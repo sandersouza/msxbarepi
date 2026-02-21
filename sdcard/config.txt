@@ -1,0 +1,6 @@
+arm_64bit=1
+enable_uart=1
+kernel=kernel8.img
+hdmi_force_hotplug=1
+disable_overscan=1
+dtoverlay=pi3-disable-bt
