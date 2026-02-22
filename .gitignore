@@ -2,4 +2,5 @@ build/
 artifacts/
 third_party/fmsx
 third_party/circle
+roms/*.rom
 .DS_Store
