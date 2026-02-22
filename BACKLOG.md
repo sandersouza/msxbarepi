@@ -105,6 +105,24 @@ Objetivo: emulador sobe em baremetal e renderiza frames em HDMI, mesmo sem áudi
 
 Critério de saída M1.1:
 - Emulador inicia em baremetal e exibe vídeo de ROM MSX1 na HDMI.
+- Status: concluído.
+
+Status atual (execução desta sessão):
+
+- [x] Core base selecionado e commit fixado em `third_party/fmsx/UPSTREAM.md`
+- [x] Upstream integrado em `third_party/fmsx/`
+- [x] Licenciamento validado operacionalmente pelo mantenedor (registro: `docs/legal/fmsx-authorization.md`)
+- [x] Dependências mapeadas e documentadas em `docs/m1-1-core-bringup.md`
+- [x] Camada `platform` baremetal criada
+- [x] Loop de frame bring-up em HDMI integrado ao kernel
+- [x] Loader mínimo de ROM via `initramfs` (arquivo no SD carregado pelo firmware)
+- [x] Execução real do núcleo fMSX integrada no runtime baremetal (build OK)
+- [x] Validado em hardware real (RPi 3B + initramfs com BIOS Expert 1.1)
+- [x] BASIC exibido via HDMI em hardware real (boot funcional)
+- [x] Otimização de blit HDMI (`blit3x` + LUT RGB565)
+- [x] Preset de fast boot por frame-skip temporário (~17s até BASIC observado)
+- [x] Presets de framebuffer reduzido para teste de custo de blit (`960x720` e `800x600`)
+- [x] Consolidar preset fastboot como baseline e revalidar após mudanças de render/core (MMU+cache+pacing promovidos)
 
 ## M1.2 - Jogabilidade Básica MSX1 (Prioridade P0)
 
@@ -113,12 +131,26 @@ Objetivo: rodar ROMs MSX1 com interação básica do usuário.
 1. Implementar entrada real (teclado/controle definido) com mapeamento MSX mínimo.
 2. Implementar reset do emulador e comando de troca de ROM (mínimo viável).
 3. Implementar mapeadores prioritários para conjunto de ROMs alvo.
-4. Ajustar timing do loop para estabilidade (frame pacing inicial).
-5. Validar pelo menos 2 ROMs MSX1 de referência com input funcional.
-6. Documentar limitações de compatibilidade conhecidas.
+4. Integrar áudio básico funcional para jogabilidade:
+   - PSG (AY-3-8910) com saída PCM mínima
+   - manter FM/SCC em stub se necessário nesta fase
+5. Ajustar timing do loop para estabilidade (frame pacing inicial).
+6. Validar pelo menos 2 ROMs MSX1 de referência com input + áudio básico funcionais.
+7. Documentar limitações de compatibilidade conhecidas.
 
 Critério de saída M1.2:
-- Pelo menos 2 ROMs MSX1 executam com vídeo + input estáveis.
+- Pelo menos 2 ROMs MSX1 executam com vídeo + input + áudio básico estáveis.
+
+Status atual (parcial, início por item 4):
+
+- [x] Pipeline de áudio do core reativado em modo `PSG-only` (AY8910) sem FM/SCC/NukeYKT
+- [x] Mixagem EMULib (`InitSound` + `RenderAndPlayAudio`) integrada ao loop por frame
+- [x] Fila PCM (`audio_pcm`) integrada entre frontend e backend de saída
+- [x] Preset de teste gerado: `artifacts/kernel8-audio-test.img`
+- [x] Driver de saída PCM no hardware via PWM analógico (P2) sem DMA (funcional, qualidade ainda a refinar)
+- [x] Smoke test dedicado da rota P2 (`artifacts/kernel8-audio-p2-smoketest.img`)
+- [ ] Refinar saída P2 (glitches/latência/estéreo estável) e migrar para DMA
+- [ ] Implementar backend de áudio HDMI (reutilizando `audio_pcm`)
 
 ## M1.3 - Estabilização e Performance (Prioridade P1)
 
@@ -126,9 +158,16 @@ Objetivo: tornar uso contínuo viável no RPi 3B e fechar M1.
 
 1. Instrumentar métricas (ms/frame, dropped frames, uso de CPU).
 2. Identificar e corrigir gargalos críticos de render/timing.
-3. Integrar áudio em fases:
-   - fase 1: stub silencioso estável
-   - fase 2: saída PCM básica
+   - baseline atual medido em hardware:
+     - `O1 + blit3x` ~25s ate BASIC
+     - `fastboot` (skip temporario de apresentacao) ~17s ate BASIC
+     - proximo A/B: `fastboot-fb960x720` e `fastboot-fb800x600` (reduzir pixels do framebuffer real)
+     - validar clock ARM efetivo do RPi 3B em baremetal (`arm_freq=1200` no `config.txt`) antes de concluir diagnostico de "meia velocidade"
+     - MMU+cache habilitados (preset estavel) + frame pacing restaurando velocidade percebida correta
+3. Refinar áudio (após áudio básico em M1.2):
+   - reduzir latência / glitches
+   - revisar mixagem (PSG/SCC/FM)
+   - habilitar recursos adicionais por etapas
 4. Criar checklist de regressão (boot, ROM load, input, vídeo, estabilidade).
 5. Consolidar documentação técnica do port em `docs/`.
 6. Coletar evidências de fechamento (capturas/logs e ROMs testadas).
@@ -136,7 +175,59 @@ Objetivo: tornar uso contínuo viável no RPi 3B e fechar M1.
 Critério de saída M1.3:
 - Sessão de teste contínua estável no RPi 3B com performance aceitável para títulos MSX1 básicos.
 
+## M1.4 - Validação Comparativa com MSX Real (Prioridade P1)
+
+Objetivo: medir e aproximar fidelidade do `msxbare` em relação a um MSX real (vídeo, áudio, timing e comportamento observável).
+
+1. Definir bancada de comparação e procedimento padronizado:
+   - MSX real de referência (modelo/BIOS/fonte/tela/cabos)
+   - RPi 3B + `msxbare` (versão/preset fixado)
+   - mesmas ROMs/cenas/scripts de teste nos dois lados
+2. Congelar conjunto de ROMs/cenas de comparação (benchmark funcional):
+   - BASIC idle / prompt
+   - jogo com música contínua
+   - jogo com scroll/sprites
+   - tela de cores/paleta por screen mode (quando disponível)
+3. Validar vídeo com captura:
+   - capturar saída de vídeo do MSX real (placa de captura)
+   - capturar saída HDMI do `msxbare`
+   - comparar aspect ratio, enquadramento, bordas, overscan e alinhamento
+4. Validar paleta/cores por screen mode:
+   - medir diferenças de cor (RGB/HSV/Delta aproximado) por amostra
+   - documentar desvios por `SCREEN` (`0/1/2/...` conforme suporte)
+   - ajustar paleta/conversão quando necessário
+5. Validar timing/frequência de vídeo:
+   - medir frequência de quadro e estabilidade (50/60Hz)
+   - medir pacing percebido em cenas de movimento
+   - registrar jitter / dropped frames
+6. Validar áudio com instrumentos:
+   - gravar áudio do MSX real e do `msxbare` (mesmas cenas)
+   - comparar forma de onda, envelope e espectro/histograma
+   - identificar clipping, ruído, DC offset, latência e pitch incorreto
+7. Validar sinais analógicos/PWM com mini osciloscópio (quando aplicável):
+   - frequência efetiva de saída
+   - amplitude relativa / offset DC
+   - presença de glitches/aliasing
+8. Medir velocidade de execução comparada:
+   - tempo até BASIC
+   - tempo de boot de ROMs selecionadas
+   - comportamento de animações e input response em cenas fixas
+9. Construir matriz de conformidade:
+   - vídeo (aspect ratio, cores, bordas, timing)
+   - áudio (pitch, timbre, ruído, latência)
+   - velocidade/timing geral
+   - observações e prioridade de correção
+10. Gerar documentação e evidências em `docs/`:
+   - metodologia
+   - medições
+   - capturas/áudios/gráficos
+   - diferenças conhecidas e plano de correção
+
+Critério de saída M1.4:
+- Existe relatório comparativo reproduzível com evidências instrumentadas (vídeo + áudio + timing) entre `msxbare` e MSX real.
+- Principais desvios estão quantificados e priorizados em backlog técnico.
+
 ## Priorização geral
 
 - `P0`: M1.1 e M1.2 (funcionalidade essencial).
-- `P1`: M1.3 (qualidade, performance e robustez).
+- `P1`: M1.3 e M1.4 (qualidade, performance, robustez e fidelidade comparativa).

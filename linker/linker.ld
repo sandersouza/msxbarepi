@@ -25,5 +25,7 @@ SECTIONS
     }
 
     . = ALIGN(16);
-    __stack_top = . + 0x4000;
+    __stack_bottom = .;
+    . += 0x100000; /* 1MiB stack for fMSX bring-up (deep call paths/logging) */
+    __stack_top = .;
 }

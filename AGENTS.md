@@ -19,6 +19,13 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Todo acesso MMIO deve ser encapsulado e comentado
 - Novos módulos devem incluir teste manual objetivo (procedimento e resultado esperado)
 - Scripts com potencial destrutivo (ex.: formatação de disco) devem oferecer modo de validação sem persistência (dry-run) e ser testados nesse modo antes de uso real
+- Integrações de `third_party` devem registrar commit fixado e análise de licença antes de adoção definitiva
+- Para o core fMSX autorizado neste projeto: manter uso não comercial, atribuição explícita, LICENSE original intacta e proibição de redistribuir BIOS/ROMs protegidos
+- Nesta fase, BIOS/ROM do fMSX devem ser fornecidas externamente via `initramfs` CPIO no SD (não versionar assets protegidos no repositório)
+- Usar `third_party/fmsx` e `third_party/circle` como fontes de consulta prioritárias para novas implementações e correções (especialmente core, vídeo, áudio, timers, GPIO e periféricos do Raspberry Pi), evitando reinventar a roda quando houver solução já validada
+- Antes de implementar drivers/periféricos sensíveis (ex.: áudio PWM/HDMI, DMA, clocks), consultar primeiro referências em `third_party/circle` e registrar no código/documentação qual arquivo/classe foi usado como base conceitual
+- Sempre que o fluxo de boot exigir novos arquivos no SD, atualizar `scripts/prepare-sd.sh` para copiar esses arquivos automaticamente
+- Quando houver trade-off de estabilidade vs desempenho (ex.: otimização do frontend do renderer), manter knobs de build explícitos no `Makefile` e documentados no `README.md`
 
 ## Fluxo de trabalho
 

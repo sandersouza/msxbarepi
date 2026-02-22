@@ -25,9 +25,11 @@ DRY_RUN="${DRY_RUN:-0}"
 NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
 AUTO_CONFIRM="${AUTO_CONFIRM:-0}"
 
-KERNEL_IMG="${KERNEL_IMG:-${PROJECT_ROOT}/build/kernel8.img}"
+KERNEL_IMG="${KERNEL_IMG:-}"
 CONFIG_TXT="${CONFIG_TXT:-${PROJECT_ROOT}/sdcard/config.txt}"
-FIRMWARE_DIR="${FIRMWARE_DIR:-}"
+INITRAMFS_IMG="${INITRAMFS_IMG:-${PROJECT_ROOT}/sdcard/msx.cpio}"
+INITRAMFS_SRC_DIR="${INITRAMFS_SRC_DIR:-${PROJECT_ROOT}/roms/msx1}"
+FIRMWARE_DIR="${FIRMWARE_DIR:-${PROJECT_ROOT}/rpi-firmware}"
 
 plist_get() {
   local key="$1"
@@ -52,6 +54,62 @@ run_or_echo() {
   else
     "$@"
   fi
+}
+
+select_with_fzf() {
+  local prompt="$1"
+  local header="$2"
+  shift 2
+  local items=("$@")
+  local selected=""
+  local status=0
+
+  if [ "${#items[@]}" -eq 0 ]; then
+    return 1
+  fi
+
+  if [ "$NON_INTERACTIVE" = "1" ]; then
+    printf '%s' "${items[0]}"
+    return 0
+  fi
+
+  set +e
+  selected="$(printf '%s\n' "${items[@]}" | FZF_DEFAULT_OPTS= fzf --height=15 --reverse --border --prompt="${prompt}" --header="${header}" --bind 'enter:accept')"
+  status=$?
+  set -e
+
+  if [ "$status" -ne 0 ] || [ -z "$selected" ]; then
+    return 1
+  fi
+
+  printf '%s' "$selected"
+}
+
+safe_eject_disk() {
+  local disk="$1"
+
+  if [ "$DRY_RUN" = "1" ]; then
+    run_or_echo sync
+    run_or_echo sleep 1
+    run_or_echo diskutil unmountDisk "$disk"
+    run_or_echo diskutil eject "$disk"
+    return 0
+  fi
+
+  sync
+  sleep 1
+
+  # Spotlight/mdsync pode segurar o volume logo apos a copia.
+  diskutil unmountDisk "$disk" >/dev/null 2>&1 || true
+  sleep 1
+
+  if diskutil eject "$disk" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  sleep 2
+  diskutil unmountDisk "$disk" >/dev/null 2>&1 || true
+  diskutil eject "$disk" >/dev/null
 }
 
 disk_paths="$(diskutil list external physical | awk '/^\/dev\/disk[0-9]+/{print $1}')"
@@ -127,32 +185,48 @@ echo "Selecione o disco do microSD:"
 
 if [ "$NON_INTERACTIVE" = "1" ]; then
   selected_line="${candidates[0]}"
-  fzf_status=0
   echo "[INFO] NON_INTERACTIVE=1: selecionado automaticamente: ${selected_line}"
 else
-  # Executa o fzf de forma robusta:
-  # - set +e evita abortar silenciosamente por causa do `set -e`
-  # - limpa FZF_DEFAULT_OPTS para evitar bindings globais que possam bloquear Enter
-  set +e
-  selected_line="$(printf '%s\n' "${candidates[@]}" | FZF_DEFAULT_OPTS= fzf --height=15 --reverse --border --prompt="Disk > " --header="Use setas e Enter para selecionar" --bind 'enter:accept')"
-  fzf_status=$?
-  set -e
-fi
-
-if [ "$fzf_status" -ne 0 ]; then
-  echo "[ABORTADO] Selecao cancelada (fzf exit code: ${fzf_status})."
-  exit 1
-fi
-
-if [ -z "$selected_line" ]; then
-  echo "[ABORTADO] Nenhum disco selecionado (linha vazia)."
-  exit 1
+  selected_line="$(select_with_fzf "Disk > " "Use setas e Enter para selecionar" "${candidates[@]}")" || {
+    echo "[ABORTADO] Selecao cancelada."
+    exit 1
+  }
 fi
 
 target_disk="$(printf '%s' "$selected_line" | awk '{print $1}')"
 if [ -z "$target_disk" ]; then
   echo "[ERRO] Falha ao identificar disco selecionado."
   exit 1
+fi
+
+kernel_img_from_user=0
+if [ -n "$KERNEL_IMG" ]; then
+  kernel_img_from_user=1
+fi
+
+if [ "$kernel_img_from_user" -eq 0 ]; then
+  artifact_candidates=()
+  while IFS= read -r img; do
+    [ -z "$img" ] && continue
+    artifact_candidates+=("$img")
+  done < <(find "${PROJECT_ROOT}/artifacts" -maxdepth 1 -type f -name '*.img' 2>/dev/null | sort)
+
+  if [ "${#artifact_candidates[@]}" -gt 0 ]; then
+    echo
+    echo "Selecione o kernel (.img) em artifacts/:"
+    selected_kernel="$(select_with_fzf "Kernel > " "Use setas e Enter para selecionar o kernel" "${artifact_candidates[@]}")" || {
+      echo "[ABORTADO] Selecao de kernel cancelada."
+      exit 1
+    }
+    KERNEL_IMG="$selected_kernel"
+    echo "[INFO] Kernel selecionado: ${KERNEL_IMG}"
+    echo
+  else
+    KERNEL_IMG="${PROJECT_ROOT}/build/kernel8.img"
+    echo
+    echo "[INFO] Nenhum kernel em artifacts/. Usando padrao: ${KERNEL_IMG}"
+    echo
+  fi
 fi
 
 if [ "$AUTO_CONFIRM" = "1" ] && [ "$DRY_RUN" = "1" ]; then
@@ -192,6 +266,21 @@ if [ "$DRY_RUN" != "1" ] && [ ! -d "$TARGET_VOLUME" ]; then
   exit 1
 fi
 
+if [ -n "$INITRAMFS_IMG" ] && [ -d "$INITRAMFS_SRC_DIR" ]; then
+  if [ -x "${PROJECT_ROOT}/scripts/make-initramfs.sh" ]; then
+    echo "[INFO] Gerando initramfs (msx.cpio) a partir de ${INITRAMFS_SRC_DIR}..."
+    if [ "$DRY_RUN" = "1" ]; then
+      echo "[DRY-RUN] ${PROJECT_ROOT}/scripts/make-initramfs.sh ${INITRAMFS_SRC_DIR} ${INITRAMFS_IMG}"
+    else
+      "${PROJECT_ROOT}/scripts/make-initramfs.sh" "$INITRAMFS_SRC_DIR" "$INITRAMFS_IMG"
+    fi
+  else
+    echo "[WARN] Script de initramfs nao encontrado/executavel: ${PROJECT_ROOT}/scripts/make-initramfs.sh"
+  fi
+elif [ -n "$INITRAMFS_IMG" ]; then
+  echo "[INFO] Diretório de ROMs para initramfs nao encontrado: ${INITRAMFS_SRC_DIR} (pulando geracao automatica)"
+fi
+
 if [ -f "$KERNEL_IMG" ]; then
   run_or_echo cp "$KERNEL_IMG" "${TARGET_VOLUME}/kernel8.img"
   echo "[OK] Copiado: kernel8.img"
@@ -204,6 +293,13 @@ if [ -f "$CONFIG_TXT" ]; then
   echo "[OK] Copiado: config.txt"
 else
   echo "[WARN] Nao encontrado: ${CONFIG_TXT}"
+fi
+
+if [ -f "$INITRAMFS_IMG" ]; then
+  run_or_echo cp "$INITRAMFS_IMG" "${TARGET_VOLUME}/msx.cpio"
+  echo "[OK] Copiado: msx.cpio"
+else
+  echo "[WARN] Nao encontrado: ${INITRAMFS_IMG}"
 fi
 
 if [ -n "$FIRMWARE_DIR" ]; then
@@ -220,13 +316,7 @@ else
   echo "[INFO] FIRMWARE_DIR nao definido. Se necessario, copie os firmwares do Raspberry Pi manualmente."
 fi
 
-if [ "$DRY_RUN" = "1" ]; then
-  run_or_echo sync
-  run_or_echo diskutil eject "$target_disk"
-else
-  run_or_echo sync
-  run_or_echo diskutil eject "$target_disk" >/dev/null
-fi
+safe_eject_disk "$target_disk"
 echo
 if [ "$DRY_RUN" = "1" ]; then
   echo "[OK] Validacao em dry-run concluida (sem persistir alteracoes no disco): ${target_disk}"
