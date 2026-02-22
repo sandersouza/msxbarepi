@@ -151,6 +151,11 @@ Status atual (parcial, início por item 4):
 - [x] Smoke test dedicado da rota P2 (`artifacts/kernel8-audio-p2-smoketest.img`)
 - [ ] Refinar saída P2 (glitches/latência/estéreo estável) e migrar para DMA
 - [ ] Implementar backend de áudio HDMI (reutilizando `audio_pcm`)
+  - [x] separar backend `audio_out_hdmi` + preset `artifacts/kernel8-audio-hdmi-test.img` (scaffold)
+  - [x] mapear referências do Circle (`hdmisoundbasedevice.*`, `bcm2835.h`, `dmacommon.h`)
+  - [ ] inicialização MAI/HDMI mínima (polling)
+  - [ ] saída audível HDMI (48kHz)
+  - [ ] migrar para DMA cíclico
 
 ## M1.3 - Estabilização e Performance (Prioridade P1)
 

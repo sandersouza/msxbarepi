@@ -116,12 +116,14 @@ static inline uint32_t pcm16_to_pwm(int16_t s)
     return (u * (range - 1u)) >> 16;
 }
 
+#if MSXBARE_AUDIO_P2_SMOKETEST_MS > 0
 static void pwm_output_direct_mono_sample(int16_t s)
 {
     uint32_t duty = pcm16_to_pwm(s);
     *PWM_DAT1 = duty;
     *PWM_DAT2 = duty;
 }
+#endif
 
 static inline void pwm_fifo_push_mono_sample(int16_t s)
 {

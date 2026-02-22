@@ -43,6 +43,7 @@ Opcoes uteis de build (estado atual do bring-up do core):
 - `FMSX_BOOT_FRAME_COUNT=N`: limite maximo de frames para `FMSX_BOOT_FRAME_SKIP` (tambem desliga ao fim da inicializacao do core)
 - `FB_WIDTH=N FB_HEIGHT=N`: resolucao do framebuffer solicitada ao firmware (impacta custo de blit no CPU)
 - `ENABLE_AUDIO=1`: reativa pipeline de audio em modo PSG-only (teste; backend atual via P2/PWM)
+- `AUDIO_BACKEND=p2|hdmi`: seleciona backend de saida de audio (`p2` padrao)
 
 Perfil recomendado atual (estavel):
 
@@ -102,6 +103,23 @@ make audio-p2-smoketest
 ```
 
 Gera `artifacts/kernel8-audio-p2-smoketest.img`.
+
+Preset experimental de audio HDMI (scaffold de backend, sem som ainda):
+
+```bash
+make audio-hdmi-test
+```
+
+Gera `artifacts/kernel8-audio-hdmi-test.img`.
+
+- Usa `audio_pcm` como fonte PCM (igual ao P2)
+- Backend HDMI atual ainda e scaffold (drain de fila, sem MAI/DMA)
+- Implementacao real sera baseada em referencia conceitual de:
+  - `third_party/circle/include/circle/sound/hdmisoundbasedevice.h`
+  - `third_party/circle/lib/sound/hdmisoundbasedevice.cpp`
+
+Plano da trilha HDMI:
+- `docs/m1-2-audio-hdmi-plan.md`
 
 Presets para teste com framebuffer menor (reduz custo de blit):
 

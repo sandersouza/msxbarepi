@@ -10,6 +10,7 @@ FB_WIDTH ?= 1024
 FB_HEIGHT ?= 768
 ENABLE_MMU ?= 0
 ENABLE_AUDIO ?= 0
+AUDIO_BACKEND ?= p2
 EXTRA_CFLAGS ?=
 
 # Auto-detect common baremetal toolchain prefixes.
@@ -54,6 +55,16 @@ ASFLAGS := -ffreestanding -nostdlib -nostartfiles -mcpu=cortex-a53 -Iinclude -It
 ifeq ($(ENABLE_MMU),1)
 CFLAGS += -DMSXBARE_ENABLE_MMU=1
 endif
+
+ifeq ($(AUDIO_BACKEND),p2)
+CFLAGS += -DMSXBARE_AUDIO_BACKEND_P2=1
+AUDIO_OUT_SRC := src/audio_out_pwm.c
+else ifeq ($(AUDIO_BACKEND),hdmi)
+CFLAGS += -DMSXBARE_AUDIO_BACKEND_HDMI=1
+AUDIO_OUT_SRC := src/audio_out_hdmi.c
+else
+$(error Unsupported AUDIO_BACKEND='$(AUDIO_BACKEND)' (use p2|hdmi))
+endif
 LDFLAGS := -T linker/linker.ld
 
 SOURCES_C := \
@@ -65,7 +76,7 @@ SOURCES_C := \
 	src/mmu.c \
 	src/platform.c \
 	src/audio_pcm.c \
-	src/audio_out_pwm.c \
+	$(AUDIO_OUT_SRC) \
 	src/dtb.c \
 	src/rom_loader.c \
 	src/initramfs.c \
@@ -94,7 +105,7 @@ OBJECTS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES_C)) \
 TARGET_ELF := $(BUILD_DIR)/kernel8.elf
 TARGET_IMG := $(BUILD_DIR)/kernel8.img
 
-.PHONY: all clean help perf-kernels fastboot fastplay fastboot-fb960x720 fastboot-fb800x600 mmu-test audio-test audio-p2-smoketest
+.PHONY: all clean help perf-kernels fastboot fastplay fastboot-fb960x720 fastboot-fb800x600 mmu-test audio-test audio-p2-smoketest audio-hdmi-test
 
 all: $(TARGET_IMG)
 	@echo "Build concluído: $(TARGET_IMG)"
@@ -105,7 +116,8 @@ $(BUILD_DIR):
 $(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(BUILD_DIR)/src/fmsx/fmsx_frontend.o: CFLAGS := $(filter-out -O2,$(CFLAGS)) -O$(FMSX_FRONTEND_OPT) $(FMSX_FRONTEND_EXTRA_CFLAGS)
+$(BUILD_DIR)/src/fmsx/fmsx_frontend.o: CFLAGS := $(filter-out -O2,$(CFLAGS)) -O$(FMSX_FRONTEND_OPT) $(FMSX_FRONTEND_EXTRA_CFLAGS) -Wno-unused-variable
+$(BUILD_DIR)/third_party/%.o: CFLAGS += -Wno-unused-parameter -Wno-sign-compare -Wno-pointer-sign -Wno-dangling-else -Wno-implicit-fallthrough -Wno-parentheses -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
 
 $(BUILD_DIR)/%.o: %.S | $(BUILD_DIR)
 	$(CC) $(ASFLAGS) -c $< -o $@
@@ -170,17 +182,24 @@ mmu-test:
 
 audio-test:
 	$(MAKE) clean
-	$(MAKE) DEBUG=0 ENABLE_MMU=1 ENABLE_AUDIO=1 FMSX_FRONTEND_OPT=1 FMSX_FRAME_SKIP=0 FMSX_BOOT_FRAME_SKIP=7 FMSX_BOOT_FRAME_COUNT=1200 FB_WIDTH=1024 FB_HEIGHT=768 FMSX_FRONTEND_EXTRA_CFLAGS="-DMSXBARE_AUDIO_SELFTEST_MS=250"
+	$(MAKE) DEBUG=0 ENABLE_MMU=1 ENABLE_AUDIO=1 AUDIO_BACKEND=p2 FMSX_FRONTEND_OPT=1 FMSX_FRAME_SKIP=0 FMSX_BOOT_FRAME_SKIP=7 FMSX_BOOT_FRAME_COUNT=1200 FB_WIDTH=1024 FB_HEIGHT=768 FMSX_FRONTEND_EXTRA_CFLAGS="-DMSXBARE_AUDIO_SELFTEST_MS=250"
 	@mkdir -p artifacts
 	cp $(TARGET_IMG) artifacts/kernel8-audio-test.img
-	@echo "Preset experimental audio PSG (pipeline) gerado: artifacts/kernel8-audio-test.img"
+	@echo "Preset audio PSG via P2/PWM gerado: artifacts/kernel8-audio-test.img"
 
 audio-p2-smoketest:
 	$(MAKE) clean
-	$(MAKE) DEBUG=0 ENABLE_MMU=1 ENABLE_AUDIO=1 FMSX_FRONTEND_OPT=1 FMSX_FRAME_SKIP=0 FMSX_BOOT_FRAME_SKIP=7 FMSX_BOOT_FRAME_COUNT=1200 FB_WIDTH=1024 FB_HEIGHT=768 EXTRA_CFLAGS="-DMSXBARE_AUDIO_P2_SMOKETEST_MS=1000"
+	$(MAKE) DEBUG=0 ENABLE_MMU=1 ENABLE_AUDIO=1 AUDIO_BACKEND=p2 FMSX_FRONTEND_OPT=1 FMSX_FRAME_SKIP=0 FMSX_BOOT_FRAME_SKIP=7 FMSX_BOOT_FRAME_COUNT=1200 FB_WIDTH=1024 FB_HEIGHT=768 EXTRA_CFLAGS="-DMSXBARE_AUDIO_P2_SMOKETEST_MS=1000"
 	@mkdir -p artifacts
 	cp $(TARGET_IMG) artifacts/kernel8-audio-p2-smoketest.img
 	@echo "Preset smoke test P2 gerado: artifacts/kernel8-audio-p2-smoketest.img"
+
+audio-hdmi-test:
+	$(MAKE) clean
+	$(MAKE) DEBUG=0 ENABLE_MMU=1 ENABLE_AUDIO=1 AUDIO_BACKEND=hdmi FMSX_FRONTEND_OPT=1 FMSX_FRAME_SKIP=0 FMSX_BOOT_FRAME_SKIP=7 FMSX_BOOT_FRAME_COUNT=1200 FB_WIDTH=1024 FB_HEIGHT=768
+	@mkdir -p artifacts
+	cp $(TARGET_IMG) artifacts/kernel8-audio-hdmi-test.img
+	@echo "Preset audio HDMI (scaffold) gerado: artifacts/kernel8-audio-hdmi-test.img"
 
 help:
 	@echo "Targets: all, clean"
@@ -196,6 +215,8 @@ help:
 	@echo "Gameplay test preset (frame skip apos boot): make fastplay"
 	@echo "Lower-FB presets to test CPU cost: make fastboot-fb960x720 | make fastboot-fb800x600"
 	@echo "MMU/cache preset mantido para A/B: make mmu-test"
-	@echo "PSG audio pipeline (sem saida fisica): make audio-test"
+	@echo "PSG audio via P2/PWM: make audio-test"
 	@echo "Smoke test P2 (tom PWM direto): make audio-p2-smoketest"
+	@echo "Audio HDMI scaffold (sem som ainda): make audio-hdmi-test"
+	@echo "Audio backend: make ENABLE_AUDIO=1 AUDIO_BACKEND=p2|hdmi ..."
 	@echo "Generate A/B perf kernels: make perf-kernels"

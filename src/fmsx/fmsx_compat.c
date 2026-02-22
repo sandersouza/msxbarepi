@@ -18,20 +18,14 @@
 static unsigned char g_heap[HEAP_SIZE];
 static size_t g_heap_pos;
 
+#ifdef MSXBARE_DEBUG_LOGS
 static void bare_log(int level, const char *fmt, ...) {
     (void)level;
-#ifndef MSXBARE_DEBUG_LOGS
-    (void)fmt;
-    return;
-#else
     if (fmt) {
         console_puts("[fMSX] ");
         console_puts(fmt);
     }
-#endif
 }
-
-#ifdef MSXBARE_DEBUG_LOGS
 retro_log_printf_t log_cb = bare_log;
 #else
 retro_log_printf_t log_cb = 0;
