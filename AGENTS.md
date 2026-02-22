@@ -20,6 +20,8 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Novos módulos devem incluir teste manual objetivo (procedimento e resultado esperado)
 - Scripts com potencial destrutivo (ex.: formatação de disco) devem oferecer modo de validação sem persistência (dry-run) e ser testados nesse modo antes de uso real
 - Integrações de `third_party` devem registrar commit fixado e análise de licença antes de adoção definitiva
+- `third_party/README.md` deve documentar o propósito da pasta, o inventário atual de referências e os comandos para repovoar os repositórios locais; manter esse arquivo atualizado sempre que um novo projeto third-party for adicionado/removido
+- Projetos em `third_party/` devem ser tratados como referência/upstream e **nao devem ser alterados diretamente**; se for necessario reutilizar codigo com modificacoes, criar copia fora da pasta original (ou patch local claramente separado) e alterar essa copia
 - Para o core fMSX autorizado neste projeto: manter uso não comercial, atribuição explícita, LICENSE original intacta e proibição de redistribuir BIOS/ROMs protegidos
 - Nesta fase, BIOS/ROM do fMSX devem ser fornecidas externamente via `initramfs` CPIO no SD (não versionar assets protegidos no repositório)
 - Usar `third_party/fmsx` e `third_party/circle` como fontes de consulta prioritárias para novas implementações e correções (especialmente core, vídeo, áudio, timers, GPIO e periféricos do Raspberry Pi), evitando reinventar a roda quando houver solução já validada
@@ -32,6 +34,7 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Cada mudança deve atualizar documentação mínima em `docs/`
 - A evolução do projeto deve refletir em documentação continuamente, incluindo atualização deste `AGENTS.md` quando necessário
 - Novas diretrizes técnicas/processuais identificadas durante o desenvolvimento devem ser registradas no `AGENTS.md`
+- A documentacao do projeto deve sempre referenciar explicitamente as fontes de consulta/referencias utilizadas (ex.: arquivos/classes de `third_party/fmsx` e `third_party/circle`) quando influenciarem implementacoes ou correcoes
 - Commits pequenos e focados
 - Antes de avançar para próximo marco: build limpo (`make clean && make`) e validação em hardware
 

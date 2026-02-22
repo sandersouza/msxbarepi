@@ -1,2 +1,5 @@
 build/
+artifacts/
+third_party/fmsx
+third_party/circle
 .DS_Store
