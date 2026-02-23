@@ -111,6 +111,11 @@ Critério de saída M1.1:
 Objetivo: rodar ROMs MSX1 com interação básica do usuário.
 
 1. Implementar entrada real (teclado/controle definido) com mapeamento MSX mínimo.
+   - USB host controller (RPi 3B) bring-up mínimo para HID
+   - enumeração USB básica (device/config/interface/endpoint)
+   - camada HID (boot keyboard primeiro; gamepad depois)
+   - tradução HID -> matriz de teclado MSX / joystick MSX
+   - repetição de tecla, key rollover e tratamento de modifiers (Shift/Ctrl/Graph) mínimos
 2. Implementar reset do emulador e comando de troca de ROM (mínimo viável).
 3. Implementar mapeadores prioritários para conjunto de ROMs alvo.
 4. Ajustar timing do loop para estabilidade (frame pacing inicial).
@@ -118,7 +123,36 @@ Objetivo: rodar ROMs MSX1 com interação básica do usuário.
 6. Documentar limitações de compatibilidade conhecidas.
 
 Critério de saída M1.2:
+<<<<<<< Updated upstream
 - Pelo menos 2 ROMs MSX1 executam com vídeo + input estáveis.
+=======
+- Pelo menos 2 ROMs MSX1 executam com vídeo + input + áudio básico estáveis.
+
+Status atual (parcial, início por item 4):
+
+- [x] Pipeline de áudio do core reativado em modo `PSG-only` (AY8910) sem FM/SCC/NukeYKT
+- [x] Mixagem EMULib (`InitSound` + `RenderAndPlayAudio`) integrada ao loop por frame
+- [x] Fila PCM (`audio_pcm`) integrada entre frontend e backend de saída
+- [x] Preset de teste gerado: `artifacts/kernel8-audio-test.img`
+- [x] Driver de saída PCM no hardware via PWM analógico (P2) sem DMA (funcional, qualidade ainda a refinar)
+- [x] Smoke test dedicado da rota P2 (`artifacts/kernel8-audio-p2-smoketest.img`)
+- [ ] Refinar saída P2 (glitches/latência/estéreo estável) e migrar para DMA
+- [x] Implementar backend de áudio HDMI (reutilizando `audio_pcm`) - básico funcional
+  - [x] separar backend `audio_out_hdmi` + preset `artifacts/kernel8-audio-hdmi-test.img` (scaffold/debug)
+  - [x] mapear referências do Circle (`hdmisoundbasedevice.*`, `bcm2835.h`, `dmacommon.h`)
+  - [x] inicialização MAI/HDMI mínima (polling)
+  - [x] saída audível HDMI (48kHz)
+  - [x] migrar para DMA cíclico
+  - [x] coerência de cache (MMU+DMA: flush de buffers/CBs)
+  - [x] preset estável gerado: `artifacts/kernel8-audio-hdmi.img`
+  - [ ] refinar integração HDMI (limpeza de workarounds de bring-up / remover flags de debug do caminho de teste)
+- [ ] Iniciar trilha de input real (USB + HID)
+  - [ ] definir estratégia USB no RPi 3B (host controller alvo + referência Circle)
+  - [ ] bring-up mínimo do host USB para enumeração de um teclado HID
+  - [ ] implementar parser HID boot keyboard
+  - [ ] mapear teclas HID -> teclado MSX (mínimo para BASIC/jogos)
+  - [ ] smoke test em hardware com teclado USB (digitar no BASIC)
+>>>>>>> Stashed changes
 
 ## M1.3 - Estabilização e Performance (Prioridade P1)
 

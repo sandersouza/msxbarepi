@@ -1,2 +1,6 @@
 build/
+artifacts/
+roms/*.rom
+third_party/circle
+third_party/fmsx
 .DS_Store
