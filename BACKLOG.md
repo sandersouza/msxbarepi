@@ -166,7 +166,7 @@ Status atual (parcial, início por item 4):
   - [ ] refinar integração HDMI (limpeza de workarounds de bring-up / remover flags de debug do caminho de teste)
   - [ ] Iniciar trilha de input real (USB + HID)
   - [ ] definir estratégia USB no RPi 3B (host controller alvo + referência Circle)
-  - [ ] bring-up mínimo do host USB para enumeração de um teclado HID
+  - [~] bring-up mínimo do host USB para enumeração de um teclado HID (DWC detect/reset/power/status polling feito; enumeração pendente)
   - [ ] implementar parser HID boot keyboard
   - [ ] mapear teclas HID -> teclado MSX (mínimo para BASIC/jogos)
   - [ ] smoke test em hardware com teclado USB (digitar no BASIC)

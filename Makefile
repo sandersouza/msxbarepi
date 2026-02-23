@@ -75,6 +75,9 @@ SOURCES_C := \
 	src/console.c \
 	src/mmu.c \
 	src/platform.c \
+	src/usb_host.c \
+	src/usb_hid.c \
+	src/msx_input.c \
 	src/audio_pcm.c \
 	$(AUDIO_OUT_SRC) \
 	src/dtb.c \
@@ -105,7 +108,7 @@ OBJECTS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES_C)) \
 TARGET_ELF := $(BUILD_DIR)/kernel8.elf
 TARGET_IMG := $(BUILD_DIR)/kernel8.img
 
-.PHONY: all clean help perf-kernels fastboot fastplay fastboot-fb960x720 fastboot-fb800x600 mmu-test audio-test audio-p2-smoketest audio-hdmi audio-hdmi-test audio-hdmi-debug
+.PHONY: all clean help perf-kernels fastboot fastplay fastboot-fb960x720 fastboot-fb800x600 mmu-test audio-test audio-p2-smoketest audio-hdmi audio-hdmi-test audio-hdmi-debug usb-host-debug
 
 all: $(TARGET_IMG)
 	@echo "Build concluído: $(TARGET_IMG)"
@@ -118,6 +121,7 @@ $(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
 
 $(BUILD_DIR)/src/fmsx/fmsx_frontend.o: CFLAGS := $(filter-out -O2,$(CFLAGS)) -O$(FMSX_FRONTEND_OPT) $(FMSX_FRONTEND_EXTRA_CFLAGS) -Wno-unused-variable
 $(BUILD_DIR)/third_party/fmsx/EMULib/Sound.o: CFLAGS += -fno-tree-vectorize -fno-tree-slp-vectorize
+$(BUILD_DIR)/src/usb_host.o: CFLAGS += -fno-tree-vectorize -fno-tree-slp-vectorize
 $(BUILD_DIR)/third_party/%.o: CFLAGS += -Wno-unused-parameter -Wno-sign-compare -Wno-pointer-sign -Wno-dangling-else -Wno-implicit-fallthrough -Wno-parentheses -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
 
 $(BUILD_DIR)/%.o: %.S | $(BUILD_DIR)
@@ -216,6 +220,14 @@ audio-hdmi-debug:
 	cp $(TARGET_IMG) artifacts/kernel8-audio-hdmi-debug.img
 	@echo "Preset audio HDMI debug gerado: artifacts/kernel8-audio-hdmi-debug.img"
 
+
+usb-host-debug:
+	$(MAKE) clean
+	$(MAKE) DEBUG=0 ENABLE_MMU=0 ENABLE_AUDIO=0 FMSX_FRONTEND_OPT=1 FMSX_FRAME_SKIP=0 FMSX_BOOT_FRAME_SKIP=0 FMSX_BOOT_FRAME_COUNT=0 FB_WIDTH=1024 FB_HEIGHT=768 EXTRA_CFLAGS="-DMSXBARE_USB_HOST_DEBUG_STANDALONE=1 -DMSXBARE_USB_HOST_SILENT_LOGS=1"
+	@mkdir -p artifacts
+	cp $(TARGET_IMG) artifacts/kernel8-usb-host-debug.img
+	@echo "Preset USB host debug gerado: artifacts/kernel8-usb-host-debug.img"
+
 help:
 	@echo "Targets: all, clean"
 	@echo "Auto-detect CROSS: aarch64-none-elf- or aarch64-elf-"
@@ -235,5 +247,6 @@ help:
 	@echo "Audio HDMI (estavel): make audio-hdmi"
 	@echo "Audio HDMI (debug overlay): make audio-hdmi-test"
 	@echo "Audio HDMI debug (logs na HDMI/UART): make audio-hdmi-debug"
+	@echo "USB host debug (standalone): make usb-host-debug"
 	@echo "Audio backend: make ENABLE_AUDIO=1 AUDIO_BACKEND=p2|hdmi ..."
 	@echo "Generate A/B perf kernels: make perf-kernels"
