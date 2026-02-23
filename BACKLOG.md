@@ -150,12 +150,15 @@ Status atual (parcial, início por item 4):
 - [x] Driver de saída PCM no hardware via PWM analógico (P2) sem DMA (funcional, qualidade ainda a refinar)
 - [x] Smoke test dedicado da rota P2 (`artifacts/kernel8-audio-p2-smoketest.img`)
 - [ ] Refinar saída P2 (glitches/latência/estéreo estável) e migrar para DMA
-- [ ] Implementar backend de áudio HDMI (reutilizando `audio_pcm`)
-  - [x] separar backend `audio_out_hdmi` + preset `artifacts/kernel8-audio-hdmi-test.img` (scaffold)
+- [x] Implementar backend de áudio HDMI (reutilizando `audio_pcm`) - básico funcional
+  - [x] separar backend `audio_out_hdmi` + preset `artifacts/kernel8-audio-hdmi-test.img` (scaffold/debug)
   - [x] mapear referências do Circle (`hdmisoundbasedevice.*`, `bcm2835.h`, `dmacommon.h`)
-  - [ ] inicialização MAI/HDMI mínima (polling)
-  - [ ] saída audível HDMI (48kHz)
-  - [ ] migrar para DMA cíclico
+  - [x] inicialização MAI/HDMI mínima (polling)
+  - [x] saída audível HDMI (48kHz)
+  - [x] migrar para DMA cíclico
+  - [x] coerência de cache (MMU+DMA: flush de buffers/CBs)
+  - [x] preset estável gerado: `artifacts/kernel8-audio-hdmi.img`
+  - [ ] refinar integração HDMI (limpeza de workarounds de bring-up / remover flags de debug do caminho de teste)
 
 ## M1.3 - Estabilização e Performance (Prioridade P1)
 

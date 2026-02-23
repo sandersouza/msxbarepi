@@ -105,7 +105,7 @@ OBJECTS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES_C)) \
 TARGET_ELF := $(BUILD_DIR)/kernel8.elf
 TARGET_IMG := $(BUILD_DIR)/kernel8.img
 
-.PHONY: all clean help perf-kernels fastboot fastplay fastboot-fb960x720 fastboot-fb800x600 mmu-test audio-test audio-p2-smoketest audio-hdmi-test
+.PHONY: all clean help perf-kernels fastboot fastplay fastboot-fb960x720 fastboot-fb800x600 mmu-test audio-test audio-p2-smoketest audio-hdmi audio-hdmi-test audio-hdmi-debug
 
 all: $(TARGET_IMG)
 	@echo "Build concluído: $(TARGET_IMG)"
@@ -117,6 +117,7 @@ $(BUILD_DIR)/%.o: %.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 $(BUILD_DIR)/src/fmsx/fmsx_frontend.o: CFLAGS := $(filter-out -O2,$(CFLAGS)) -O$(FMSX_FRONTEND_OPT) $(FMSX_FRONTEND_EXTRA_CFLAGS) -Wno-unused-variable
+$(BUILD_DIR)/third_party/fmsx/EMULib/Sound.o: CFLAGS += -fno-tree-vectorize -fno-tree-slp-vectorize
 $(BUILD_DIR)/third_party/%.o: CFLAGS += -Wno-unused-parameter -Wno-sign-compare -Wno-pointer-sign -Wno-dangling-else -Wno-implicit-fallthrough -Wno-parentheses -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
 
 $(BUILD_DIR)/%.o: %.S | $(BUILD_DIR)
@@ -194,12 +195,26 @@ audio-p2-smoketest:
 	cp $(TARGET_IMG) artifacts/kernel8-audio-p2-smoketest.img
 	@echo "Preset smoke test P2 gerado: artifacts/kernel8-audio-p2-smoketest.img"
 
+audio-hdmi:
+	$(MAKE) clean
+	$(MAKE) DEBUG=0 ENABLE_MMU=1 ENABLE_AUDIO=1 AUDIO_BACKEND=hdmi FMSX_FRONTEND_OPT=0 FMSX_FRAME_SKIP=0 FMSX_BOOT_FRAME_SKIP=0 FMSX_BOOT_FRAME_COUNT=0 FB_WIDTH=1024 FB_HEIGHT=768 EXTRA_CFLAGS="-DFMSX_BAREMETAL_SKIP_AUDIO_RESET=1"
+	@mkdir -p artifacts
+	cp $(TARGET_IMG) artifacts/kernel8-audio-hdmi.img
+	@echo "Preset audio HDMI (estavel) gerado: artifacts/kernel8-audio-hdmi.img"
+
 audio-hdmi-test:
 	$(MAKE) clean
-	$(MAKE) DEBUG=0 ENABLE_MMU=1 ENABLE_AUDIO=1 AUDIO_BACKEND=hdmi FMSX_FRONTEND_OPT=1 FMSX_FRAME_SKIP=0 FMSX_BOOT_FRAME_SKIP=7 FMSX_BOOT_FRAME_COUNT=1200 FB_WIDTH=1024 FB_HEIGHT=768
+	$(MAKE) DEBUG=0 ENABLE_MMU=1 ENABLE_AUDIO=1 AUDIO_BACKEND=hdmi FMSX_FRONTEND_OPT=0 FMSX_FRAME_SKIP=0 FMSX_BOOT_FRAME_SKIP=0 FMSX_BOOT_FRAME_COUNT=0 FB_WIDTH=1024 FB_HEIGHT=768 EXTRA_CFLAGS="-DMSXBARE_AUDIO_HDMI_BOOT_DEBUG=1 -DMSXBARE_AUDIO_HDMI_OVERLAY_ONLY=1 -DFMSX_BAREMETAL_SKIP_AUDIO_RESET=1"
 	@mkdir -p artifacts
 	cp $(TARGET_IMG) artifacts/kernel8-audio-hdmi-test.img
-	@echo "Preset audio HDMI (scaffold) gerado: artifacts/kernel8-audio-hdmi-test.img"
+	@echo "Preset audio HDMI (debug overlay) gerado: artifacts/kernel8-audio-hdmi-test.img"
+
+audio-hdmi-debug:
+	$(MAKE) clean
+	$(MAKE) DEBUG=1 ENABLE_MMU=0 ENABLE_AUDIO=1 AUDIO_BACKEND=hdmi FMSX_FRONTEND_OPT=1 FMSX_FRAME_SKIP=0 FMSX_BOOT_FRAME_SKIP=7 FMSX_BOOT_FRAME_COUNT=1200 FB_WIDTH=1024 FB_HEIGHT=768 EXTRA_CFLAGS="-DMSXBARE_DEBUG_HOLD_MS=5000 -DMSXBARE_AUDIO_HDMI_DEBUG_STANDALONE=1 -DMSXBARE_AUDIO_HDMI_DMA_STANDALONE=1"
+	@mkdir -p artifacts
+	cp $(TARGET_IMG) artifacts/kernel8-audio-hdmi-debug.img
+	@echo "Preset audio HDMI debug gerado: artifacts/kernel8-audio-hdmi-debug.img"
 
 help:
 	@echo "Targets: all, clean"
@@ -217,6 +232,8 @@ help:
 	@echo "MMU/cache preset mantido para A/B: make mmu-test"
 	@echo "PSG audio via P2/PWM: make audio-test"
 	@echo "Smoke test P2 (tom PWM direto): make audio-p2-smoketest"
-	@echo "Audio HDMI scaffold (sem som ainda): make audio-hdmi-test"
+	@echo "Audio HDMI (estavel): make audio-hdmi"
+	@echo "Audio HDMI (debug overlay): make audio-hdmi-test"
+	@echo "Audio HDMI debug (logs na HDMI/UART): make audio-hdmi-debug"
 	@echo "Audio backend: make ENABLE_AUDIO=1 AUDIO_BACKEND=p2|hdmi ..."
 	@echo "Generate A/B perf kernels: make perf-kernels"

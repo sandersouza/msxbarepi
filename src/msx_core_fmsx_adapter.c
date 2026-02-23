@@ -1,7 +1,9 @@
 #include "msx_core.h"
 
 #include "fmsx_frontend.h"
+#include "console.h"
 #include "platform.h"
+#include "uart.h"
 
 #include "MSX.h"
 #include "Sound.h"
@@ -39,12 +41,22 @@ int msx_core_init(const uint8_t *rom_data, uint32_t rom_size) {
 #ifdef MSXBARE_DEBUG_LOGS
     platform_log("[dbg] msx_core_init: begin\n");
 #endif
+#ifdef MSXBARE_AUDIO_HDMI_BOOT_DEBUG
+    console_puts("[hdmi-audio-test] msx_core_init begin\n");
+    uart_puts("[hdmi-audio-test] msx_core_init begin\n");
+#endif
     if (!fmsx_frontend_init()) {
         platform_log("[M1.1] Falha ao inicializar frontend fMSX.\n");
         return 0;
     }
 #ifdef MSXBARE_DEBUG_LOGS
     platform_log("[dbg] frontend fMSX inicializado\n");
+#endif
+#ifdef MSXBARE_AUDIO_HDMI_BOOT_DEBUG
+    console_puts("[hdmi-audio-test] frontend init OK\n");
+    uart_puts("[hdmi-audio-test] frontend init OK\n");
+    console_puts("[hdmi-audio-test] cfg core begin\n");
+    uart_puts("[hdmi-audio-test] cfg core begin\n");
 #endif
 
     fmsx_frontend_set_raw_rom(rom_data, rom_size);
@@ -64,10 +76,18 @@ int msx_core_init(const uint8_t *rom_data, uint32_t rom_size) {
 #endif
     {
         unsigned long sz = 0;
+#ifdef MSXBARE_AUDIO_HDMI_BOOT_DEBUG
+        console_puts("[hdmi-audio-test] probe MSX.ROM\n");
+        uart_puts("[hdmi-audio-test] probe MSX.ROM\n");
+#endif
         if (!probe_file("MSX.ROM", &sz)) {
             platform_log("[M1.1] ERRO: MSX.ROM nao encontrado no initramfs.\n");
         }
 
+#ifdef MSXBARE_AUDIO_HDMI_BOOT_DEBUG
+        console_puts("[hdmi-audio-test] probe CARTA.ROM\n");
+        uart_puts("[hdmi-audio-test] probe CARTA.ROM\n");
+#endif
         if (!probe_file("CARTA.ROM", &sz)) {
 #ifdef MSXBARE_DEBUG_LOGS
             platform_log("[M1.1] WARN: CARTA.ROM nao encontrado (BASIC deve subir sem cartucho).\n");
@@ -75,10 +95,22 @@ int msx_core_init(const uint8_t *rom_data, uint32_t rom_size) {
         }
     }
 
+#ifdef MSXBARE_AUDIO_HDMI_BOOT_DEBUG
+    console_puts("[hdmi-audio-test] StartMSX begin\n");
+    uart_puts("[hdmi-audio-test] StartMSX begin\n");
+#endif
+
     if (!StartMSX(Mode, RAMPages, VRAMPages)) {
         platform_log("[M1.1] StartMSX falhou. Verifique initramfs com MSX.ROM e CARTA.ROM.\n");
         return 0;
     }
+
+#ifdef MSXBARE_AUDIO_HDMI_BOOT_DEBUG
+    console_puts("[hdmi-audio-test] StartMSX OK\n");
+    uart_puts("[hdmi-audio-test] StartMSX OK\n");
+#endif
+
+    fmsx_frontend_audio_late_init();
 
     /* Desliga o frame-skip de fast-boot assim que a carga inicial do core/ROMs terminou. */
     fmsx_frontend_set_boot_fast_mode(0);
@@ -104,6 +136,10 @@ void msx_core_run(void) {
     platform_log("[dbg] Chamando RunZ80 (continuo)...\n");
 #endif
     (void)RunZ80(&CPU);
+#ifdef MSXBARE_AUDIO_HDMI_BOOT_DEBUG
+    console_puts("[hdmi-audio-test] RunZ80 returned\n");
+    uart_puts("[hdmi-audio-test] RunZ80 returned\n");
+#endif
     platform_log("[M1.1] RunZ80 retornou (inesperado no baremetal).\n");
 
     for (;;) {

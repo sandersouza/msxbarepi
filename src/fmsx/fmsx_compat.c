@@ -18,7 +18,7 @@
 static unsigned char g_heap[HEAP_SIZE];
 static size_t g_heap_pos;
 
-#ifdef MSXBARE_DEBUG_LOGS
+#if defined(MSXBARE_DEBUG_LOGS)
 static void bare_log(int level, const char *fmt, ...) {
     (void)level;
     if (fmt) {

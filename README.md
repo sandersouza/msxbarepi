@@ -104,22 +104,47 @@ make audio-p2-smoketest
 
 Gera `artifacts/kernel8-audio-p2-smoketest.img`.
 
-Preset experimental de audio HDMI (scaffold de backend, sem som ainda):
+Preset estavel de audio HDMI (backend funcional):
+
+```bash
+make audio-hdmi
+```
+
+Gera `artifacts/kernel8-audio-hdmi.img`.
+
+- Usa `audio_pcm` como fonte PCM (igual ao P2)
+- Backend HDMI atual e **exclusivo** (ao testar HDMI, o backend P2 nao e usado)
+- Backend HDMI atual usa MAI + DMA ciclico (referencia Circle) e buffers PCM via `audio_pcm`
+- Preset compilado com `ENABLE_MMU=1` e coerencia de cache para buffers/CBs de DMA
+- Neste preset, o reset de audio do `ResetMSX()` segue desabilitado e o PSG e reinicializado no `late init` (workaround estavel)
+- Implementacao real sera baseada em referencia conceitual de:
+  - `third_party/circle/include/circle/sound/hdmisoundbasedevice.h`
+  - `third_party/circle/lib/sound/hdmisoundbasedevice.cpp`
+
+Preset de debug overlay para audio HDMI (diagnostico em runtime):
 
 ```bash
 make audio-hdmi-test
 ```
 
-Gera `artifacts/kernel8-audio-hdmi-test.img`.
-
-- Usa `audio_pcm` como fonte PCM (igual ao P2)
-- Backend HDMI atual ainda e scaffold (drain de fila, sem MAI/DMA)
-- Implementacao real sera baseada em referencia conceitual de:
-  - `third_party/circle/include/circle/sound/hdmisoundbasedevice.h`
-  - `third_party/circle/lib/sound/hdmisoundbasedevice.cpp`
+Gera `artifacts/kernel8-audio-hdmi-test.img` com overlay de diagnostico na HDMI.
 
 Plano da trilha HDMI:
 - `docs/m1-2-audio-hdmi-plan.md`
+
+Preset de diagnostico para audio HDMI (standalone, logs de bring-up):
+
+```bash
+make audio-hdmi-debug
+```
+
+Gera `artifacts/kernel8-audio-hdmi-debug.img` com `DEBUG=1` em modo standalone
+(sem entrar no emulador), para exibir mensagens `[audio][hdmi]` que ajudam a
+localizar a falha (sink sem audio, init MAI, polling etc.).
+
+- Logs sao espelhados em HDMI e UART
+- Inclui pausa curta no boot (5s)
+- Inicializa backend HDMI e injeta tom de teste via `audio_pcm`, sem sobrescrever a tela com o renderer do fMSX
 
 Presets para teste com framebuffer menor (reduz custo de blit):
 

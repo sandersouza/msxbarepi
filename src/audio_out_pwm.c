@@ -249,6 +249,11 @@ void audio_out_shutdown(void)
     g_audio_out_enabled = 0u;
 }
 
+uint32_t audio_out_debug_flags(void)
+{
+    return 0u;
+}
+
 void audio_out_service(void)
 {
     if (!g_audio_out_enabled || g_sample_rate == 0u || g_tick_hz == 0u) {

@@ -1,6 +1,11 @@
 #include "platform.h"
 
 #include "console.h"
+#include "uart.h"
+
+#ifndef MSXBARE_DEBUG_HOLD_MS
+#define MSXBARE_DEBUG_HOLD_MS 0u
+#endif
 
 static uint64_t read_cntfrq(void) {
     uint64_t v;
@@ -19,6 +24,15 @@ void platform_init(void) {
 
 void platform_log(const char *s) {
     console_puts(s);
+    uart_puts(s);
+}
+
+void platform_debug_hold_if_enabled(void) {
+#if MSXBARE_DEBUG_HOLD_MS > 0
+    console_puts("[dbg] Pausa para leitura de logs...\n");
+    uart_puts("[dbg] Pausa para leitura de logs...\n");
+    platform_delay_ms((uint32_t)MSXBARE_DEBUG_HOLD_MS);
+#endif
 }
 
 uint64_t platform_ticks_hz(void) {

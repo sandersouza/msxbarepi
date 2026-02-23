@@ -142,6 +142,10 @@ void framebuffer_clear(uint32_t rgb) {
     cursor_y = 0;
 }
 
+void framebuffer_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t rgb) {
+    fill_rect32(x, y, w, h, rgb);
+}
+
 void framebuffer_putc(char c) {
     if (fb_ptr == 0) {
         return;
@@ -175,6 +179,19 @@ void framebuffer_putc(char c) {
 void framebuffer_puts(const char *s) {
     while (*s) {
         framebuffer_putc(*s++);
+    }
+}
+
+void framebuffer_draw_text_at(uint32_t x, uint32_t y, const char *s) {
+    if (fb_ptr == 0 || s == 0) {
+        return;
+    }
+    while (*s) {
+        draw_char_at(x, y, *s++);
+        x += 8u;
+        if (x + 8u > fb_width) {
+            break;
+        }
     }
 }
 
