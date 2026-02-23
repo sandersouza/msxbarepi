@@ -129,6 +129,11 @@ Status atual (execução desta sessão):
 Objetivo: rodar ROMs MSX1 com interação básica do usuário.
 
 1. Implementar entrada real (teclado/controle definido) com mapeamento MSX mínimo.
+   - USB host controller (RPi 3B) bring-up mínimo para HID
+   - enumeração USB básica (device/config/interface/endpoint)
+   - camada HID (boot keyboard primeiro; gamepad depois)
+   - tradução HID -> matriz de teclado MSX / joystick MSX
+   - repetição de tecla, key rollover e tratamento de modifiers (Shift/Ctrl/Graph) mínimos
 2. Implementar reset do emulador e comando de troca de ROM (mínimo viável).
 3. Implementar mapeadores prioritários para conjunto de ROMs alvo.
 4. Integrar áudio básico funcional para jogabilidade:
@@ -159,6 +164,12 @@ Status atual (parcial, início por item 4):
   - [x] coerência de cache (MMU+DMA: flush de buffers/CBs)
   - [x] preset estável gerado: `artifacts/kernel8-audio-hdmi.img`
   - [ ] refinar integração HDMI (limpeza de workarounds de bring-up / remover flags de debug do caminho de teste)
+  - [ ] Iniciar trilha de input real (USB + HID)
+  - [ ] definir estratégia USB no RPi 3B (host controller alvo + referência Circle)
+  - [ ] bring-up mínimo do host USB para enumeração de um teclado HID
+  - [ ] implementar parser HID boot keyboard
+  - [ ] mapear teclas HID -> teclado MSX (mínimo para BASIC/jogos)
+  - [ ] smoke test em hardware com teclado USB (digitar no BASIC)
 
 ## M1.3 - Estabilização e Performance (Prioridade P1)
 
