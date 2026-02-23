@@ -1,6 +1,8 @@
-# msxbare
+# MSX BarePI
 
 Projeto de emulação de MSX em baremetal no Raspberry Pi 3B.
+
+> demais versões do RPi podem ser suportadas, mas o foco inicial é o 3B (SoC BCM2837, AArch64, 1GB RAM).
 
 ## Escolha de linguagem
 
@@ -167,26 +169,13 @@ Nota sobre `config.txt`:
 - O projeto adota HDMI como saída principal.
 - UART permanece ativa para diagnóstico, mas toda evolução funcional deve considerar exibição em HDMI.
 - A "borda externa" fora da imagem MSX e o preenchimento de letterbox do framebuffer do projeto.
-- A "borda interna" faz parte da imagem gerada pelo VDP/MSX (emulação).
+- A "borda interna" faz parte da imagem gerada pelo VDP/MSX (emulação). Ver src/mailbox.c para detalhes.
 
 ## Performance no RPi 3B (clock)
 
 - Em baremetal, nao existe governor do Linux para subir clock dinamicamente.
 - Sem `arm_freq` no `config.txt`, o Pi 3B pode ficar em clock baixo (ex.: ~600MHz), causando percepcao de "meia velocidade".
 - O `sdcard/config.txt` do projeto fixa `arm_freq=1200` (clock nominal do Pi 3B) como baseline de testes.
-
-## M1.1 Core Bring-up
-
-- Core upstream avaliado: `third_party/fmsx/` (commit fixado em `third_party/fmsx/UPSTREAM.md`).
-- Boot passa ponteiro DTB para o kernel e o projeto já consegue detectar `initramfs` para ROM.
-- Execução real do núcleo fMSX já integrada no build baremetal.
-- Para fornecer BIOS/ROM ao core sem driver SD nativo, use initramfs CPIO:
-  - gere `msx.cpio` com `scripts/make-initramfs.sh`
-  - inclua no initramfs ao menos `MSX.ROM` e `CARTA.ROM`
-  - habilite no `config.txt`: `initramfs msx.cpio followkernel`
-
-Detalhes técnicos em `docs/m1-1-core-bringup.md`.
-Procedimento de teste em `docs/m1-1-hardware-test.md`.
 
 ## Preparar microSD (macOS)
 
