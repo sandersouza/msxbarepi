@@ -6,6 +6,7 @@
 #include "uart.h"
 #include "audio_pcm.h"
 #include "audio_out.h"
+#include "msx_input.h"
 
 #include "MSX.h"
 #include "EMULib.h"
@@ -374,7 +375,7 @@ void SetColor(uint8_t N, uint8_t R, uint8_t G, uint8_t B) {
     else XPal0 = PIXEL(R, G, B);
 }
 
-unsigned int Joystick(void) { return 0; }
+unsigned int Joystick(void) { return (unsigned int)msx_input_joystick_bits(); }
 unsigned int Mouse(uint8_t N) { (void)N; return 0; }
 uint8_t DiskPresent(uint8_t ID) { (void)ID; return 0; }
 uint8_t DiskRead(uint8_t ID, uint8_t *Buf, int N) { (void)ID; (void)Buf; (void)N; return 0; }
@@ -472,6 +473,7 @@ void PutImage(void) {
 #endif
     }
     audio_step_frame();
+    msx_input_poll();
 #ifdef MSXBARE_AUDIO_HDMI_BOOT_DEBUG
     {
         static uint8_t logged_service1;
