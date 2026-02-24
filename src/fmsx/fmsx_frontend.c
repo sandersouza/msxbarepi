@@ -6,8 +6,6 @@
 #include "uart.h"
 #include "audio_pcm.h"
 #include "audio_out.h"
-#include "msx_input_backend.h"
-#include "circle_input_provider.h"
 #include "msx_input.h"
 
 #include "MSX.h"
@@ -630,7 +628,6 @@ void PutImage(void) {
     }
     msx_input_set_loop_debug(0x20u, frame_number);
     audio_step_frame();
-    msx_input_set_loop_debug(0x21u, frame_number);
     msx_input_poll();
 #ifdef MSXBARE_AUDIO_HDMI_BOOT_DEBUG
     {

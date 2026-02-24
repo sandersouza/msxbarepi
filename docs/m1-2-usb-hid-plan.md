@@ -1,36 +1,93 @@
-# M1.2 USB/HID Bring-up (RPi 3B)
+# M1.2 - USB Host + HID (Plano de Integracao)
 
-Status atual (baremetal standalone `usb-host-debug`):
-- DWC USB host detectado (`vendor/hwcfg2` OK)
-- modo host ativo (`host_mode=1`)
-- root port energizado/conectado/habilitado (`pwr=1 conn=1 en=1`)
-- `speed=0` no DWC = High-Speed (esperado para o hub USB interno do RPi 3B)
+Objetivo: habilitar input real no `msxbare` via teclado USB (HID boot keyboard primeiro), com mapeamento para teclado/joystick do MSX.
 
-Referências usadas (conceituais):
-- `third_party/circle/include/circle/usb/dwhci.h`
-- `third_party/circle/lib/usb/dwhcidevice.cpp`
-- `third_party/circle/lib/usb/dwhcirootport.cpp`
+## Estado atual
 
-Próximo passo:
-- executar sonda de controle em EP0 (`GET_DESCRIPTOR` de 8 bytes no address 0) para confirmar enumeração do hub interno antes da camada HID.
+- Video e audio basicos estao funcionais no RPi 3B (`P2` e `HDMI`).
+- `fMSX` ainda roda com input neutro (`Joystick() = 0`, sem teclado real).
+- Foi criada a base de modulos:
+  - `src/usb_host.c` (scaffold host USB)
+  - `src/usb_hid.c` (scaffold HID)
+  - `src/msx_input.c` (camada agregadora de input para o core)
+- `msx_input_poll()` ja esta integrado ao loop por frame no frontend (`PutImage()`).
+- Bring-up minimo do controlador DWC (polling) foi iniciado em `usb_host.c`:
+  - leitura de `vendor_id` / `hw_cfg2`
+  - `core soft reset` (sequencia inspirada no Circle)
+  - configuracao host clock (`HCFG`) e power-on do root port
+  - polling de status do root port (connect/enable/speed), sem enumeracao ainda
 
-Observação:
-- No RPi 3B o root port vê primeiro o hub interno (LAN9514/SMSC), não o teclado diretamente.
+## Referencias consultadas (Circle)
 
+Uso conceitual / sequenciamento / arquitetura (nao copiar codigo diretamente):
 
-Próximo passo (pivot pragmático usando Circle):
-- [x] Spike Circle USB/HID validado em hardware (sample `08-usbkeyboard`): hub interno LAN9514 enumerado e teclado HID funcional (digitação confirmada).
-- [x] Compilar e validar `third_party/circle/sample/08-usbkeyboard` (RPI3/AArch64) como spike standalone (`artifacts/kernel8-circle-usbkeyboard-debug.img`) para confirmar a pilha USB/HID do Circle no hardware.
-- [~] Bridge compartilhada criada fora de `third_party/circle` (`include/msx_hid_bridge.h`, `src/msx_hid_bridge.c`) e backend `INPUT_BACKEND=circle` agora consome essa bridge; falta integrar runtime Circle ao `msxbare`.
+- Host USB / DWC:
+  - `third_party/circle/include/circle/usb/dwhci.h`
+  - `third_party/circle/include/circle/usb/dwhciregister.h`
+  - `third_party/circle/lib/usb/dwhcidevice.cpp`
+  - `third_party/circle/lib/usb/dwhcirootport.cpp`
+  - `third_party/circle/lib/usb/dwhciregister.cpp`
+  - `third_party/circle/lib/usb/usbsubsystem.cpp`
+- Enumeracao / stack USB:
+  - `third_party/circle/include/circle/usb/usbdevice.h`
+  - `third_party/circle/include/circle/usb/usbendpoint.h`
+  - `third_party/circle/include/circle/usb/usbrequest.h`
+  - `third_party/circle/include/circle/usb/usbconfigparser.h`
+- HID / teclado:
+  - `third_party/circle/include/circle/usb/usbhid.h`
+  - `third_party/circle/include/circle/usb/usbhiddevice.h`
+  - `third_party/circle/include/circle/usb/usbkeyboard.h`
+  - `third_party/circle/lib/usb/usbhiddevice.cpp`
+  - `third_party/circle/lib/usb/usbkeyboard.cpp`
 
-Referências adicionais (Circle):
-- `third_party/circle/sample/08-usbkeyboard/kernel.cpp`
-- `third_party/circle/include/circle/usb/usbhcidevice.h`
-- `third_party/circle/include/circle/usb/usbkeyboard.h`
+## Arquitetura alvo no msxbare
 
-- [x] Spike standalone `apps/circle-usb-msxinput-debug` validado em hardware: pilha USB/HID do Circle + bridge compartilhada (`msx_hid_bridge`) recebendo raw HID e mapeando joystick bits MSX.
+1. `usb_host.c`
+   - inicializa controlador host USB (RPi 3B)
+   - executa polling/servico de transfers
+   - expoe status basico (device/hid present)
 
-- [~] `msx_input` preparado para integração: API `msx_input_submit_hid_boot_report()` + mapeamento HID->`KeyState[]`/`JST_*` + backend `INPUT_BACKEND=circle` consumidor da bridge compartilhada (runtime Circle ainda pendente).
+2. `usb_hid.c`
+   - consome reports HID (boot keyboard primeiro)
+   - parser de modifiers + 6-key rollover (boot protocol)
+   - fila de reports/eventos minima
 
-- [~] Preset experimental `audio-hdmi-circle-input` agora gera artefato (`artifacts/kernel8-audio-hdmi-circle-input.img`) com runtime Circle input linkado ao `msxbare`; falta validacao em hardware do fluxo completo (boot + teclado HID no binario principal).
-- [x] Preset provisório `audio-hdmi-no-circle` gerado (`artifacts/kernel8-audio-hdmi-no-circle.img`) para manter baseline de vídeo+áudio HDMI sem runtime Circle enquanto o freeze no ctor USB do Circle (`S:52`) é investigado.
+3. `msx_input.c`
+   - traduz HID -> matriz de teclado MSX / joystick MSX
+   - exposto para callbacks do fMSX (`Joystick()`, e depois matriz `KeyState`)
+
+4. `fmsx_frontend.c`
+   - chama `msx_input_poll()` por frame (ja integrado)
+
+## Etapas tecnicas (proximas)
+
+1. Bring-up minimo do host USB (DWC) no Pi 3B:
+   - [x] reset/control registers basicos + root port power + status polling
+   - [ ] root port reset pulse e detect estavel de speed
+   - [ ] transfer de controle (GET_DESCRIPTOR)
+
+2. Enumeracao minima de dispositivo HID teclado:
+   - device descriptor
+   - configuration/interface/endpoint
+   - set address / set configuration
+   - selecionar boot protocol (teclado)
+
+3. Polling de endpoint interrupt IN:
+   - ler report HID boot keyboard (8 bytes)
+   - detectar pressed/released
+
+4. Mapeamento HID -> MSX:
+   - letras/numeros/espaco/enter/backspace
+   - cursores
+   - modifiers (Shift/Ctrl)
+   - joystick minimo (setas + espaco/ctrl como fire, se necessario)
+
+5. Validacao em hardware:
+   - digitar no BASIC
+   - testar controles minimos em 1 jogo
+
+## Criterio de aceite desta trilha (primeiro corte)
+
+- Um teclado USB HID (boot protocol) enumera no RPi 3B
+- E possivel digitar no BASIC via HDMI
+- `audio-hdmi` e `audio-test` continuam sem regressao

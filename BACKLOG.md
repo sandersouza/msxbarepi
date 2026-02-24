@@ -165,15 +165,10 @@ Status atual (parcial, início por item 4):
   - [x] preset estável gerado: `artifacts/kernel8-audio-hdmi.img`
   - [ ] refinar integração HDMI (limpeza de workarounds de bring-up / remover flags de debug do caminho de teste)
   - [ ] Iniciar trilha de input real (USB + HID)
-  - [x] definir estratégia USB no RPi 3B (host controller alvo + referência Circle)
-  - [x] iniciar spike standalone com a pilha USB/HID do Circle (`sample/08-usbkeyboard`) para validar enumeração/HID antes da bridge com `msxbare`
-  - [x] validar em hardware real o spike Circle USB/HID (hub interno + teclado HID)
-  - [~] criar bridge C/C++ (fora de `third_party/circle`) para integrar teclado HID do Circle ao `msx_input` (bridge compartilhada `include/msx_hid_bridge.h` + `src/msx_hid_bridge.c`; backend `INPUT_BACKEND=circle` consome a bridge; preset experimental `audio-hdmi-circle-input` ja compila com runtime Circle linkado; validacao funcional em hardware ainda pendente)
-  - [ ] bring-up mínimo do host USB para enumeração de um teclado HID
-  - [x] DWC host mode + root port enable (standalone `usb-host-debug`) validado em hardware (`host_mode=1 conn=1 en=1`)
-  - [~] sonda EP0 (`GET_DESCRIPTOR` addr0, 8 bytes) em implementação/validação no standalone
-  - [~] implementar parser HID boot keyboard (bridge raw HID validada via Circle; parser/fila no `msxbare` ainda pendente)
-  - [~] mapear teclas HID -> teclado MSX (mínimo inicial implementado em `msx_input` para raw HID boot report; bridge compartilhada validada via Circle; integração Circle->msxbare pendente)
+  - [ ] definir estratégia USB no RPi 3B (host controller alvo + referência Circle)
+  - [~] bring-up mínimo do host USB para enumeração de um teclado HID (DWC detect/reset/power/status polling feito; enumeração pendente)
+  - [ ] implementar parser HID boot keyboard
+  - [ ] mapear teclas HID -> teclado MSX (mínimo para BASIC/jogos)
   - [ ] smoke test em hardware com teclado USB (digitar no BASIC)
 
 ## M1.3 - Estabilização e Performance (Prioridade P1)

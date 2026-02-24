@@ -55,6 +55,7 @@
 #define DWHCI_HOST_PORT_ENABLE_CHANGED   (1u << 3)
 #define DWHCI_HOST_PORT_OVERCURRENT_CHANGED (1u << 5)
 #define DWHCI_HOST_PORT_DEFAULT_MASK (DWHCI_HOST_PORT_CONNECT_CHANGED | DWHCI_HOST_PORT_ENABLE | DWHCI_HOST_PORT_ENABLE_CHANGED | DWHCI_HOST_PORT_OVERCURRENT_CHANGED)
+<<<<<<< HEAD
 #define DWHCI_HOST_CHAN_CHARACTER(chan) (USB_HOST_BASE + 0x100UL + ((chan) * 0x20UL))
 #define DWHCI_HOST_CHAN_SPLIT_CTRL(chan) (USB_HOST_BASE + 0x104UL + ((chan) * 0x20UL))
 #define DWHCI_HOST_CHAN_INT(chan)      (USB_HOST_BASE + 0x108UL + ((chan) * 0x20UL))
@@ -89,6 +90,8 @@
 #define DWHCI_HOST_CHAN_XFER_SIZ_PID_DATA1 2u
 #define DWHCI_HOST_CHAN_XFER_SIZ_PID_SETUP 3u
 #define GPU_UNCACHED_BASE 0xC0000000u
+=======
+>>>>>>> main
 
 static inline uint32_t mmio_read32(uintptr_t addr)
 {
@@ -100,6 +103,7 @@ static inline void mmio_write32(uintptr_t addr, uint32_t v)
     *(volatile uint32_t *)addr = v;
 }
 
+<<<<<<< HEAD
 static inline uint32_t usb_bus_address(const void *p) { return ((((uintptr_t)p) & ~(uintptr_t)0xC0000000u) | GPU_UNCACHED_BASE); }
 
 static inline void dcache_clean_range(const void *addr, uint32_t len)
@@ -122,6 +126,8 @@ static inline void dcache_invalidate_range(const void *addr, uint32_t len)
 #endif
 }
 
+=======
+>>>>>>> main
 static void mmio_delay_cycles(unsigned int n)
 {
     while (n--) {
@@ -169,6 +175,7 @@ static void dwc_flush_rx_fifo(void)
 static void usb_host_sample_status(void);
 static void usb_host_try_init(void);
 static void usb_host_log_once_summary(void);
+<<<<<<< HEAD
 static void usb_host_probe_ep0_desc8(void);
 static int usb_ctrl_get_device_desc(uint8_t devaddr, uint8_t speed, uint16_t mps, uint16_t len, uint8_t *buf);
 static int usb_ctrl_set_address(uint8_t addr, uint8_t speed, uint16_t mps);
@@ -356,6 +363,8 @@ static void usb_host_enum_addr1_desc18(void)
         g_status.ep0_product_id16 = (uint16_t)desc18[10] | ((uint16_t)desc18[11] << 8);
     }
 }
+=======
+>>>>>>> main
 
 #define PROPTAG_SET_POWER_STATE          0x00028001u
 #define DEVICE_ID_USB_HCD               3u
@@ -399,13 +408,24 @@ static int usb_hcd_power_on(void)
  * This module only provides a stable API and polling hook integration point.
  */
 
+<<<<<<< HEAD
+=======
+static usb_host_status_t g_status;
+static uint8_t g_summary_logged;
+static uint32_t g_poll_div;
+static uint32_t g_last_port_bits;
+
+>>>>>>> main
 void usb_host_init(void)
 {
     memset(&g_status, 0, sizeof(g_status));
     g_summary_logged = 0u;
     g_poll_div = 0u;
     g_last_port_bits = 0xFFFFFFFFu;
+<<<<<<< HEAD
     g_ep0_enum18_attempted = 0u;
+=======
+>>>>>>> main
     usb_host_try_init();
     usb_host_sample_status();
     usb_host_log_once_summary();
@@ -415,6 +435,7 @@ void usb_host_poll(void)
 {
     /* Sample at a lower rate; no IRQs/enumeration yet. */
     ++g_poll_div;
+<<<<<<< HEAD
 #ifndef MSXBARE_USB_HOST_DEBUG_STANDALONE
     if ((g_poll_div & 0x3FFFu) != 0u) {
         return;
@@ -432,6 +453,13 @@ void usb_host_poll(void)
         usb_host_sample_status();
     }
 
+=======
+    if ((g_poll_div & 0x3FFFu) != 0u) {
+        return;
+    }
+    usb_host_sample_status();
+
+>>>>>>> main
     /* Log root port state changes for manual bring-up validation. */
     if (g_status.init_ok) {
         uint32_t port_bits =
@@ -481,6 +509,7 @@ void usb_host_get_status(usb_host_status_t *out_status)
     out_status->hprt_raw = g_status.hprt_raw;
     out_status->gusbcfg_raw = g_status.gusbcfg_raw;
     out_status->gahbcfg_raw = g_status.gahbcfg_raw;
+<<<<<<< HEAD
     out_status->ep0_probe_started = g_status.ep0_probe_started;
     out_status->ep0_setup_ok = g_status.ep0_setup_ok;
     out_status->ep0_data_ok = g_status.ep0_data_ok;
@@ -493,6 +522,8 @@ void usb_host_get_status(usb_host_status_t *out_status)
     out_status->ep0_assigned_address = g_status.ep0_assigned_address;
     out_status->ep0_vendor_id16 = g_status.ep0_vendor_id16;
     out_status->ep0_product_id16 = g_status.ep0_product_id16;
+=======
+>>>>>>> main
 }
 
 static void usb_host_try_init(void)

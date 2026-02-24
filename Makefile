@@ -103,9 +103,6 @@ SOURCES_C := \
 	src/usb_host.c \
 	src/usb_hid.c \
 	src/msx_input.c \
-	src/msx_hid_bridge.c \
-$(INPUT_BACKEND_SRC) \
-$(CIRCLE_LINK_SHIM_SRC) \
 	src/audio_pcm.c \
 	$(AUDIO_OUT_SRC) \
 	src/dtb.c \
@@ -138,7 +135,7 @@ OBJECTS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES_C)) \
 TARGET_ELF := $(BUILD_DIR)/kernel8.elf
 TARGET_IMG := $(BUILD_DIR)/kernel8.img
 
-.PHONY: all clean help perf-kernels fastboot fastplay fastboot-fb960x720 fastboot-fb800x600 mmu-test audio-test audio-p2-smoketest audio-hdmi audio-hdmi-no-circle audio-hdmi-circle-input audio-hdmi-test audio-hdmi-debug usb-host-debug circle-usbkeyboard-debug circle-usb-msxinput-debug
+.PHONY: all clean help perf-kernels fastboot fastplay fastboot-fb960x720 fastboot-fb800x600 mmu-test audio-test audio-p2-smoketest audio-hdmi audio-hdmi-test audio-hdmi-debug usb-host-debug
 
 all: $(TARGET_IMG)
 	@echo "Build concluído: $(TARGET_IMG)"
@@ -155,7 +152,6 @@ $(BUILD_DIR)/%.o: %.cpp | $(BUILD_DIR)
 $(BUILD_DIR)/src/fmsx/fmsx_frontend.o: CFLAGS := $(filter-out -O2,$(CFLAGS)) -O$(FMSX_FRONTEND_OPT) $(FMSX_FRONTEND_EXTRA_CFLAGS) -Wno-unused-variable
 $(BUILD_DIR)/third_party/fmsx/EMULib/Sound.o: CFLAGS += -fno-tree-vectorize -fno-tree-slp-vectorize
 $(BUILD_DIR)/src/usb_host.o: CFLAGS += -fno-tree-vectorize -fno-tree-slp-vectorize
-$(BUILD_DIR)/src/kernel.o: CFLAGS += -fno-tree-vectorize -fno-tree-slp-vectorize
 $(BUILD_DIR)/third_party/%.o: CFLAGS += -Wno-unused-parameter -Wno-sign-compare -Wno-pointer-sign -Wno-dangling-else -Wno-implicit-fallthrough -Wno-parentheses -Wno-unused-function -Wno-unused-variable -Wno-unused-but-set-variable
 
 $(BUILD_DIR)/%.o: %.S | $(BUILD_DIR)
@@ -325,30 +321,13 @@ audio-hdmi-debug:
 	cp $(TARGET_IMG) artifacts/kernel8-audio-hdmi-debug.img
 	@echo "Preset audio HDMI debug gerado: artifacts/kernel8-audio-hdmi-debug.img"
 
+
 usb-host-debug:
 	$(MAKE) clean
-	$(MAKE) DEBUG=0 ENABLE_MMU=0 ENABLE_AUDIO=0 FMSX_FRONTEND_OPT=0 EXTRA_CFLAGS="-DMSXBARE_USB_HOST_DEBUG_STANDALONE=1 -DMSXBARE_USB_HOST_SILENT_LOGS=1"
+	$(MAKE) DEBUG=0 ENABLE_MMU=0 ENABLE_AUDIO=0 FMSX_FRONTEND_OPT=1 FMSX_FRAME_SKIP=0 FMSX_BOOT_FRAME_SKIP=0 FMSX_BOOT_FRAME_COUNT=0 FB_WIDTH=1024 FB_HEIGHT=768 EXTRA_CFLAGS="-DMSXBARE_USB_HOST_DEBUG_STANDALONE=1 -DMSXBARE_USB_HOST_SILENT_LOGS=1"
 	@mkdir -p artifacts
 	cp $(TARGET_IMG) artifacts/kernel8-usb-host-debug.img
 	@echo "Preset USB host debug gerado: artifacts/kernel8-usb-host-debug.img"
-
-circle-usbkeyboard-debug:
-	@mkdir -p artifacts
-	cd third_party/circle && ./configure -r 3 -p aarch64-elf- -f
-	$(MAKE) -C third_party/circle/sample/08-usbkeyboard clean
-	$(MAKE) -C third_party/circle/sample/08-usbkeyboard
-	cp third_party/circle/sample/08-usbkeyboard/kernel8.img artifacts/kernel8-circle-usbkeyboard-debug.img
-	@echo "Spike Circle USB keyboard gerado: artifacts/kernel8-circle-usbkeyboard-debug.img"
-
-circle-usb-msxinput-debug:
-	@mkdir -p artifacts
-	cd third_party/circle && ./configure -r 3 -p aarch64-elf- -f
-	$(MAKE) -C apps/circle-usb-msxinput-debug clean
-	$(MAKE) -C apps/circle-usb-msxinput-debug
-	cp apps/circle-usb-msxinput-debug/kernel8.img artifacts/kernel8-circle-usb-msxinput-debug.img
-	@echo "Spike Circle USB->MSX input bridge gerado: artifacts/kernel8-circle-usb-msxinput-debug.img"
-
-
 
 help:
 	@echo "Targets: all, clean"
@@ -373,7 +352,5 @@ help:
 	@echo "Audio HDMI (debug overlay): make audio-hdmi-test"
 	@echo "Audio HDMI debug (logs na HDMI/UART): make audio-hdmi-debug"
 	@echo "USB host debug (standalone): make usb-host-debug"
-	@echo "Circle USB keyboard spike (standalone): make circle-usbkeyboard-debug"
-	@echo "Circle USB->MSX input bridge spike: make circle-usb-msxinput-debug"
 	@echo "Audio backend: make ENABLE_AUDIO=1 AUDIO_BACKEND=p2|hdmi ..."
 	@echo "Generate A/B perf kernels: make perf-kernels"
