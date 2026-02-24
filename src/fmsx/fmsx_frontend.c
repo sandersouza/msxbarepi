@@ -6,6 +6,9 @@
 #include "uart.h"
 #include "audio_pcm.h"
 #include "audio_out.h"
+#include "msx_input_backend.h"
+#include "circle_input_provider.h"
+#include "msx_input.h"
 
 #include "MSX.h"
 #include "EMULib.h"
@@ -45,6 +48,14 @@ extern AY8910 PSG;
 #define MAX_SCANLINE (PALVideo ? 255 : 242)
 
 #define PIXEL(R,G,B) (uint16_t)((((31 * (R)) / 255) << 11) | (((63 * (G)) / 255) << 5) | ((31 * (B)) / 255))
+
+#ifndef MSXBARE_DEBUG_TOP_STRIP_PX
+#define MSXBARE_DEBUG_TOP_STRIP_PX 0u
+#endif
+
+#ifndef MSXBARE_CIRCLE_INPUT_TEXT_MODE_DEBUG
+#define MSXBARE_CIRCLE_INPUT_TEXT_MODE_DEBUG 0
+#endif
 
 static uint16_t *image_buffer;
 static uint16_t XPal[80];
@@ -147,7 +158,144 @@ static void hdbg_overlay_render(void)
 }
 #endif
 
+#ifdef MSXBARE_CIRCLE_INPUT_OVERLAY_DEBUG
+#ifndef MSXBARE_CDBG_FLUSH_DIV_MASK
+#define MSXBARE_CDBG_FLUSH_DIV_MASK 63u
+#endif
+static void cdbg_overlay_render(void)
+{
+    static char l0[] = "TXTDBG OS:00";
+    static uint8_t cdbg_os = 0u;
+    static uint32_t cdbg_flush_div = 0u;
+    static uint32_t cdbg_redraw_div = 0u;
+    static char l1[] = "CI R:N F:N K:N S:00 G:N B:000 P:0000 LP:00/000";
+    static char l2[] = "EV Q:000000 E:000000 K0:00 M:00";
+    static char l3[] = "JY BJ:0000 MJ:0000";
+    static const char hex[] = "0123456789ABCDEF";
+    const uint32_t text_x = 64u;
+    const uint32_t text_y = 64u;
+    const uint32_t panel_x = 56u;
+    const uint32_t panel_y = 56u;
+    const uint32_t panel_w = 520u;
+    const uint32_t panel_h = 40u;
+    uint32_t v;
+
+    uint32_t dbg_loop_counter;
+    uint32_t dbg_loop_stage;
+    uint32_t dbg_applied;
+    uint32_t dbg_pending;
+    uint16_t dbg_joy;
+    uint32_t dbg_bp;
+    uint32_t dbg_pp;
+    uint32_t dbg_ps;
+    uint32_t dbg_pr;
+    uint32_t dbg_pf;
+    uint32_t dbg_pk;
+
+    cdbg_os = 0x01u;
+    if ((cdbg_redraw_div++ & 15u) != 0u) {
+        return;
+    }
+    dbg_loop_counter = msx_input_debug_loop_counter();
+    dbg_loop_stage = msx_input_debug_loop_stage();
+    dbg_applied = msx_input_debug_applied_seq();
+    dbg_pending = msx_input_debug_pending_seq();
+    dbg_joy = msx_input_debug_joystick_bits();
+    dbg_bp = msx_input_backend_debug_backend_polls();
+    dbg_pp = circle_input_provider_debug_polls();
+    dbg_ps = circle_input_provider_debug_stage();
+    dbg_pr = circle_input_provider_debug_ready();
+    dbg_pf = circle_input_provider_debug_failed();
+    dbg_pk = circle_input_provider_debug_kbd_bound();
+
+    cdbg_os = 0x02u;
+#if MSXBARE_CIRCLE_INPUT_TEXT_MODE_DEBUG
+    framebuffer_fill_rect(0u, 0u, (uint32_t)MSXBARE_FB_WIDTH, (uint32_t)MSXBARE_FB_HEIGHT, 0x00000000u);
+#else
+    framebuffer_fill_rect(panel_x, panel_y, panel_w, panel_h, 0x00000000u);
+#endif
+
+    l1[5]  = dbg_pr ? 'Y' : 'N';
+    l1[9]  = dbg_pf ? 'Y' : 'N';
+    l1[13] = dbg_pk ? 'Y' : 'N';
+    l1[17] = hex[(dbg_ps >> 4) & 0x0Fu];
+    l1[18] = hex[dbg_ps & 0x0Fu];
+    l1[22] = msx_input_runtime_enabled() ? 'Y' : 'N';
+    v = dbg_bp % 1000u;
+    l1[26] = (char)('0' + ((v / 100u) % 10u));
+    l1[27] = (char)('0' + ((v / 10u) % 10u));
+    l1[28] = (char)('0' + (v % 10u));
+    v = dbg_pp % 10000u;
+    l1[32] = (char)('0' + ((v / 1000u) % 10u));
+    l1[33] = (char)('0' + ((v / 100u) % 10u));
+    l1[34] = (char)('0' + ((v / 10u) % 10u));
+    l1[35] = (char)('0' + (v % 10u));
+
+    l1[40] = hex[(dbg_loop_stage >> 4) & 0x0Fu];
+    l1[41] = hex[dbg_loop_stage & 0x0Fu];
+    v = dbg_loop_counter % 1000u;
+    l1[43] = (char)('0' + ((v / 100u) % 10u));
+    l1[44] = (char)('0' + ((v / 10u) % 10u));
+    l1[45] = (char)('0' + (v % 10u));
+
+    v = dbg_applied % 1000000u;
+    l2[5]  = (char)('0' + ((v / 100000u) % 10u));
+    l2[6]  = (char)('0' + ((v / 10000u) % 10u));
+    l2[7]  = (char)('0' + ((v / 1000u) % 10u));
+    l2[8]  = (char)('0' + ((v / 100u) % 10u));
+    l2[9]  = (char)('0' + ((v / 10u) % 10u));
+    l2[10] = (char)('0' + (v % 10u));
+    v = 0u % 1000000u;
+    l2[14] = (char)('0' + ((v / 100000u) % 10u));
+    l2[15] = (char)('0' + ((v / 10000u) % 10u));
+    l2[16] = (char)('0' + ((v / 1000u) % 10u));
+    l2[17] = (char)('0' + ((v / 100u) % 10u));
+    l2[18] = (char)('0' + ((v / 10u) % 10u));
+    l2[19] = (char)('0' + (v % 10u));
+    l2[24] = hex[(0u >> 4) & 0x0Fu];
+    l2[25] = hex[0u & 0x0Fu];
+    l2[29] = hex[(0u >> 4) & 0x0Fu];
+    l2[30] = hex[0u & 0x0Fu];
+
+    l3[6]  = hex[(0u >> 12) & 0x0Fu];
+    l3[7]  = hex[(0u >> 8) & 0x0Fu];
+    l3[8]  = hex[(0u >> 4) & 0x0Fu];
+    l3[9]  = hex[0u & 0x0Fu];
+    l3[14] = hex[(dbg_joy >> 12) & 0x0Fu];
+    l3[15] = hex[(dbg_joy >> 8) & 0x0Fu];
+    l3[16] = hex[(dbg_joy >> 4) & 0x0Fu];
+    l3[17] = hex[dbg_joy & 0x0Fu];
+
+    cdbg_os = 0x03u;
+    l0[10] = hex[(cdbg_os >> 4) & 0x0Fu];
+    l0[11] = hex[cdbg_os & 0x0Fu];
+    framebuffer_set_text_colors(0x00FFFFFFu, 0x00000000u);
+    framebuffer_draw_text_at(text_x, text_y + 0u, l0);
+    framebuffer_draw_text_at(text_x, text_y + 8u, l1);
+    framebuffer_draw_text_at(text_x, text_y + 16u, l2);
+    framebuffer_draw_text_at(text_x, text_y + 24u, l3);
+    cdbg_os = 0x04u; l0[10] = hex[(cdbg_os >> 4) & 0x0Fu]; l0[11] = hex[cdbg_os & 0x0Fu];
+    framebuffer_draw_text_at(text_x, text_y + 0u, l0);
+#if MSXBARE_CIRCLE_INPUT_TEXT_MODE_DEBUG
+    cdbg_os = 0x05u; l0[10] = hex[(cdbg_os >> 4) & 0x0Fu]; l0[11] = hex[cdbg_os & 0x0Fu];
+    framebuffer_draw_text_at(text_x, text_y + 0u, l0);
+    if ((cdbg_flush_div++ & (uint32_t)MSXBARE_CDBG_FLUSH_DIV_MASK) == 0u) {
+        framebuffer_flush_rect(0u, 0u, 640u, 160u);
+    }
+#else
+    cdbg_os = 0x05u; l0[10] = hex[(cdbg_os >> 4) & 0x0Fu]; l0[11] = hex[cdbg_os & 0x0Fu];
+    framebuffer_draw_text_at(text_x, text_y + 0u, l0);
+    if ((cdbg_flush_div++ & (uint32_t)MSXBARE_CDBG_FLUSH_DIV_MASK) == 0u) {
+        framebuffer_flush_rect(panel_x, panel_y, panel_w, panel_h);
+    }
+#endif
+    cdbg_os = 0x06u; l0[10] = hex[(cdbg_os >> 4) & 0x0Fu]; l0[11] = hex[cdbg_os & 0x0Fu];
+}
+
+#endif
+
 int fmsx_frontend_init(void) {
+
 #ifdef MSXBARE_AUDIO_HDMI_BOOT_DEBUG
     HDBG("[H] fa\n");
 #endif
@@ -314,7 +462,8 @@ static void pace_frame(void) {
     }
 
     while ((int64_t)(pace_next_tick - now) > 0) {
-        audio_out_service();
+        msx_input_set_loop_debug(0x22u, frame_number);
+    audio_out_service();
         now = platform_ticks_now();
     }
 
@@ -374,7 +523,7 @@ void SetColor(uint8_t N, uint8_t R, uint8_t G, uint8_t B) {
     else XPal0 = PIXEL(R, G, B);
 }
 
-unsigned int Joystick(void) { return 0; }
+unsigned int Joystick(void) { return (unsigned int)msx_input_joystick_bits(); }
 unsigned int Mouse(uint8_t N) { (void)N; return 0; }
 uint8_t DiskPresent(uint8_t ID) { (void)ID; return 0; }
 uint8_t DiskRead(uint8_t ID, uint8_t *Buf, int N) { (void)ID; (void)Buf; (void)N; return 0; }
@@ -397,6 +546,7 @@ unsigned int WriteAudio(int16_t *Data, unsigned int Length) {
 }
 
 void PutImage(void) {
+    msx_input_set_loop_debug(0x01u, frame_number);
     uint32_t base_skip = (uint32_t)MSXBARE_FRAME_SKIP;
     uint32_t boot_skip = (uint32_t)MSXBARE_BOOT_FRAME_SKIP;
     uint32_t present_skip = base_skip;
@@ -446,6 +596,7 @@ void PutImage(void) {
     }
 #endif
     if ((frame_number % present_div) == 0u) {
+        msx_input_set_loop_debug(0x10u, frame_number);
 #ifdef MSXBARE_AUDIO_HDMI_BOOT_DEBUG
         {
             static uint8_t logged_blit1;
@@ -456,6 +607,7 @@ void PutImage(void) {
         }
 #endif
 #if !defined(MSXBARE_AUDIO_HDMI_BOOT_DEBUG_NOBLIT)
+        msx_input_set_loop_debug(0x11u, frame_number);
         framebuffer_blit_rgb565(image_buffer, WIDTH, HEIGHT, MSXBARE_LETTERBOX_RGB);
 #ifdef MSXBARE_AUDIO_HDMI_BOOT_DEBUG
         hdbg_overlay_render();
@@ -470,8 +622,16 @@ void PutImage(void) {
             }
         }
 #endif
+#ifdef MSXBARE_CIRCLE_INPUT_OVERLAY_DEBUG
+        msx_input_set_loop_debug(0x12u, frame_number);
+        cdbg_overlay_render();
+        msx_input_set_loop_debug(0x16u, frame_number);
+#endif
     }
+    msx_input_set_loop_debug(0x20u, frame_number);
     audio_step_frame();
+    msx_input_set_loop_debug(0x21u, frame_number);
+    msx_input_poll();
 #ifdef MSXBARE_AUDIO_HDMI_BOOT_DEBUG
     {
         static uint8_t logged_service1;
@@ -500,6 +660,7 @@ void PutImage(void) {
         }
     }
 #endif
+    msx_input_set_loop_debug(0x23u, frame_number);
     pace_frame();
 #ifdef MSXBARE_AUDIO_HDMI_BOOT_DEBUG
     {
@@ -510,6 +671,7 @@ void PutImage(void) {
         }
     }
 #endif
+    msx_input_set_loop_debug(0x24u, frame_number);
     frame_number++;
 #ifdef MSXBARE_AUDIO_HDMI_BOOT_DEBUG
     {

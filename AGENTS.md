@@ -28,13 +28,18 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Antes de implementar drivers/periféricos sensíveis (ex.: áudio PWM/HDMI, DMA, clocks), consultar primeiro referências em `third_party/circle` e registrar no código/documentação qual arquivo/classe foi usado como base conceitual
 - Sempre que o fluxo de boot exigir novos arquivos no SD, atualizar `scripts/prepare-sd.sh` para copiar esses arquivos automaticamente
 - Quando houver trade-off de estabilidade vs desempenho (ex.: otimização do frontend do renderer), manter knobs de build explícitos no `Makefile` e documentados no `README.md`
+- Reutilizar o padrao de painel validado em `docs/debug-overlay-hdmi-template.md` para novos debugs HDMI; preservar formato/layout quando ele estiver legivel e alterar apenas indicadores/contadores durante iteracoes de diagnostico.
+- Para debug em runtime com framebuffer HDMI (especialmente com MMU/cache ativo), preferir painel de debug dedicado com area reservada (viewport de blit deslocado) e overlay desenhado apos o frame; evitar misturar `console_puts()` com o painel. Em modo de debug visual, silenciar escrita do console HDMI apos o boot do core, manter logs compactos (codigos curtos em poucas linhas), e fazer flush de cache do framebuffer (`dc cvac` + `dsb`) apos desenhar o overlay para evitar caracteres parciais/corrompidos. Se a leitura visual continuar ruim, usar preset `text-only` (sem blit do emulador) ou UART como fallback.
+- Preset de debug visual que se mostrou funcional na pratica (Circle input + HDMI): emulador em `0,0` com escala limitada a `2x`, overlay compacto no canto superior esquerdo (4 linhas: `TXTDBG/CI/EV/JY`), texto branco sobre caixa preta, `console` HDMI silenciado apos boot do core, e `framebuffer_flush_rect()` apenas na area do painel com throttle de flush (para reduzir flicker e evitar travas por flush em MMU/cache). Reutilizar este formato antes de tentar novos overlays complexos.
 
 ## Fluxo de trabalho
 
+- Diretorio de trabalho deste projeto (workspace atual): `/Users/sandersouza/Developer/msxbarepi`; usar este caminho como referencia padrao nas operacoes locais e comandos
 - Cada mudança deve atualizar documentação mínima em `docs/`
 - A evolução do projeto deve refletir em documentação continuamente, incluindo atualização deste `AGENTS.md` quando necessário
 - Novas diretrizes técnicas/processuais identificadas durante o desenvolvimento devem ser registradas no `AGENTS.md`
 - A documentacao do projeto deve sempre referenciar explicitamente as fontes de consulta/referencias utilizadas (ex.: arquivos/classes de `third_party/fmsx` e `third_party/circle`) quando influenciarem implementacoes ou correcoes
+- Por padrao, seguir iterando de forma autonoma ate entregar build/resultado testavel; so pausar para status intermediario se o usuario pedir explicitamente
 - Commits pequenos e focados
 - Antes de avançar para próximo marco: build limpo (`make clean && make`) e validação em hardware
 

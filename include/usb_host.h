@@ -15,6 +15,18 @@ typedef struct {
     uint8_t port_speed;
     uint8_t hid_keyboard_present;
     uint8_t hid_gamepad_present;
+    uint8_t ep0_probe_started;
+    uint8_t ep0_setup_ok;
+    uint8_t ep0_data_ok;
+    uint8_t ep0_status_ok;
+    uint8_t ep0_desc_valid;
+    uint8_t ep0_max_packet_size0;
+    uint8_t ep0_dev_class;
+    uint8_t ep0_set_address_ok;
+    uint8_t ep0_desc18_ok;
+    uint8_t ep0_assigned_address;
+    uint16_t ep0_vendor_id16;
+    uint16_t ep0_product_id16;
     uint32_t vendor_id;
     uint32_t hw_cfg2;
     uint32_t gintsts_raw;

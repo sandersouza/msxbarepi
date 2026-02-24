@@ -51,3 +51,8 @@ void platform_delay_ms(uint32_t ms) {
     while ((read_cntpct() - start) < wait_ticks) {
     }
 }
+
+void platform_irq_enable(void) {
+    __asm__ volatile("msr daifclr, #2" ::: "memory");
+    __asm__ volatile("isb");
+}

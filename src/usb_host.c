@@ -55,6 +55,40 @@
 #define DWHCI_HOST_PORT_ENABLE_CHANGED   (1u << 3)
 #define DWHCI_HOST_PORT_OVERCURRENT_CHANGED (1u << 5)
 #define DWHCI_HOST_PORT_DEFAULT_MASK (DWHCI_HOST_PORT_CONNECT_CHANGED | DWHCI_HOST_PORT_ENABLE | DWHCI_HOST_PORT_ENABLE_CHANGED | DWHCI_HOST_PORT_OVERCURRENT_CHANGED)
+#define DWHCI_HOST_CHAN_CHARACTER(chan) (USB_HOST_BASE + 0x100UL + ((chan) * 0x20UL))
+#define DWHCI_HOST_CHAN_SPLIT_CTRL(chan) (USB_HOST_BASE + 0x104UL + ((chan) * 0x20UL))
+#define DWHCI_HOST_CHAN_INT(chan)      (USB_HOST_BASE + 0x108UL + ((chan) * 0x20UL))
+#define DWHCI_HOST_CHAN_INT_MASK(chan) (USB_HOST_BASE + 0x10CUL + ((chan) * 0x20UL))
+#define DWHCI_HOST_CHAN_XFER_SIZ(chan) (USB_HOST_BASE + 0x110UL + ((chan) * 0x20UL))
+#define DWHCI_HOST_CHAN_DMA_ADDR(chan) (USB_HOST_BASE + 0x114UL + ((chan) * 0x20UL))
+#define DWHCI_HOST_CHAN_CHARACTER_MAX_PKT_SIZ_MASK 0x7FFu
+#define DWHCI_HOST_CHAN_CHARACTER_EP_NUMBER_SHIFT 11
+#define DWHCI_HOST_CHAN_CHARACTER_EP_DIRECTION_IN (1u << 15)
+#define DWHCI_HOST_CHAN_CHARACTER_LOW_SPEED_DEVICE (1u << 17)
+#define DWHCI_HOST_CHAN_CHARACTER_EP_TYPE_SHIFT 18
+#define DWHCI_HOST_CHAN_CHARACTER_EP_TYPE_CONTROL (0u << DWHCI_HOST_CHAN_CHARACTER_EP_TYPE_SHIFT)
+#define DWHCI_HOST_CHAN_CHARACTER_MULTI_CNT_SHIFT 20
+#define DWHCI_HOST_CHAN_CHARACTER_DEVICE_ADDRESS_SHIFT 22
+#define DWHCI_HOST_CHAN_CHARACTER_DISABLE (1u << 30)
+#define DWHCI_HOST_CHAN_CHARACTER_ENABLE  (1u << 31)
+#define DWHCI_HOST_CHAN_INT_XFER_COMPLETE (1u << 0)
+#define DWHCI_HOST_CHAN_INT_HALTED        (1u << 1)
+#define DWHCI_HOST_CHAN_INT_AHB_ERROR     (1u << 2)
+#define DWHCI_HOST_CHAN_INT_STALL         (1u << 3)
+#define DWHCI_HOST_CHAN_INT_NAK           (1u << 4)
+#define DWHCI_HOST_CHAN_INT_ACK           (1u << 5)
+#define DWHCI_HOST_CHAN_INT_XACT_ERROR    (1u << 7)
+#define DWHCI_HOST_CHAN_INT_BABBLE_ERROR  (1u << 8)
+#define DWHCI_HOST_CHAN_INT_FRAME_OVERRUN (1u << 9)
+#define DWHCI_HOST_CHAN_INT_DTOG_ERROR    (1u << 10)
+#define DWHCI_HOST_CHAN_INT_ERROR_MASK (DWHCI_HOST_CHAN_INT_AHB_ERROR | DWHCI_HOST_CHAN_INT_STALL | DWHCI_HOST_CHAN_INT_XACT_ERROR | DWHCI_HOST_CHAN_INT_BABBLE_ERROR | DWHCI_HOST_CHAN_INT_FRAME_OVERRUN | DWHCI_HOST_CHAN_INT_DTOG_ERROR)
+#define DWHCI_HOST_CHAN_XFER_SIZ_BYTES_MASK 0x7FFFFu
+#define DWHCI_HOST_CHAN_XFER_SIZ_PACKETS_SHIFT 19
+#define DWHCI_HOST_CHAN_XFER_SIZ_PID_SHIFT 29
+#define DWHCI_HOST_CHAN_XFER_SIZ_PID_DATA0 0u
+#define DWHCI_HOST_CHAN_XFER_SIZ_PID_DATA1 2u
+#define DWHCI_HOST_CHAN_XFER_SIZ_PID_SETUP 3u
+#define GPU_UNCACHED_BASE 0xC0000000u
 
 static inline uint32_t mmio_read32(uintptr_t addr)
 {
@@ -64,6 +98,28 @@ static inline uint32_t mmio_read32(uintptr_t addr)
 static inline void mmio_write32(uintptr_t addr, uint32_t v)
 {
     *(volatile uint32_t *)addr = v;
+}
+
+static inline uint32_t usb_bus_address(const void *p) { return ((((uintptr_t)p) & ~(uintptr_t)0xC0000000u) | GPU_UNCACHED_BASE); }
+
+static inline void dcache_clean_range(const void *addr, uint32_t len)
+{
+#ifdef MSXBARE_ENABLE_MMU
+    uintptr_t a = (uintptr_t)addr & ~(uintptr_t)63u;
+    uintptr_t e = ((uintptr_t)addr + len + 63u) & ~(uintptr_t)63u;
+    for (; a < e; a += 64u) { __asm__ volatile("dc cvac, %0" :: "r"(a) : "memory"); }
+    __asm__ volatile("dsb sy" ::: "memory");
+#endif
+}
+
+static inline void dcache_invalidate_range(const void *addr, uint32_t len)
+{
+#ifdef MSXBARE_ENABLE_MMU
+    uintptr_t a = (uintptr_t)addr & ~(uintptr_t)63u;
+    uintptr_t e = ((uintptr_t)addr + len + 63u) & ~(uintptr_t)63u;
+    for (; a < e; a += 64u) { __asm__ volatile("dc ivac, %0" :: "r"(a) : "memory"); }
+    __asm__ volatile("dsb sy" ::: "memory");
+#endif
 }
 
 static void mmio_delay_cycles(unsigned int n)
@@ -113,6 +169,193 @@ static void dwc_flush_rx_fifo(void)
 static void usb_host_sample_status(void);
 static void usb_host_try_init(void);
 static void usb_host_log_once_summary(void);
+static void usb_host_probe_ep0_desc8(void);
+static int usb_ctrl_get_device_desc(uint8_t devaddr, uint8_t speed, uint16_t mps, uint16_t len, uint8_t *buf);
+static int usb_ctrl_set_address(uint8_t addr, uint8_t speed, uint16_t mps);
+static void usb_host_enum_addr1_desc18(void);
+
+static usb_host_status_t g_status;
+static uint8_t g_summary_logged;
+static uint32_t g_poll_div;
+static uint32_t g_last_port_bits;
+static uint8_t g_ep0_enum18_attempted;
+
+static int hc_wait_transaction(unsigned ch, uint32_t timeout_ms, uint32_t *out_hcint, uint32_t *out_hctsiz)
+{
+    uint32_t last = 0u;
+    for (uint32_t ms = 0; ms < timeout_ms; ++ms) {
+        for (uint32_t i = 0; i < 1000u; ++i) {
+            uint32_t hi = mmio_read32(DWHCI_HOST_CHAN_INT(ch));
+            last = hi;
+            if (hi & (DWHCI_HOST_CHAN_INT_HALTED | DWHCI_HOST_CHAN_INT_XFER_COMPLETE | DWHCI_HOST_CHAN_INT_ERROR_MASK | DWHCI_HOST_CHAN_INT_NAK | DWHCI_HOST_CHAN_INT_ACK)) {
+                if (out_hcint) *out_hcint = hi;
+                if (out_hctsiz) *out_hctsiz = mmio_read32(DWHCI_HOST_CHAN_XFER_SIZ(ch));
+                return 1;
+            }
+            mmio_delay_cycles(150u);
+        }
+        platform_delay_ms(1u);
+    }
+    if (out_hcint) *out_hcint = last;
+    if (out_hctsiz) *out_hctsiz = mmio_read32(DWHCI_HOST_CHAN_XFER_SIZ(ch));
+    return 0;
+}
+
+static int hc_exec_control(unsigned ch, uint8_t devaddr, uint8_t speed, uint8_t in_dir, uint8_t pid, void *buf, uint32_t len, uint16_t mps, uint32_t *hcint_out, uint32_t *hctsiz_out)
+{
+    uint32_t hcchar = mmio_read32(DWHCI_HOST_CHAN_CHARACTER(ch));
+    if (hcchar & DWHCI_HOST_CHAN_CHARACTER_ENABLE) {
+        mmio_write32(DWHCI_HOST_CHAN_CHARACTER(ch), (hcchar & ~DWHCI_HOST_CHAN_CHARACTER_ENABLE) | DWHCI_HOST_CHAN_CHARACTER_DISABLE);
+        (void)hc_wait_transaction(ch, 20u, 0, 0);
+    }
+
+    mmio_write32(DWHCI_HOST_CHAN_SPLIT_CTRL(ch), 0u);
+    mmio_write32(DWHCI_HOST_CHAN_INT(ch), 0xFFFFFFFFu);
+    mmio_write32(DWHCI_HOST_CHAN_INT_MASK(ch), 0xFFFFFFFFu);
+
+    if (!in_dir && len) dcache_clean_range(buf, len);
+    if (in_dir && len) dcache_invalidate_range(buf, len);
+
+    uint32_t packets = (len == 0u) ? 1u : ((len + mps - 1u) / mps);
+    uint32_t hctsiz = (len & DWHCI_HOST_CHAN_XFER_SIZ_BYTES_MASK)
+                   | ((packets & 0x3FFu) << DWHCI_HOST_CHAN_XFER_SIZ_PACKETS_SHIFT)
+                   | ((uint32_t)pid << DWHCI_HOST_CHAN_XFER_SIZ_PID_SHIFT);
+    mmio_write32(DWHCI_HOST_CHAN_XFER_SIZ(ch), hctsiz);
+    mmio_write32(DWHCI_HOST_CHAN_DMA_ADDR(ch), usb_bus_address(buf));
+
+    hcchar = 0u;
+    hcchar |= (uint32_t)(mps & DWHCI_HOST_CHAN_CHARACTER_MAX_PKT_SIZ_MASK);
+    hcchar |= (0u << DWHCI_HOST_CHAN_CHARACTER_EP_NUMBER_SHIFT);
+    if (in_dir) hcchar |= DWHCI_HOST_CHAN_CHARACTER_EP_DIRECTION_IN;
+    if (speed == 2u) hcchar |= DWHCI_HOST_CHAN_CHARACTER_LOW_SPEED_DEVICE;
+    hcchar |= DWHCI_HOST_CHAN_CHARACTER_EP_TYPE_CONTROL;
+    hcchar |= (1u << DWHCI_HOST_CHAN_CHARACTER_MULTI_CNT_SHIFT);
+    hcchar |= ((uint32_t)devaddr << DWHCI_HOST_CHAN_CHARACTER_DEVICE_ADDRESS_SHIFT);
+    hcchar |= DWHCI_HOST_CHAN_CHARACTER_ENABLE;
+    mmio_write32(DWHCI_HOST_CHAN_CHARACTER(ch), hcchar);
+
+    if (!hc_wait_transaction(ch, 200u, hcint_out, hctsiz_out)) {
+        return 0;
+    }
+    if (in_dir && len) dcache_invalidate_range(buf, len);
+    if (hcint_out && ((*hcint_out) & DWHCI_HOST_CHAN_INT_NAK)) return 0;
+    if (hcint_out && ((*hcint_out) & DWHCI_HOST_CHAN_INT_ERROR_MASK)) return 0;
+    if (hcint_out && ((*hcint_out) & DWHCI_HOST_CHAN_INT_STALL)) return 0;
+    return (hcint_out && ((*hcint_out) & DWHCI_HOST_CHAN_INT_XFER_COMPLETE)) ? 1 : 0;
+}
+
+static int usb_ctrl_get_device_desc(uint8_t devaddr, uint8_t speed, uint16_t mps, uint16_t len, uint8_t *buf)
+{
+    static uint8_t setup_pkt[8] __attribute__((aligned(64)));
+    static uint8_t zlp[64] __attribute__((aligned(64)));
+    uint32_t hi = 0u, hsiz = 0u;
+
+    memset(zlp, 0, sizeof(zlp));
+    setup_pkt[0] = 0x80u; /* IN, Standard, Device */
+    setup_pkt[1] = 0x06u; /* GET_DESCRIPTOR */
+    setup_pkt[2] = 0x00u; setup_pkt[3] = 0x01u; /* DEVICE desc */
+    setup_pkt[4] = 0x00u; setup_pkt[5] = 0x00u;
+    setup_pkt[6] = (uint8_t)(len & 0xFFu);
+    setup_pkt[7] = (uint8_t)((len >> 8) & 0xFFu);
+
+    if (!hc_exec_control(0u, devaddr, speed, 0u, DWHCI_HOST_CHAN_XFER_SIZ_PID_SETUP, setup_pkt, 8u, mps, &hi, &hsiz)) return 0;
+    if (!hc_exec_control(0u, devaddr, speed, 1u, DWHCI_HOST_CHAN_XFER_SIZ_PID_DATA1, buf, len, mps, &hi, &hsiz)) return 0;
+    if (!hc_exec_control(0u, devaddr, speed, 0u, DWHCI_HOST_CHAN_XFER_SIZ_PID_DATA1, zlp, 0u, mps, &hi, &hsiz)) return 0;
+    return 1;
+}
+
+static int usb_ctrl_set_address(uint8_t addr, uint8_t speed, uint16_t mps)
+{
+    static uint8_t setup_pkt[8] __attribute__((aligned(64)));
+    static uint8_t zlp[64] __attribute__((aligned(64)));
+    uint32_t hi = 0u, hsiz = 0u;
+
+    memset(zlp, 0, sizeof(zlp));
+    setup_pkt[0] = 0x00u; /* OUT, Standard, Device */
+    setup_pkt[1] = 0x05u; /* SET_ADDRESS */
+    setup_pkt[2] = addr;  setup_pkt[3] = 0x00u;
+    setup_pkt[4] = 0x00u; setup_pkt[5] = 0x00u;
+    setup_pkt[6] = 0x00u; setup_pkt[7] = 0x00u;
+
+    if (!hc_exec_control(0u, 0u, speed, 0u, DWHCI_HOST_CHAN_XFER_SIZ_PID_SETUP, setup_pkt, 8u, mps, &hi, &hsiz)) return 0;
+    if (!hc_exec_control(0u, 0u, speed, 1u, DWHCI_HOST_CHAN_XFER_SIZ_PID_DATA1, zlp, 0u, mps, &hi, &hsiz)) return 0;
+    return 1;
+}
+
+static void usb_host_probe_ep0_desc8(void)
+{
+    static uint8_t desc8[64] __attribute__((aligned(64)));
+    uint16_t ep0_mps = (g_status.port_speed == 0u) ? 64u : 8u;
+
+    g_status.ep0_probe_started = 1u;
+    g_status.ep0_setup_ok = 0u;
+    g_status.ep0_data_ok = 0u;
+    g_status.ep0_status_ok = 0u;
+    g_status.ep0_desc_valid = 0u;
+    g_status.ep0_max_packet_size0 = 0u;
+    g_status.ep0_dev_class = 0u;
+    g_status.ep0_set_address_ok = 0u;
+    g_status.ep0_desc18_ok = 0u;
+    g_status.ep0_assigned_address = 0u;
+    g_status.ep0_vendor_id16 = 0u;
+    g_status.ep0_product_id16 = 0u;
+
+    memset(desc8, 0, sizeof(desc8));
+
+    if (!usb_ctrl_get_device_desc(0u, g_status.port_speed, ep0_mps, 8u, desc8)) {
+        return;
+    }
+    g_status.ep0_setup_ok = 1u;
+    g_status.ep0_data_ok = 1u;
+    g_status.ep0_status_ok = 1u;
+
+    if (desc8[0] >= 8u && desc8[1] == 0x01u) {
+        g_status.ep0_desc_valid = 1u;
+        g_status.ep0_max_packet_size0 = desc8[7];
+        g_status.ep0_dev_class = desc8[4];
+    } else {
+        return;
+    }
+
+    if (g_status.ep0_max_packet_size0 == 0u) {
+        g_status.ep0_max_packet_size0 = (uint8_t)ep0_mps;
+    }
+}
+
+static void usb_host_enum_addr1_desc18(void)
+{
+    static uint8_t desc18[64] __attribute__((aligned(64)));
+    uint16_t ep0_mps;
+
+    if (g_ep0_enum18_attempted) {
+        return;
+    }
+    g_ep0_enum18_attempted = 1u;
+
+    if (!g_status.ep0_desc_valid) {
+        return;
+    }
+
+    ep0_mps = g_status.ep0_max_packet_size0 ? g_status.ep0_max_packet_size0 : ((g_status.port_speed == 0u) ? 64u : 8u);
+
+    if (!usb_ctrl_set_address(1u, g_status.port_speed, ep0_mps)) {
+        return;
+    }
+    g_status.ep0_set_address_ok = 1u;
+    g_status.ep0_assigned_address = 1u;
+    platform_delay_ms(20u);
+
+    memset(desc18, 0, sizeof(desc18));
+    if (!usb_ctrl_get_device_desc(1u, g_status.port_speed, ep0_mps, 18u, desc18)) {
+        return;
+    }
+    if (desc18[0] >= 18u && desc18[1] == 0x01u) {
+        g_status.ep0_desc18_ok = 1u;
+        g_status.ep0_dev_class = desc18[4];
+        g_status.ep0_vendor_id16 = (uint16_t)desc18[8] | ((uint16_t)desc18[9] << 8);
+        g_status.ep0_product_id16 = (uint16_t)desc18[10] | ((uint16_t)desc18[11] << 8);
+    }
+}
 
 #define PROPTAG_SET_POWER_STATE          0x00028001u
 #define DEVICE_ID_USB_HCD               3u
@@ -156,17 +399,13 @@ static int usb_hcd_power_on(void)
  * This module only provides a stable API and polling hook integration point.
  */
 
-static usb_host_status_t g_status;
-static uint8_t g_summary_logged;
-static uint32_t g_poll_div;
-static uint32_t g_last_port_bits;
-
 void usb_host_init(void)
 {
     memset(&g_status, 0, sizeof(g_status));
     g_summary_logged = 0u;
     g_poll_div = 0u;
     g_last_port_bits = 0xFFFFFFFFu;
+    g_ep0_enum18_attempted = 0u;
     usb_host_try_init();
     usb_host_sample_status();
     usb_host_log_once_summary();
@@ -176,10 +415,22 @@ void usb_host_poll(void)
 {
     /* Sample at a lower rate; no IRQs/enumeration yet. */
     ++g_poll_div;
+#ifndef MSXBARE_USB_HOST_DEBUG_STANDALONE
     if ((g_poll_div & 0x3FFFu) != 0u) {
         return;
     }
+#endif
     usb_host_sample_status();
+
+    if (g_status.init_ok && g_status.host_mode && g_status.device_present && g_status.port_enabled && !g_status.ep0_probe_started) {
+        usb_host_probe_ep0_desc8();
+        usb_host_sample_status();
+    }
+
+    else if (g_status.init_ok && g_status.host_mode && g_status.device_present && g_status.port_enabled && g_status.ep0_desc_valid && !g_status.ep0_desc18_ok) {
+        usb_host_enum_addr1_desc18();
+        usb_host_sample_status();
+    }
 
     /* Log root port state changes for manual bring-up validation. */
     if (g_status.init_ok) {
@@ -230,6 +481,18 @@ void usb_host_get_status(usb_host_status_t *out_status)
     out_status->hprt_raw = g_status.hprt_raw;
     out_status->gusbcfg_raw = g_status.gusbcfg_raw;
     out_status->gahbcfg_raw = g_status.gahbcfg_raw;
+    out_status->ep0_probe_started = g_status.ep0_probe_started;
+    out_status->ep0_setup_ok = g_status.ep0_setup_ok;
+    out_status->ep0_data_ok = g_status.ep0_data_ok;
+    out_status->ep0_status_ok = g_status.ep0_status_ok;
+    out_status->ep0_desc_valid = g_status.ep0_desc_valid;
+    out_status->ep0_max_packet_size0 = g_status.ep0_max_packet_size0;
+    out_status->ep0_dev_class = g_status.ep0_dev_class;
+    out_status->ep0_set_address_ok = g_status.ep0_set_address_ok;
+    out_status->ep0_desc18_ok = g_status.ep0_desc18_ok;
+    out_status->ep0_assigned_address = g_status.ep0_assigned_address;
+    out_status->ep0_vendor_id16 = g_status.ep0_vendor_id16;
+    out_status->ep0_product_id16 = g_status.ep0_product_id16;
 }
 
 static void usb_host_try_init(void)

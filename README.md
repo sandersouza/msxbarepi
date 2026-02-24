@@ -47,6 +47,7 @@ A pasta `third_party/` inclui código de terceiros usado no projeto, organizado 
 
 - `third_party/fmsx/`: código do emulador fMSX (GPLv2)
 - `third_party/circle/`: código de referência para audio HDMI (Circle, MIT)
+- Spike USB/HID com Circle: `artifacts/kernel8-circle-usbkeyboard-debug.img` (sample `08-usbkeyboard`, standalone)
 
 ## Build rápido
 
@@ -236,3 +237,45 @@ KERNEL_IMG=artifacts/kernel8-fastboot-fb800x600.img FIRMWARE_DIR=./rpi-firmware 
 ## Suporte a RPMC v9 (Rasperry Pi MSX Clone)
 - O projeto prevê compatíbilidade com a placa de slots do RPMC v9, permitindo o uso de cartuchos físicos de MSX.
 - O suporte a RPMC v9 é um plano de médio prazo, e pode exigir ajustes na implementação do slot e na BIOS para lidar com as peculiaridades do hardware de cartucho real.
+
+
+## Spike USB/HID (Circle)
+
+Build do sample `08-usbkeyboard` do Circle (RPI3/AArch64) para validar USB host + hub interno + teclado HID fora da pilha USB custom:
+
+```bash
+make circle-usbkeyboard-debug
+KERNEL_IMG=artifacts/kernel8-circle-usbkeyboard-debug.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
+```
+
+Referências usadas: `third_party/circle/sample/08-usbkeyboard`, `third_party/circle/include/circle/usb/usbhcidevice.h`, `third_party/circle/include/circle/usb/usbkeyboard.h`.
+
+
+## Spike Circle USB->MSX Input Bridge
+
+Standalone fora de `third_party` usando a pilha USB/HID do Circle e a bridge compartilhada `msx_hid_bridge` (`include/msx_hid_bridge.h`, `src/msx_hid_bridge.c`) para raw HID -> estado de input MSX (`joystick_bits`).
+
+O backend `INPUT_BACKEND=circle` no `msxbare` já consome essa bridge; falta integrar o runtime Circle dentro do binário principal.
+
+```bash
+make circle-usb-msxinput-debug
+KERNEL_IMG=artifacts/kernel8-circle-usb-msxinput-debug.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
+```
+
+Referencias usadas: `third_party/circle/sample/08-usbkeyboard`, `third_party/circle/include/circle/usb/usbkeyboard.h`, `third_party/fmsx/fMSX/MSX.h` (layout `JST_*`).
+
+Preset experimental (msxbare + audio HDMI estavel + runtime Circle input integrado):
+```bash
+make audio-hdmi-no-circle
+KERNEL_IMG=artifacts/kernel8-audio-hdmi-no-circle.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
+```
+
+Preset provisório para seguir desenvolvimento sem o runtime Circle integrado (input Circle desativado por flag de build, vídeo+áudio HDMI mantidos estáveis).
+
+
+```bash
+make audio-hdmi-circle-input
+KERNEL_IMG=artifacts/kernel8-audio-hdmi-circle-input.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
+```
+
+Observacao: integra bibliotecas do Circle com shims de link/runtime locais (fora de `third_party`) e ainda requer validacao funcional em hardware da entrada no binario principal.

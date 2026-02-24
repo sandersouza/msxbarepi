@@ -21,6 +21,34 @@ static uint32_t bg_color = 0x00000000u;
 static uint32_t rgb565_lut[65536];
 static uint32_t rgb565_lut_ready;
 
+
+static inline void cache_clean_range_nodsb(const void *addr, uint32_t len)
+{
+    uintptr_t a = (uintptr_t)addr & ~((uintptr_t)63u);
+    uintptr_t e = ((uintptr_t)addr + (uintptr_t)len + 63u) & ~((uintptr_t)63u);
+    for (; a < e; a += 64u) {
+        __asm__ volatile("dc cvac, %0" :: "r"(a) : "memory");
+    }
+}
+
+static inline void cache_clean_range(const void *addr, uint32_t len)
+{
+    cache_clean_range_nodsb(addr, len);
+    __asm__ volatile("dsb sy" ::: "memory");
+}
+
+#ifndef MSXBARE_FB_BLIT_TOP_RESERVED
+#define MSXBARE_FB_BLIT_TOP_RESERVED 0u
+#endif
+
+#ifndef MSXBARE_FB_BLIT_LEFT_RESERVED
+#define MSXBARE_FB_BLIT_LEFT_RESERVED 0u
+#endif
+
+#ifndef MSXBARE_FB_BLIT_MAX_SCALE
+#define MSXBARE_FB_BLIT_MAX_SCALE 0u
+#endif
+
 static inline uint32_t encode_fb_rgb(uint32_t rgb)
 {
     /* Mailbox pixel order is byte order in framebuffer memory.
@@ -146,6 +174,34 @@ void framebuffer_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint3
     fill_rect32(x, y, w, h, rgb);
 }
 
+void framebuffer_set_text_colors(uint32_t fg_rgb, uint32_t bg_rgb) {
+    fg_color = fg_rgb;
+    bg_color = bg_rgb;
+}
+
+void framebuffer_flush(void) {
+    if (fb_ptr == 0 || fb_pitch == 0 || fb_height == 0) {
+        return;
+    }
+    cache_clean_range((const void *)fb_ptr, fb_pitch * fb_height);
+}
+
+void framebuffer_flush_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h) {
+    if (fb_ptr == 0 || fb_pitch == 0 || fb_height == 0 || w == 0 || h == 0) {
+        return;
+    }
+    if (x >= fb_width || y >= fb_height) {
+        return;
+    }
+    if (x + w > fb_width) w = fb_width - x;
+    if (y + h > fb_height) h = fb_height - y;
+    for (uint32_t yy = 0; yy < h; ++yy) {
+        const void *row = (const void *)(fb_ptr + (y + yy) * fb_pitch + x * 4u);
+        cache_clean_range_nodsb(row, w * 4u);
+    }
+    __asm__ volatile("dsb sy" ::: "memory");
+}
+
 void framebuffer_putc(char c) {
     if (fb_ptr == 0) {
         return;
@@ -210,17 +266,39 @@ void framebuffer_blit_rgb565(const uint16_t *src, uint32_t src_w, uint32_t src_h
     static uint32_t cached_out_h;
     static uint32_t cached_bg_rgb;
 
-    uint32_t scale_x = fb_width / src_w;
-    uint32_t scale_y = fb_height / src_h;
+    uint32_t view_x = MSXBARE_FB_BLIT_LEFT_RESERVED;
+    uint32_t view_y = MSXBARE_FB_BLIT_TOP_RESERVED;
+    uint32_t view_w = fb_width;
+    uint32_t view_h = fb_height;
+
+    if (view_x >= fb_width) {
+        view_x = 0u;
+    }
+    if (view_y >= fb_height) {
+        view_y = 0u;
+    }
+    view_w -= view_x;
+    view_h -= view_y;
+    if (view_w == 0u || view_h == 0u) {
+        return;
+    }
+
+    uint32_t scale_x = view_w / src_w;
+    uint32_t scale_y = view_h / src_h;
     uint32_t scale = scale_x < scale_y ? scale_x : scale_y;
     if (scale == 0) {
         scale = 1;
     }
+#if (MSXBARE_FB_BLIT_MAX_SCALE > 0)
+    if (scale > (uint32_t)MSXBARE_FB_BLIT_MAX_SCALE) {
+        scale = (uint32_t)MSXBARE_FB_BLIT_MAX_SCALE;
+    }
+#endif
 
     uint32_t out_w = src_w * scale;
     uint32_t out_h = src_h * scale;
-    uint32_t off_x = (fb_width - out_w) / 2;
-    uint32_t off_y = (fb_height - out_h) / 2;
+    uint32_t off_x = view_x + (view_w - out_w) / 2;
+    uint32_t off_y = view_y + (view_h - out_h) / 2;
 
     if (!border_valid ||
         cached_src_w != src_w || cached_src_h != src_h ||
@@ -228,10 +306,11 @@ void framebuffer_blit_rgb565(const uint16_t *src, uint32_t src_w, uint32_t src_h
         cached_off_x != off_x || cached_off_y != off_y ||
         cached_out_w != out_w || cached_out_h != out_h ||
         cached_bg_rgb != bg_rgb) {
-        fill_rect32(0, 0, fb_width, off_y, bg_rgb);
-        fill_rect32(0, off_y + out_h, fb_width, fb_height - (off_y + out_h), bg_rgb);
-        fill_rect32(0, off_y, off_x, out_h, bg_rgb);
-        fill_rect32(off_x + out_w, off_y, fb_width - (off_x + out_w), out_h, bg_rgb);
+        /* Clear only inside the emulation viewport, preserving reserved debug strips. */
+        fill_rect32(view_x, view_y, view_w, off_y - view_y, bg_rgb);
+        fill_rect32(view_x, off_y + out_h, view_w, (view_y + view_h) - (off_y + out_h), bg_rgb);
+        fill_rect32(view_x, off_y, off_x - view_x, out_h, bg_rgb);
+        fill_rect32(off_x + out_w, off_y, (view_x + view_w) - (off_x + out_w), out_h, bg_rgb);
 
         cached_src_w = src_w;
         cached_src_h = src_h;

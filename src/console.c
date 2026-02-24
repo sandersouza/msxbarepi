@@ -3,6 +3,8 @@
 #include "framebuffer.h"
 #include "uart.h"
 
+static int console_enabled = 1;
+
 static int hdmi_ready;
 
 #ifndef MSXBARE_FB_WIDTH
@@ -23,8 +25,12 @@ void console_init(void) {
 }
 
 void console_puts(const char *s) {
-    if (hdmi_ready) {
+    if (console_enabled && hdmi_ready) {
         framebuffer_puts(s);
     }
     uart_puts(s);
+}
+
+void console_set_enabled(int enabled) {
+    console_enabled = enabled ? 1 : 0;
 }

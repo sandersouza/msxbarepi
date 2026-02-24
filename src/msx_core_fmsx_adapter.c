@@ -4,6 +4,7 @@
 #include "console.h"
 #include "platform.h"
 #include "uart.h"
+#include "msx_input.h"
 
 #include "MSX.h"
 #include "Sound.h"
@@ -112,6 +113,8 @@ int msx_core_init(const uint8_t *rom_data, uint32_t rom_size) {
 
     fmsx_frontend_audio_late_init();
 
+    msx_input_set_runtime_enabled(1);
+
     /* Desliga o frame-skip de fast-boot assim que a carga inicial do core/ROMs terminou. */
     fmsx_frontend_set_boot_fast_mode(0);
 
@@ -121,6 +124,10 @@ int msx_core_init(const uint8_t *rom_data, uint32_t rom_size) {
     g_ready = 1;
     g_run_iterations = 0;
     platform_log("[M1.1] fMSX inicializado (HDMI).\n");
+#ifdef MSXBARE_CIRCLE_INPUT_OVERLAY_DEBUG
+    /* Avoid console HDMI writes corrupting the dedicated overlay debug panel. */
+    console_set_enabled(0);
+#endif
     return 1;
 }
 
