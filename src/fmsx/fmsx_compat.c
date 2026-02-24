@@ -13,9 +13,12 @@
 #include <unistd.h>
 #include <stdarg.h>
 
-#define HEAP_SIZE (8u * 1024u * 1024u)
+#ifndef MSXBARE_HEAP_SIZE
+#define MSXBARE_HEAP_SIZE (8u * 1024u * 1024u)
+#endif
+#define HEAP_SIZE MSXBARE_HEAP_SIZE
 
-static unsigned char g_heap[HEAP_SIZE];
+static unsigned char g_heap[HEAP_SIZE] __attribute__((aligned(16)));
 static size_t g_heap_pos;
 
 #if defined(MSXBARE_DEBUG_LOGS)
@@ -33,10 +36,11 @@ retro_log_printf_t log_cb = 0;
 
 typedef struct {
     size_t size;
+    size_t _pad0;
 } alloc_hdr_t;
 
 static void *heap_alloc(size_t size) {
-    size_t aligned = (size + 7u) & ~7u;
+    size_t aligned = (size + 15u) & ~15u;
     size_t total = aligned + sizeof(alloc_hdr_t);
     if (g_heap_pos + total > HEAP_SIZE) {
         return 0;

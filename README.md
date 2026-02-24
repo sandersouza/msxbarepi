@@ -1,17 +1,38 @@
-# msxbare
+# MSX BarePI
 
 Projeto de emulação de MSX em baremetal no Raspberry Pi 3B.
+
+> demais versões do RPi podem ser suportadas, mas o foco inicial é o 3B (SoC BCM2837, AArch64, 1GB RAM).
+
+## Ambiente de desenvolvimento
+
+Atualmente o desenvolvimento é focado em macOS, com toolchain de compilação cruzada AArch64 baremetal (ex.: `aarch64-none-elf-gcc`). O projeto é organizado para ser portátil, mas o suporte a outros sistemas operacionais (ex.: Linux) e toolchains pode exigir ajustes manuais (ex.: scripts de build, configuração do ambiente).
+
+### RPi em modo boot USB / Ethernet (sem microSD)
+- RPi 3B suporta boot por USB (ex.: pendrive) ou Ethernet (PXE), eliminando a necessidade de um microSD.
+- Requer configuração prévia do RPi usando `Raspberry OS` para habilitar o boot por USB/Ethernet (ex.: via `raspi-config` ou editando `config.txt`).
+- O processo de preparação do dispositivo de boot (ex.: pendrive) é similar ao do microSD, copiando a imagem gerada (`kernel8.img`) para a partição de boot.
+- Para Ethernet, é necessário configurar um servidor PXE na rede para fornecer a imagem de boot ao RPi.
+
+### Debug e logs
+- Logs de diagnóstico são exibidos via HDMI (limitado e com flag específica de build) e UART.
+- Para debug mais detalhado, é recomendado usar a UART, especialmente durante o desenvolvimento inicial e otimizações de performance.
+- Para montar um debugger JTAG, é necessário hardware adicional (ex.: Raspberry Pi Debug Probe) e configuração específica, o que pode ser considerado em fases posteriores do projeto.
+- Para console serial, é possível usar um adaptador USB-serial conectado aos pinos GPIO do RPi para acessar os logs de diagnóstico e interagir com o sistema em tempo real.
+
+### Hardware adicional
+- Para desenvolvimento avançado, pode ser útil um osciloscópio para analisar sinais de áudio e vídeo, especialmente ao implementar a saída de vídeo composto e otimizar a pipeline de áudio.
+- Um analisador lógico pode ser útil para depurar a comunicação via mailbox e outros protocolos de hardware entre o kernel e o firmware do RPi.
+- Para testes de áudio, um amplificador e alto-falantes ou fones de ouvido são necessários para avaliar a qualidade do som gerado pelo backend HDMI ou P2.
+
 
 ## Escolha de linguagem
 
 - Kernel/runtime: `C` (controle baixo nível, toolchain madura e previsível em baremetal)
 - Bootstrap inicial: `AArch64 Assembly` (vetor de entrada e setup mínimo da stack)
+- Scripts de build/deploy: `Bash` (simplicidade e portabilidade, sem dependências externas)
 
-## Meta inicial
-
-Gerar `kernel8.img` com um `Hello World` via HDMI (framebuffer), bootando sem sistema operacional no Raspberry Pi 3B.
-
-## Estrutura
+## Estrutura do projeto ( scaffold )
 
 - `boot/`: ponto de entrada em assembly
 - `src/`: código C do kernel
@@ -19,6 +40,14 @@ Gerar `kernel8.img` com um `Hello World` via HDMI (framebuffer), bootando sem si
 - `linker/`: script de link
 - `scripts/`: utilitários de build/deploy
 - `docs/`: documentação técnica
+- `docs/legal`: licenças e atribuições de código de terceiros
+
+## Third-party
+A pasta `third_party/` inclui código de terceiros usado no projeto, organizado por componente e precisa ser populada manualmente ( ver third_party/README.md para detalhes ).
+
+- `third_party/fmsx/`: código do emulador fMSX (GPLv2)
+- `third_party/circle/`: código de referência para audio HDMI (Circle, MIT)
+- Spike USB/HID com Circle: `artifacts/kernel8-circle-usbkeyboard-debug.img` (sample `08-usbkeyboard`, standalone)
 
 ## Build rápido
 
@@ -74,7 +103,7 @@ Benchmark observado em hardware (RPi 3B, BIOS Expert 1.1):
 - preset `fastboot`: ~17s ate o BASIC
 - atualizado: com MMU+cache+pacing, a velocidade percebida voltou ao patamar correto
 
-Preset alternativo para teste de gameplay/performance (apresentacao em 1/2 taxa apos boot):
+Preset alternativo para teste de gameplay/performance ( apresentação em 1/2 taxa apos boot ):
 
 ```bash
 make fastplay
@@ -104,7 +133,7 @@ make audio-p2-smoketest
 
 Gera `artifacts/kernel8-audio-p2-smoketest.img`.
 
-Preset estavel de audio HDMI (backend funcional):
+Preset estável de audio HDMI (backend funcional):
 
 ```bash
 make audio-hdmi
@@ -165,39 +194,29 @@ Nota sobre `config.txt`:
 ## Saída de vídeo
 
 - O projeto adota HDMI como saída principal.
+- O framebuffer é gerenciado pelo firmware do RPi, e o kernel interage com ele via mailbox (sem acesso direto ao hardware de vídeo).
+- Futuramente, será implementada saída de vídeo composto via GPIO visando compatibilidade com TVs antigas, mas isso é um plano de médio prazo.
 - UART permanece ativa para diagnóstico, mas toda evolução funcional deve considerar exibição em HDMI.
 - A "borda externa" fora da imagem MSX e o preenchimento de letterbox do framebuffer do projeto.
-- A "borda interna" faz parte da imagem gerada pelo VDP/MSX (emulação).
+- A "borda interna" faz parte da imagem gerada pelo VDP/MSX (emulação). Ver src/mailbox.c para detalhes.
 
 ## Performance no RPi 3B (clock)
 
 - Em baremetal, nao existe governor do Linux para subir clock dinamicamente.
 - Sem `arm_freq` no `config.txt`, o Pi 3B pode ficar em clock baixo (ex.: ~600MHz), causando percepcao de "meia velocidade".
 - O `sdcard/config.txt` do projeto fixa `arm_freq=1200` (clock nominal do Pi 3B) como baseline de testes.
+- Para garantir performance consistente, é recomendado manter essa configuração, especialmente durante o desenvolvimento e testes de otimização.
 
-## M1.1 Core Bring-up
+## Preparar microSD ou USB (macOS)
 
-- Core upstream avaliado: `third_party/fmsx/` (commit fixado em `third_party/fmsx/UPSTREAM.md`).
-- Boot passa ponteiro DTB para o kernel e o projeto já consegue detectar `initramfs` para ROM.
-- Execução real do núcleo fMSX já integrada no build baremetal.
-- Para fornecer BIOS/ROM ao core sem driver SD nativo, use initramfs CPIO:
-  - gere `msx.cpio` com `scripts/make-initramfs.sh`
-  - inclua no initramfs ao menos `MSX.ROM` e `CARTA.ROM`
-  - habilite no `config.txt`: `initramfs msx.cpio followkernel`
-
-Detalhes técnicos em `docs/m1-1-core-bringup.md`.
-Procedimento de teste em `docs/m1-1-hardware-test.md`.
-
-## Preparar microSD (macOS)
-
-Script interativo com TUI (`fzf`) e protecoes para evitar disco incorreto:
+Script interativo com TUI (`fzf`) e proteções para evitar seleção de disco incorretamente formatado ou com dados importantes ( ex.: disco do sistema ):
 
 ```bash
 brew install fzf
 scripts/prepare-sd.sh
 ```
 
-Opcionalmente, para copiar firmwares no mesmo passo:
+Opcionalmente, para copiar firmwares alternativos no mesmo passo:
 
 ```bash
 FIRMWARE_DIR=/caminho/para/firmware scripts/prepare-sd.sh
@@ -215,3 +234,48 @@ Exemplos A/B com framebuffer menor:
 KERNEL_IMG=artifacts/kernel8-fastboot-fb960x720.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
 KERNEL_IMG=artifacts/kernel8-fastboot-fb800x600.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
 ```
+## Suporte a RPMC v9 (Rasperry Pi MSX Clone)
+- O projeto prevê compatíbilidade com a placa de slots do RPMC v9, permitindo o uso de cartuchos físicos de MSX.
+- O suporte a RPMC v9 é um plano de médio prazo, e pode exigir ajustes na implementação do slot e na BIOS para lidar com as peculiaridades do hardware de cartucho real.
+
+
+## Spike USB/HID (Circle)
+
+Build do sample `08-usbkeyboard` do Circle (RPI3/AArch64) para validar USB host + hub interno + teclado HID fora da pilha USB custom:
+
+```bash
+make circle-usbkeyboard-debug
+KERNEL_IMG=artifacts/kernel8-circle-usbkeyboard-debug.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
+```
+
+Referências usadas: `third_party/circle/sample/08-usbkeyboard`, `third_party/circle/include/circle/usb/usbhcidevice.h`, `third_party/circle/include/circle/usb/usbkeyboard.h`.
+
+
+## Spike Circle USB->MSX Input Bridge
+
+Standalone fora de `third_party` usando a pilha USB/HID do Circle e a bridge compartilhada `msx_hid_bridge` (`include/msx_hid_bridge.h`, `src/msx_hid_bridge.c`) para raw HID -> estado de input MSX (`joystick_bits`).
+
+O backend `INPUT_BACKEND=circle` no `msxbare` já consome essa bridge; falta integrar o runtime Circle dentro do binário principal.
+
+```bash
+make circle-usb-msxinput-debug
+KERNEL_IMG=artifacts/kernel8-circle-usb-msxinput-debug.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
+```
+
+Referencias usadas: `third_party/circle/sample/08-usbkeyboard`, `third_party/circle/include/circle/usb/usbkeyboard.h`, `third_party/fmsx/fMSX/MSX.h` (layout `JST_*`).
+
+Preset experimental (msxbare + audio HDMI estavel + runtime Circle input integrado):
+```bash
+make audio-hdmi-no-circle
+KERNEL_IMG=artifacts/kernel8-audio-hdmi-no-circle.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
+```
+
+Preset provisório para seguir desenvolvimento sem o runtime Circle integrado (input Circle desativado por flag de build, vídeo+áudio HDMI mantidos estáveis).
+
+
+```bash
+make audio-hdmi-circle-input
+KERNEL_IMG=artifacts/kernel8-audio-hdmi-circle-input.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
+```
+
+Observacao: integra bibliotecas do Circle com shims de link/runtime locais (fora de `third_party`) e ainda requer validacao funcional em hardware da entrada no binario principal.

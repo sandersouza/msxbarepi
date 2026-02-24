@@ -8,10 +8,13 @@ SECTIONS
         KEEP(*(.text.boot))
         *(.text*)
     }
+    _etext = .;
 
     .rodata : {
         *(.rodata*)
     }
+    PROVIDE(__init_start = .);
+    PROVIDE(__init_end = .);
 
     .data : {
         *(.data*)
@@ -23,6 +26,7 @@ SECTIONS
         *(COMMON)
         __bss_end = .;
     }
+    _end = __bss_end;
 
     . = ALIGN(16);
     __stack_bottom = .;
