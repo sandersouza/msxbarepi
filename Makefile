@@ -15,6 +15,7 @@ AUDIO_BACKEND ?= p2
 INPUT_BACKEND ?= usb
 ENABLE_CIRCLE_INPUT_RUNTIME ?= 0
 CIRCLE_LINK_SHIM_SRC ?=
+MSX_HID_BRIDGE_SRC ?=
 EXTRA_CFLAGS ?=
 
 # Auto-detect common baremetal toolchain prefixes.
@@ -74,6 +75,7 @@ endif
 ifeq ($(INPUT_BACKEND),circle)
 CFLAGS += -DMSXBARE_INPUT_BACKEND_CIRCLE=1
 INPUT_BACKEND_SRC := src/msx_input_backend_circle_stub.c
+MSX_HID_BRIDGE_SRC := src/msx_hid_bridge.c
 ifeq ($(ENABLE_CIRCLE_INPUT_RUNTIME),1)
 CFLAGS += -DMSXBARE_CIRCLE_INPUT_RUNTIME=1
 CXXFLAGS_CIRCLE := -Wall -Wextra -O2 -ffreestanding -nostdlib -nostartfiles -mcpu=cortex-a53 -fno-exceptions -fno-rtti 
@@ -103,6 +105,9 @@ SOURCES_C := \
 	src/usb_host.c \
 	src/usb_hid.c \
 	src/msx_input.c \
+	$(INPUT_BACKEND_SRC) \
+	$(MSX_HID_BRIDGE_SRC) \
+	$(CIRCLE_LINK_SHIM_SRC) \
 	src/audio_pcm.c \
 	$(AUDIO_OUT_SRC) \
 	src/dtb.c \
