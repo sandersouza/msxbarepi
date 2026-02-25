@@ -7,6 +7,8 @@
 #include "audio_pcm.h"
 #include "audio_out.h"
 #include "msx_input.h"
+#include "msx_input_backend.h"
+#include "circle_input_provider.h"
 
 #include "MSX.h"
 #include "EMULib.h"
