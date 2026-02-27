@@ -1,17 +1,19 @@
-#ifndef FRAMEBUFFER_H
-#define FRAMEBUFFER_H
+#ifndef MSXBARE_FRAMEBUFFER_H
+#define MSXBARE_FRAMEBUFFER_H
 
 #include <stdint.h>
 
-int framebuffer_init(uint32_t width, uint32_t height, uint32_t depth);
-void framebuffer_clear(uint32_t rgb);
-void framebuffer_fill_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t rgb);
-void framebuffer_set_text_colors(uint32_t fg_rgb, uint32_t bg_rgb);
-void framebuffer_flush(void);
-void framebuffer_flush_rect(uint32_t x, uint32_t y, uint32_t w, uint32_t h);
-void framebuffer_putc(char c);
-void framebuffer_puts(const char *s);
-void framebuffer_draw_text_at(uint32_t x, uint32_t y, const char *s);
-void framebuffer_blit_rgb565(const uint16_t *src, uint32_t src_w, uint32_t src_h, uint32_t bg_rgb);
+typedef struct framebuffer_info {
+    uint32_t width;
+    uint32_t height;
+    uint32_t pitch;
+    uint32_t is_rgb;
+    uint8_t *pixels;
+    uint32_t size;
+} framebuffer_info_t;
+
+int framebuffer_init(framebuffer_info_t *fb, uint32_t width, uint32_t height);
+void framebuffer_fill(framebuffer_info_t *fb, uint32_t color);
+void framebuffer_draw_rect(framebuffer_info_t *fb, uint32_t x, uint32_t y, uint32_t w, uint32_t h, uint32_t color);
 
 #endif

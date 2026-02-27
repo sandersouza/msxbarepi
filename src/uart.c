@@ -1,75 +1,74 @@
+#include "common.h"
+#include "platform.h"
 #include "uart.h"
 
-#define MMIO_BASE       0x3F000000UL
-#define GPIO_BASE       (MMIO_BASE + 0x200000)
-#define UART0_BASE      (MMIO_BASE + 0x201000)
+#define GPIO_BASE (MMIO_BASE + 0x200000)
+#define GPFSEL1 (GPIO_BASE + 0x04)
+#define GPPUD (GPIO_BASE + 0x94)
+#define GPPUDCLK0 (GPIO_BASE + 0x98)
 
-#define GPFSEL1         ((volatile unsigned int *)(GPIO_BASE + 0x04))
-#define GPPUD           ((volatile unsigned int *)(GPIO_BASE + 0x94))
-#define GPPUDCLK0       ((volatile unsigned int *)(GPIO_BASE + 0x98))
+#define UART0_BASE (MMIO_BASE + 0x201000)
+#define UART0_DR (UART0_BASE + 0x00)
+#define UART0_FR (UART0_BASE + 0x18)
+#define UART0_IBRD (UART0_BASE + 0x24)
+#define UART0_FBRD (UART0_BASE + 0x28)
+#define UART0_LCRH (UART0_BASE + 0x2C)
+#define UART0_CR (UART0_BASE + 0x30)
+#define UART0_IMSC (UART0_BASE + 0x38)
+#define UART0_ICR (UART0_BASE + 0x44)
 
-#define UART0_DR        ((volatile unsigned int *)(UART0_BASE + 0x00))
-#define UART0_FR        ((volatile unsigned int *)(UART0_BASE + 0x18))
-#define UART0_IBRD      ((volatile unsigned int *)(UART0_BASE + 0x24))
-#define UART0_FBRD      ((volatile unsigned int *)(UART0_BASE + 0x28))
-#define UART0_LCRH      ((volatile unsigned int *)(UART0_BASE + 0x2C))
-#define UART0_CR        ((volatile unsigned int *)(UART0_BASE + 0x30))
-#define UART0_IMSC      ((volatile unsigned int *)(UART0_BASE + 0x38))
-#define UART0_ICR       ((volatile unsigned int *)(UART0_BASE + 0x44))
+void uart_init(void)
+{
+    uint32_t selector;
 
-static void delay(int count) {
-    while (count--) {
-        __asm__ volatile("nop");
+    mmio_write(UART0_CR, 0);
+
+    selector = mmio_read(GPFSEL1);
+    selector &= ~((7u << 12) | (7u << 15));
+    selector |= (4u << 12) | (4u << 15);
+    mmio_write(GPFSEL1, selector);
+
+    mmio_write(GPPUD, 0);
+    platform_delay_us(150);
+    mmio_write(GPPUDCLK0, (1u << 14) | (1u << 15));
+    platform_delay_us(150);
+    mmio_write(GPPUDCLK0, 0);
+
+    mmio_write(UART0_ICR, 0x7FF);
+    mmio_write(UART0_IBRD, 1);
+    mmio_write(UART0_FBRD, 40);
+    mmio_write(UART0_LCRH, (3u << 5));
+    mmio_write(UART0_IMSC, 0);
+    mmio_write(UART0_CR, (1u << 0) | (1u << 8) | (1u << 9));
+}
+
+void uart_putc(char c)
+{
+    while (mmio_read(UART0_FR) & (1u << 5)) {
     }
+
+    mmio_write(UART0_DR, (uint32_t)c);
 }
 
-void uart_init(void) {
-    unsigned int r;
+void uart_puts(const char *text)
+{
+    char c;
 
-    // Desabilita UART0 durante configuração
-    *UART0_CR = 0x00000000;
-
-    // Configura GPIO14/15 para ALT0 (TXD0/RXD0)
-    r = *GPFSEL1;
-    r &= ~((7u << 12) | (7u << 15));
-    r |=  (4u << 12) | (4u << 15);
-    *GPFSEL1 = r;
-
-    // Desativa pull-up/down
-    *GPPUD = 0x00000000;
-    delay(150);
-    *GPPUDCLK0 = (1u << 14) | (1u << 15);
-    delay(150);
-    *GPPUDCLK0 = 0x00000000;
-
-    // Limpa interrupções pendentes
-    *UART0_ICR = 0x7FF;
-
-    // 115200 bps (clock 48MHz)
-    *UART0_IBRD = 26;
-    *UART0_FBRD = 3;
-
-    // 8N1, FIFO habilitado
-    *UART0_LCRH = (1u << 4) | (3u << 5);
-
-    // Mascara interrupções
-    *UART0_IMSC = 0;
-
-    // Habilita UART, TX, RX
-    *UART0_CR = (1u << 0) | (1u << 8) | (1u << 9);
-}
-
-void uart_putc(char c) {
-    while (*UART0_FR & (1u << 5)) {
-    }
-    *UART0_DR = (unsigned int)c;
-}
-
-void uart_puts(const char *s) {
-    while (*s) {
-        if (*s == '\n') {
+    while (*text != '\0') {
+        c = *text++;
+        if (c == '\n') {
             uart_putc('\r');
         }
-        uart_putc(*s++);
+        uart_putc(c);
+    }
+}
+
+void uart_put_hex32(uint32_t value)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    int shift;
+
+    for (shift = 28; shift >= 0; shift -= 4) {
+        uart_putc(hex[(value >> shift) & 0xFu]);
     }
 }

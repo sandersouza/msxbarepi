@@ -1,28 +1,30 @@
+#include "common.h"
 #include "mailbox.h"
 
-#define MMIO_BASE            0x3F000000UL
-#define MBOX_BASE            (MMIO_BASE + 0x0000B880)
+#define MAILBOX_BASE (MMIO_BASE + 0xB880)
+#define MAILBOX_READ (MAILBOX_BASE + 0x00)
+#define MAILBOX_STATUS (MAILBOX_BASE + 0x18)
+#define MAILBOX_WRITE (MAILBOX_BASE + 0x20)
 
-#define MBOX_READ            ((volatile uint32_t *)(MBOX_BASE + 0x00))
-#define MBOX_STATUS          ((volatile uint32_t *)(MBOX_BASE + 0x18))
-#define MBOX_WRITE           ((volatile uint32_t *)(MBOX_BASE + 0x20))
+#define MAILBOX_EMPTY (1u << 30)
+#define MAILBOX_FULL (1u << 31)
 
-#define MBOX_STATUS_FULL     0x80000000u
-#define MBOX_STATUS_EMPTY    0x40000000u
+int mailbox_call(uint8_t channel, volatile uint32_t *buffer)
+{
+    uint32_t request;
 
-int mailbox_call(uint8_t channel, volatile uint32_t *mailbox_buffer) {
-    uint32_t addr = ((uint32_t)(uintptr_t)mailbox_buffer & ~0xFu) | (uint32_t)(channel & 0xFu);
+    request = ((uint32_t)(uintptr_t)buffer & ~0xFu) | (channel & 0xFu);
 
-    while (*MBOX_STATUS & MBOX_STATUS_FULL) {
+    while (mmio_read(MAILBOX_STATUS) & MAILBOX_FULL) {
     }
-    *MBOX_WRITE = addr;
+    mmio_write(MAILBOX_WRITE, request);
 
     for (;;) {
-        while (*MBOX_STATUS & MBOX_STATUS_EMPTY) {
+        while (mmio_read(MAILBOX_STATUS) & MAILBOX_EMPTY) {
         }
 
-        if (*MBOX_READ == addr) {
-            return mailbox_buffer[1] == 0x80000000u;
+        if (mmio_read(MAILBOX_READ) == request) {
+            return buffer[1] == 0x80000000u;
         }
     }
 }

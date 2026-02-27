@@ -1,58 +1,35 @@
+#include "common.h"
 #include "platform.h"
 
-#include "console.h"
-#include "uart.h"
+#define SYSTEM_TIMER_BASE (MMIO_BASE + 0x3000)
+#define SYSTEM_TIMER_CLO (SYSTEM_TIMER_BASE + 0x04)
+#define SYSTEM_TIMER_CHI (SYSTEM_TIMER_BASE + 0x08)
 
-#ifndef MSXBARE_DEBUG_HOLD_MS
-#define MSXBARE_DEBUG_HOLD_MS 0u
-#endif
+uint64_t platform_get_time_us(void)
+{
+    uint32_t hi;
+    uint32_t lo;
+    uint32_t hi_check;
 
-static uint64_t read_cntfrq(void) {
-    uint64_t v;
-    __asm__ volatile("mrs %0, cntfrq_el0" : "=r"(v));
-    return v;
+    do {
+        hi = mmio_read(SYSTEM_TIMER_CHI);
+        lo = mmio_read(SYSTEM_TIMER_CLO);
+        hi_check = mmio_read(SYSTEM_TIMER_CHI);
+    } while (hi != hi_check);
+
+    return (((uint64_t)hi) << 32) | lo;
 }
 
-static uint64_t read_cntpct(void) {
-    uint64_t v;
-    __asm__ volatile("mrs %0, cntpct_el0" : "=r"(v));
-    return v;
-}
-
-void platform_init(void) {
-}
-
-void platform_log(const char *s) {
-    console_puts(s);
-    uart_puts(s);
-}
-
-void platform_debug_hold_if_enabled(void) {
-#if MSXBARE_DEBUG_HOLD_MS > 0
-    console_puts("[dbg] Pausa para leitura de logs...\n");
-    uart_puts("[dbg] Pausa para leitura de logs...\n");
-    platform_delay_ms((uint32_t)MSXBARE_DEBUG_HOLD_MS);
-#endif
-}
-
-uint64_t platform_ticks_hz(void) {
-    return read_cntfrq();
-}
-
-uint64_t platform_ticks_now(void) {
-    return read_cntpct();
-}
-
-void platform_delay_ms(uint32_t ms) {
-    uint64_t start = read_cntpct();
-    uint64_t freq = read_cntfrq();
-    uint64_t wait_ticks = (freq * (uint64_t)ms) / 1000u;
-
-    while ((read_cntpct() - start) < wait_ticks) {
+void platform_delay_us(uint32_t us)
+{
+    const uint64_t start = platform_get_time_us();
+    while ((platform_get_time_us() - start) < (uint64_t)us) {
     }
 }
 
-void platform_irq_enable(void) {
-    __asm__ volatile("msr daifclr, #2" ::: "memory");
-    __asm__ volatile("isb");
+void platform_delay_ms(uint32_t ms)
+{
+    while (ms-- != 0u) {
+        platform_delay_us(1000);
+    }
 }

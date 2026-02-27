@@ -1,212 +1,221 @@
-#include "console.h"
+#include "audio_stub.h"
+#include "circle_audio_runtime.h"
+#include "circle_input_runtime.h"
 #include "framebuffer.h"
-#include "initramfs.h"
-#include "mmu.h"
-#include "msx_input.h"
-#include "msx_core.h"
+#include "input_stub.h"
 #include "platform.h"
-#include "rom_loader.h"
 #include "uart.h"
-#ifdef MSXBARE_AUDIO_HDMI_DEBUG_STANDALONE
-#include "audio_out.h"
-#include "audio_pcm.h"
+
+#ifndef MSXBARE_FB_WIDTH
+#define MSXBARE_FB_WIDTH 1024u
 #endif
 
-#ifdef MSXBARE_AUDIO_HDMI_DEBUG_STANDALONE
-static void hdmi_audio_debug_standalone(void) {
-    static int16_t tone[256];
-    uint32_t phase = 0u;
-    const uint32_t sample_rate = 48000u;
-    const uint32_t freq_hz = 440u;
-    const uint32_t phase_step = (uint32_t)(((uint64_t)freq_hz << 24) / sample_rate);
-    const uint64_t hz = platform_ticks_hz();
-    const uint64_t run_ticks = hz ? (hz * 8u) : 0u;
-    uint64_t start = platform_ticks_now();
+#ifndef MSXBARE_FB_HEIGHT
+#define MSXBARE_FB_HEIGHT 768u
+#endif
 
-    platform_log("[audio][hdmi] modo diagnostico standalone (sem emulador).\n");
-    platform_log("[audio][hdmi] inicializando fila PCM e backend HDMI (48kHz)...\n");
-    audio_pcm_init(sample_rate, 1u);
-    audio_out_init(sample_rate);
-    platform_log("[audio][hdmi] injetando tom 440Hz por 8s e servindo backend...\n");
+static void render_boot_screen(framebuffer_info_t *fb)
+{
+    framebuffer_fill(fb, 0x00101010u);
+    framebuffer_draw_rect(fb, 0, 0, fb->width, 72, 0x00003366u);
+    framebuffer_draw_rect(fb, 0, fb->height - 48, fb->width, 48, 0x00002244u);
+    framebuffer_draw_rect(fb, 32, 120, fb->width - 64, fb->height - 200, 0x00000000u);
+    framebuffer_draw_rect(fb, 40, 128, fb->width - 80, fb->height - 216, 0x0000AA22u);
+}
 
-    while (!hz || (platform_ticks_now() - start) < run_ticks) {
-        for (unsigned int i = 0; i < 256u; ++i) {
-            phase += phase_step;
-            tone[i] = (phase & 0x00800000u) ? 12000 : -12000;
+static void render_heartbeat(framebuffer_info_t *fb, uint32_t tick)
+{
+    const uint32_t bar_w = 240u;
+    const uint32_t x = 48u + (tick % ((fb->width > (bar_w + 96u)) ? (fb->width - bar_w - 96u) : 1u));
+    const uint32_t y = fb->height > 96u ? fb->height - 88u : 0u;
+
+    framebuffer_draw_rect(fb, 40, y, fb->width > 80 ? fb->width - 80 : 0, 24, 0x00000000u);
+    framebuffer_draw_rect(fb, x, y + 2u, bar_w, 20, 0x00FFFF00u);
+}
+
+void kernel_main(uint64_t dtb_ptr)
+{
+    (void)dtb_ptr;
+
+    uart_init();
+    uart_puts("\r\n[msxbare][m0] boot start\r\n");
+    uart_puts("[msxbare][m0] init uart: ok\r\n");
+
+    framebuffer_info_t framebuffer;
+    if (!framebuffer_init(&framebuffer, MSXBARE_FB_WIDTH, MSXBARE_FB_HEIGHT)) {
+        uart_puts("[msxbare][m0] init framebuffer: fail\r\n");
+        for (;;) {
+            platform_delay_ms(250);
         }
-        (void)audio_pcm_write_interleaved_s16(tone, 256u);
-        for (unsigned int i = 0; i < 128u; ++i) {
-            audio_out_service();
-        }
-        platform_delay_ms(2);
     }
 
-    platform_log("[audio][hdmi] fim do teste. sistema parado para leitura.\n");
-    while (1) {
-        audio_out_service();
-        platform_delay_ms(50);
-    }
-}
-#endif
-#ifdef MSXBARE_USB_HOST_DEBUG_STANDALONE
-#include "usb_host.h"
-#endif
+    uart_puts("[msxbare][m0] init framebuffer: ok\r\n");
+    uart_puts("[msxbare][m0] fb width=0x");
+    uart_put_hex32(framebuffer.width);
+    uart_puts(" height=0x");
+    uart_put_hex32(framebuffer.height);
+    uart_puts(" pitch=0x");
+    uart_put_hex32(framebuffer.pitch);
+    uart_puts("\r\n");
 
-#ifdef MSXBARE_USB_HOST_DEBUG_STANDALONE
-static char *usbdbg_append_str(char *p, const char *s) { while (*s) *p++ = *s++; return p; }
-static char *usbdbg_append_u32(char *p, uint32_t v) {
-    char tmp[10]; unsigned n = 0;
-    if (v == 0u) { *p++ = '0'; return p; }
-    while (v && n < sizeof(tmp)) { tmp[n++] = (char)('0' + (v % 10u)); v /= 10u; }
-    while (n) *p++ = tmp[--n];
-    return p;
-}
-static char *usbdbg_append_hex32(char *p, uint32_t v) {
-    static const char h[] = "0123456789ABCDEF";
-    *p++='0'; *p++='x';
-    for (int i = 7; i >= 0; --i) *p++ = h[(v >> (i*4)) & 0xFu];
-    return p;
-}
-static void usbdbg_line_at(uint32_t x, uint32_t y, const char *prefix, uint32_t a, const char *mid, uint32_t b) {
-    char line[128]; char *q = line;
-    q = usbdbg_append_str(q, prefix);
-    q = usbdbg_append_hex32(q, a);
-    q = usbdbg_append_str(q, mid);
-    q = usbdbg_append_hex32(q, b);
-    *q='\0';
-    framebuffer_draw_text_at(x,y,line);
-}
-static void usbdbg_status_line(uint32_t x, uint32_t y, const usb_host_status_t *st) {
-    char line[128]; char *q = line;
-    q = usbdbg_append_str(q, "detect="); q = usbdbg_append_u32(q, st->controller_detected);
-    q = usbdbg_append_str(q, " init_ok="); q = usbdbg_append_u32(q, st->init_ok);
-    q = usbdbg_append_str(q, " host_mode="); q = usbdbg_append_u32(q, st->host_mode);
-    *q='\0'; framebuffer_draw_text_at(x,y,line);
-}
-static void usbdbg_root_line(uint32_t x, uint32_t y, const usb_host_status_t *st) {
-    char line[128]; char *q = line;
-    q = usbdbg_append_str(q, "rootport pwr="); q = usbdbg_append_u32(q, st->port_powered);
-    q = usbdbg_append_str(q, " conn="); q = usbdbg_append_u32(q, st->device_present);
-    q = usbdbg_append_str(q, " en="); q = usbdbg_append_u32(q, st->port_enabled);
-    q = usbdbg_append_str(q, " speed="); q = usbdbg_append_u32(q, st->port_speed);
-    *q='\0'; framebuffer_draw_text_at(x,y,line);
-}
-static void usbdbg_hid_line(uint32_t x, uint32_t y, const usb_host_status_t *st) {
-    char line[96]; char *q = line;
-    q = usbdbg_append_str(q, "hid-kbd="); q = usbdbg_append_u32(q, st->hid_keyboard_present);
-    q = usbdbg_append_str(q, " hid-pad="); q = usbdbg_append_u32(q, st->hid_gamepad_present);
-    q = usbdbg_append_str(q, " (stub)");
-    *q='\0'; framebuffer_draw_text_at(x,y,line);
-}
-static void usbdbg_raw1_line(uint32_t x, uint32_t y, const usb_host_status_t *st) {
-    char line[160]; char *q = line;
-    q = usbdbg_append_str(q, "hcd_pwr="); q = usbdbg_append_u32(q, st->hcd_power_on_ok);
-    q = usbdbg_append_str(q, " GINT="); q = usbdbg_append_hex32(q, st->gintsts_raw);
-    q = usbdbg_append_str(q, " HPRT="); q = usbdbg_append_hex32(q, st->hprt_raw);
-    *q='\0'; framebuffer_draw_text_at(x,y,line);
-}
+    audio_stub_init();
+    uart_puts("[msxbare][m0] init audio stub: ok (hdmi path placeholder)\r\n");
 
-static void usbdbg_raw2_line(uint32_t x, uint32_t y, const usb_host_status_t *st) {
-    char line[160]; char *q = line;
-    q = usbdbg_append_str(q, "GUSBCFG="); q = usbdbg_append_hex32(q, st->gusbcfg_raw);
-    q = usbdbg_append_str(q, " GAHBCFG="); q = usbdbg_append_hex32(q, st->gahbcfg_raw);
-    *q='\0'; framebuffer_draw_text_at(x,y,line);
-}
+    render_boot_screen(&framebuffer);
+    uart_puts("[msxbare][m0] render hdmi: ok\r\n");
 
-static void usb_host_debug_standalone(void) {
-    usb_host_status_t st;
-
-    framebuffer_clear(0x00000000u);
-    framebuffer_draw_text_at(8, 8, "MSXBare boot");
-    framebuffer_draw_text_at(8, 24, "USB Host Debug (standalone)");
-    framebuffer_draw_text_at(8, 56, "U0: entrou no standalone");
-    uart_puts("[usb][dbg] standalone enter\n");
-
-    framebuffer_draw_text_at(8, 72, "U1: chamando usb_host_init()...");
-    uart_puts("[usb][dbg] before usb_host_init\n");
-    usb_host_init();
-    framebuffer_draw_text_at(8, 88, "U2: usb_host_init() retornou");
-    uart_puts("[usb][dbg] after usb_host_init\n");
-
-    while (1) {
-        framebuffer_draw_text_at(8, 104, "U3: poll");
-        usb_host_poll();
-        framebuffer_draw_text_at(8, 104, "U4: get_status");
-        usb_host_get_status(&st);
-        framebuffer_draw_text_at(8, 104, "U5: draw");
-
-        framebuffer_fill_rect(0, 120, 1024, 168, 0x00000000u);
-
-        usbdbg_line_at(8, 120, "V=", st.vendor_id, " H2=", st.hw_cfg2);
-        usbdbg_status_line(8, 136, &st);
-        usbdbg_root_line(8, 152, &st);
-        usbdbg_hid_line(8, 168, &st);
-        usbdbg_raw1_line(8, 184, &st);
-        usbdbg_raw2_line(8, 200, &st);
-
-        framebuffer_draw_text_at(8, 104, "U6: sleep");
-        platform_delay_ms(250);
-    }
-}
+#ifdef MSXBARE_CIRCLE_AUDIO_RUNTIME
+    uart_puts("[msxbare][m0.2] circle hdmi audio runtime: deferred init\r\n");
 #endif
 
-void kernel_main(unsigned long dtb_ptr) {
-    const unsigned char *rom_data = 0;
-    unsigned int rom_size = 0;
-
-    console_init();
-    platform_init();
-
-#ifdef MSXBARE_ENABLE_MMU
-#ifdef MSXBARE_DEBUG_LOGS
-    console_puts("[dbg] MMU/cache: habilitando...\n");
-#endif
-    mmu_enable_identity_map();
-#ifdef MSXBARE_DEBUG_LOGS
-    console_puts("[dbg] MMU/cache: OK\n");
-#endif
-#endif
-
-    console_puts("MSXBare boot\n");
-    console_puts("M1.1 - Core MSX1\n");
-
-#ifdef MSXBARE_AUDIO_HDMI_DEBUG_STANDALONE
-    hdmi_audio_debug_standalone();
-#endif
-
-#ifdef MSXBARE_USB_HOST_DEBUG_STANDALONE
-    usb_host_debug_standalone();
-#endif
-
-    if (rom_loader_from_initramfs((unsigned long)dtb_ptr, &rom_data, &rom_size)) {
-        console_puts("Initramfs carregado via SD\n");
-        initramfs_mount(rom_data, rom_size);
+#ifdef MSXBARE_CIRCLE_INPUT_RUNTIME
+    if (!circle_input_runtime_init()) {
+        uart_puts("[msxbare][m0.1] init circle input runtime: fail\r\n");
     } else {
-        console_puts("Initramfs nao encontrado\n");
+        uart_puts("[msxbare][m0.1] init circle input runtime: ok\r\n");
     }
-
-#ifdef MSXBARE_AUDIO_HDMI_BOOT_DEBUG
-    console_puts("[hdmi-audio-test] antes de msx_core_init\n");
 #endif
 
-    msx_input_init();
-
-#ifdef MSXBARE_DEBUG_LOGS
-    console_puts("[dbg] Chamando msx_core_init...\n");
+    input_stub_state_t input;
+    input_stub_init(&input);
+#ifdef MSXBARE_CIRCLE_INPUT_RUNTIME
+    uart_puts("[msxbare][m0] init input backend: circle-usb-hid\r\n");
+#else
+    uart_puts("[msxbare][m0] init input stub: ok (usb/hid placeholder)\r\n");
 #endif
-    if (!msx_core_init(rom_data, rom_size)) {
-        console_puts("[M1.1] Falha na inicializacao do core. Verifique BIOS/ROM no initramfs.\n");
-        while (1) {
-            platform_delay_ms(1000);
+
+    uint32_t tick = 0;
+#ifdef MSXBARE_CIRCLE_INPUT_RUNTIME
+    circle_input_snapshot_t circle_snapshot;
+#endif
+#ifdef MSXBARE_CIRCLE_AUDIO_RUNTIME
+    circle_audio_snapshot_t circle_audio;
+    uint32_t prev_writable_hits = 0;
+    uint32_t prev_writable_misses = 0;
+    uint32_t audio_init_state = 0;
+#endif
+    for (;;) {
+#ifdef MSXBARE_CIRCLE_INPUT_RUNTIME
+        circle_input_runtime_poll(&circle_snapshot);
+#else
+        input_stub_poll(&input);
+#endif
+
+#ifdef MSXBARE_CIRCLE_AUDIO_RUNTIME
+        if (audio_init_state == 0u && tick >= 180u) {
+            uart_puts("[msxbare][m0.2] attempting deferred audio init\r\n");
+            if (!circle_audio_runtime_init()) {
+                audio_init_state = 2u;
+                uart_puts("[msxbare][m0.2] deferred audio init: fail\r\n");
+            } else {
+                audio_init_state = 1u;
+                uart_puts("[msxbare][m0.2] deferred audio init: ok\r\n");
+            }
         }
+
+        if (audio_init_state == 1u) {
+            circle_audio_runtime_poll(&circle_audio);
+        } else {
+            circle_audio.ready = audio_init_state == 0u ? 0x0000000Du : 0x000000EEu;
+            circle_audio.active = 0u;
+            circle_audio.queue_frames = 0u;
+            circle_audio.queue_avail = 0u;
+            circle_audio.writes = 0u;
+            circle_audio.drops = 0u;
+            circle_audio.last_level = 0u;
+            circle_audio.writable_hits = 0u;
+            circle_audio.writable_misses = 0u;
+        }
+#else
+        audio_stub_tick();
+#endif
+
+        if ((tick & 0x0Fu) == 0u) {
+            render_heartbeat(&framebuffer, tick);
+#ifdef MSXBARE_CIRCLE_INPUT_RUNTIME
+            if (circle_snapshot.keyboard_attached) {
+                framebuffer_draw_rect(&framebuffer, 40u, framebuffer.height - 56u, 120u, 12u, 0x0000FF00u);
+            } else {
+                framebuffer_draw_rect(&framebuffer, 40u, framebuffer.height - 56u, 120u, 12u, 0x00AA0000u);
+            }
+#endif
+
+#ifdef MSXBARE_CIRCLE_AUDIO_RUNTIME
+            if (audio_init_state == 0u) {
+                framebuffer_draw_rect(&framebuffer, 176u, framebuffer.height - 56u, 120u, 12u, 0x00006699u);
+            } else if (audio_init_state == 2u) {
+                framebuffer_draw_rect(&framebuffer, 176u, framebuffer.height - 56u, 120u, 12u, 0x00AA0000u);
+            } else if (circle_audio.active) {
+                framebuffer_draw_rect(&framebuffer, 176u, framebuffer.height - 56u, 120u, 12u, 0x0000AAFFu);
+            } else {
+                framebuffer_draw_rect(&framebuffer, 176u, framebuffer.height - 56u, 120u, 12u, 0x00004488u);
+            }
+
+            {
+                uint32_t hit_delta = circle_audio.writable_hits - prev_writable_hits;
+                uint32_t miss_delta = circle_audio.writable_misses - prev_writable_misses;
+                uint32_t hit_w = hit_delta > 120u ? 120u : hit_delta;
+                uint32_t miss_w = miss_delta > 120u ? 120u : miss_delta;
+
+                framebuffer_draw_rect(&framebuffer, 304u, framebuffer.height - 56u, 120u, 5u, 0x00000000u);
+                framebuffer_draw_rect(&framebuffer, 304u, framebuffer.height - 50u, 120u, 5u, 0x00000000u);
+
+                if (hit_w > 0u) {
+                    framebuffer_draw_rect(&framebuffer, 304u, framebuffer.height - 56u, hit_w, 5u, 0x0000FF00u);
+                }
+                if (miss_w > 0u) {
+                    framebuffer_draw_rect(&framebuffer, 304u, framebuffer.height - 50u, miss_w, 5u, 0x00FF0000u);
+                }
+
+                prev_writable_hits = circle_audio.writable_hits;
+                prev_writable_misses = circle_audio.writable_misses;
+            }
+#endif
+        }
+
+        if ((tick % 120u) == 0u) {
+#ifdef MSXBARE_CIRCLE_INPUT_RUNTIME
+            uart_puts("[msxbare][m0.1] circle ready=0x");
+            uart_put_hex32(circle_snapshot.ready);
+            uart_puts(" kbd=0x");
+            uart_put_hex32(circle_snapshot.keyboard_attached);
+            uart_puts(" ev=0x");
+            uart_put_hex32(circle_snapshot.key_events);
+            uart_puts(" mod=0x");
+            uart_put_hex32(circle_snapshot.last_modifiers);
+            uart_puts("\r\n");
+#else
+            uart_puts("[msxbare][m0] loop heartbeat polls=0x");
+            uart_put_hex32(input.polls);
+            uart_puts("\r\n");
+#endif
+
+        #ifdef MSXBARE_CIRCLE_AUDIO_RUNTIME
+                uart_puts("[msxbare][m0.2] audio ready=0x");
+                uart_put_hex32(circle_audio.ready);
+                uart_puts(" active=0x");
+                uart_put_hex32(circle_audio.active);
+                uart_puts(" q=0x");
+                uart_put_hex32(circle_audio.queue_frames);
+                uart_puts(" avail=0x");
+                uart_put_hex32(circle_audio.queue_avail);
+                uart_puts(" wr=0x");
+                uart_put_hex32(circle_audio.writes);
+                uart_puts(" drop=0x");
+                uart_put_hex32(circle_audio.drops);
+                    uart_puts(" wh=0x");
+                    uart_put_hex32(circle_audio.writable_hits);
+                    uart_puts(" wm=0x");
+                    uart_put_hex32(circle_audio.writable_misses);
+                uart_puts("\r\n");
+        #endif
+        }
+
+        ++tick;
+    #ifdef MSXBARE_CIRCLE_AUDIO_RUNTIME
+        platform_delay_ms(1);
+    #else
+        platform_delay_ms(16);
+    #endif
     }
-
-#ifdef MSXBARE_AUDIO_HDMI_BOOT_DEBUG
-    console_puts("[hdmi-audio-test] msx_core_init OK\n");
-#endif
-
-#ifdef MSXBARE_DEBUG_LOGS
-    platform_debug_hold_if_enabled();
-#endif
-    msx_core_run();
 }

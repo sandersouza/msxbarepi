@@ -17,6 +17,34 @@ Objetivo: painel de debug legível no framebuffer HDMI com MMU/cache ativo, sem 
 - Evitar flush global do framebuffer no hot path.
 - Evitar getters de debug que copiam structs grandes / tocam backends complexos; preferir getters escalares.
 
+## Diretriz visual para overlay e menu do emulador
+- Evitar fundo preto em linha inteira quando o objetivo for apenas destacar um rotulo.
+- Preferir fundo preto localizado (caixa curta) somente no texto de status/badge (ex.: `PAUSE ||`).
+- Em telas de menu, aplicar o mesmo principio: destacar apenas item selecionado/titulo com caixa opaca local, preservando o restante da imagem do emulador.
+- Reservar faixa inteira opaca apenas para paineis de diagnostico quando a legibilidade exigir.
+
+## Esqueleto de menu (estado atual no combo)
+- Durante `PAUSE`, o combo desenha uma caixa flutuante preta centralizada sobre o box do emulador.
+- Titulo do menu: `PAUSE II`.
+- Itens iniciais renderizados (texto 2x):
+	- `Cartridge A`
+	- `Cartridge B`
+	- `Disk Drive A`
+	- `Disk Drive B`
+	- `Settings`
+- Selecao visual atual:
+	- faixa por inversao de cores (fundo claro + texto escuro)
+	- largura da faixa = largura da caixa menos 1 caractere de margem em cada lado
+	- itens centralizados horizontalmente dentro da caixa
+- Navegacao atual:
+	- cursor move com `Up/Down` (edge-trigger, sem repeticao por hold)
+	- selecao limitada aos 4 itens selecionaveis iniciais
+- Anti-flicker aplicado:
+	- menu so e redesenhado quando houver mudanca de estado (mostrar/ocultar, selecao ou reposicionamento)
+	- evita repaint continuo do fundo da caixa em todos os ticks do loop
+- O desenho ocorre sem faixa opaca global; ao sair do `PAUSE`, o texto do menu deixa de ser redesenhado e o proximo frame do emulador recompõe a area.
+- Implementacao de referencia: `circle_combo/kernel.cpp` em `DrawMenuSkeleton()`.
+
 ## Formato compacto sugerido (cabendo em poucas linhas)
 - `TXTDBG OS:xx`
 - `CI R:? F:? K:? S:?? G:? B:??? P:???? LP:??/???`

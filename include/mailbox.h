@@ -1,8 +1,8 @@
-#ifndef MAILBOX_H
-#define MAILBOX_H
+#ifndef MSXBARE_MAILBOX_H
+#define MSXBARE_MAILBOX_H
 
 #include <stdint.h>
 
-int mailbox_call(uint8_t channel, volatile uint32_t *mailbox_buffer);
+int mailbox_call(uint8_t channel, volatile uint32_t *buffer);
 
 #endif
