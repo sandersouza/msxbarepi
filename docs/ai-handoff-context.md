@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 27/02/2026 16:46
+Última atualização: 27/02/2026 16:50
 
 ## Objetivo deste arquivo
 
@@ -457,3 +457,5 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-02-27 16:43:18 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
 - 2026-02-27 16:46:39 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
 - 2026-02-27 16:46:46 | stage=combo-build-output-cleanup | status=build-ok | artifact=build/circle_combo/kernel8.img | note=Makefile raiz ajustado para copiar kernel do combo para build/circle_combo e limpar circle_combo ao final; artefatos de build removidos do indice git e ignorados por circle_combo/.gitignore
+- 2026-02-27 16:50:21 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 16:50:21 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
