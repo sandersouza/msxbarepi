@@ -38,8 +38,8 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 
 ## Fluxo de trabalho
 
-- Diretorio de trabalho deste projeto (workspace atual): `/Users/sandersouza/Developer/msxbarepi`; usar este caminho como referencia padrao nas operacoes locais e comandos
-- Antes de rodar builds/iteracoes de debug, confirmar `PWD` em `/Users/sandersouza/Developer/msxbarepi` para evitar executar comandos no repositorio errado
+- Diretorio de trabalho deste projeto (workspace atual): `/Users/sandersouza/Developer/msxbarepi-circle`; usar este caminho como referencia padrao nas operacoes locais e comandos
+- Antes de rodar builds/iteracoes de debug, confirmar `PWD` em `/Users/sandersouza/Developer/msxbarepi-circle` para evitar executar comandos no repositorio errado
 - Em cada iteracao, o agente deve executar localmente os builds/makes necessarios (em vez de delegar ao usuario) para validar compilacao, capturar erros e analisar warnings antes de orientar os proximos passos
 - Cada mudança deve atualizar documentação mínima em `docs/`
 - A evolução do projeto deve refletir em documentação continuamente, incluindo atualização deste `AGENTS.md` quando necessário
@@ -58,8 +58,9 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Loop principal de emulação (CPU Z80 + memória + IO)
 - Carregamento de ROM e mapeamentos principais de MSX
 
-## Definition of Done (fase atual)
+## Definition of Done (fase atual: M2 bootstrap fMSX)
 
-- Gera `build/kernel8.img` sem erros
-- Boot no Raspberry Pi 3B sem OS
-- Mensagem de Hello World visível no serial UART
+- Gera `artifacts/kernel8.img` (perfil estavel) sem erros
+- Gera `artifacts/kernel8-m2-fmsx-bootstrap.img` sem erros
+- Boot no Raspberry Pi 3B sem OS com loop do fMSX ativo
+- Menu de pausa funcional (`F12`) com submenu `Settings` operacional

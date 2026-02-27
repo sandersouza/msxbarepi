@@ -1,55 +1,49 @@
-# M1 — HDMI Debug Overlay (combo standalone)
+# M1 — HDMI Debug Overlay (histórico e base de referência)
 
-## Objetivo
-Implementar overlay HDMI compacto de runtime para debug sem depender de UART, preservando o formato validado em hardware.
+## Objetivo original do M1
 
-## Implementação
-- Alvo: `circle_combo/kernel.cpp`
-- Formato de 4 linhas no canto superior esquerdo:
-  - `TXTDBG OS:xx`
-  - `CI R:? F:? K:? S:? G:? B:? P:?????`
-  - `EV Q:###### E:###### K0:### M:###`
-  - `JY BJ:#### MJ:####`
-- Atualização com throttle no loop principal (a cada ~50 ms).
-- Console HDMI mantido legível: callback de teclado não imprime mais texto bruto no framebuffer.
-- Ordem de render para modo gráfico/framebuffer: desenhar overlay sempre **após** o blit do frame principal (emulador), preservando legibilidade.
+Estabelecer um overlay HDMI legível em runtime para debug sem dependência exclusiva de UART.
 
-## Ativação/Desativação simples
-- Runtime: tecla `F1` alterna overlay `ON/OFF`.
-- Build-time default:
-  - `COMBO_DEBUG_OVERLAY_DEFAULT=1 make m0-combo` (inicia ligado)
-  - `COMBO_DEBUG_OVERLAY_DEFAULT=0 make m0-combo` (inicia desligado)
+## Resultado consolidado
 
-## Indicadores atuais
-- `OS`: fase simples do overlay (baseado no tick do loop)
-- `CI`:
-  - `R`: frames ocupados na fila de áudio
-  - `F`: frames livres da fila de áudio
-  - `K`: teclado USB anexado
-  - `S`: dispositivo de áudio ativo
-  - `G`: eventos de hotplug processados
-  - `B`: ocorrências de escrita parcial/queda na fila de áudio
-  - `P`: tick do loop principal
-- `EV`:
-  - `Q`: operações de escrita de áudio
-  - `E`: contador de erros de escrita
-  - `K0`: contador de eventos de tecla
-  - `M`: último código ASCII observado
-- `JY`:
-  - `BJ`: bitmap de botões/direções pressionados (bridge local via HID raw)
-  - `MJ`: bitmap mapeado em formato MSX ativo-em-zero (`~BJ & 0x3F`)
-  - Mapeamento atual: setas (`↑↓←→`) + `Space/Z` (botão 1) + `X` (botão 2)
+- Overlay no `circle_combo/kernel.cpp` com métricas de runtime.
+- Redesenho após blit do emulador para manter legibilidade.
+- Uso de caixa/área local (sem faixa global opaca contínua).
+- Limpeza e redraw controlados para reduzir flicker.
 
-## Referências
-- Template de layout/regras: `docs/debug-overlay-hdmi-template.md`
-- API de console/framebuffer Circle: `third_party/circle/include/circle/screen.h` e `third_party/circle/doc/screen.txt`
-- Base conceitual de áudio (fila/refill): `third_party/circle/sample/34-sounddevices/kernel.cpp`
+## Mapeamento de teclas (estado atual)
 
-## Teste manual
-1. Build: `make m0-combo`
-2. Preparar SD:
-   - `KERNEL_IMG=artifacts/kernel8-m0-combo.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh`
-3. Boot no RPi3B:
-  - Esperado: overlay de 4 linhas no topo esquerdo, rotor ativo, áudio contínuo HDMI e `K` mudando para `1` ao conectar teclado.
-4. Pressionar `F1`:
-  - Esperado: alternância imediata do painel (`ON/OFF`) sem interromper áudio/input.
+- `F11`: toggle do overlay de debug (quando compilado com `COMBO_ENABLE_DEBUG_OVERLAY=1`)
+- `F12`: pausa/retoma emulação
+- `Pause`: mapeado para `STOP` do MSX
+
+## Layout de referência
+
+O template de layout e regras visuais fica em:
+
+- `docs/debug-overlay-hdmi-template.md`
+
+## Teste manual rápido
+
+Build:
+
+```bash
+make m2-fmsx-bootstrap
+```
+
+Preparar SD:
+
+```bash
+KERNEL_IMG=artifacts/kernel8-m2-fmsx-bootstrap.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
+```
+
+Critérios esperados:
+
+- Overlay legível sobre o frame do emulador.
+- Toggle em runtime sem travar vídeo/input/áudio.
+- Em pausa, menu e overlay não corrompem o framebuffer.
+
+## Referências upstream
+
+- Circle screen/framebuffer: `third_party/circle/include/circle/screen.h`
+- Base conceitual de áudio/fila: `third_party/circle/sample/34-sounddevices/kernel.cpp`

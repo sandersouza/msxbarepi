@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 27/02/2026 03:16
+Última atualização: 27/02/2026 13:11
 
 ## Objetivo deste arquivo
 
@@ -130,9 +130,9 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 
 ## Próximo passo recomendado (curto prazo)
 
-1. Consolidar M0.3 combinando input+áudio no mesmo build com flags independentes
-2. Estabilizar sequência de init para reduzir risco das variantes full
-3. Criar overlay de debug M1 seguindo `docs/debug-overlay-hdmi-template.md`
+1. Validar em hardware os novos toggles do submenu `Settings` (`Overlay DBG` e `Audio Mute`) com checklist de regressão
+2. Consolidar preset estável de uso diário no `README.md` (perfil e comandos recomendados por cenário)
+3. Evoluir o submenu `Settings` com novos controles de vídeo mantendo o layout validado em `docs/debug-overlay-hdmi-template.md`
 
 ## Fontes de referência usadas
 
@@ -380,3 +380,5 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-02-27 03:16:03 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
 - 2026-02-27 03:16:11 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
 - 2026-02-27 03:16:20 | stage=stable-default-profile | status=build-ok | artifact=artifacts/kernel8.img | note=make default agora gera artifacts/kernel8.img com Debug OFF, Fast Boot, Mapper OFF(64KB), MegaRAM OFF; WIDTH 80 verificado como nao suportado no BASIC em modo MSX1
+- 2026-02-27 13:11:32 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 13:11:35 | stage=docs-full-sync | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=revisao geral das documentacoes: README/AGENTS/docs/third_party/roms/sdcard alinhados ao estado M2 atual

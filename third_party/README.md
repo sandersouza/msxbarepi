@@ -1,53 +1,58 @@
 # third_party
 
-## Motivo desta pasta existir
+## Propósito
 
-Esta pasta existe para reunir **projetos de terceiros usados como**:
+A pasta `third_party/` reúne upstreams usados como:
 
-- referência técnica (hardware, drivers, áudio, vídeo, timing)
-- base de integração (`fMSX`)
-- comparação de implementação (evitar reinventar a roda)
+- referência técnica (drivers, áudio, vídeo, timers, USB)
+- base de integração do core fMSX
+- consulta para decisões de implementação sem reinventar componentes já validados
 
-No repositório principal, a pasta `third_party/` pode ser publicada **sem os fontes completos** desses projetos para evitar duplicação de código de terceiros e reduzir tamanho/ruído do repositório.
+Diretriz obrigatória: **não alterar diretamente** projetos dentro de `third_party/`.
 
-## Conteúdo esperado
+## Inventário atual
 
-Atualmente, as referências usadas pelo projeto são:
-
-- `third_party/fmsx`
-  - core de emulação MSX (base integrada no `msxbare`)
 - `third_party/circle`
-  - ambiente baremetal para Raspberry Pi usado como referência para drivers/periféricos (ex.: áudio PWM/HDMI, clocks, DMA)
+  - upstream: `https://github.com/rsta2/circle.git`
+  - commit fixado (snapshot local): `5d819ab24f9a6c53ebab3525558051826b39d757`
+  - licença: `LICENSE` (MIT)
+- `third_party/fmsx`
+  - upstream: `https://github.com/libretro/fmsx-libretro.git`
+  - commit fixado (snapshot local): `fbe4dfc4c3e3f7eb27089def3d663a905b181845`
+  - licença: `LICENSE` (não comercial conforme termos do projeto fMSX)
 
-## Como popular esta pasta (clone local)
+## Como repovoar localmente
 
-Execute a partir da raiz do projeto:
+A partir da raiz do projeto:
 
 ```bash
 mkdir -p third_party
 
-git clone --depth 1 https://github.com/fmsx/fMSX.git third_party/fmsx
-git clone --depth 1 https://github.com/rsta2/circle.git third_party/circle
+git clone https://github.com/rsta2/circle.git third_party/circle
+git clone https://github.com/libretro/fmsx-libretro.git third_party/fmsx
 ```
 
-## Como atualizar as referências locais
+Opcional: fixar nos commits atualmente documentados:
 
 ```bash
-git -C third_party/fmsx pull --ff-only
-git -C third_party/circle pull --ff-only
+git -C third_party/circle checkout 5d819ab24f9a6c53ebab3525558051826b39d757
+git -C third_party/fmsx checkout fbe4dfc4c3e3f7eb27089def3d663a905b181845
 ```
 
-## Como recriar do zero
+## Guardrail de integridade
+
+Antes de builds dependentes de Circle/fMSX, execute:
 
 ```bash
-rm -rf third_party/fmsx third_party/circle
-
-git clone --depth 1 https://github.com/fmsx/fMSX.git third_party/fmsx
-git clone --depth 1 https://github.com/rsta2/circle.git third_party/circle
+make guard-third-party
 ```
 
-## Observações
+Esse guardrail falha quando há alterações locais em `third_party/circle` ou `third_party/fmsx` (exceto com `ALLOW_DIRTY_THIRD_PARTY=1`).
 
-- Antes de incorporar código/ideias de terceiros, validar licença e registrar obrigações no projeto.
-- Para uso como referência, documentar no código/docs qual arquivo/classe serviu de base conceitual.
-- Se novas referências forem adicionadas em `third_party/`, este arquivo deve ser atualizado.
+## Política de contribuição
+
+Se for necessário adaptar código upstream:
+
+1. criar camada local fora de `third_party/` (ex.: `circle_combo/`)
+2. documentar a referência conceitual usada
+3. preservar licença e atribuição no fluxo do projeto

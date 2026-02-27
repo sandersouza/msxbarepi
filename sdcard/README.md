@@ -1,25 +1,25 @@
 # Arquivos para o cartão SD
 
-Antes de copiar para o SD, gere o `initramfs` com as ROMs/BIOS (arquivo `msx.cpio`):
+O fluxo oficial para preparar SD é:
 
-```sh
-scripts/make-initramfs.sh roms/msx1 sdcard/msx.cpio
+```bash
+./scripts/prepare-sd.sh
 ```
 
-Exemplo alternativo (para empacotar apenas ROMs da raiz de `roms/`):
+## Geração manual de initramfs (opcional)
 
-```sh
-mkdir -p artifacts/initramfs-roms
-cp roms/*.ROM artifacts/initramfs-roms/
-scripts/make-initramfs.sh artifacts/initramfs-roms sdcard/msx.cpio
+Se quiser gerar `msx.cpio` manualmente antes do preparo:
+
+```bash
+./scripts/make-initramfs.sh roms/msx1 sdcard/msx.cpio
 ```
 
-Copie para a partição FAT32 de boot:
+## Conteúdo esperado na partição FAT32
 
-- `kernel8.img` (gerado em `build/kernel8.img`)
-- `config.txt` (já disponível nesta pasta)
-- `msx.cpio` (gerado em `sdcard/msx.cpio`)
+- `kernel8.img`
+- `config.txt`
+- `cmdline.txt` (opcional, mas usado no fluxo atual)
+- `msx.cpio`
+- firmware do Raspberry Pi (`bootcode.bin`, `start.elf`, `fixup.dat`, `*.dtb`)
 
-Opcional:
-
-- `cmdline.txt` (não necessário para este estágio baremetal)
+O `scripts/prepare-sd.sh` copia e valida esses itens automaticamente conforme disponibilidade.
