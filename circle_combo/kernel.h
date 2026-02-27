@@ -46,6 +46,7 @@ private:
     void HandleMenuAction(TComboMenuAction action);
     void ResetEmulationRuntimeState(void);
     void UpdateJoystickFromRaw(unsigned char modifiers, const unsigned char raw_keys[6]);
+    void SetDebugOverlayEnabled(boolean enabled);
 
     static void KeyPressedHandler(const char *text);
     static void KeyStatusRawHandler(unsigned char modifiers, const unsigned char raw_keys[6], void *context);
@@ -126,6 +127,7 @@ private:
     CComboPauseMenu m_PauseMenu;
     boolean m_OverscanEnabled;
     boolean m_ScanlinesEnabled;
+    boolean m_AudioMuted;
     boolean m_FmsxFallbackPattern;
     boolean m_TestToneEnabled;
     boolean m_MmuEnabled;

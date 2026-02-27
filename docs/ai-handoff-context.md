@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 27/02/2026 04:32
+Última atualização: 27/02/2026 13:00
 
 ## Objetivo deste arquivo
 
@@ -394,3 +394,6 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-02-27 04:22:41 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
 - 2026-02-27 04:28:26 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
 - 2026-02-27 04:32:04 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 12:57:56 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 13:00:47 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 13:00:52 | stage=m2-settings-overlay-audio-mute | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=menu settings: opcao 3/4 substituidas por Overlay DBG ON/OFF e Audio Mute ON/OFF com labels dinamicos e acao real em runtime

@@ -196,7 +196,8 @@ Atalhos de teclado no runtime:
 Submenu `Settings` (mock inicial):
 - `Overscan ON/OFF`: alterna o tamanho da area do emulador sem cortar imagem (ON = area maxima segura, OFF = margem de seguranca)
 - `Scanlines ON/OFF`: aplica/remove scanlines no blit de video
-- `Opcao 3`, `Opcao 4`: placeholders (mock)
+- `Overlay DBG ON/OFF`: habilita/desabilita o overlay visual de debug em runtime (quando o build suporta overlay)
+- `Audio Mute ON/OFF`: silencia/reativa a saida de audio HDMI em runtime
 
 Exemplo (fallback para outra BIOS):
 

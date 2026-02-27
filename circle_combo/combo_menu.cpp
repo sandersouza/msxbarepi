@@ -26,10 +26,16 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_InSettings(FALSE),
     m_OverscanEnabled(FALSE),
     m_ScanlinesEnabled(FALSE),
+    m_OverlayEnabled(FALSE),
+    m_OverlayAvailable(FALSE),
+    m_AudioMuted(FALSE),
     m_LastBackPressed(FALSE),
     m_LastDrawnInSettings(FALSE),
     m_LastDrawnOverscan(FALSE),
     m_LastDrawnScanlines(FALSE),
+    m_LastDrawnOverlay(FALSE),
+    m_LastDrawnOverlayAvailable(FALSE),
+    m_LastDrawnAudioMuted(FALSE),
     m_ForceRedraw(TRUE),
     m_RequestBackgroundRestore(FALSE),
     m_LastBoxX(0),
@@ -55,6 +61,9 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnInSettings = FALSE;
     m_LastDrawnOverscan = m_OverscanEnabled;
     m_LastDrawnScanlines = m_ScanlinesEnabled;
+    m_LastDrawnOverlay = m_OverlayEnabled;
+    m_LastDrawnOverlayAvailable = m_OverlayAvailable;
+    m_LastDrawnAudioMuted = m_AudioMuted;
     m_ForceRedraw = TRUE;
     m_RequestBackgroundRestore = FALSE;
     m_LastBoxValid = FALSE;
@@ -81,6 +90,25 @@ void CComboPauseMenu::SetScanlinesEnabled(boolean enabled)
     }
 }
 
+void CComboPauseMenu::SetOverlayEnabled(boolean enabled, boolean available)
+{
+    if (m_OverlayEnabled != enabled || m_OverlayAvailable != available)
+    {
+        m_OverlayEnabled = enabled;
+        m_OverlayAvailable = available;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+void CComboPauseMenu::SetAudioMuted(boolean enabled)
+{
+    if (m_AudioMuted != enabled)
+    {
+        m_AudioMuted = enabled;
+        m_ForceRedraw = TRUE;
+    }
+}
+
 void CComboPauseMenu::RequestRedraw(void)
 {
     m_ForceRedraw = TRUE;
@@ -97,7 +125,13 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
 {
     if (m_InSettings)
     {
-        return combo_menu_settings_items_get(m_OverscanEnabled, m_ScanlinesEnabled, count);
+        return combo_menu_settings_items_get(
+            m_OverscanEnabled,
+            m_ScanlinesEnabled,
+            m_OverlayEnabled,
+            m_OverlayAvailable,
+            m_AudioMuted,
+            count);
     }
 
     return combo_menu_root_items_get(count);
@@ -318,7 +352,10 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnSelected == m_Selected
      && m_LastDrawnInSettings == m_InSettings
      && m_LastDrawnOverscan == m_OverscanEnabled
-     && m_LastDrawnScanlines == m_ScanlinesEnabled)
+     && m_LastDrawnScanlines == m_ScanlinesEnabled
+     && m_LastDrawnOverlay == m_OverlayEnabled
+     && m_LastDrawnOverlayAvailable == m_OverlayAvailable
+     && m_LastDrawnAudioMuted == m_AudioMuted)
     {
         return;
     }
@@ -354,6 +391,9 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnInSettings = m_InSettings;
     m_LastDrawnOverscan = m_OverscanEnabled;
     m_LastDrawnScanlines = m_ScanlinesEnabled;
+    m_LastDrawnOverlay = m_OverlayEnabled;
+    m_LastDrawnOverlayAvailable = m_OverlayAvailable;
+    m_LastDrawnAudioMuted = m_AudioMuted;
     m_LastBoxX = box_x;
     m_LastBoxY = box_y;
     m_LastBoxW = box_w_px;

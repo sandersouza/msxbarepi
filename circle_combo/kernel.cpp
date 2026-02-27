@@ -167,6 +167,7 @@ CComboKernel::CComboKernel(void)
 	m_BlitMapValid(FALSE),
 	m_OverscanEnabled(FALSE),
 	m_ScanlinesEnabled(FALSE),
+	m_AudioMuted(FALSE),
 	m_FmsxFallbackPattern(FALSE),
 	m_TestToneEnabled(COMBO_TEST_TONE_DEFAULT ? TRUE : FALSE),
 	m_MmuEnabled(FALSE),
@@ -306,6 +307,8 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_Logger.Write(FromKernel, LogNotice, "Overlay toggle: F11 | Pause: F12");
 	m_PauseMenu.SetOverscanEnabled(m_OverscanEnabled);
 	m_PauseMenu.SetScanlinesEnabled(m_ScanlinesEnabled);
+	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, COMBO_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
+	m_PauseMenu.SetAudioMuted(m_AudioMuted);
 #if COMBO_ENABLE_FMSX
 	fmsx_runtime_set_overscan(m_OverscanEnabled);
 #endif
@@ -610,6 +613,10 @@ void CComboKernel::RefillAudioQueue(void)
 				if (sample32 > clip_max) sample32 = clip_max;
 				if (sample32 < -clip_max) sample32 = -clip_max;
 				sample32 = (sample32 * (int) m_AudioOutputGainPct) / 100;
+				if (m_AudioMuted)
+				{
+					sample32 = 0;
+				}
 				const s16 sample = (s16) sample32;
 				m_LastAudioSample = sample;
 				const unsigned abs_sample = sample >= 0 ? (unsigned) sample : (unsigned) (-sample);
@@ -950,17 +957,40 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		m_Logger.Write(FromKernel, LogNotice, m_ScanlinesEnabled ? "Settings: Scanlines ON" : "Settings: Scanlines OFF");
 		break;
 
-	case ComboMenuActionSettingsOption3:
-		m_Logger.Write(FromKernel, LogNotice, "Settings: Opcao 3 (mock)");
+	case ComboMenuActionToggleOverlay:
+	#if COMBO_ENABLE_DEBUG_OVERLAY
+		SetDebugOverlayEnabled(m_DebugOverlayEnabled ? FALSE : TRUE);
+		m_Logger.Write(FromKernel, LogNotice, m_DebugOverlayEnabled ? "Settings: Overlay DBG ON" : "Settings: Overlay DBG OFF");
+	#else
+		m_Logger.Write(FromKernel, LogNotice, "Settings: Overlay DBG indisponivel neste build");
+	#endif
 		break;
 
-	case ComboMenuActionSettingsOption4:
-		m_Logger.Write(FromKernel, LogNotice, "Settings: Opcao 4 (mock)");
+	case ComboMenuActionToggleAudioMute:
+		m_AudioMuted = m_AudioMuted ? FALSE : TRUE;
+		m_PauseMenu.SetAudioMuted(m_AudioMuted);
+		m_PauseMenu.RequestRedraw();
+		m_Logger.Write(FromKernel, LogNotice, m_AudioMuted ? "Settings: Audio mute ON" : "Settings: Audio mute OFF");
 		break;
 
 	default:
 		break;
 	}
+}
+
+void CComboKernel::SetDebugOverlayEnabled(boolean enabled)
+{
+#if COMBO_ENABLE_DEBUG_OVERLAY
+	m_DebugOverlayEnabled = enabled ? TRUE : FALSE;
+	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, TRUE);
+	m_PauseMenu.RequestRedraw();
+	if (!m_DebugOverlayEnabled)
+	{
+		ClearDebugOverlay();
+	}
+#else
+	(void) enabled;
+#endif
 }
 
 void CComboKernel::ClearDebugOverlay(void)
@@ -1075,11 +1105,7 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	if (f1_pressed && !m_LastF12Pressed)
 	{
 		#if COMBO_ENABLE_DEBUG_OVERLAY
-		m_DebugOverlayEnabled = m_DebugOverlayEnabled ? FALSE : TRUE;
-		if (!m_DebugOverlayEnabled)
-		{
-			ClearDebugOverlay();
-		}
+		SetDebugOverlayEnabled(m_DebugOverlayEnabled ? FALSE : TRUE);
 		m_Logger.Write(FromKernel, LogNotice, m_DebugOverlayEnabled ? "Overlay ON" : "Overlay OFF");
 		#endif
 	}

@@ -12,6 +12,8 @@ public:
     void Reset(void);
     void SetOverscanEnabled(boolean enabled);
     void SetScanlinesEnabled(boolean enabled);
+    void SetOverlayEnabled(boolean enabled, boolean available);
+    void SetAudioMuted(boolean enabled);
     void RequestRedraw(void);
     boolean ConsumeBackgroundRestoreRequest(void);
     TComboMenuAction ProcessInput(boolean paused, boolean up_pressed, boolean down_pressed, boolean enter_pressed, boolean back_pressed);
@@ -33,10 +35,16 @@ private:
     boolean m_InSettings;
     boolean m_OverscanEnabled;
     boolean m_ScanlinesEnabled;
+    boolean m_OverlayEnabled;
+    boolean m_OverlayAvailable;
+    boolean m_AudioMuted;
     boolean m_LastBackPressed;
     boolean m_LastDrawnInSettings;
     boolean m_LastDrawnOverscan;
     boolean m_LastDrawnScanlines;
+    boolean m_LastDrawnOverlay;
+    boolean m_LastDrawnOverlayAvailable;
+    boolean m_LastDrawnAudioMuted;
     boolean m_ForceRedraw;
     boolean m_RequestBackgroundRestore;
     unsigned m_LastBoxX;
