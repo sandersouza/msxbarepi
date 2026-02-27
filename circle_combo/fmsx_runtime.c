@@ -56,6 +56,7 @@ extern int RAMPages;
 extern int VRAMPages;
 extern unsigned fmsx_video_get_latest(const u16 **pixels, unsigned *width, unsigned *height);
 extern const char *ROMName[];
+extern void fmsx_video_set_overscan(boolean enabled);
 
 static TFmsxRuntimeStatus g_fmsx_status = { FALSE, FALSE, 0u, 0, 0 };
 static const unsigned kFmsxAudioRate = 48000u;
@@ -251,6 +252,11 @@ void fmsx_runtime_shutdown(void)
     }
 
     g_fmsx_status.running = FALSE;
+}
+
+void fmsx_runtime_set_overscan(boolean enabled)
+{
+    fmsx_video_set_overscan(enabled);
 }
 
 TFmsxRuntimeStatus fmsx_runtime_get_status(void)

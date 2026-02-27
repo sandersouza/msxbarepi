@@ -93,6 +93,7 @@ static const u8 kHidKeyLeft = 0x50;
 static const u8 kHidKeyDown = 0x51;
 static const u8 kHidKeyUp = 0x52;
 static const u8 kHidKeyEnter = 0x28;
+static const u8 kHidKeyEsc = 0x29;
 static const u8 kHidKeyF11 = 0x44;
 static const u8 kHidKeyF12 = 0x45;
 
@@ -139,6 +140,7 @@ CComboKernel::CComboKernel(void)
 	m_EmulationPaused(FALSE),
 	m_LastF12Pressed(FALSE),
 	m_LastPausePressed(FALSE),
+	m_PauseNeedsBackgroundRedraw(FALSE),
 	m_FmsxEnabled(COMBO_ENABLE_FMSX ? TRUE : FALSE),
 	m_FmsxReady(FALSE),
 	m_FmsxFrames(0),
@@ -163,6 +165,8 @@ CComboKernel::CComboKernel(void)
 	m_BlitMapDstW(0),
 	m_BlitMapDstH(0),
 	m_BlitMapValid(FALSE),
+	m_OverscanEnabled(FALSE),
+	m_ScanlinesEnabled(FALSE),
 	m_FmsxFallbackPattern(FALSE),
 	m_TestToneEnabled(COMBO_TEST_TONE_DEFAULT ? TRUE : FALSE),
 	m_MmuEnabled(FALSE),
@@ -300,6 +304,11 @@ TComboShutdownMode CComboKernel::Run(void)
 		WriteScreenText("\x1b[?25l");
 	}
 	m_Logger.Write(FromKernel, LogNotice, "Overlay toggle: F11 | Pause: F12");
+	m_PauseMenu.SetOverscanEnabled(m_OverscanEnabled);
+	m_PauseMenu.SetScanlinesEnabled(m_ScanlinesEnabled);
+#if COMBO_ENABLE_FMSX
+	fmsx_runtime_set_overscan(m_OverscanEnabled);
+#endif
 
 	u64 next_frame_us = CTimer::GetClockTicks64();
 	for (unsigned tick = 0; ; ++tick)
@@ -398,13 +407,22 @@ TComboShutdownMode CComboKernel::Run(void)
 
 			if (stepped_fmsx)
 			{
-				BlitFmsxFrame();
+				BlitFmsxFrame(FALSE);
 			}
 
 			if (now_us > next_frame_us + (kFmsxFrameIntervalUs * 12ull))
 			{
 				next_frame_us = now_us - (kFmsxFrameIntervalUs * 2ull);
 			}
+		}
+		#endif
+
+		#if COMBO_ENABLE_FMSX
+		if (m_FmsxReady && m_EmulationPaused && m_PauseNeedsBackgroundRedraw)
+		{
+			BlitFmsxFrame(TRUE);
+			m_PauseNeedsBackgroundRedraw = FALSE;
+			m_PauseMenu.RequestRedraw();
 		}
 		#endif
 
@@ -726,7 +744,7 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 	WriteScreenText("\x1b[0m");
 }
 
-void CComboKernel::BlitFmsxFrame(void)
+void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 {
 #if COMBO_ENABLE_FMSX
 	const u16 *pixels = 0;
@@ -734,7 +752,7 @@ void CComboKernel::BlitFmsxFrame(void)
 	unsigned height = 0;
 	const unsigned sequence = fmsx_runtime_get_video_frame(&pixels, &width, &height);
 
-	if (sequence == m_FmsxVideoSeq || pixels == 0 || width == 0 || height == 0)
+	if ((!force_redraw && sequence == m_FmsxVideoSeq) || pixels == 0 || width == 0 || height == 0)
 	{
 		return;
 	}
@@ -743,14 +761,17 @@ void CComboKernel::BlitFmsxFrame(void)
 
 	const unsigned screen_width = m_Screen.GetWidth();
 	const unsigned screen_height = m_Screen.GetHeight();
-	const unsigned view_y0 = 0u;
-	const unsigned view_h = screen_height;
-	unsigned dst_width = screen_width;
+	const unsigned overscan_scale_pct = m_OverscanEnabled ? 100u : 92u;
+	const unsigned view_w = (screen_width * overscan_scale_pct) / 100u;
+	const unsigned view_h = (screen_height * overscan_scale_pct) / 100u;
+	const unsigned view_x0 = (screen_width > view_w) ? ((screen_width - view_w) / 2u) : 0u;
+	const unsigned view_y0 = (screen_height > view_h) ? ((screen_height - view_h) / 2u) : 0u;
+	unsigned dst_width = view_w;
 	unsigned dst_height = view_h;
-	if ((u64) screen_width * (u64) height <= (u64) view_h * (u64) width)
+	if ((u64) view_w * (u64) height <= (u64) view_h * (u64) width)
 	{
-		dst_width = screen_width;
-		dst_height = (unsigned) (((u64) screen_width * (u64) height) / (u64) width);
+		dst_width = view_w;
+		dst_height = (unsigned) (((u64) view_w * (u64) height) / (u64) width);
 	}
 	else
 	{
@@ -759,7 +780,7 @@ void CComboKernel::BlitFmsxFrame(void)
 	}
 	if (dst_width == 0u) dst_width = 1u;
 	if (dst_height == 0u) dst_height = 1u;
-	const unsigned offset_x = screen_width > dst_width ? (screen_width - dst_width) / 2u : 0u;
+	const unsigned offset_x = view_x0 + (view_w > dst_width ? (view_w - dst_width) / 2u : 0u);
 	const unsigned offset_y = view_y0 + (view_h > dst_height ? (view_h - dst_height) / 2u : 0u);
 	m_FmsxBoxX = offset_x;
 	m_FmsxBoxY = offset_y;
@@ -772,6 +793,7 @@ void CComboKernel::BlitFmsxFrame(void)
 	{
 		u16 *dst_base = (u16 *) (uintptr) frame_buffer->GetBuffer();
 		const unsigned pitch_pixels = frame_buffer->GetPitch() / sizeof(u16);
+		const boolean scanlines = m_ScanlinesEnabled;
 		const boolean can_use_maps = (dst_width <= kBlitMapMaxAxis) && (dst_height <= kBlitMapMaxAxis);
 		if (can_use_maps)
 		{
@@ -801,9 +823,15 @@ void CComboKernel::BlitFmsxFrame(void)
 				const unsigned src_y = m_BlitYMap[y];
 				const u16 *src_line = pixels + (src_y * width);
 				u16 *dst_line = dst_base + ((offset_y + y) * pitch_pixels) + offset_x;
+				const boolean dark_line = scanlines && (y & 1u);
 				for (unsigned x = 0; x < dst_width; ++x)
 				{
-					dst_line[x] = src_line[m_BlitXMap[x]];
+					u16 sample = src_line[m_BlitXMap[x]];
+					if (dark_line)
+					{
+						sample = (u16) ((sample & 0xF7DEu) >> 1);
+					}
+					dst_line[x] = sample;
 				}
 			}
 		}
@@ -814,10 +842,16 @@ void CComboKernel::BlitFmsxFrame(void)
 				const unsigned src_y = (unsigned) (((u64) y * (u64) height) / (u64) dst_height);
 				const u16 *src_line = pixels + (src_y * width);
 				u16 *dst_line = dst_base + ((offset_y + y) * pitch_pixels) + offset_x;
+				const boolean dark_line = scanlines && (y & 1u);
 				for (unsigned x = 0; x < dst_width; ++x)
 				{
 					const unsigned src_x = (unsigned) (((u64) x * (u64) width) / (u64) dst_width);
-					dst_line[x] = src_line[src_x];
+					u16 sample = src_line[src_x];
+					if (dark_line)
+					{
+						sample = (u16) ((sample & 0xF7DEu) >> 1);
+					}
+					dst_line[x] = sample;
 				}
 			}
 			m_BlitMapValid = FALSE;
@@ -836,10 +870,16 @@ void CComboKernel::BlitFmsxFrame(void)
 	{
 		const unsigned src_y = (unsigned) (((u64) y * (u64) height) / (u64) dst_height);
 		const u16 *line = pixels + (src_y * width);
+		const boolean dark_line = m_ScanlinesEnabled && (y & 1u);
 		for (unsigned x = 0; x < dst_width; ++x)
 		{
 			const unsigned src_x = (unsigned) (((u64) x * (u64) width) / (u64) dst_width);
-			m_Screen.SetPixel(offset_x + x, offset_y + y, (TScreenColor) line[src_x]);
+			u16 sample = line[src_x];
+			if (dark_line)
+			{
+				sample = (u16) ((sample & 0xF7DEu) >> 1);
+			}
+			m_Screen.SetPixel(offset_x + x, offset_y + y, (TScreenColor) sample);
 		}
 	}
 #endif
@@ -891,6 +931,31 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 			}
 		}
 	#endif
+		break;
+
+	case ComboMenuActionToggleOverscan:
+		m_OverscanEnabled = m_OverscanEnabled ? FALSE : TRUE;
+		m_PauseMenu.SetOverscanEnabled(m_OverscanEnabled);
+		m_PauseMenu.RequestRedraw();
+	#if COMBO_ENABLE_FMSX
+		fmsx_runtime_set_overscan(m_OverscanEnabled);
+	#endif
+		m_Logger.Write(FromKernel, LogNotice, m_OverscanEnabled ? "Settings: Overscan ON" : "Settings: Overscan OFF");
+		break;
+
+	case ComboMenuActionToggleScanlines:
+		m_ScanlinesEnabled = m_ScanlinesEnabled ? FALSE : TRUE;
+		m_PauseMenu.SetScanlinesEnabled(m_ScanlinesEnabled);
+		m_PauseMenu.RequestRedraw();
+		m_Logger.Write(FromKernel, LogNotice, m_ScanlinesEnabled ? "Settings: Scanlines ON" : "Settings: Scanlines OFF");
+		break;
+
+	case ComboMenuActionSettingsOption3:
+		m_Logger.Write(FromKernel, LogNotice, "Settings: Opcao 3 (mock)");
+		break;
+
+	case ComboMenuActionSettingsOption4:
+		m_Logger.Write(FromKernel, LogNotice, "Settings: Opcao 4 (mock)");
 		break;
 
 	default:
@@ -950,6 +1015,7 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	boolean menu_up_pressed = FALSE;
 	boolean menu_down_pressed = FALSE;
 	boolean menu_enter_pressed = FALSE;
+	boolean menu_back_pressed = FALSE;
 
 	for (unsigned i = 0; i < 6; ++i)
 	{
@@ -973,6 +1039,10 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 		if (key == kHidKeyEnter)
 		{
 			menu_enter_pressed = TRUE;
+		}
+		if (key == kHidKeyEsc)
+		{
+			menu_back_pressed = TRUE;
 		}
 
 		switch (key)
@@ -1024,6 +1094,11 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 			if (!m_EmulationPaused)
 			{
 				m_PauseMenu.Reset();
+				m_PauseNeedsBackgroundRedraw = FALSE;
+			}
+			else
+			{
+				m_PauseNeedsBackgroundRedraw = TRUE;
 			}
 			m_Logger.Write(FromKernel, LogNotice, m_EmulationPaused ? "Emulation PAUSED" : "Emulation RESUMED");
 			m_LastPauseToggleUs = now_us;
@@ -1035,7 +1110,12 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 		m_EmulationPaused,
 		menu_up_pressed,
 		menu_down_pressed,
-		menu_enter_pressed);
+		menu_enter_pressed,
+		menu_back_pressed);
+	if (m_PauseMenu.ConsumeBackgroundRestoreRequest())
+	{
+		m_PauseNeedsBackgroundRedraw = TRUE;
+	}
 	HandleMenuAction(menu_action);
 
 	m_JoyBridgeBits = bridge_bits;

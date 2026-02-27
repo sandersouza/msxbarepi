@@ -42,7 +42,7 @@ private:
     void ClearDebugOverlay(void);
     void BootTrace(const char *tag);
     void WriteScreenText(const char *text);
-    void BlitFmsxFrame(void);
+    void BlitFmsxFrame(boolean force_redraw);
     void HandleMenuAction(TComboMenuAction action);
     void ResetEmulationRuntimeState(void);
     void UpdateJoystickFromRaw(unsigned char modifiers, const unsigned char raw_keys[6]);
@@ -96,6 +96,7 @@ private:
     boolean m_EmulationPaused;
     boolean m_LastF12Pressed;
     boolean m_LastPausePressed;
+    boolean m_PauseNeedsBackgroundRedraw;
     boolean m_FmsxEnabled;
     boolean m_FmsxReady;
     unsigned long m_FmsxFrames;
@@ -123,6 +124,8 @@ private:
     u16 m_BlitXMap[kBlitMapMaxAxis];
     u16 m_BlitYMap[kBlitMapMaxAxis];
     CComboPauseMenu m_PauseMenu;
+    boolean m_OverscanEnabled;
+    boolean m_ScanlinesEnabled;
     boolean m_FmsxFallbackPattern;
     boolean m_TestToneEnabled;
     boolean m_MmuEnabled;

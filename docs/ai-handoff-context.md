@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 27/02/2026 03:24
+Última atualização: 27/02/2026 04:32
 
 ## Objetivo deste arquivo
 
@@ -382,3 +382,15 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-02-27 03:16:20 | stage=stable-default-profile | status=build-ok | artifact=artifacts/kernel8.img | note=make default agora gera artifacts/kernel8.img com Debug OFF, Fast Boot, Mapper OFF(64KB), MegaRAM OFF; WIDTH 80 verificado como nao suportado no BASIC em modo MSX1
 - 2026-02-27 03:24:44 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
 - 2026-02-27 03:24:44 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-27 03:37:42 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 03:37:42 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-27 03:48:41 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 03:49:14 | stage=m2-settings-submenu-overscan | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=menu settings com submenu, ESC retorna ao menu anterior, F12 sai do pause; overscan ON/OFF aplicado no blit e exposto no runtime
+- 2026-02-27 03:57:10 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 03:57:20 | stage=m2-settings-scanlines | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=settings opcao 2 virou Scanlines ON/OFF com efeito visual no blit; opcao funciona em runtime e submenu continua com ESC back + F12 exit
+- 2026-02-27 04:06:54 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 04:09:52 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 04:16:28 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 04:22:41 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 04:28:26 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 04:32:04 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img

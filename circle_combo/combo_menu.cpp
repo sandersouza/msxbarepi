@@ -23,6 +23,20 @@ CComboPauseMenu::CComboPauseMenu(void)
   m_Selected(0),
   m_LastDrawnSelected(0xFFFFFFFFu),
   m_Visible(FALSE),
+    m_InSettings(FALSE),
+    m_OverscanEnabled(FALSE),
+    m_ScanlinesEnabled(FALSE),
+    m_LastBackPressed(FALSE),
+    m_LastDrawnInSettings(FALSE),
+    m_LastDrawnOverscan(FALSE),
+    m_LastDrawnScanlines(FALSE),
+    m_ForceRedraw(TRUE),
+    m_RequestBackgroundRestore(FALSE),
+    m_LastBoxX(0),
+    m_LastBoxY(0),
+    m_LastBoxW(0),
+    m_LastBoxH(0),
+    m_LastBoxValid(FALSE),
   m_LastUpPressed(FALSE),
   m_LastDownPressed(FALSE),
   m_LastEnterPressed(FALSE)
@@ -33,18 +47,66 @@ void CComboPauseMenu::Reset(void)
 {
     m_Row = 1;
     m_Col = 1;
+    m_InSettings = FALSE;
     m_Selected = FindFirstSelectable();
     m_LastDrawnSelected = 0xFFFFFFFFu;
     m_Visible = FALSE;
+    m_LastBackPressed = FALSE;
+    m_LastDrawnInSettings = FALSE;
+    m_LastDrawnOverscan = m_OverscanEnabled;
+    m_LastDrawnScanlines = m_ScanlinesEnabled;
+    m_ForceRedraw = TRUE;
+    m_RequestBackgroundRestore = FALSE;
+    m_LastBoxValid = FALSE;
     m_LastUpPressed = FALSE;
     m_LastDownPressed = FALSE;
     m_LastEnterPressed = FALSE;
 }
 
+void CComboPauseMenu::SetOverscanEnabled(boolean enabled)
+{
+    if (m_OverscanEnabled != enabled)
+    {
+        m_OverscanEnabled = enabled;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+void CComboPauseMenu::SetScanlinesEnabled(boolean enabled)
+{
+    if (m_ScanlinesEnabled != enabled)
+    {
+        m_ScanlinesEnabled = enabled;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+void CComboPauseMenu::RequestRedraw(void)
+{
+    m_ForceRedraw = TRUE;
+}
+
+boolean CComboPauseMenu::ConsumeBackgroundRestoreRequest(void)
+{
+    const boolean pending = m_RequestBackgroundRestore;
+    m_RequestBackgroundRestore = FALSE;
+    return pending;
+}
+
+const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
+{
+    if (m_InSettings)
+    {
+        return combo_menu_settings_items_get(m_OverscanEnabled, m_ScanlinesEnabled, count);
+    }
+
+    return combo_menu_root_items_get(count);
+}
+
 unsigned CComboPauseMenu::FindFirstSelectable(void) const
 {
     unsigned item_count = 0u;
-    const TComboMenuItem *items = combo_menu_items_get(&item_count);
+    const TComboMenuItem *items = GetItems(&item_count);
 
     for (unsigned i = 0; i < item_count; ++i)
     {
@@ -60,7 +122,7 @@ unsigned CComboPauseMenu::FindFirstSelectable(void) const
 unsigned CComboPauseMenu::FindPrevSelectable(unsigned from) const
 {
     unsigned item_count = 0u;
-    const TComboMenuItem *items = combo_menu_items_get(&item_count);
+    const TComboMenuItem *items = GetItems(&item_count);
     if (item_count == 0u)
     {
         return 0u;
@@ -81,7 +143,7 @@ unsigned CComboPauseMenu::FindPrevSelectable(unsigned from) const
 unsigned CComboPauseMenu::FindNextSelectable(unsigned from) const
 {
     unsigned item_count = 0u;
-    const TComboMenuItem *items = combo_menu_items_get(&item_count);
+    const TComboMenuItem *items = GetItems(&item_count);
     if (item_count == 0u)
     {
         return 0u;
@@ -99,10 +161,11 @@ unsigned CComboPauseMenu::FindNextSelectable(unsigned from) const
     return from;
 }
 
-TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused, boolean up_pressed, boolean down_pressed, boolean enter_pressed)
+TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused, boolean up_pressed, boolean down_pressed, boolean enter_pressed, boolean back_pressed)
 {
     if (!paused)
     {
+        m_LastBackPressed = back_pressed;
         m_LastUpPressed = up_pressed;
         m_LastDownPressed = down_pressed;
         m_LastEnterPressed = enter_pressed;
@@ -110,9 +173,23 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused, boolean up_presse
     }
 
     unsigned item_count = 0u;
-    const TComboMenuItem *items = combo_menu_items_get(&item_count);
+    const TComboMenuItem *items = GetItems(&item_count);
     if (item_count == 0u)
     {
+        m_LastBackPressed = back_pressed;
+        m_LastUpPressed = up_pressed;
+        m_LastDownPressed = down_pressed;
+        m_LastEnterPressed = enter_pressed;
+        return ComboMenuActionNone;
+    }
+
+    if (back_pressed && !m_LastBackPressed && m_InSettings)
+    {
+        m_InSettings = FALSE;
+        m_Selected = FindFirstSelectable();
+        m_ForceRedraw = TRUE;
+        m_RequestBackgroundRestore = TRUE;
+        m_LastBackPressed = back_pressed;
         m_LastUpPressed = up_pressed;
         m_LastDownPressed = down_pressed;
         m_LastEnterPressed = enter_pressed;
@@ -137,9 +214,20 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused, boolean up_presse
     TComboMenuAction action = ComboMenuActionNone;
     if (enter_pressed && !m_LastEnterPressed && items[m_Selected].selectable)
     {
-        action = items[m_Selected].action;
+        if (!m_InSettings && items[m_Selected].action == ComboMenuActionSettings)
+        {
+            m_InSettings = TRUE;
+            m_Selected = FindFirstSelectable();
+            m_ForceRedraw = TRUE;
+            m_RequestBackgroundRestore = TRUE;
+        }
+        else
+        {
+            action = items[m_Selected].action;
+        }
     }
 
+    m_LastBackPressed = back_pressed;
     m_LastUpPressed = up_pressed;
     m_LastDownPressed = down_pressed;
     m_LastEnterPressed = enter_pressed;
@@ -150,7 +238,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused, boolean up_presse
 void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, unsigned screen_width, unsigned screen_height,
                              unsigned anchor_x, unsigned anchor_y, unsigned anchor_w, unsigned anchor_h)
 {
-    static const char kTitle[] = "PAUSE MENU";
+    static const char kRootTitle[] = "PAUSE MENU";
+    static const char kSettingsTitle[] = "SETTINGS";
     const TGfxTextStyle title_style = { BRIGHT_WHITE_COLOR, BLACK_COLOR, TRUE };
     const TGfxTextStyle normal_style = { BRIGHT_WHITE_COLOR, BLACK_COLOR, FALSE };
     const TGfxTextStyle selected_style = { BLACK_COLOR, BRIGHT_WHITE_COLOR, FALSE };
@@ -170,11 +259,13 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     }
 
     unsigned item_count = 0u;
-    const TComboMenuItem *items = combo_menu_items_get(&item_count);
+    const TComboMenuItem *items = GetItems(&item_count);
     if (item_count == 0u)
     {
         return;
     }
+
+    const char *title = m_InSettings ? kSettingsTitle : kRootTitle;
 
     unsigned char_w = renderer->GetCharWidth();
     unsigned char_h = renderer->GetCharHeight();
@@ -193,7 +284,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         }
     }
 
-    const unsigned title_len = ComboStrLen(kTitle);
+    const unsigned title_len = ComboStrLen(title);
     unsigned content_cols = max_item_len > title_len ? max_item_len : title_len;
     content_cols += 4u;
     if (content_cols < 18u)
@@ -221,9 +312,13 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     }
 
     if (m_Visible
+        && !m_ForceRedraw
      && m_Row == box_y
      && m_Col == box_x
-     && m_LastDrawnSelected == m_Selected)
+     && m_LastDrawnSelected == m_Selected
+     && m_LastDrawnInSettings == m_InSettings
+     && m_LastDrawnOverscan == m_OverscanEnabled
+     && m_LastDrawnScanlines == m_ScanlinesEnabled)
     {
         return;
     }
@@ -233,7 +328,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
 
     const unsigned title_x = box_x + ((box_cols - title_len) / 2u) * cell_w;
     const unsigned title_y = box_y;
-    renderer->DrawText(title_x, title_y, kTitle, title_style, scale_x, scale_y);
+    renderer->DrawText(title_x, title_y, title, title_style, scale_x, scale_y);
 
     for (unsigned i = 0; i < item_count; ++i)
     {
@@ -256,5 +351,14 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_Row = box_y;
     m_Col = box_x;
     m_LastDrawnSelected = m_Selected;
+    m_LastDrawnInSettings = m_InSettings;
+    m_LastDrawnOverscan = m_OverscanEnabled;
+    m_LastDrawnScanlines = m_ScanlinesEnabled;
+    m_LastBoxX = box_x;
+    m_LastBoxY = box_y;
+    m_LastBoxW = box_w_px;
+    m_LastBoxH = box_h_px;
+    m_LastBoxValid = TRUE;
+    m_ForceRedraw = FALSE;
     m_Visible = TRUE;
 }

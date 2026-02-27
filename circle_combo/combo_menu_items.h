@@ -10,6 +10,10 @@ enum TComboMenuAction {
     ComboMenuActionDiskDriveA,
     ComboMenuActionDiskDriveB,
     ComboMenuActionSettings,
+    ComboMenuActionToggleOverscan,
+    ComboMenuActionToggleScanlines,
+    ComboMenuActionSettingsOption3,
+    ComboMenuActionSettingsOption4,
     ComboMenuActionMsxBasic,
     ComboMenuActionReset
 };
@@ -20,6 +24,7 @@ typedef struct {
     boolean selectable;
 } TComboMenuItem;
 
-const TComboMenuItem *combo_menu_items_get(unsigned *count);
+const TComboMenuItem *combo_menu_root_items_get(unsigned *count);
+const TComboMenuItem *combo_menu_settings_items_get(boolean overscan_enabled, boolean scanlines_enabled, unsigned *count);
 
 #endif

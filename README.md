@@ -191,6 +191,12 @@ Atalhos de teclado no runtime:
 - `F12`: pausa/retoma emulacao
 - `F11`: toggle do overlay de debug (somente quando `COMBO_ENABLE_DEBUG_OVERLAY=1`)
 - `Pause` (teclado PC): mapeado para `STOP` do MSX
+- No menu pausado: `Enter` abre/ativa item, `ESC` volta do submenu `Settings` para o menu principal, `F12` fecha o menu (retoma emulacao)
+
+Submenu `Settings` (mock inicial):
+- `Overscan ON/OFF`: alterna o tamanho da area do emulador sem cortar imagem (ON = area maxima segura, OFF = margem de seguranca)
+- `Scanlines ON/OFF`: aplica/remove scanlines no blit de video
+- `Opcao 3`, `Opcao 4`: placeholders (mock)
 
 Exemplo (fallback para outra BIOS):
 

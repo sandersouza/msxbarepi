@@ -213,6 +213,11 @@ void fmsx_runtime_set_joystick_bits(u8 bridge_bits)
     g_bridge_bits = bridge_bits;
 }
 
+void fmsx_video_set_overscan(boolean enabled)
+{
+    g_overscan = enabled ? 1 : 0;
+}
+
 void fmsx_runtime_set_keyboard_raw(u8 modifiers, const unsigned char raw_keys[6])
 {
     fmsx_keyboard_clear_all();
