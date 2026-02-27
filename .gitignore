@@ -5,4 +5,3 @@ third_party/circle
 roms/*.rom
 sdcard/msx.cpio
 .DS_Store
-PRJ_PROMPT.md
