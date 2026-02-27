@@ -1,0 +1,135 @@
+#ifndef MSXBARE_CIRCLE_COMBO_KERNEL_H
+#define MSXBARE_CIRCLE_COMBO_KERNEL_H
+
+#include "gfx_textbox.h"
+#include "combo_menu.h"
+
+#include <circle/actled.h>
+#include <circle/devicenameservice.h>
+#include <circle/exceptionhandler.h>
+#include <circle/interrupt.h>
+#include <circle/koptions.h>
+#include <circle/logger.h>
+#include <circle/sched/scheduler.h>
+#include <circle/screen.h>
+#include <circle/serial.h>
+#include <circle/sound/soundbasedevice.h>
+#include <circle/timer.h>
+#include <circle/types.h>
+#include <circle/usb/usbhcidevice.h>
+#include <circle/usb/usbkeyboard.h>
+
+enum TComboShutdownMode {
+    ComboShutdownNone,
+    ComboShutdownHalt,
+    ComboShutdownReboot
+};
+
+class CComboKernel
+{
+public:
+    CComboKernel(void);
+    ~CComboKernel(void);
+
+    boolean Initialize(void);
+    TComboShutdownMode Run(void);
+
+private:
+    void RefillAudioQueue(void);
+    void InitializeAudioOutput(boolean fmsx_audio_enabled);
+    void GenerateSamples(s16 *buffer, unsigned frames);
+    void DrawDebugOverlay(unsigned tick);
+    void ClearDebugOverlay(void);
+    void BootTrace(const char *tag);
+    void WriteScreenText(const char *text);
+    void BlitFmsxFrame(void);
+    void HandleMenuAction(TComboMenuAction action);
+    void ResetEmulationRuntimeState(void);
+    void UpdateJoystickFromRaw(unsigned char modifiers, const unsigned char raw_keys[6]);
+
+    static void KeyPressedHandler(const char *text);
+    static void KeyStatusRawHandler(unsigned char modifiers, const unsigned char raw_keys[6], void *context);
+    static void KeyboardRemovedHandler(CDevice *device, void *context);
+
+private:
+	static const unsigned kBlitMapMaxAxis = 2048u;
+
+    CActLED m_ActLED;
+    CKernelOptions m_Options;
+    CDeviceNameService m_DeviceNameService;
+    CScreenDevice m_Screen;
+    CGfxTextBoxRenderer m_GfxText;
+    CSerialDevice m_Serial;
+    CExceptionHandler m_ExceptionHandler;
+    CInterruptSystem m_Interrupt;
+    CTimer m_Timer;
+    CLogger m_Logger;
+    CScheduler m_Scheduler;
+    CUSBHCIDevice m_USBHCI;
+
+    CSoundBaseDevice *m_Sound;
+    CUSBKeyboardDevice *m_Keyboard;
+    void *m_KeyboardRemovedHandle;
+
+    u32 m_AudioPhase;
+    u32 m_AudioStep;
+
+    unsigned m_PlugAndPlayCount;
+    unsigned m_KeyEventCount;
+    unsigned m_LastKeyCode;
+    unsigned m_AudioWriteOps;
+    unsigned m_AudioDropOps;
+    unsigned m_AudioPeak;
+    s16 m_LastAudioSample;
+    unsigned m_SoundStartAttempts;
+    unsigned m_SoundStartFailures;
+    unsigned m_LastQueueAvail;
+    unsigned m_LastQueueFree;
+    unsigned m_AudioTargetPeakRuntime;
+    unsigned m_AudioClipMaxRuntime;
+    unsigned m_AudioOutputGainPct;
+    unsigned m_BootToneFramesRemaining;
+    boolean m_AudioInitAttempted;
+    u8 m_JoyBridgeBits;
+    u8 m_JoyMappedBits;
+    boolean m_DebugOverlayEnabled;
+    boolean m_EmulationPaused;
+    boolean m_LastF12Pressed;
+    boolean m_LastPausePressed;
+    boolean m_FmsxEnabled;
+    boolean m_FmsxReady;
+    unsigned long m_FmsxFrames;
+    int m_FmsxLastError;
+    int m_FmsxLastPC;
+    unsigned m_FmsxPcRepeatCount;
+    boolean m_FmsxPcLoopLogged;
+    unsigned m_FmsxVideoSeq;
+    u64 m_FmsxFpsWindowStartUs;
+    u64 m_LastPauseToggleUs;
+    u64 m_LastOverlayUs;
+    unsigned long m_FmsxFpsWindowStartFrames;
+    unsigned m_FmsxFpsX10;
+    unsigned m_FmsxBlankFrames;
+    unsigned m_InitramfsFiles;
+    unsigned m_FmsxBoxX;
+    unsigned m_FmsxBoxY;
+    unsigned m_FmsxBoxW;
+    unsigned m_FmsxBoxH;
+    unsigned m_BlitMapSrcW;
+    unsigned m_BlitMapSrcH;
+    unsigned m_BlitMapDstW;
+    unsigned m_BlitMapDstH;
+    boolean m_BlitMapValid;
+    u16 m_BlitXMap[kBlitMapMaxAxis];
+    u16 m_BlitYMap[kBlitMapMaxAxis];
+    CComboPauseMenu m_PauseMenu;
+    boolean m_FmsxFallbackPattern;
+    boolean m_TestToneEnabled;
+    boolean m_MmuEnabled;
+    boolean m_DCacheEnabled;
+    boolean m_ICacheEnabled;
+
+    static CComboKernel *s_Instance;
+};
+
+#endif

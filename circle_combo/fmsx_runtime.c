@@ -1,0 +1,264 @@
+#include "fmsx_runtime.h"
+
+#include "../third_party/fmsx/fMSX/MSX.h"
+#include "../third_party/fmsx/Z80/Z80.h"
+#include "../third_party/fmsx/EMULib/Sound.h"
+
+#ifndef COMBO_FMSX_AUDIO
+#define COMBO_FMSX_AUDIO 1
+#endif
+
+#ifndef COMBO_FMSX_MSX1_TEXT80
+#define COMBO_FMSX_MSX1_TEXT80 1
+#endif
+
+#ifndef COMBO_FMSX_CART_GUESS
+#define COMBO_FMSX_CART_GUESS 1
+#endif
+
+#ifndef COMBO_FMSX_CARTA_MAPPER
+#define COMBO_FMSX_CARTA_MAPPER 255
+#endif
+
+#ifndef COMBO_FMSX_CARTB_MAPPER
+#define COMBO_FMSX_CARTB_MAPPER 255
+#endif
+
+#ifndef COMBO_FMSX_RAMMAPPER_KB
+#define COMBO_FMSX_RAMMAPPER_KB 256
+#endif
+
+#ifndef COMBO_FMSX_MEGARAM_ENABLED
+#define COMBO_FMSX_MEGARAM_ENABLED 1
+#endif
+
+#ifndef COMBO_FMSX_BOOT_PROFILE
+#define COMBO_FMSX_BOOT_PROFILE 0
+#endif
+
+#if (COMBO_FMSX_RAMMAPPER_KB == 64)
+#define COMBO_FMSX_RAMMAPPER_PAGES 4
+#elif (COMBO_FMSX_RAMMAPPER_KB == 256)
+#define COMBO_FMSX_RAMMAPPER_PAGES 16
+#elif (COMBO_FMSX_RAMMAPPER_KB == 512)
+#define COMBO_FMSX_RAMMAPPER_PAGES 32
+#elif (COMBO_FMSX_RAMMAPPER_KB == 1024)
+#define COMBO_FMSX_RAMMAPPER_PAGES 64
+#else
+#error "COMBO_FMSX_RAMMAPPER_KB must be 64, 256, 512, or 1024"
+#endif
+
+extern Z80 CPU;
+extern int ScanLine;
+extern uint8_t UPeriod;
+extern int Mode;
+extern int RAMPages;
+extern int VRAMPages;
+extern unsigned fmsx_video_get_latest(const u16 **pixels, unsigned *width, unsigned *height);
+extern const char *ROMName[];
+
+static TFmsxRuntimeStatus g_fmsx_status = { FALSE, FALSE, 0u, 0, 0 };
+static const unsigned kFmsxAudioRate = 48000u;
+static unsigned g_boot_warmup_frames_remaining = 0u;
+
+static unsigned fmsx_runtime_boot_warmup_frames(void)
+{
+#if COMBO_FMSX_BOOT_PROFILE == 1
+    return 720u;
+#elif COMBO_FMSX_BOOT_PROFILE == 2
+    return 2400u;
+#else
+    return 0u;
+#endif
+}
+
+static unsigned fmsx_runtime_boot_burst_steps(void)
+{
+#if COMBO_FMSX_BOOT_PROFILE == 1
+    return 4u;
+#elif COMBO_FMSX_BOOT_PROFILE == 2
+    return 8u;
+#else
+    return 1u;
+#endif
+}
+
+static boolean fmsx_runtime_start(boolean boot_basic)
+{
+    g_fmsx_status.initialized = TRUE;
+    g_fmsx_status.running = FALSE;
+    g_fmsx_status.frames = 0u;
+    g_fmsx_status.last_pc = 0;
+    g_fmsx_status.last_error = 0;
+
+    int startup_mode = MSX_MSX1 | MSX_NTSC | MSX_JOY1;
+#if COMBO_FMSX_MSX1_TEXT80
+    startup_mode |= MSX_FIXEDFONT;
+#endif
+#if !COMBO_FMSX_MEGARAM_ENABLED
+    startup_mode |= MSX_NO_MEGARAM;
+#endif
+#if COMBO_FMSX_CART_GUESS
+    startup_mode |= MSX_GUESSA | MSX_GUESSB;
+#endif
+#if (COMBO_FMSX_CARTA_MAPPER != 255)
+    startup_mode &= ~MSX_MAPPERA;
+    startup_mode |= (COMBO_FMSX_CARTA_MAPPER & 0x0F) << 8;
+    startup_mode &= ~MSX_GUESSA;
+#endif
+#if (COMBO_FMSX_CARTB_MAPPER != 255)
+    startup_mode &= ~MSX_MAPPERB;
+    startup_mode |= (COMBO_FMSX_CARTB_MAPPER & 0x0F) << 12;
+    startup_mode &= ~MSX_GUESSB;
+#endif
+
+    const char *saved_carta = 0;
+    const char *saved_cartb = 0;
+    if (boot_basic)
+    {
+        saved_carta = ROMName[0];
+        saved_cartb = ROMName[1];
+        ROMName[0] = 0;
+        ROMName[1] = 0;
+    }
+
+    const boolean started = StartMSX(startup_mode, COMBO_FMSX_RAMMAPPER_PAGES, 2) ? TRUE : FALSE;
+
+    if (boot_basic)
+    {
+        ROMName[0] = saved_carta;
+        ROMName[1] = saved_cartb;
+    }
+
+    if (!started)
+    {
+        g_fmsx_status.last_error = 1;
+        return FALSE;
+    }
+
+    UPeriod = 100;
+
+#if COMBO_FMSX_AUDIO
+    InitSound(kFmsxAudioRate);
+    SetChannels(150, (1 << SND_CHANNELS) - 1);
+#endif
+
+    g_fmsx_status.running = TRUE;
+    g_boot_warmup_frames_remaining = fmsx_runtime_boot_warmup_frames();
+    return TRUE;
+}
+
+#if (COMBO_FMSX_BOOT_PROFILE < 0) || (COMBO_FMSX_BOOT_PROFILE > 2)
+#error "COMBO_FMSX_BOOT_PROFILE must be 0 (normal), 1 (fast), or 2 (game)"
+#endif
+
+#if (COMBO_FMSX_CARTA_MAPPER != 255) && ((COMBO_FMSX_CARTA_MAPPER < 0) || (COMBO_FMSX_CARTA_MAPPER > 8))
+#error "COMBO_FMSX_CARTA_MAPPER must be 0..8 or 255 (auto/default)"
+#endif
+
+#if (COMBO_FMSX_CARTB_MAPPER != 255) && ((COMBO_FMSX_CARTB_MAPPER < 0) || (COMBO_FMSX_CARTB_MAPPER > 8))
+#error "COMBO_FMSX_CARTB_MAPPER must be 0..8 or 255 (auto/default)"
+#endif
+
+boolean fmsx_runtime_init(void)
+{
+    if (g_fmsx_status.initialized)
+    {
+        return g_fmsx_status.running;
+    }
+    return fmsx_runtime_start(FALSE);
+}
+
+boolean fmsx_runtime_reboot_basic(void)
+{
+    if (g_fmsx_status.running)
+    {
+        TrashMSX();
+    }
+
+    g_fmsx_status.initialized = FALSE;
+    g_fmsx_status.running = FALSE;
+    return fmsx_runtime_start(TRUE);
+}
+
+boolean fmsx_runtime_hard_reset(void)
+{
+    if (!g_fmsx_status.running)
+    {
+        return FALSE;
+    }
+
+    const int mode_after = ResetMSX(Mode, RAMPages, VRAMPages);
+    if ((mode_after & MSX_MODEL) != (Mode & MSX_MODEL))
+    {
+        g_fmsx_status.last_error = 2;
+        return FALSE;
+    }
+
+    g_fmsx_status.frames = 0u;
+    g_fmsx_status.last_pc = 0;
+    g_fmsx_status.last_error = 0;
+    g_boot_warmup_frames_remaining = fmsx_runtime_boot_warmup_frames();
+    return TRUE;
+}
+
+boolean fmsx_runtime_step_frame(void)
+{
+    if (!g_fmsx_status.running)
+    {
+        return FALSE;
+    }
+
+    unsigned steps = 1u;
+    if (g_boot_warmup_frames_remaining > 0u)
+    {
+        steps = fmsx_runtime_boot_burst_steps();
+        if (steps == 0u)
+        {
+            steps = 1u;
+        }
+        if (steps > g_boot_warmup_frames_remaining)
+        {
+            steps = g_boot_warmup_frames_remaining;
+        }
+    }
+
+    for (unsigned i = 0; i < steps; ++i)
+    {
+        ScanLine = 261;
+        g_fmsx_status.last_pc = (int) RunZ80(&CPU);
+        g_fmsx_status.frames++;
+        if (g_boot_warmup_frames_remaining > 0u)
+        {
+            g_boot_warmup_frames_remaining--;
+        }
+    }
+
+#if COMBO_FMSX_AUDIO
+    if (g_boot_warmup_frames_remaining == 0u)
+    {
+        RenderAndPlayAudio(kFmsxAudioRate / 60u);
+    }
+#endif
+    return TRUE;
+}
+
+void fmsx_runtime_shutdown(void)
+{
+    if (g_fmsx_status.running)
+    {
+        TrashMSX();
+    }
+
+    g_fmsx_status.running = FALSE;
+}
+
+TFmsxRuntimeStatus fmsx_runtime_get_status(void)
+{
+    return g_fmsx_status;
+}
+
+unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsigned *height)
+{
+    return fmsx_video_get_latest(pixels, width, height);
+}

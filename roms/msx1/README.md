@@ -3,12 +3,14 @@ A initramfs é um sistema de arquivos em memória que contém os arquivos necess
 
 Para o projeto `msx1`, o initramfs contém as ROMs do MSX, incluindo a BIOS (essescial),os cartuchos e imagens de disco (opcionais), que são necessárias para emular o ambiente do MSX1.
 
+No runtime atual do `circle_combo`, esses nomes são detectados automaticamente no `msx.cpio` e aplicados nos slots/drives padrão do fMSX.
+
 ```
 MSX.ROM   - BIOS do MSX ( Slot 0 )
 CARTA.ROM - Cartucho porta A ( Slot 1-1 )
 CARTB.ROM - Cartucho porta B ( Slot 1-2 )
-DISKA.ROM - Drive de disquete virtual A
-DISKB.ROM - Drive de disquete virtual B
+DRIVEA.DSK - Drive de disquete virtual A
+DRIVEB.DSK - Drive de disquete virtual B
 ```
 
 Para fins de desenvolvimento, a `BIOS` usada nessa etapa, é a do `MSX Expert 1.1` da `Gradiente`. Ela é compatível com o padrão `MSX1` e pode ser encontrada em diversos sites de ROMs de **MSX**.

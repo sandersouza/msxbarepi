@@ -1,14 +1,10 @@
-#ifndef PLATFORM_H
-#define PLATFORM_H
+#ifndef MSXBARE_PLATFORM_H
+#define MSXBARE_PLATFORM_H
 
 #include <stdint.h>
 
-void platform_init(void);
-void platform_log(const char *s);
-void platform_debug_hold_if_enabled(void);
-uint64_t platform_ticks_hz(void);
-uint64_t platform_ticks_now(void);
+uint64_t platform_get_time_us(void);
+void platform_delay_us(uint32_t us);
 void platform_delay_ms(uint32_t ms);
-void platform_irq_enable(void);
 
 #endif

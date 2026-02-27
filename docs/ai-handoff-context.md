@@ -1,0 +1,382 @@
+# AI Handoff Context
+
+Última atualização: 27/02/2026 03:16
+
+## Objetivo deste arquivo
+
+Registrar o estado operacional do projeto para continuidade entre agentes de IA sem perda de contexto.
+
+## Estado atual do projeto
+
+- Workspace alvo: `/Users/sandersouza/Developer/msxbarepi-circle`
+- Fase: M0 consolidado + M2 bootstrap fMSX em evolução
+- Status confirmado em hardware:
+  - Boot baremetal funcional no RPi 3B
+  - HDMI com framebuffer funcional (tela colorida + barra em movimento)
+  - Áudio HDMI funcional (sample Circle standalone com `sounddev=sndhdmi`)
+  - Variantes com integração Circle compilam e foram preparadas para validação em hardware
+
+## Implementações concluídas até agora
+
+### Base M0
+
+- Bootstrap e linker: `boot/start.S`, `linker/linker.ld`
+- Runtime C mínimo: `src/kernel.c`, `src/platform.c`, `src/string.c`
+- UART: `src/uart.c`
+- Mailbox + framebuffer HDMI: `src/mailbox.c`, `src/framebuffer.c`
+- Stubs iniciais: `src/audio_stub.c`, `src/input_stub.c`
+
+### Integração Circle Input (M0.1)
+
+- Ponte C/C++: `include/circle_input_runtime.h`, `src/circle_input_runtime.cpp`
+- Hook no kernel: `src/kernel.c`
+- Targets de build:
+  - `make m0-circle-input` (safe)
+  - `make m0-circle-input-full` (experimental)
+
+### Integração Circle HDMI Audio (M0.2)
+
+- Ponte C/C++: `include/circle_audio_runtime.h`, `src/circle_audio_runtime.cpp`
+- Hook no kernel: `src/kernel.c`
+- Targets de build:
+  - `make m0-hdmi-audio` (safe)
+  - `make m0-hdmi-audio-full` (experimental)
+
+### Build system
+
+- `Makefile` refatorado para scaffold incremental M0 + variações safe/full
+- `src/circle_main_stub.c` adicionado para satisfazer dependência de `main` ao linkar `libcircle`
+
+## Artefatos relevantes
+
+- `artifacts/kernel8-m0.img`
+- `artifacts/kernel8-m0-circle-input.img`
+- `artifacts/kernel8-m0-circle-input-full.img`
+- `artifacts/kernel8-m0-hdmi-audio.img`
+- `artifacts/kernel8-m0-hdmi-audio-full.img`
+- Spikes Circle standalone:
+  - `artifacts/kernel8-circle-usbkeyboard-debug.img`
+  - `artifacts/kernel8-circle-sounddevices-debug.img`
+
+## Comandos padrão de validação
+
+### Build
+
+- `make`
+- `make m0`
+- `make m0-circle-input`
+- `make m0-circle-input-full`
+- `make m0-hdmi-audio`
+- `make m0-hdmi-audio-full`
+- `make m2-fmsx-bootstrap`
+
+### Preparar SD (sempre sem DRY_RUN)
+
+- `KERNEL_IMG=artifacts/kernel8-m0.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh`
+- `KERNEL_IMG=artifacts/kernel8-m0-circle-input.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh`
+- `KERNEL_IMG=artifacts/kernel8-m0-circle-input-full.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh`
+- `KERNEL_IMG=artifacts/kernel8-m0-hdmi-audio.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh`
+- `KERNEL_IMG=artifacts/kernel8-m0-hdmi-audio-full.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh`
+- `KERNEL_IMG=artifacts/kernel8-m2-fmsx-bootstrap.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh`
+
+## Convenções e decisões já tomadas
+
+- Sempre informar comando de SD ao final de cada build de teste sem `DRY_RUN=1`
+- Evolução por modo safe/full para evitar regressões de boot em integrações Circle
+- Referências conceituais de Circle devem ser citadas em documentação
+- Guardrail de upstream ativo no build: `make guard-third-party` / `scripts/check-third-party-pristine.sh` valida que `third_party/circle` e `third_party/fmsx` estão limpos antes do `circle-configure` (override apenas com `ALLOW_DIRTY_THIRD_PARTY=1`)
+
+## Estado funcional M2 (fMSX)
+
+- MMU + caches confirmados em runtime no hardware (`M:1 C:1 I:1`)
+- Pipeline de vídeo com blit direto RGB565 no framebuffer ativo
+- Política de upstream preservada: patches de fMSX usados no bootstrap foram movidos para `circle_combo/fmsx_local/` (`MSX.c`, `Common.h`, `Z80.c`), mantendo `third_party/fmsx` e `third_party/circle` sem alterações locais
+- Loader de initramfs CPIO (`newc`) ativo no boot:
+  - lê `/chosen/linux,initrd-start` e `/chosen/linux,initrd-end` do DTB
+  - monta arquivos em VFS de memória (`fmsx_virtual_fs`)
+  - integra com `fopen/rfopen` do core
+- Nomes padrão esperados no `msx.cpio` já roteados para uso automático: `MSX.ROM`, `CARTA.ROM`, `CARTB.ROM`, `DRIVEA.DSK`, `DRIVEB.DSK`
+- Novo knob de teste para isolamento de travamento por áudio: `COMBO_HARD_DISABLE_AUDIO=1` (desvia I/O sonoro OPLL/PSG no core local e mantém reset/runtime de áudio desabilitados)
+- Novo teste de cartucho 16KB MSX1: runtime força slot A para `MAP_GEN16` e remove `MSX_GUESSA/MSX_GUESSB` na chamada de `StartMSX()`
+- Correção de diagnóstico: `CARTA.ROM` de teste é 48KB (49152 bytes) com assinatura `AB` em `0x4000`; runtime voltou para modo neutro MSX1 sem forçar mapper
+- Novo knob de isolamento de slot: `COMBO_CARTA_ONLY=1` para carregar apenas `CARTA.ROM` e ignorar `CARTB.ROM`
+- Novo diagnóstico de loop no runtime: overlay linha `JY2` agora exibe `PC` e `R` (repetições consecutivas do mesmo PC), com log UART quando `R>=1200`
+- Diagnóstico confirmado no cartucho: travamento em `PC=BDE3` (opcode `HALT`), indicando espera de IRQ/VBlank
+- Correção aplicada: `LoopZ80()` não encerra mais em `ScanLine==192`; `INT_QUIT` do frame-step agora ocorre após janela de VBlank
+- Áudio fMSX reativado no combo: `COMBO_FMSX_AUDIO=1` (default), `WriteAudio()` agora alimenta ring buffer PCM e kernel drena para HDMI (`CHDMISoundBaseDevice`)
+- Correção adicional de áudio: `fmsx_runtime_step_frame()` agora chama `RenderAndPlayAudio(48000/60)` e `fmsx_runtime_init()` chama `InitSound(48000)`
+- Correção de build: `Makefile` raiz passou a repassar flags `COMBO_*` para `circle_combo` no target `m2-fmsx-bootstrap` (antes alguns knobs não chegavam ao sub-build)
+- Telemetria de áudio adicionada no overlay: linha `EV` mostra `A:WWWW/PPPP` (samples escritos/puxados) e linha `JY2` mostra `L` (nível do ring buffer)
+- Ajuste adicional no mixer de áudio: após `InitSound(48000)`, runtime agora chama `SetChannels(255/MAXCHANNELS, (1<<SND_CHANNELS)-1)` (padrão usado no `libretro.c`) para garantir canais habilitados
+- Ajuste de ganho no mixer EMULib: `SetChannels()` atualizado para volume mestre `255` com todos os canais habilitados (evita quantização excessiva para zero)
+- Correção de fila HDMI: `RefillAudioQueue()` não escreve mais blocos de silêncio quando `fmsx_audio_pull_samples()` retorna 0; agora escreve somente frames realmente gerados pelo core
+
+## Sinais esperados em runtime
+
+- M0 base: barra de heartbeat animada + logs UART periódicos
+- M0.1 input:
+  - `circle ready=0x00000020` no safe
+  - `circle ready=0x000000FF` no full
+- M0.2 áudio:
+  - `audio ready=0x00000020` no safe
+  - `audio ready=0x000000FF` no full
+
+## Riscos e pontos de atenção
+
+- Variantes full podem regressar boot dependendo da ordem/init de subsistemas Circle
+- Linker gera warning de segmento RWX (não bloqueante neste estágio)
+- Integração fMSX no M2 está ativa, mas ainda requer validação final em hardware com cart/disk reais via `msx.cpio`
+- No sample de áudio standalone, ausência de `cmdline.txt` com `sounddev=sndhdmi` pode gerar boot sem som na HDMI (tom roteado para saída default)
+
+## Próximo passo recomendado (curto prazo)
+
+1. Consolidar M0.3 combinando input+áudio no mesmo build com flags independentes
+2. Estabilizar sequência de init para reduzir risco das variantes full
+3. Criar overlay de debug M1 seguindo `docs/debug-overlay-hdmi-template.md`
+
+## Fontes de referência usadas
+
+- Circle USB keyboard sample: `third_party/circle/sample/08-usbkeyboard`
+- Circle sound sample: `third_party/circle/sample/34-sounddevices`
+- Driver HDMI áudio: `third_party/circle/include/circle/sound/hdmisoundbasedevice.h`
+- Implementação HDMI áudio: `third_party/circle/lib/sound/hdmisoundbasedevice.cpp`
+
+## Histórico de ciclos
+- 2026-02-26 17:06:30 | stage=m0.2-audio-safe | status=ok | artifact=artifacts/kernel8-m0-hdmi-audio.img
+- 2026-02-26 17:06:30 | stage=m0.2-audio-full | status=ok | artifact=artifacts/kernel8-m0-hdmi-audio-full.img
+- 2026-02-26 17:11:14 | stage=m0.2-audio-safe-standalone | status=ok | artifact=artifacts/kernel8-m0-hdmi-audio.img
+- 2026-02-26 | stage=prepare-sd-cmdline-verify | status=ok | artifact=scripts/prepare-sd.sh | note=script agora valida que cmdline.txt foi copiado no volume destino
+- 2026-02-26 | stage=hardware-audio-hdmi | status=ok | artifact=artifacts/kernel8-m0-hdmi-audio.img | note=som confirmado em hardware apos copia de cmdline.txt com sounddev=sndhdmi
+- 2026-02-26 | stage=audio-routing-fix | status=ok | artifact=sdcard/cmdline.txt | note=prepare-sd passa a copiar cmdline.txt com sounddev=sndhdmi
+- 2026-02-26 17:20:53 | stage=m0.3-combo-safe | status=ok | artifact=artifacts/kernel8-m0-combo.img
+- 2026-02-26 17:24:44 | stage=m0.3-combo-safe | status=ok | artifact=artifacts/kernel8-m0-combo.img
+- 2026-02-26 17:35:02 | stage=m0.3-combo-safe | status=ok | artifact=artifacts/kernel8-m0-combo.img
+- 2026-02-26 17:35:51 | stage=m0.3-combo-safe | status=ok | artifact=artifacts/kernel8-m0-combo.img
+- 2026-02-26 17:38:07 | stage=m0.3-combo-safe | status=ok | artifact=artifacts/kernel8-m0-combo.img
+- 2026-02-26 17:41:10 | stage=m0.3-combo-safe | status=ok | artifact=artifacts/kernel8-m0-combo.img
+- 2026-02-26 17:43:13 | stage=m0.3-combo-safe | status=ok | artifact=artifacts/kernel8-m0-combo.img
+- 2026-02-26 17:53:38 | stage=m0.3-combo-standalone | status=ok | artifact=artifacts/kernel8-m0-combo.img
+- 2026-02-26 17:58:03 | stage=m0.3-combo-standalone | status=ok | artifact=artifacts/kernel8-m0-combo.img
+- 2026-02-26 18:01:21 | stage=m0.3-combo-standalone | status=ok | artifact=artifacts/kernel8-m0-combo.img
+- 2026-02-26 18:01:34 | stage=m1-debug-overlay | status=ok | artifact=artifacts/kernel8-m0-combo.img
+- 2026-02-26 18:05:16 | stage=m0.3-combo-standalone | status=ok | artifact=artifacts/kernel8-m0-combo.img
+- 2026-02-26 18:05:21 | stage=m1-jy-bits | status=ok | artifact=artifacts/kernel8-m0-combo.img
+- 2026-02-26 18:07:23 | stage=m0.3-combo-standalone | status=ok | artifact=artifacts/kernel8-m0-combo.img
+- 2026-02-26 18:07:28 | stage=m1-overlay-toggle | status=ok | artifact=artifacts/kernel8-m0-combo.img
+- 2026-02-26 18:16:14 | stage=m0.3-combo-standalone | status=ok | artifact=artifacts/kernel8-m0-combo.img
+- 2026-02-26 18:16:32 | stage=m2-bootstrap-scaffold | status=blocked-libc | artifact=artifacts/kernel8-m0-combo.img
+- 2026-02-26 18:49:37 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 18:55:27 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 18:55:45 | stage=m0.3-combo-standalone | status=ok | artifact=artifacts/kernel8-m0-combo.img
+- 2026-02-26 18:55:59 | stage=m2-video-blit-audio-off | status=ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 19:00:14 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 19:03:30 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 19:07:44 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 19:08:01 | stage=m2-render-fallback-diagnostic | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=overlay agora mostra contador B (blank frames) e flag P (checkerboard fallback quando frame do core vem zerado)
+- 2026-02-26 19:15:00 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 19:15:18 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 19:15:38 | stage=m2-embedded-bios-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=fopen/rfopen atendem MSX.ROM via blob embutido (fmsx_embedded_roms.S) e overlay linha JY agora exibe R/E para estado de init do core
+- 2026-02-26 19:20:18 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 19:20:31 | stage=m2-hdmi-viewport-overlay-order | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=blit do emulador com escala+centralizacao na resolucao HDMI ativa; overlay redesenhado a cada loop apos blit para manter legibilidade
+- 2026-02-26 19:25:00 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 19:25:09 | stage=m2-anti-flicker-pacing | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=loop do core limitado para ~60Hz e fallback quadriculado removido do fluxo normal para evitar cintilacao
+- 2026-02-26 19:31:11 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 19:31:26 | stage=m2-mmu-cache-diagnostic | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=overlay e log exibem bits de SCTLR_EL1 (M/C/I) para confirmar MMU e caches ativos em runtime
+- 2026-02-26 19:34:23 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 19:34:33 | stage=m2-direct-fb-blit-hotpath | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=blit principal agora escreve RGB565 diretamente no framebuffer (pitch-aware), reduzindo overhead de SetPixel por pixel
+- 2026-02-26 19:49:19 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 19:53:02 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 19:53:13 | stage=m2-initramfs-cpio-vfs | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=mount de arquivos do msx.cpio em VFS no boot e suporte aos nomes padrao de BIOS/cart/disks
+- 2026-02-26 20:00:27 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:07:51 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:10:57 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:11:00 | stage=m2-local-overlay-fmsx | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=wrappers passaram a compilar `circle_combo/fmsx_local/*` em vez de editar `third_party/fmsx`
+- 2026-02-26 20:12:43 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:15:00 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:15:34 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:16:06 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:17:09 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:17:28 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:20:08 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:20:12 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:20:28 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:20:32 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:25:35 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:33:06 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:36:00 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:36:18 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:36:43 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:39:40 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:40:24 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:44:18 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:45:22 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:49:07 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:50:23 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:50:45 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:52:03 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 20:53:44 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:00:03 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:00:36 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:04:54 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:11:36 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:12:06 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:16:08 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:17:54 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:20:35 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 | stage=m2-hard-audio-off-test | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=build com COMBO_HARD_DISABLE_AUDIO=1 para A/B de travamento no boot do cartucho MSX1 16KB
+- 2026-02-26 21:25:22 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:27:27 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:29:54 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 | stage=m2-cart16k-force-mapgen16 | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=StartMSX sem auto-guess e mapper A fixo para cartucho MSX1 16KB
+- 2026-02-26 | stage=m2-cart48k-neutral-mode | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=StartMSX em modo MSX1 neutro (sem guess/mapper forçado) alinhado ao cartucho de 48KB
+- 2026-02-26 | stage=m2-carta-only-isolation | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=build com COMBO_CARTA_ONLY=1 para descartar conflito de slot/cartucho B
+- 2026-02-26 | stage=m2-pc-loop-trace-overlay | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=overlay mostra PC/R e loga suspeita de loop no mesmo PC durante travamento
+- 2026-02-26 21:30:36 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:31:44 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:32:10 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:35:13 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:37:44 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:38:28 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:42:26 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 | stage=m2-halt-bde3-vblank-fix | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=frame-step sai apos VBlank para evitar deadlock de HALT aguardando IRQ
+- 2026-02-26 21:47:14 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 | stage=m2-fmsx-audio-hdmi-enable | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=runtime de audio do fMSX habilitado e roteado para HDMI no loop do combo
+- 2026-02-26 21:50:29 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:51:06 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:51:28 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:52:06 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:55:01 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:55:34 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 21:59:41 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 22:00:48 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 22:04:45 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 22:08:18 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 22:12:11 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 22:14:33 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 22:17:05 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 22:20:06 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 22:24:34 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 22:25:01 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 22:27:51 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 22:30:41 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 22:39:01 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 22:39:01 | stage=m2-audio-confirmed | status=runtime-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=audio confirmado em hardware; probe tone e boot beep agora desativados por padrao (knobs mantidos)
+- 2026-02-26 22:41:02 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 22:41:02 | stage=m2-fps-pacing | status=runtime-tuned | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=loop de emulacao migrado para pacing temporal 60Hz; overlay EV troca B por V (fps)
+- 2026-02-26 22:43:31 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 22:43:31 | stage=m2-audio-gain-tune | status=runtime-tuned | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=ganho HDMI reduzido (base/max/target) e SetChannels ajustado para 192 para reduzir clipping
+- 2026-02-26 22:47:14 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 22:47:14 | stage=m2-audio-fps-stability | status=runtime-tuned | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=volume -10% (SetChannels=172), target_peak=8000 e refill budget por iteracao=512 frames para reduzir spikes e queda de FPS
+- 2026-02-26 22:52:30 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 22:52:30 | stage=m2-runtime-clip-fps-controls | status=runtime-tuned | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=PgUp/PgDn ajustam clip max em runtime; overlay EV mostra C; overlay throttled 10Hz e refill budget reduzido para estabilidade de FPS
+- 2026-02-26 22:56:13 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 22:56:13 | stage=m2-audio-runtime-gain-control | status=runtime-tuned | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=PgUp/PgDn agora controlam ganho de saida G:% (20..150), defaults de ganho/target/clip reduzidos e SetChannels=150
+- 2026-02-26 23:00:29 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 23:00:29 | stage=m2-audio-lock-fps-tune | status=runtime-tuned | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=C=16000 e G=70 travados; PgUp/PgDn desativados; refill de audio temporizado (4ms) e overlay em 4Hz para reduzir queda de FPS
+- 2026-02-26 23:00:59 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 23:00:59 | stage=m2-fps-audio-refill-batch | status=runtime-tuned | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=refill audio a cada 8ms com budget 512 para reduzir overhead e ajudar estabilidade de FPS
+- 2026-02-26 23:04:58 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 23:04:58 | stage=m2-desync-rollback | status=runtime-tuned | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=rollback de tweaks que causaram desync: sem MsSleep(1), refill audio continuo, overlay 10Hz, budget 256; C/G travados mantidos
+- 2026-02-26 23:05:40 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 23:05:40 | stage=m2-catchup-blit-opt | status=runtime-tuned | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=otimizacao de pacing: em catch-up faz blit uma vez por loop (ultimo frame), reduzindo custo de video e ajudando FPS
+- 2026-02-26 23:07:34 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 23:07:34 | stage=m2-overlay-freeze-key | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=tecla PAUSE alterna freeze do overlay DBG/LOG sem pausar emulacao
+- 2026-02-26 23:11:47 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 23:11:47 | stage=m2-fps-loop-optimization | status=runtime-tuned | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=USB poll throttled (4ms), catchup max 4 frames, yield condicional apenas quando adiantado; alvo: evitar queda para ~45 FPS apos F3300
+- 2026-02-26 23:17:12 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 23:17:12 | stage=m2-av-resync-rollback | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=rollback de tuning que degradou audio: sem throttle USB/cond-yield/catchup=4; loop restaurado e overlay freeze por PAUSE mantido
+- 2026-02-26 23:18:30 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 23:18:30 | stage=m2-overlay-ev1-ev2-cleanup | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=overlay separado em EV1/EV2, JY movido para linhas 5/6, clear com ESC[2K em 6 linhas, toggle overlay aceita F1/F12
+- 2026-02-26 23:23:38 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 23:23:38 | stage=m2-audio-continuity-resync-tune | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=catchup max 3, resync menos agressivo, e hold da ultima amostra quando ring do core zera para evitar audio intervalado
+- 2026-02-26 23:29:48 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 23:29:48 | stage=m2-audio-refill-stabilize | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=refill estabilizado: budget 1024, sem yield interno, escreve write_frames mesmo com got parcial; toggle overlay aceita F1/F11/F12
+- 2026-02-26 23:33:39 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 23:33:39 | stage=m2-overlay-clear-fix | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=clear do overlay voltou para sobrescrita por espacos (6 linhas) para garantir hide via F12/F1/F11
+- 2026-02-26 23:36:59 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 23:36:59 | stage=m2-pause-full-emulation | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=F12 voltou a ser unico toggle do overlay; F1/F11 removidos; PAUSE agora pausa/retoma emulacao completa com audio em silencio
+- 2026-02-26 23:37:35 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 23:37:35 | stage=m2-overlay-paused-indicator | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=overlay linha TXTDBG agora mostra PAU:1/0 para estado de emulacao pausada
+- 2026-02-26 23:40:00 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 23:40:00 | stage=m2-vcr-pause-badge | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=badge PAUSE || adicionado no canto superior direito do box do emulador; visivel apenas quando PAUSE ativo
+- 2026-02-26 23:52:45 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 23:52:46 | stage=m2-asset-policy-compliance | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=initramfs embutido desativado por padrao; fallback BIOS embutida configuravel via COMBO_EMBEDDED_BIOS_PATH (default cbios_main_msx1_br.rom)
+- 2026-02-26 23:56:07 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-26 23:56:07 | stage=m2-initramfs-first-fallback-guard | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=fallback de BIOS embutida agora so ocorre quando initramfs montada==0; com initramfs presente, busca fica restrita a VFS/initramfs
+- 2026-02-27 00:03:20 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 00:03:20 | stage=m2-initramfs-first-enforced | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=config.txt agora habilita initramfs msx.cpio; parser nao usa mais fallback cego de endereco; prepare-sd valida linha initramfs
+- 2026-02-27 00:04:34 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 00:04:34 | stage=m2-build-warning-suppression | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=warnings do build M2 ocultados via COMBO_SUPPRESS_WARNINGS=1 (reversivel com COMBO_SUPPRESS_WARNINGS=0)
+- 2026-02-27 00:09:04 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 00:09:04 | stage=m2-keyboard-matrix-bridge | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=USB raw keyboard agora alimenta KeyState do fMSX (HID->matrix), corrigindo input no BASIC/BIOS
+- 2026-02-27 00:13:58 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 00:13:58 | stage=m2-keyboard-full-map | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=mapa HID->MSX expandido: letras, numeros, pontuacao completa, keypad e teclas especiais (COUNTRY/DEAD/STOP/F1..F5 etc.)
+- 2026-02-27 00:16:37 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 00:16:37 | stage=m2-mini-kbd-debug-and-viewport | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=EV2 mostra KH/KM (HID->MSX); com overlay oculto viewport usa altura maxima mantendo aspect ratio
+- 2026-02-27 00:22:29 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 00:22:29 | stage=m2-fractional-aspect-fit | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=renderer agora usa aspect-fit fracionario (nao apenas escala inteira), maximizando viewport com proporcao preservada
+- 2026-02-27 00:27:20 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 00:27:20 | stage=m2-pause-debounce-fix | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=PAUSE agora usa debounce por tempo (200ms) para evitar necessidade de múltiplos toques
+- 2026-02-27 00:30:21 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 00:30:21 | stage=m2-overlay-local-bg-policy | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=overlay de debug voltou para fundo padrao da tela (sem faixa preta inteira); fundo preto mantido apenas em badges locais (ex.: PAUSE ||), diretriz alinhada para futuro menu do emulador
+- 2026-02-27 00:32:10 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 00:32:10 | stage=m2-pause-menu-skeleton-local-bg | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=PAUSE agora desenha esqueleto minimo de menu (titulo + item selecionado) com caixa preta local; sem faixa opaca global
+- 2026-02-27 00:37:48 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 00:37:48 | stage=m2-gfx-textbox-library | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=novo modulo importavel gfx_textbox (matriz de caracteres em framebuffer com cor/posicao/escala); menu PAUSE migrado para render grafico via CCharGenerator, sem uso de ANSI para menu
+- 2026-02-27 00:41:18 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 00:53:02 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 00:53:02 | stage=m2-floating-pause-menu-center-2x | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=menu de PAUSE agora usa caixa flutuante central preta sobre o box do emulador, titulo PAUSE II, textos 2x, itens centralizados e faixa de selecao invertida com margem de 1 caractere por lado
+- 2026-02-27 00:53:02 | stage=m2-msx1-text80-default | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=novo knob COMBO_FMSX_MSX1_TEXT80=1 (default) aplicado no startup_mode do fMSX (MSX_FIXEDFONT) para habilitar por padrao o caminho de texto relacionado ao suporte de 80 colunas no MSX1
+- 2026-02-27 01:00:35 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 01:00:35 | stage=m2-pause-menu-flicker-fix | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=menu em PAUSE agora so redesenha quando estado muda (selecao/posicao/visibilidade), reduzindo flicker de fundo
+- 2026-02-27 01:00:35 | stage=m2-pause-menu-cursor-move | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=cursor do menu com Up/Down via edge trigger (sem auto-repeat por tecla segurada), navegando entre os 4 itens selecionaveis
+- 2026-02-27 01:02:37 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 01:02:37 | stage=m2-mapper-megaram-build-knobs | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=novos knobs COMBO_FMSX_RAMMAPPER_KB e COMBO_FMSX_MEGARAM_KB (256/512/1024) adicionados ao Makefile raiz/circle_combo e aplicados no runtime/core local fMSX
+- 2026-02-27 01:02:37 | stage=m2-mapper-megaram-1024-validate | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=compilacao validada com COMBO_FMSX_RAMMAPPER_KB=1024 e COMBO_FMSX_MEGARAM_KB=1024
+- 2026-02-27 01:03:38 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 01:06:25 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 01:11:25 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 01:11:25 | stage=m2-carta-mapper-guess-default | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=runtime agora habilita MSX_GUESSA/MSX_GUESSB por default (COMBO_FMSX_CART_GUESS=1) para evitar travas de ROMs maiores em CARTA quando mapper nao e forçado
+- 2026-02-27 01:11:25 | stage=m2-carta-mapper-override-knob | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=novo knob COMBO_FMSX_CARTA_MAPPER=0..8|255 permite forcar mapper de CARTA (255=auto/default)
+- 2026-02-27 01:15:05 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 01:18:46 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 01:18:46 | stage=m2-build-configurator-script | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=novo script scripts/build-m2-config.sh com selecao interativa de RAM mapper/MegaRAM (inclui OFF), mapper CARTA/CARTB (AUTO/manual), debug overlay e boot limpo
+- 2026-02-27 01:18:46 | stage=m2-cartb-mapper-and-clean-boot-knobs | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=novos knobs COMBO_FMSX_CARTB_MAPPER, COMBO_FMSX_MEGARAM_ENABLED e COMBO_BOOT_QUIET; runtime passa a suportar override de mapper do slot B e desativacao explicita de MegaRAM
+- 2026-02-27 01:18:46 | stage=m2-config-txt-disable-splash | status=build-ok | artifact=sdcard/config.txt | note=note=disable_splash=1 habilitado para reduzir tela colorida de firmware no boot
+- 2026-02-27 01:23:55 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 01:26:22 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 01:27:43 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 01:28:16 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 01:30:33 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 01:30:33 | stage=m2-audio-resync-latency-cap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=ring de audio agora limita backlog para ~200ms (descarta amostras antigas quando latency passa do limite), reduzindo desync apos slowdown
+- 2026-02-27 01:30:33 | stage=m2-audio-overflow-overwrite-oldest | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=overflow no ring nao quebra mais bloco; passa a sobrescrever amostra mais antiga para manter continuidade do stream
+- 2026-02-27 01:30:33 | stage=m2-audio-underflow-no-hold-last | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=refill HDMI nao repete mais ultimo sample quando falta audio do core; preenche com silencio para evitar som "quebrado" em intervalos
+- 2026-02-27 01:32:40 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 01:37:00 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 01:42:17 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 01:56:01 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 02:03:35 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 02:11:09 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 02:16:31 | stage=m2-render-cache-stability | status=hardware-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=hardware: F003296 pico breve V06.3 sem reproduzir falha principal; CI R 5760 estavel; JY2 R0000 L4320; runtime estavel
+- 2026-02-27 02:19:11 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 02:19:20 | stage=m2-full-viewport-fixed | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=viewport fixa full-screen com aspect ratio; sem area reservada para DBG; overlay sobrepoe linhas superiores
+- 2026-02-27 02:21:35 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 02:30:48 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 02:36:34 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 02:36:41 | stage=m2-menu-reset-hard | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=menu: item Reset apos MSX BASIC; Enter executa hard reset via ResetMSX mantendo ROMs/discos carregados
+- 2026-02-27 02:42:16 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 02:42:23 | stage=m2-menu-modularization | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=refactor: menu extraido de kernel para modulos combo_menu/combo_menu_items; kernel agora so despacha acoes (MSX BASIC/Reset)
+- 2026-02-27 02:57:26 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 02:57:37 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 02:57:48 | stage=m2-boot-profiles | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=script build-m2-config com modo de boot NORMAL/FAST BOOT/GAME BOOT; novo knob COMBO_FMSX_BOOT_PROFILE=0/1/2; GAME BOOT forca COMBO_CARTA_ONLY=1
+- 2026-02-27 03:01:01 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 03:01:10 | stage=m2-keymap-f11-f12-stop | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=teclas: F12 pause/resume, F11 toggle DBG apenas com COMBO_ENABLE_DEBUG_OVERLAY=1, tecla Pause do PC mapeada para STOP do MSX
+- 2026-02-27 03:02:08 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 03:06:18 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 03:09:14 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 03:09:22 | stage=m2-boot-path-audio-defer | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=otimizacao boot: init de audio HDMI removida do caminho critico e adiada para apos primeiros frames do fMSX
+- 2026-02-27 03:10:05 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 03:16:03 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 03:16:03 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-27 03:16:11 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 03:16:20 | stage=stable-default-profile | status=build-ok | artifact=artifacts/kernel8.img | note=make default agora gera artifacts/kernel8.img com Debug OFF, Fast Boot, Mapper OFF(64KB), MegaRAM OFF; WIDTH 80 verificado como nao suportado no BASIC em modo MSX1

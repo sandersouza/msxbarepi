@@ -27,6 +27,7 @@ AUTO_CONFIRM="${AUTO_CONFIRM:-0}"
 
 KERNEL_IMG="${KERNEL_IMG:-}"
 CONFIG_TXT="${CONFIG_TXT:-${PROJECT_ROOT}/sdcard/config.txt}"
+CMDLINE_TXT="${CMDLINE_TXT:-${PROJECT_ROOT}/sdcard/cmdline.txt}"
 INITRAMFS_IMG="${INITRAMFS_IMG:-${PROJECT_ROOT}/sdcard/msx.cpio}"
 INITRAMFS_SRC_DIR="${INITRAMFS_SRC_DIR:-${PROJECT_ROOT}/roms/msx1}"
 FIRMWARE_DIR="${FIRMWARE_DIR:-${PROJECT_ROOT}/rpi-firmware}"
@@ -289,10 +290,26 @@ else
 fi
 
 if [ -f "$CONFIG_TXT" ]; then
+  if ! grep -Eq '^[[:space:]]*initramfs[[:space:]]+msx\.cpio([[:space:]]+|$)' "$CONFIG_TXT"; then
+    echo "[ERRO] config.txt sem linha obrigatoria de initramfs (ex.: 'initramfs msx.cpio followkernel')."
+    echo "[ERRO] Ajuste ${CONFIG_TXT} antes de preparar o SD."
+    exit 1
+  fi
   run_or_echo cp "$CONFIG_TXT" "${TARGET_VOLUME}/config.txt"
   echo "[OK] Copiado: config.txt"
 else
   echo "[WARN] Nao encontrado: ${CONFIG_TXT}"
+fi
+
+if [ -f "$CMDLINE_TXT" ]; then
+  run_or_echo cp "$CMDLINE_TXT" "${TARGET_VOLUME}/cmdline.txt"
+  echo "[OK] Copiado: cmdline.txt"
+  if [ "$DRY_RUN" != "1" ] && [ ! -f "${TARGET_VOLUME}/cmdline.txt" ]; then
+    echo "[ERRO] Falha ao validar copia de cmdline.txt em ${TARGET_VOLUME}."
+    exit 1
+  fi
+else
+  echo "[INFO] cmdline.txt nao encontrado: ${CMDLINE_TXT} (opcional)"
 fi
 
 if [ -f "$INITRAMFS_IMG" ]; then
