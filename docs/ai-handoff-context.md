@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 27/02/2026 15:46
+Última atualização: 27/02/2026 16:46
 
 ## Objetivo deste arquivo
 
@@ -453,3 +453,7 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-02-27 16:24:03 | stage=beta-v0.1-performance-milestone-planning | status=remote-ok | artifact=https://github.com/sandersouza/msxbarepi/milestone/7 | note=milestone #7 criada; labels de prioridade/area/performance criadas; issues #34-#40 abertas com P0/P1/P2 e vinculadas ao projeto MSX BarePI; espelho local docs/milestones/m7 sincronizado
 - 2026-02-27 16:39:21 | stage=beta-v0.1-priority-realignment | status=remote-ok | artifact=https://github.com/sandersouza/msxbarepi/milestone/7 | note=issue #36 definida como bloqueante com escopo detalhado; issue #34 rebaixada para P1; issue #39 elevada para P0; criadas #41 (50/60Hz) e #42 (Turbo Z80 DES/PAN/MAX) como P0; docs/milestones/m7 sincronizados
 - 2026-02-27 16:41:17 | stage=github-branch-sync-policy | status=docs-ok | artifact=AGENTS.md,docs/github-project-management.md | note=adicionada politica de sync de branches locais/remotas; remocao de branch local somente com confirmacao do usuario; proibido alterar/deletar branch main
+- 2026-02-27 16:43:18 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 16:43:18 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-27 16:46:39 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 16:46:46 | stage=combo-build-output-cleanup | status=build-ok | artifact=build/circle_combo/kernel8.img | note=Makefile raiz ajustado para copiar kernel do combo para build/circle_combo e limpar circle_combo ao final; artefatos de build removidos do indice git e ignorados por circle_combo/.gitignore

@@ -195,7 +195,7 @@ m0-hdmi-audio-integrated-full: circle-configure
 	@echo "Artefato M0.2 audio full (experimental): artifacts/kernel8-m0-hdmi-audio-full.img"
 
 m0-combo: circle-configure
-	@mkdir -p artifacts
+	@mkdir -p artifacts build/circle_combo
 	$(MAKE) -C circle_combo clean >/dev/null
 	$(MAKE) -C circle_combo
 	@img=$$(ls circle_combo/kernel8*.img 2>/dev/null | head -n1); \
@@ -203,12 +203,14 @@ m0-combo: circle-configure
 		echo "Erro: imagem do combo standalone nao encontrada"; \
 		exit 1; \
 	fi; \
-	cp "$$img" artifacts/kernel8-m0-combo.img
+	cp "$$img" build/circle_combo/kernel8.img; \
+	cp build/circle_combo/kernel8.img artifacts/kernel8-m0-combo.img
+	$(MAKE) -C circle_combo clean >/dev/null
 	bash $(CONTEXT_UPDATER) m0.3-combo-standalone ok artifacts/kernel8-m0-combo.img
 	@echo "Artefato M0.3 combo standalone (audio HDMI + USB teclado): artifacts/kernel8-m0-combo.img"
 
 m2-fmsx-bootstrap: circle-configure
-	@mkdir -p artifacts
+	@mkdir -p artifacts build/circle_combo
 	$(MAKE) -C circle_combo clean >/dev/null
 	$(MAKE) -C circle_combo CHECK_DEPS=0 COMBO_ENABLE_FMSX=1 \
 		COMBO_INITRAMFS_MOUNT=$(COMBO_INITRAMFS_MOUNT) \
@@ -237,7 +239,9 @@ m2-fmsx-bootstrap: circle-configure
 		echo "Erro: imagem do bootstrap M2 fMSX nao encontrada"; \
 		exit 1; \
 	fi; \
-	cp "$$img" artifacts/kernel8-m2-fmsx-bootstrap.img
+	cp "$$img" build/circle_combo/kernel8.img; \
+	cp build/circle_combo/kernel8.img artifacts/kernel8-m2-fmsx-bootstrap.img
+	$(MAKE) -C circle_combo clean >/dev/null
 	bash $(CONTEXT_UPDATER) m2-bootstrap build-ok artifacts/kernel8-m2-fmsx-bootstrap.img
 	@echo "Artefato M2 bootstrap (fMSX core + combo loop): artifacts/kernel8-m2-fmsx-bootstrap.img"
 
