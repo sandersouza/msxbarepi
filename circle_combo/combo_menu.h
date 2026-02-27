@@ -10,13 +10,21 @@ public:
     CComboPauseMenu(void);
 
     void Reset(void);
-    void SetOverscanEnabled(boolean enabled);
-    void SetScanlinesEnabled(boolean enabled);
+    void SetOverscanPercent(unsigned percent);
+    unsigned GetOverscanPercent(void) const;
+    void SetWidescreenEnabled(boolean enabled);
+    void SetScanlineMode(unsigned mode);
     void SetOverlayEnabled(boolean enabled, boolean available);
     void SetAudioMuted(boolean enabled);
     void RequestRedraw(void);
     boolean ConsumeBackgroundRestoreRequest(void);
-    TComboMenuAction ProcessInput(boolean paused, boolean up_pressed, boolean down_pressed, boolean enter_pressed, boolean back_pressed);
+    TComboMenuAction ProcessInput(boolean paused,
+                                 boolean up_pressed,
+                                 boolean down_pressed,
+                                 boolean left_pressed,
+                                 boolean right_pressed,
+                                 boolean enter_pressed,
+                                 boolean back_pressed);
     void Render(boolean visible, CGfxTextBoxRenderer *renderer, unsigned screen_width, unsigned screen_height,
                 unsigned anchor_x, unsigned anchor_y, unsigned anchor_w, unsigned anchor_h);
 
@@ -33,15 +41,17 @@ private:
     unsigned m_LastDrawnSelected;
     boolean m_Visible;
     boolean m_InSettings;
-    boolean m_OverscanEnabled;
-    boolean m_ScanlinesEnabled;
+    unsigned m_OverscanPercent;
+    boolean m_WidescreenEnabled;
+    unsigned m_ScanlineMode;
     boolean m_OverlayEnabled;
     boolean m_OverlayAvailable;
     boolean m_AudioMuted;
     boolean m_LastBackPressed;
     boolean m_LastDrawnInSettings;
-    boolean m_LastDrawnOverscan;
-    boolean m_LastDrawnScanlines;
+    unsigned m_LastDrawnOverscanPercent;
+    boolean m_LastDrawnWidescreen;
+    unsigned m_LastDrawnScanlineMode;
     boolean m_LastDrawnOverlay;
     boolean m_LastDrawnOverlayAvailable;
     boolean m_LastDrawnAudioMuted;
@@ -54,6 +64,8 @@ private:
     boolean m_LastBoxValid;
     boolean m_LastUpPressed;
     boolean m_LastDownPressed;
+    boolean m_LastLeftPressed;
+    boolean m_LastRightPressed;
     boolean m_LastEnterPressed;
 };
 

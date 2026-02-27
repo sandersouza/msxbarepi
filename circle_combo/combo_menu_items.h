@@ -10,8 +10,10 @@ enum TComboMenuAction {
     ComboMenuActionDiskDriveA,
     ComboMenuActionDiskDriveB,
     ComboMenuActionSettings,
-    ComboMenuActionToggleOverscan,
-    ComboMenuActionToggleScanlines,
+    ComboMenuActionOverscanChanged,
+    ComboMenuActionToggleWidescreen,
+    ComboMenuActionCycleScanlines,
+    ComboMenuActionCycleScanlinesPrev,
     ComboMenuActionToggleOverlay,
     ComboMenuActionToggleAudioMute,
     ComboMenuActionMsxBasic,
@@ -25,8 +27,9 @@ typedef struct {
 } TComboMenuItem;
 
 const TComboMenuItem *combo_menu_root_items_get(unsigned *count);
-const TComboMenuItem *combo_menu_settings_items_get(boolean overscan_enabled,
-                                                     boolean scanlines_enabled,
+const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
+                                                     boolean widescreen_enabled,
+                                                     unsigned scanline_mode,
                                                      boolean overlay_enabled,
                                                      boolean overlay_available,
                                                      boolean audio_muted,

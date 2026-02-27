@@ -44,6 +44,11 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Cada mudança deve atualizar documentação mínima em `docs/`
 - A evolução do projeto deve refletir em documentação continuamente, incluindo atualização deste `AGENTS.md` quando necessário
 - Novas diretrizes técnicas/processuais identificadas durante o desenvolvimento devem ser registradas no `AGENTS.md`
+- Gestão de projeto no GitHub deve seguir `docs/github-project-management.md` (fonte de verdade para fluxo de issues/milestones/branches/PRs)
+- Manter espelho local das milestones/issues em `docs/milestones/` sincronizado com o remoto
+- Sincronizar branches locais com remotas (`git fetch --prune`); se branch remota for removida, propor remoção da local correspondente
+- Antes de deletar qualquer branch local, confirmar explicitamente com o usuário
+- Nunca alterar, deletar ou reescrever a branch `main`
 - Manter um arquivo de CONTEXT persistente para handoff entre IAs em `docs/ai-handoff-context.md`; atualizar esse arquivo ao final de cada ciclo relevante (build, milestone, bug, decisão técnica) com estado atual, artefatos gerados, comandos executados, próximos passos e riscos abertos, para permitir continuidade sem perda de contexto
 - A documentacao do projeto deve sempre referenciar explicitamente as fontes de consulta/referencias utilizadas (ex.: arquivos/classes de `third_party/fmsx` e `third_party/circle`) quando influenciarem implementacoes ou correcoes
 - Por padrao, seguir iterando de forma autonoma ate entregar build/resultado testavel; so pausar para status intermediario se o usuario pedir explicitamente

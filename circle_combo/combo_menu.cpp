@@ -17,6 +17,52 @@ static unsigned ComboStrLen(const char *text)
     return len;
 }
 
+static void ComboSliceCopy(char *dst, unsigned dst_size, const char *src, unsigned start, unsigned len)
+{
+    if (dst == 0 || dst_size == 0u)
+    {
+        return;
+    }
+
+    if (src == 0)
+    {
+        dst[0] = '\0';
+        return;
+    }
+
+    unsigned i = 0u;
+    while (i + 1u < dst_size && i < len && src[start + i] != '\0')
+    {
+        dst[i] = src[start + i];
+        ++i;
+    }
+    dst[i] = '\0';
+}
+
+static unsigned ComboFindFlagStart(const char *label)
+{
+    const unsigned len = ComboStrLen(label);
+    if (len < 4u)
+    {
+        return len;
+    }
+
+    if (label[len - 1u] != ']')
+    {
+        return len;
+    }
+
+    for (unsigned i = len - 1u; i > 1u; --i)
+    {
+        if (label[i] == '[' && label[i - 1u] == ' ')
+        {
+            return i - 1u;
+        }
+    }
+
+    return len;
+}
+
 CComboPauseMenu::CComboPauseMenu(void)
 : m_Row(1),
   m_Col(1),
@@ -24,15 +70,17 @@ CComboPauseMenu::CComboPauseMenu(void)
   m_LastDrawnSelected(0xFFFFFFFFu),
   m_Visible(FALSE),
     m_InSettings(FALSE),
-    m_OverscanEnabled(FALSE),
-    m_ScanlinesEnabled(FALSE),
+    m_OverscanPercent(0u),
+    m_WidescreenEnabled(FALSE),
+    m_ScanlineMode(0u),
     m_OverlayEnabled(FALSE),
     m_OverlayAvailable(FALSE),
     m_AudioMuted(FALSE),
     m_LastBackPressed(FALSE),
     m_LastDrawnInSettings(FALSE),
-    m_LastDrawnOverscan(FALSE),
-    m_LastDrawnScanlines(FALSE),
+    m_LastDrawnOverscanPercent(0u),
+    m_LastDrawnWidescreen(FALSE),
+    m_LastDrawnScanlineMode(0u),
     m_LastDrawnOverlay(FALSE),
     m_LastDrawnOverlayAvailable(FALSE),
     m_LastDrawnAudioMuted(FALSE),
@@ -45,6 +93,8 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastBoxValid(FALSE),
   m_LastUpPressed(FALSE),
   m_LastDownPressed(FALSE),
+  m_LastLeftPressed(FALSE),
+  m_LastRightPressed(FALSE),
   m_LastEnterPressed(FALSE)
 {
 }
@@ -59,8 +109,9 @@ void CComboPauseMenu::Reset(void)
     m_Visible = FALSE;
     m_LastBackPressed = FALSE;
     m_LastDrawnInSettings = FALSE;
-    m_LastDrawnOverscan = m_OverscanEnabled;
-    m_LastDrawnScanlines = m_ScanlinesEnabled;
+    m_LastDrawnOverscanPercent = m_OverscanPercent;
+    m_LastDrawnWidescreen = m_WidescreenEnabled;
+    m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
     m_LastDrawnAudioMuted = m_AudioMuted;
@@ -69,23 +120,49 @@ void CComboPauseMenu::Reset(void)
     m_LastBoxValid = FALSE;
     m_LastUpPressed = FALSE;
     m_LastDownPressed = FALSE;
+    m_LastLeftPressed = FALSE;
+    m_LastRightPressed = FALSE;
     m_LastEnterPressed = FALSE;
 }
 
-void CComboPauseMenu::SetOverscanEnabled(boolean enabled)
+void CComboPauseMenu::SetOverscanPercent(unsigned percent)
 {
-    if (m_OverscanEnabled != enabled)
+    if (percent > 100u)
     {
-        m_OverscanEnabled = enabled;
+        percent = 100u;
+    }
+
+    if (m_OverscanPercent != percent)
+    {
+        m_OverscanPercent = percent;
         m_ForceRedraw = TRUE;
     }
 }
 
-void CComboPauseMenu::SetScanlinesEnabled(boolean enabled)
+unsigned CComboPauseMenu::GetOverscanPercent(void) const
 {
-    if (m_ScanlinesEnabled != enabled)
+    return m_OverscanPercent;
+}
+
+void CComboPauseMenu::SetWidescreenEnabled(boolean enabled)
+{
+    if (m_WidescreenEnabled != enabled)
     {
-        m_ScanlinesEnabled = enabled;
+        m_WidescreenEnabled = enabled;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+void CComboPauseMenu::SetScanlineMode(unsigned mode)
+{
+    if (mode > 2u)
+    {
+        mode = 2u;
+    }
+
+    if (m_ScanlineMode != mode)
+    {
+        m_ScanlineMode = mode;
         m_ForceRedraw = TRUE;
     }
 }
@@ -126,8 +203,9 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
     if (m_InSettings)
     {
         return combo_menu_settings_items_get(
-            m_OverscanEnabled,
-            m_ScanlinesEnabled,
+            m_OverscanPercent,
+            m_WidescreenEnabled,
+            m_ScanlineMode,
             m_OverlayEnabled,
             m_OverlayAvailable,
             m_AudioMuted,
@@ -195,13 +273,21 @@ unsigned CComboPauseMenu::FindNextSelectable(unsigned from) const
     return from;
 }
 
-TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused, boolean up_pressed, boolean down_pressed, boolean enter_pressed, boolean back_pressed)
+TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
+                                               boolean up_pressed,
+                                               boolean down_pressed,
+                                               boolean left_pressed,
+                                               boolean right_pressed,
+                                               boolean enter_pressed,
+                                               boolean back_pressed)
 {
     if (!paused)
     {
         m_LastBackPressed = back_pressed;
         m_LastUpPressed = up_pressed;
         m_LastDownPressed = down_pressed;
+        m_LastLeftPressed = left_pressed;
+        m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
         return ComboMenuActionNone;
     }
@@ -213,6 +299,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused, boolean up_presse
         m_LastBackPressed = back_pressed;
         m_LastUpPressed = up_pressed;
         m_LastDownPressed = down_pressed;
+        m_LastLeftPressed = left_pressed;
+        m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
         return ComboMenuActionNone;
     }
@@ -226,6 +314,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused, boolean up_presse
         m_LastBackPressed = back_pressed;
         m_LastUpPressed = up_pressed;
         m_LastDownPressed = down_pressed;
+        m_LastLeftPressed = left_pressed;
+        m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
         return ComboMenuActionNone;
     }
@@ -246,7 +336,69 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused, boolean up_presse
     }
 
     TComboMenuAction action = ComboMenuActionNone;
-    if (enter_pressed && !m_LastEnterPressed && items[m_Selected].selectable)
+    boolean handled_settings_input = FALSE;
+    if (m_InSettings && items[m_Selected].selectable)
+    {
+        const boolean enter_edge = enter_pressed && !m_LastEnterPressed;
+        const boolean left_edge = left_pressed && !m_LastLeftPressed;
+        const boolean right_edge = right_pressed && !m_LastRightPressed;
+
+        if (items[m_Selected].action == ComboMenuActionOverscanChanged)
+        {
+            unsigned next_value = m_OverscanPercent;
+            if (left_edge)
+            {
+                next_value = (next_value == 0u) ? 100u : (next_value - 10u);
+            }
+            if ((right_edge || enter_edge) && next_value <= 100u)
+            {
+                next_value = (next_value >= 100u) ? 0u : (next_value + 10u);
+                if (next_value > 100u)
+                {
+                    next_value = 100u;
+                }
+            }
+
+            if (next_value != m_OverscanPercent)
+            {
+                m_OverscanPercent = next_value;
+                m_ForceRedraw = TRUE;
+                m_RequestBackgroundRestore = TRUE;
+                action = ComboMenuActionOverscanChanged;
+            }
+            handled_settings_input = enter_edge || left_edge || right_edge;
+        }
+        else if (items[m_Selected].action == ComboMenuActionCycleScanlines)
+        {
+            if (left_edge)
+            {
+                action = ComboMenuActionCycleScanlinesPrev;
+                m_ForceRedraw = TRUE;
+                m_RequestBackgroundRestore = TRUE;
+            }
+            else if (right_edge || enter_edge)
+            {
+                action = ComboMenuActionCycleScanlines;
+                m_ForceRedraw = TRUE;
+                m_RequestBackgroundRestore = TRUE;
+            }
+            handled_settings_input = enter_edge || left_edge || right_edge;
+        }
+        else if ((items[m_Selected].action == ComboMenuActionToggleWidescreen)
+              || (items[m_Selected].action == ComboMenuActionToggleOverlay)
+              || (items[m_Selected].action == ComboMenuActionToggleAudioMute))
+        {
+            if (enter_edge || left_edge || right_edge)
+            {
+                action = items[m_Selected].action;
+                m_ForceRedraw = TRUE;
+                m_RequestBackgroundRestore = TRUE;
+            }
+            handled_settings_input = enter_edge || left_edge || right_edge;
+        }
+    }
+
+    if (enter_pressed && !m_LastEnterPressed && items[m_Selected].selectable && !handled_settings_input)
     {
         if (!m_InSettings && items[m_Selected].action == ComboMenuActionSettings)
         {
@@ -258,12 +410,19 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused, boolean up_presse
         else
         {
             action = items[m_Selected].action;
+            if (m_InSettings)
+            {
+                /* Force redraw of dynamic labels (e.g. [LIG]/[DES]) immediately on Enter. */
+                m_ForceRedraw = TRUE;
+            }
         }
     }
 
     m_LastBackPressed = back_pressed;
     m_LastUpPressed = up_pressed;
     m_LastDownPressed = down_pressed;
+    m_LastLeftPressed = left_pressed;
+    m_LastRightPressed = right_pressed;
     m_LastEnterPressed = enter_pressed;
 
     return action;
@@ -351,8 +510,9 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_Col == box_x
      && m_LastDrawnSelected == m_Selected
      && m_LastDrawnInSettings == m_InSettings
-     && m_LastDrawnOverscan == m_OverscanEnabled
-     && m_LastDrawnScanlines == m_ScanlinesEnabled
+     && m_LastDrawnOverscanPercent == m_OverscanPercent
+     && m_LastDrawnWidescreen == m_WidescreenEnabled
+     && m_LastDrawnScanlineMode == m_ScanlineMode
      && m_LastDrawnOverlay == m_OverlayEnabled
      && m_LastDrawnOverlayAvailable == m_OverlayAvailable
      && m_LastDrawnAudioMuted == m_AudioMuted)
@@ -372,16 +532,46 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         const unsigned row = 2u + i;
         const unsigned y = box_y + (row * cell_h);
         const unsigned text_len = ComboStrLen(items[i].label);
-        const unsigned x = box_x + ((box_cols - text_len) / 2u) * cell_w;
+        const boolean settings_row = m_InSettings;
 
         if (items[i].selectable && i == m_Selected && box_cols > 2u)
         {
             renderer->FillRect(box_x + cell_w, y, (box_cols - 2u) * cell_w, cell_h, BRIGHT_WHITE_COLOR);
-            renderer->DrawText(x, y, items[i].label, selected_style, scale_x, scale_y);
+        }
+
+        if (settings_row)
+        {
+            const unsigned split = ComboFindFlagStart(items[i].label);
+            const unsigned left_len = split < text_len ? split : text_len;
+            const unsigned flag_len = split < text_len ? (text_len - split) : 0u;
+            const unsigned inner_left_col = 1u;
+            const unsigned inner_right_col = box_cols > 0u ? (box_cols - 2u) : 0u;
+            const unsigned x_left = box_x + (inner_left_col * cell_w);
+            const unsigned x_flag = flag_len > 0u
+                ? box_x + ((inner_right_col + 1u - flag_len) * cell_w)
+                : 0u;
+            const TGfxTextStyle style = (items[i].selectable && i == m_Selected) ? selected_style : normal_style;
+
+            if (flag_len > 0u && x_flag > x_left + cell_w)
+            {
+                char left_buf[48];
+                char flag_buf[32];
+                ComboSliceCopy(left_buf, sizeof(left_buf), items[i].label, 0u, left_len);
+                ComboSliceCopy(flag_buf, sizeof(flag_buf), items[i].label, split, flag_len);
+                renderer->DrawText(x_left, y, left_buf, style, scale_x, scale_y);
+                renderer->DrawText(x_flag, y, flag_buf, style, scale_x, scale_y);
+            }
+            else
+            {
+                const unsigned x = box_x + ((box_cols - text_len) / 2u) * cell_w;
+                renderer->DrawText(x, y, items[i].label, style, scale_x, scale_y);
+            }
         }
         else
         {
-            renderer->DrawText(x, y, items[i].label, normal_style, scale_x, scale_y);
+            const unsigned x = box_x + ((box_cols - text_len) / 2u) * cell_w;
+            const TGfxTextStyle style = (items[i].selectable && i == m_Selected) ? selected_style : normal_style;
+            renderer->DrawText(x, y, items[i].label, style, scale_x, scale_y);
         }
     }
 
@@ -389,8 +579,9 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_Col = box_x;
     m_LastDrawnSelected = m_Selected;
     m_LastDrawnInSettings = m_InSettings;
-    m_LastDrawnOverscan = m_OverscanEnabled;
-    m_LastDrawnScanlines = m_ScanlinesEnabled;
+    m_LastDrawnOverscanPercent = m_OverscanPercent;
+    m_LastDrawnWidescreen = m_WidescreenEnabled;
+    m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
     m_LastDrawnAudioMuted = m_AudioMuted;

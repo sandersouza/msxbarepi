@@ -20,7 +20,7 @@ COMBO_FMSX_MEGARAM_ENABLED ?= 1
 COMBO_FMSX_CART_GUESS ?= 1
 COMBO_FMSX_CARTA_MAPPER ?= 255
 COMBO_FMSX_CARTB_MAPPER ?= 255
-COMBO_FMSX_BOOT_PROFILE ?= 0
+COMBO_FMSX_BOOT_PROFILE ?= 1
 COMBO_BOOT_QUIET ?= 0
 COMBO_ENABLE_DEBUG_OVERLAY ?= 1
 
@@ -72,7 +72,7 @@ CFLAGS += -DSKIP_STDIO_REDEFINES
 CFLAGS += -I ./fmsx_compat -I ../third_party/fmsx -I ../third_party/fmsx/fMSX -I ../third_party/fmsx/EMULib -I ../third_party/fmsx/Z80
 endif
 
-OBJS = main.o kernel.o gfx_textbox.o combo_menu.o combo_menu_items.o
+OBJS = main.o kernel.o keyboard_input.o gfx_textbox.o combo_menu.o combo_menu_items.o
 
 ifeq ($(COMBO_ENABLE_FMSX),1)
 OBJS += fmsx_runtime.o fmsx_host_stubs.o fmsx_compat_stubs.o fmsx_libc_shim.o

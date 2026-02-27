@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 27/02/2026 13:00
+Última atualização: 27/02/2026 15:46
 
 ## Objetivo deste arquivo
 
@@ -397,3 +397,59 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-02-27 12:57:56 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
 - 2026-02-27 13:00:47 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
 - 2026-02-27 13:00:52 | stage=m2-settings-overlay-audio-mute | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=menu settings: opcao 3/4 substituidas por Overlay DBG ON/OFF e Audio Mute ON/OFF com labels dinamicos e acao real em runtime
+- 2026-02-27 13:45:22 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 13:45:22 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-27 13:51:59 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 13:51:59 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-27 13:51:59 | stage=m2-overscan-border-cleanup | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=blit agora limpa diferenca entre box antigo e novo ao alternar Overscan, evitando lixo visual nas bordas
+- 2026-02-27 14:03:41 | stage=m2-overscan-aspect-fill | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=Overscan ON agora usa aspect-fill (zoom com crop central) para ocupar mais area da tela; Overscan OFF permanece aspect-fit com margem de seguranca
+- 2026-02-27 14:15:04 | stage=m2-settings-toggle-redraw-fix | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=Settings agora forca redraw ao confirmar item com Enter; labels [LIG]/[DES] atualizam sem mover cursor; em pausa, overscan/scanlines tambem solicitam refresh do fundo
+- 2026-02-27 13:53:59 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 13:53:59 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-27 13:56:39 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 13:56:39 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-27 14:30:12 | stage=m2-boottrace-hdmi-cleanup | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=mensagens BT:* removidas da HDMI (incluindo BT:I1 no init); BootTrace mantido apenas no logger serial
+- 2026-02-27 13:58:53 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 13:58:53 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-27 14:39:46 | stage=m2-overscan-zoom-trim-10pct | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=Overscan ON mantido em aspect-fill, mas com reducao de ~10% no zoom (crop menor) para respeitar melhor limites de tela
+- 2026-02-27 14:52:11 | stage=m2-overscan-runtime-calibration | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=Settings ganhou Overscan [000..100] com ajuste por setas esquerda/direita (passo 5), aplicacao imediata no frame pausado; valor 0=sem overscan e 100=maximo
+- 2026-02-27 15:02:26 | stage=m2-fastboot-default | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=Fast Boot virou default global de compilacao: COMBO_FMSX_BOOT_PROFILE=1 no Makefile raiz, circle_combo/Makefile e default do scripts/build-m2-config.sh
+- 2026-02-27 15:11:03 | stage=m2-overscan-keep-4x3 | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=overscan numerico 0..100 agora so ajusta escala da viewport; renderer voltou a manter aspecto do frame (4:3) sem crop/stretch widescreen
+- 2026-02-27 15:24:58 | stage=m2-settings-widescreen-toggle | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=novo item Widescreen ON/OFF no Settings; OFF preserva 4:3, ON força stretch 16:9 da viewport; overscan 0..100 mantido em ajuste por setas
+- 2026-02-27 15:35:44 | stage=m2-overscan-step-10 | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=ajuste de Overscan [000..100] no menu mudou de passo 5 para passo 10 em setas esquerda/direita
+- 2026-02-27 15:49:20 | stage=m2-scanlines-alt-method | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=novo toggle Scanlines ALT no Settings; modo ALT escurece 50% por paridade da linha fonte MSX (src_y), mantendo modo atual por linha de destino (y)
+- 2026-02-27 16:02:18 | stage=m2-scanline-modes-des-lcd-crt | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=Settings consolidado para Scanlines [DES/LCD/CRT]; LCD=50% por linha destino (y), CRT=75% por linha fonte (src_y); removidos toggles separados de scanline e scanline alt
+- 2026-02-27 16:16:40 | stage=m2-scanline-crt-85-and-settings-refresh | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=modo CRT ajustado para 85% nas linhas fonte impares (src_y); nomenclatura Overlay DBG -> Debugger; refresh de Settings centralizado para atualizar labels no Enter em qualquer item
+- 2026-02-27 16:28:03 | stage=m2-settings-flag-alignment-and-unified-controls | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=itens de Settings com label alinhado a esquerda e flag alinhada a direita; Enter agora cicla/incrementa flags e setas esquerda/direita decrementam/incrementam (incluindo toggles), com refresh imediato
+- 2026-02-27 16:36:22 | stage=m2-stabilization-freeze | status=build-ok | artifact=artifacts/kernel8.img | note=encerramento de iteracao com build limpo (make clean && make) + build de validacao com DBG via flag; baseline congelada para proxima issue/fase
+- 2026-02-27 14:00:53 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 14:00:53 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-27 14:05:59 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 14:05:59 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-27 14:09:11 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 14:09:11 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-27 14:10:30 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 14:10:30 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-27 14:12:32 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 14:12:32 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-27 14:18:55 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 14:18:55 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-27 14:20:11 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 14:27:27 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 14:36:01 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 14:43:50 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 14:51:25 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 15:00:42 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 15:04:01 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 15:04:01 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 15:04:01 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-27 15:46:18 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 16:07:34 | stage=github-project-management-docs | status=docs-ok | artifact=docs/github-project-management.md | note=AGENTS atualizado para consultar guia de gestao GitHub; criado espelho local docs/milestones/{m2,m4,m5} com issues abertas sincronizadas do remoto
+- 2026-02-27 16:09:48 | stage=docs-milestone-reorg | status=docs-ok | artifact=docs/milestones | note=arquivos de milestone removidos da raiz de docs e realocados para docs/milestones/m0,m1,m2; referencias antigas atualizadas (README)
+- 2026-02-27 16:11:12 | stage=docs-milestone-readmes | status=docs-ok | artifact=docs/milestones/m*/README.md | note=criados READMEs de milestone com metadados/descricao do GitHub; adicionadas pastas m3 e m6 para sincronizacao completa com milestones remotas
+- 2026-02-27 16:11:56 | stage=github-project-binding-docs | status=docs-ok | artifact=docs/github-project-management.md | note=projeto oficial definido como MSX BarePI (users/sandersouza/projects/3) e fluxo atualizado para vincular issue/PR ao projeto
+- 2026-02-27 16:13:26 | stage=github-project-issue-linking | status=remote-ok | artifact=https://github.com/users/sandersouza/projects/3 | note=issues abertas #8,#14,#17,#18,#19,#21,#22,#23,#29 vinculadas ao projeto MSX BarePI via gh issue edit --add-project
+- 2026-02-27 16:16:16 | stage=github-issue-triage-close | status=remote-ok | artifact=https://github.com/sandersouza/msxbarepi/issues | note=triagem de issues abertas; fechadas #8,#23,#29 com comentario de conclusao; sincronizacao local atualizada em docs/milestones e snapshot em docs/github-project-management.md
+- 2026-02-27 16:24:03 | stage=beta-v0.1-performance-milestone-planning | status=remote-ok | artifact=https://github.com/sandersouza/msxbarepi/milestone/7 | note=milestone #7 criada; labels de prioridade/area/performance criadas; issues #34-#40 abertas com P0/P1/P2 e vinculadas ao projeto MSX BarePI; espelho local docs/milestones/m7 sincronizado
+- 2026-02-27 16:39:21 | stage=beta-v0.1-priority-realignment | status=remote-ok | artifact=https://github.com/sandersouza/msxbarepi/milestone/7 | note=issue #36 definida como bloqueante com escopo detalhado; issue #34 rebaixada para P1; issue #39 elevada para P0; criadas #41 (50/60Hz) e #42 (Turbo Z80 DES/PAN/MAX) como P0; docs/milestones/m7 sincronizados
+- 2026-02-27 16:41:17 | stage=github-branch-sync-policy | status=docs-ok | artifact=AGENTS.md,docs/github-project-management.md | note=adicionada politica de sync de branches locais/remotas; remocao de branch local somente com confirmacao do usuario; proibido alterar/deletar branch main

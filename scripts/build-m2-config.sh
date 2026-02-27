@@ -198,7 +198,7 @@ if [ "$NON_INTERACTIVE" != "1" ]; then
         ;;
       7)
         set +e
-        choice="$(choose "Modo de boot" 1 "NORMAL" "FAST BOOT" "GAME BOOT")"
+        choice="$(choose "Modo de boot" 2 "NORMAL" "FAST BOOT" "GAME BOOT")"
         status=$?
         set -e
         if [ "$status" -eq 2 ]; then

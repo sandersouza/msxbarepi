@@ -44,6 +44,7 @@ private:
     void WriteScreenText(const char *text);
     void BlitFmsxFrame(boolean force_redraw);
     void HandleMenuAction(TComboMenuAction action);
+    void RefreshSettingsUiAfterAction(void);
     void ResetEmulationRuntimeState(void);
     void UpdateJoystickFromRaw(unsigned char modifiers, const unsigned char raw_keys[6]);
     void SetDebugOverlayEnabled(boolean enabled);
@@ -125,8 +126,9 @@ private:
     u16 m_BlitXMap[kBlitMapMaxAxis];
     u16 m_BlitYMap[kBlitMapMaxAxis];
     CComboPauseMenu m_PauseMenu;
-    boolean m_OverscanEnabled;
-    boolean m_ScanlinesEnabled;
+    unsigned m_OverscanPercent;
+    boolean m_WidescreenEnabled;
+    unsigned m_ScanlineMode;
     boolean m_AudioMuted;
     boolean m_FmsxFallbackPattern;
     boolean m_TestToneEnabled;

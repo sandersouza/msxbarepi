@@ -11,38 +11,6 @@ static const TComboMenuItem kRootItems[] =
     { "Reset", ComboMenuActionReset, TRUE }
 };
 
-static const TComboMenuItem kSettingsItemsOverscanOff[] =
-{
-    { "Overscan [DES]", ComboMenuActionToggleOverscan, TRUE },
-    { "Scanlines [DES]", ComboMenuActionToggleScanlines, TRUE },
-    { "Overlay DBG [DES]", ComboMenuActionToggleOverlay, TRUE },
-    { "Audio Mute [DES]", ComboMenuActionToggleAudioMute, TRUE }
-};
-
-static const TComboMenuItem kSettingsItemsOverscanOn[] =
-{
-    { "Overscan [LIG]", ComboMenuActionToggleOverscan, TRUE },
-    { "Scanlines [DES]", ComboMenuActionToggleScanlines, TRUE },
-    { "Overlay DBG [DES]", ComboMenuActionToggleOverlay, TRUE },
-    { "Audio Mute [DES]", ComboMenuActionToggleAudioMute, TRUE }
-};
-
-static const TComboMenuItem kSettingsItemsOverscanOffScanlinesOn[] =
-{
-    { "Overscan [DES]", ComboMenuActionToggleOverscan, TRUE },
-    { "Scanlines [LIG]", ComboMenuActionToggleScanlines, TRUE },
-    { "Overlay DBG [DES]", ComboMenuActionToggleOverlay, TRUE },
-    { "Audio Mute [DES]", ComboMenuActionToggleAudioMute, TRUE }
-};
-
-static const TComboMenuItem kSettingsItemsOverscanOnScanlinesOn[] =
-{
-    { "Overscan [LIG]", ComboMenuActionToggleOverscan, TRUE },
-    { "Scanlines [LIG]", ComboMenuActionToggleScanlines, TRUE },
-    { "Overlay DBG [DES]", ComboMenuActionToggleOverlay, TRUE },
-    { "Audio Mute [DES]", ComboMenuActionToggleAudioMute, TRUE }
-};
-
 const TComboMenuItem *combo_menu_root_items_get(unsigned *count)
 {
     if (count != 0)
@@ -53,43 +21,76 @@ const TComboMenuItem *combo_menu_root_items_get(unsigned *count)
     return kRootItems;
 }
 
-const TComboMenuItem *combo_menu_settings_items_get(boolean overscan_enabled,
-                                                     boolean scanlines_enabled,
+const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
+                                                     boolean widescreen_enabled,
+                                                     unsigned scanline_mode,
                                                      boolean overlay_enabled,
                                                      boolean overlay_available,
                                                      boolean audio_muted,
                                                      unsigned *count)
 {
-    static TComboMenuItem settings_items[4];
-    static const char *kOverlayOff = "Overlay DBG [DES]";
-    static const char *kOverlayOn = "Overlay DBG [LIG]";
-    static const char *kOverlayNA = "Overlay DBG [N/A]";
+    static TComboMenuItem settings_items[5];
+    static char overscan_label[] = "Overscan [000]";
+    static const char *kWidescreenOff = "Widescreen [DES]";
+    static const char *kWidescreenOn = "Widescreen [LIG]";
+    static const char *kScanlineDes = "Scanlines [DES]";
+    static const char *kScanlineLcd = "Scanlines [LCD]";
+    static const char *kScanlineCrt = "Scanlines [CRT]";
+    static const char *kOverlayOff = "Debugger [DES]";
+    static const char *kOverlayOn = "Debugger [LIG]";
+    static const char *kOverlayNA = "Debugger [N/A]";
     static const char *kAudioMuteOff = "Audio Mute [DES]";
     static const char *kAudioMuteOn = "Audio Mute [LIG]";
 
-    if (count != 0)
+    if (overscan_percent > 100u)
     {
-        *count = (unsigned) (sizeof(kSettingsItemsOverscanOff) / sizeof(kSettingsItemsOverscanOff[0]));
+        overscan_percent = 100u;
+    }
+    if (scanline_mode > 2u)
+    {
+        scanline_mode = 2u;
     }
 
-    const TComboMenuItem *base_items = 0;
-    if (overscan_enabled)
+    overscan_label[10] = (char) ('0' + ((overscan_percent / 100u) % 10u));
+    overscan_label[11] = (char) ('0' + ((overscan_percent / 10u) % 10u));
+    overscan_label[12] = (char) ('0' + (overscan_percent % 10u));
+
+    settings_items[0].label = overscan_label;
+    settings_items[0].action = ComboMenuActionOverscanChanged;
+    settings_items[0].selectable = TRUE;
+
+    settings_items[1].label = widescreen_enabled ? kWidescreenOn : kWidescreenOff;
+    settings_items[1].action = ComboMenuActionToggleWidescreen;
+    settings_items[1].selectable = TRUE;
+
+    const char *scanline_label = kScanlineDes;
+    if (scanline_mode == 1u)
     {
-        base_items = scanlines_enabled ? kSettingsItemsOverscanOnScanlinesOn : kSettingsItemsOverscanOn;
+        scanline_label = kScanlineLcd;
     }
-    else
+    else if (scanline_mode == 2u)
     {
-        base_items = scanlines_enabled ? kSettingsItemsOverscanOffScanlinesOn : kSettingsItemsOverscanOff;
+        scanline_label = kScanlineCrt;
     }
 
-    for (unsigned i = 0; i < 4u; ++i)
-    {
-        settings_items[i] = base_items[i];
-    }
+    settings_items[2].label = scanline_label;
+    settings_items[2].action = ComboMenuActionCycleScanlines;
+    settings_items[2].selectable = TRUE;
 
-    settings_items[2].label = overlay_available
+    settings_items[3].label = overlay_available
         ? (overlay_enabled ? kOverlayOn : kOverlayOff)
         : kOverlayNA;
-    settings_items[3].label = audio_muted ? kAudioMuteOn : kAudioMuteOff;
+    settings_items[3].action = ComboMenuActionToggleOverlay;
+    settings_items[3].selectable = TRUE;
+
+    settings_items[4].label = audio_muted ? kAudioMuteOn : kAudioMuteOff;
+    settings_items[4].action = ComboMenuActionToggleAudioMute;
+    settings_items[4].selectable = TRUE;
+
+    if (count != 0)
+    {
+        *count = (unsigned) (sizeof(settings_items) / sizeof(settings_items[0]));
+    }
+
     return settings_items;
 }

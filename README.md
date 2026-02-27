@@ -6,7 +6,7 @@ Projeto de emulação de MSX em baremetal no Raspberry Pi 3B.
 
 - Baseline compilável implementado para bring-up: boot AArch64 + UART + framebuffer HDMI + stubs de áudio/input.
 - Comando principal atual: `make` (gera `build/kernel8.img`) e `make m0` (copia para `artifacts/kernel8-m0.img`).
-- Procedimento de validação manual em hardware: `docs/m0-hello-world.md`.
+- Procedimento de validação manual em hardware: `docs/milestones/m0/hello-world.md`.
 - Este README contém histórico de fases anteriores; para execução imediata do estado vigente, siga a seção acima.
 
 > demais versões do RPi podem ser suportadas, mas o foco inicial é o 3B (SoC BCM2837, AArch64, 1GB RAM).
@@ -161,11 +161,12 @@ Perfis de boot:
 - `NORMAL`: comportamento padrão.
 - `FAST BOOT`: acelera os frames iniciais até entrar no BASIC ou iniciar carregamento de mídia.
 - `GAME BOOT`: modo cartucho-only (`CARTA`) com aceleração agressiva de bootstrap para entrar no jogo o mais rápido possível.
+- Default atual do configurador: `FAST BOOT`.
 
 Knobs adicionais relevantes:
 - `COMBO_FMSX_MEGARAM_ENABLED=0|1` (default `1`)
 - `COMBO_FMSX_CARTB_MAPPER=0..8|255` (default `255` = auto/default)
-- `COMBO_FMSX_BOOT_PROFILE=0|1|2` (0=`NORMAL`, 1=`FAST BOOT`, 2=`GAME BOOT`)
+- `COMBO_FMSX_BOOT_PROFILE=0|1|2` (default `1`; 0=`NORMAL`, 1=`FAST BOOT`, 2=`GAME BOOT`)
 - `COMBO_ENABLE_DEBUG_OVERLAY=0|1` (default `1`, quando `0` remove toggle/render do DBG no build)
 - `COMBO_BOOT_QUIET=0|1` (default `0`)
 
@@ -194,10 +195,17 @@ Atalhos de teclado no runtime:
 - No menu pausado: `Enter` abre/ativa item, `ESC` volta do submenu `Settings` para o menu principal, `F12` fecha o menu (retoma emulacao)
 
 Submenu `Settings` (mock inicial):
-- `Overscan ON/OFF`: alterna o tamanho da area do emulador sem cortar imagem (ON = area maxima segura, OFF = margem de seguranca)
-- `Scanlines ON/OFF`: aplica/remove scanlines no blit de video
-- `Overlay DBG ON/OFF`: habilita/desabilita o overlay visual de debug em runtime (quando o build suporta overlay)
+- `Overscan [000..100]`: ajusta a intensidade do overscan com `seta esquerda/direita` (0 = sem overscan, 100 = maximo)
+- `Widescreen ON/OFF`: alterna entre render 4:3 (OFF) e stretch 16:9 (ON, quebra proposital de aspecto)
+- `Scanlines [DES/LCD/CRT]`: alterna entre
+  - `DES`: sem scanline
+  - `LCD`: scanline clássico (linhas ímpares de destino em 50%)
+  - `CRT`: scanline por paridade da linha fonte MSX (`src_y`), com linhas ímpares em 85%
+- `Debugger ON/OFF`: habilita/desabilita o overlay visual de debug em runtime (quando o build suporta overlay)
 - `Audio Mute ON/OFF`: silencia/reativa a saida de audio HDMI em runtime
+- Controles de flags no Settings:
+  - `Enter`: ciclo/incremento (ex.: `DES->LCD->CRT->DES`, `0->10->...->100->0`, `DES<->LIG`)
+  - `Seta Esquerda/Direita`: decremento/incremento da flag (ou toggle para flags binárias)
 
 Exemplo (fallback para outra BIOS):
 

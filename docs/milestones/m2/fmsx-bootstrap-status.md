@@ -47,6 +47,37 @@
     - blit RGB565 direto em memória do framebuffer (`CBcmFrameBuffer::GetBuffer` + `GetPitch`) no lugar de `SetPixel()` por pixel
     - fallback automático para `SetPixel()` permanece ativo quando depth/framebuffer não atenderem o caminho otimizado
   - overlay ampliado com estado do runtime (`R` ready / `E` erro)
+  - Correção de limpeza de borda ao alternar Overscan:
+    - ao reduzir o viewport (Overscan OFF), o renderer agora limpa apenas as regiões excedentes da caixa anterior
+    - evita “lixo” residual nas bordas após toggle no menu de Settings
+  - Ajuste de escala do Overscan ON:
+    - `Overscan ON` passou a usar `aspect-fill` (zoom com crop central), ocupando mais área da HDMI
+    - ajuste fino posterior: zoom reduzido em ~10% (crop menor) para evitar extrapolar limites visuais em algumas TVs
+    - `Overscan OFF` mantém `aspect-fit` com margem de segurança
+  - Calibração provisória de overscan em runtime:
+    - item `Overscan [000..100]` no Settings
+    - ajuste por `seta esquerda/direita` (passo de 10), com aplicação imediata no frame em pausa
+    - escala: `0` = sem overscan (safe fit), `100` = overscan máximo configurado
+    - guardrail atual: com `Widescreen OFF`, overscan preserva aspecto original do frame (4:3)
+  - Toggle de widescreen em runtime:
+    - novo item `Widescreen ON/OFF` no Settings
+    - `OFF`: renderer mantém 4:3 (aspect preservado)
+    - `ON`: renderer força preenchimento 16:9 da viewport (stretch intencional, com quebra de aspecto)
+  - Modos de scanline em runtime:
+    - item único `Scanlines [DES/LCD/CRT]` no Settings
+    - `DES`: sem scanline
+    - `LCD`: escurecimento de 50% por paridade da linha de destino (`y`)
+    - `CRT`: escurecimento de 85% por paridade da linha fonte do MSX (`src_y`), aproximando melhor o comportamento de CRT após escala
+    - controles: `Enter` faz ciclo incremental; `seta esquerda/direita` faz decremento/incremento
+  - Correção de redraw no submenu Settings:
+    - rotina única de refresh aplicada após qualquer ação de Settings (incluindo novos itens)
+    - labels (ex.: `Debugger` e `Audio Mute`) atualizam imediatamente no `Enter` e `setas`, sem depender de mover cursor
+  - Correção de redraw no submenu Settings:
+    - toggles de Settings agora forçam redraw imediato no `Enter`, atualizando rótulos `[LIG]/[DES]` sem mover cursor
+    - em pausa, toggles visuais (Overscan/Scanlines) também pedem refresh do fundo para refletir a mudança no frame atrás do menu
+  - Limpeza de HUD de boot na HDMI:
+    - `BootTrace` continua no logger serial, mas não escreve mais `BT:*` no canto superior esquerdo da tela
+    - removido também o texto inicial `BT:I1` da fase de `Initialize()`
 
 ## Limitação encontrada (estado atual)
 - O caminho `COMBO_ENABLE_FMSX=1` usa camada de compatibilidade local para libc/streams (`fmsx_compat`) e stubs de I/O/disco neste estágio.
@@ -63,6 +94,7 @@
 
 ## Knobs de build úteis
 - `COMBO_ENABLE_FMSX=1`: habilita bootstrap do core fMSX no `circle_combo`.
+- `COMBO_FMSX_BOOT_PROFILE=1`: default de build (Fast Boot) no `Makefile` raiz, `circle_combo/Makefile` e no configurador `scripts/build-m2-config.sh`.
 - `COMBO_TEST_TONE_DEFAULT=0`: desativa tom de teste HDMI (default).
 - `COMBO_TEST_TONE_DEFAULT=1`: reativa tom de teste HDMI para diagnóstico.
 
