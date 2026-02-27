@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 27/02/2026 03:16
+Última atualização: 27/02/2026 03:24
 
 ## Objetivo deste arquivo
 
@@ -380,3 +380,5 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-02-27 03:16:03 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
 - 2026-02-27 03:16:11 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
 - 2026-02-27 03:16:20 | stage=stable-default-profile | status=build-ok | artifact=artifacts/kernel8.img | note=make default agora gera artifacts/kernel8.img com Debug OFF, Fast Boot, Mapper OFF(64KB), MegaRAM OFF; WIDTH 80 verificado como nao suportado no BASIC em modo MSX1
+- 2026-02-27 03:24:44 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 03:24:44 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
