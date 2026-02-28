@@ -33,6 +33,9 @@ static const unsigned kZ80TurboModeDes = 0u;
 static const unsigned kZ80TurboModePan = 1u;
 static const unsigned kZ80TurboModeMax = 2u;
 static const unsigned char kHidKeySpace = 0x2Cu;
+/* Panasonic-like autofire cadence: short pulse, then gap. */
+static const unsigned kRenshaPeriodFrames = 4u; /* 15Hz @60fps, 12.5Hz @50fps */
+static const unsigned kRenshaOnFrames = 1u;
 static const unsigned kRgb565LutSize = 65536u;
 
 static unsigned UMax(unsigned a, unsigned b)
@@ -1945,9 +1948,9 @@ void CComboKernel::PushKeyboardStateToRuntime(boolean advance_rensha_phase)
 	{
 		if (advance_rensha_phase)
 		{
-			m_RenshaPhase ^= 1u;
+			m_RenshaPhase = (m_RenshaPhase + 1u) % kRenshaPeriodFrames;
 		}
-		if ((m_RenshaPhase & 1u) != 0u)
+		if (m_RenshaPhase >= kRenshaOnFrames)
 		{
 			RawKeysRemoveHid(raw_keys, kHidKeySpace);
 		}
