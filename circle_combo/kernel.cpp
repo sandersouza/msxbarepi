@@ -15,7 +15,9 @@ static const char FromKernel[] = "combo";
 static const unsigned kSampleRate = 48000;
 static const unsigned kChunkSize = 384 * 10;
 static const unsigned kQueueMs = 120;
-static const u64 kFmsxFrameIntervalUs = 1000000ull / 60ull;
+/* 16667us caps cadence at <=60fps (1000000/60 truncated would run slightly >60). */
+static const u64 kFmsxFrameIntervalUs = 16667ull;
+static const u64 kDebugOverlayIntervalUs = 200000ull;
 static const uintptr kDCacheLineSize = 64u;
 static const u16 kLetterboxColor565 = 0x0000u;
 static const unsigned kOverscanSafeScalePct = 92u;
@@ -23,6 +25,7 @@ static const unsigned kOverscanMaxScalePct = 100u;
 static const unsigned kScanlineModeOff = 0u;
 static const unsigned kScanlineModeLcd = 1u;
 static const unsigned kScanlineModeCrt = 2u;
+static const unsigned kRgb565LutSize = 65536u;
 
 static unsigned UMax(unsigned a, unsigned b)
 {
@@ -34,20 +37,130 @@ static unsigned UMin(unsigned a, unsigned b)
 	return a < b ? a : b;
 }
 
-static u16 DimRgb565Half(u16 sample)
+static u16 s_DimLutHalf[kRgb565LutSize];
+static u16 s_DimLut85[kRgb565LutSize];
+static boolean s_DimLutReady = FALSE;
+
+static void EnsureDimLutReady(void)
 {
-	return (u16) ((sample & 0xF7DEu) >> 1);
+	if (s_DimLutReady)
+	{
+		return;
+	}
+
+	for (unsigned sample = 0; sample < kRgb565LutSize; ++sample)
+	{
+		const u16 rgb = (u16) sample;
+		s_DimLutHalf[sample] = (u16) ((rgb & 0xF7DEu) >> 1);
+
+		const unsigned r = (rgb >> 11) & 0x1Fu;
+		const unsigned g = (rgb >> 5) & 0x3Fu;
+		const unsigned b = rgb & 0x1Fu;
+		const unsigned r85 = (r * 85u) / 100u;
+		const unsigned g85 = (g * 85u) / 100u;
+		const unsigned b85 = (b * 85u) / 100u;
+		s_DimLut85[sample] = (u16) ((r85 << 11) | (g85 << 5) | b85);
+	}
+
+	s_DimLutReady = TRUE;
 }
 
-static u16 DimRgb56585(u16 sample)
+static void BlitMappedLineRgb565(u16 *dst_line,
+					 const u16 *src_line,
+					 const u16 *xmap,
+					 unsigned dst_width,
+					 unsigned src_x0,
+					 unsigned dim_mode,
+					 const u16 *dim_lut)
 {
-	const unsigned r = (sample >> 11) & 0x1Fu;
-	const unsigned g = (sample >> 5) & 0x3Fu;
-	const unsigned b = sample & 0x1Fu;
-	const unsigned r85 = (r * 85u) / 100u;
-	const unsigned g85 = (g * 85u) / 100u;
-	const unsigned b85 = (b * 85u) / 100u;
-	return (u16) ((r85 << 11) | (g85 << 5) | b85);
+	if (dst_line == 0 || src_line == 0 || xmap == 0 || dst_width == 0u)
+	{
+		return;
+	}
+
+	unsigned x = 0u;
+
+	/* Align to 32-bit stores when possible (2 pixels per write). */
+	if ((((uintptr) dst_line) & 0x2u) != 0u)
+	{
+		u16 sample = src_line[src_x0 + xmap[0]];
+		if (dim_mode == 1u)
+		{
+			sample = (u16) ((sample & 0xF7DEu) >> 1);
+		}
+		else if (dim_mode == 2u && dim_lut != 0)
+		{
+			sample = dim_lut[sample];
+		}
+		dst_line[0] = sample;
+		x = 1u;
+	}
+
+	for (; x + 1u < dst_width; x += 2u)
+	{
+		u16 s0 = src_line[src_x0 + xmap[x]];
+		u16 s1 = src_line[src_x0 + xmap[x + 1u]];
+		if (dim_mode == 1u)
+		{
+			u32 packed = (u32) s0 | ((u32) s1 << 16);
+			packed = (packed & 0xF7DEF7DEu) >> 1;
+			*(u32 *) (void *) (dst_line + x) = packed;
+			continue;
+		}
+		else if (dim_mode == 2u)
+		{
+			s0 = dim_lut[s0];
+			s1 = dim_lut[s1];
+		}
+		*(u32 *) (void *) (dst_line + x) = (u32) s0 | ((u32) s1 << 16);
+	}
+
+	if (x < dst_width)
+	{
+		u16 sample = src_line[src_x0 + xmap[x]];
+		if (dim_mode == 1u)
+		{
+			sample = (u16) ((sample & 0xF7DEu) >> 1);
+		}
+		else if (dim_mode == 2u && dim_lut != 0)
+		{
+			sample = dim_lut[sample];
+		}
+		dst_line[x] = sample;
+	}
+}
+
+static void BlitMappedLineRgb565NoDim(u16 *dst_line,
+						  const u16 *src_line,
+						  const u16 *xmap,
+						  unsigned dst_width,
+						  unsigned src_x0)
+{
+	if (dst_line == 0 || src_line == 0 || xmap == 0 || dst_width == 0u)
+	{
+		return;
+	}
+
+	unsigned x = 0u;
+
+	/* Align to 32-bit stores when possible (2 pixels per write). */
+	if ((((uintptr) dst_line) & 0x2u) != 0u)
+	{
+		dst_line[0] = src_line[src_x0 + xmap[0]];
+		x = 1u;
+	}
+
+	for (; x + 1u < dst_width; x += 2u)
+	{
+		const u16 s0 = src_line[src_x0 + xmap[x]];
+		const u16 s1 = src_line[src_x0 + xmap[x + 1u]];
+		*(u32 *) (void *) (dst_line + x) = (u32) s0 | ((u32) s1 << 16);
+	}
+
+	if (x < dst_width)
+	{
+		dst_line[x] = src_line[src_x0 + xmap[x]];
+	}
 }
 
 static void FlushDCacheRange(void *addr, unsigned bytes)
@@ -516,7 +629,7 @@ TComboShutdownMode CComboKernel::Run(void)
 		if (COMBO_ENABLE_DEBUG_OVERLAY && m_DebugOverlayEnabled)
 		{
 			now_us = CTimer::GetClockTicks64();
-			if (m_LastOverlayUs == 0u || now_us - m_LastOverlayUs >= 100000ull)
+			if (m_LastOverlayUs == 0u || now_us - m_LastOverlayUs >= kDebugOverlayIntervalUs)
 			{
 				DrawDebugOverlay(tick);
 				m_LastOverlayUs = now_us;
@@ -822,6 +935,8 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 {
 #if COMBO_ENABLE_FMSX
+	EnsureDimLutReady();
+
 	const u16 *pixels = 0;
 	unsigned width = 0;
 	unsigned height = 0;
@@ -981,6 +1096,8 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 				m_BlitMapValid = TRUE;
 			}
 
+			unsigned crt_cached_src_y = 0xFFFFFFFFu;
+			u16 crt_dim_line_cache[kBlitMapMaxAxis];
 			for (unsigned y = 0; y < dst_height; ++y)
 			{
 				const unsigned src_y = src_y0 + m_BlitYMap[y];
@@ -988,23 +1105,35 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 				u16 *dst_line = dst_base + ((offset_y + y) * pitch_pixels) + offset_x;
 				const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
 				const boolean dark_crt = (scanline_mode == kScanlineModeCrt) && ((src_y & 1u) != 0u);
-				for (unsigned x = 0; x < dst_width; ++x)
+				const unsigned dim_mode = dark_lcd ? 1u : (dark_crt ? 2u : 0u);
+				if (dark_crt && src_w <= kBlitMapMaxAxis)
 				{
-					u16 sample = src_line[src_x0 + m_BlitXMap[x]];
-					if (dark_lcd)
+					if (src_y != crt_cached_src_y)
 					{
-						sample = DimRgb565Half(sample);
+						for (unsigned sx = 0; sx < src_w; ++sx)
+						{
+							crt_dim_line_cache[sx] = s_DimLut85[src_line[src_x0 + sx]];
+						}
+						crt_cached_src_y = src_y;
 					}
-					else if (dark_crt)
-					{
-						sample = DimRgb56585(sample);
-					}
-					dst_line[x] = sample;
+					BlitMappedLineRgb565NoDim(dst_line, crt_dim_line_cache, m_BlitXMap, dst_width, 0u);
+					continue;
+				}
+				if (dim_mode == 0u)
+				{
+					BlitMappedLineRgb565NoDim(dst_line, src_line, m_BlitXMap, dst_width, src_x0);
+				}
+				else
+				{
+					const u16 *dim_lut = (dim_mode == 2u) ? s_DimLut85 : 0;
+					BlitMappedLineRgb565(dst_line, src_line, m_BlitXMap, dst_width, src_x0, dim_mode, dim_lut);
 				}
 			}
 		}
 		else
 		{
+			unsigned crt_cached_src_y = 0xFFFFFFFFu;
+			u16 crt_dim_line_cache[kBlitMapMaxAxis];
 			for (unsigned y = 0; y < dst_height; ++y)
 			{
 				const unsigned src_y = src_y0 + (unsigned) (((u64) y * (u64) src_h) / (u64) dst_height);
@@ -1012,19 +1141,49 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 				u16 *dst_line = dst_base + ((offset_y + y) * pitch_pixels) + offset_x;
 				const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
 				const boolean dark_crt = (scanline_mode == kScanlineModeCrt) && ((src_y & 1u) != 0u);
-				for (unsigned x = 0; x < dst_width; ++x)
+				const u16 *dim_lut = dark_lcd ? s_DimLutHalf : (dark_crt ? s_DimLut85 : 0);
+				if (dark_lcd)
 				{
-					const unsigned src_x = src_x0 + (unsigned) (((u64) x * (u64) src_w) / (u64) dst_width);
-					u16 sample = src_line[src_x];
-					if (dark_lcd)
+					for (unsigned x = 0; x < dst_width; ++x)
 					{
-						sample = DimRgb565Half(sample);
+						const unsigned src_x = src_x0 + (unsigned) (((u64) x * (u64) src_w) / (u64) dst_width);
+						dst_line[x] = dim_lut[src_line[src_x]];
 					}
-					else if (dark_crt)
+				}
+				else if (dark_crt)
+				{
+					if (src_w <= kBlitMapMaxAxis)
 					{
-						sample = DimRgb56585(sample);
+						if (src_y != crt_cached_src_y)
+						{
+							for (unsigned sx = 0; sx < src_w; ++sx)
+							{
+								crt_dim_line_cache[sx] = dim_lut[src_line[src_x0 + sx]];
+							}
+							crt_cached_src_y = src_y;
+						}
+						for (unsigned x = 0; x < dst_width; ++x)
+						{
+							const unsigned src_x = (unsigned) (((u64) x * (u64) src_w) / (u64) dst_width);
+							dst_line[x] = crt_dim_line_cache[src_x];
+						}
 					}
-					dst_line[x] = sample;
+					else
+					{
+						for (unsigned x = 0; x < dst_width; ++x)
+						{
+							const unsigned src_x = src_x0 + (unsigned) (((u64) x * (u64) src_w) / (u64) dst_width);
+							dst_line[x] = dim_lut[src_line[src_x]];
+						}
+					}
+				}
+				else
+				{
+					for (unsigned x = 0; x < dst_width; ++x)
+					{
+						const unsigned src_x = src_x0 + (unsigned) (((u64) x * (u64) src_w) / (u64) dst_width);
+						dst_line[x] = src_line[src_x];
+					}
 				}
 			}
 			m_BlitMapValid = FALSE;
@@ -1074,17 +1233,14 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 		const unsigned scanline_mode = (m_ScanlineMode > kScanlineModeCrt) ? kScanlineModeCrt : m_ScanlineMode;
 		const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
 		const boolean dark_crt = (scanline_mode == kScanlineModeCrt) && ((src_y & 1u) != 0u);
+		const u16 *dim_lut = dark_lcd ? s_DimLutHalf : (dark_crt ? s_DimLut85 : 0);
 		for (unsigned x = 0; x < dst_width; ++x)
 		{
 			const unsigned src_x = src_x0 + (unsigned) (((u64) x * (u64) src_w) / (u64) dst_width);
 			u16 sample = line[src_x];
-			if (dark_lcd)
+			if (dim_lut != 0)
 			{
-				sample = DimRgb565Half(sample);
-			}
-			else if (dark_crt)
-			{
-				sample = DimRgb56585(sample);
+				sample = dim_lut[sample];
 			}
 			m_Screen.SetPixel(offset_x + x, offset_y + y, (TScreenColor) sample);
 		}

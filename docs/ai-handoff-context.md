@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 27/02/2026 16:50
+Última atualização: 27/02/2026 21:45
 
 ## Objetivo deste arquivo
 
@@ -459,3 +459,29 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-02-27 16:46:46 | stage=combo-build-output-cleanup | status=build-ok | artifact=build/circle_combo/kernel8.img | note=Makefile raiz ajustado para copiar kernel do combo para build/circle_combo e limpar circle_combo ao final; artefatos de build removidos do indice git e ignorados por circle_combo/.gitignore
 - 2026-02-27 16:50:21 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
 - 2026-02-27 16:50:21 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-27 16:52:51 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 16:53:05 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 16:53:18 | stage=issue-36-render-hotpath-opt1 | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=blit path otimizado: branch por pixel removida e dim CRT 85% via LUT RGB565; issue #36 atualizada no GitHub
+- 2026-02-27 16:56:53 | stage=issue-branch-link-policy | status=docs-ok | artifact=docs/github-project-management.md | note=confirmado uso de gh issue develop para vincular branch de issue; branch issue/36-renderer-framebuffer-perf vinculada e publicada em origin
+- 2026-02-27 18:01:35 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 18:01:59 | stage=issue-36-render-hotpath-opt2 | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=scanline LCD/CRT movida para LUT completa RGB565 (65536); issue #36 atualizada para novo ciclo A/B
+- 2026-02-27 18:11:31 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 18:11:38 | stage=issue-36-render-hotpath-opt3 | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=blit de linha mapeada otimizado com escrita 32-bit por pares de pixels; issue #36 atualizada
+- 2026-02-27 18:17:46 | stage=project-status-workflow-policy | status=docs-ok | artifact=docs/github-project-management.md | note=workflow de status no project documentado (In progress/In review/Done + rollback); issue #36 movida para In progress
+- 2026-02-27 18:25:05 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 18:25:17 | stage=issue-36-fps-cap-60hz | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=frame interval fixado em 16667us para limitar cadence a <=60fps e evitar speedup por truncamento inteiro
+- 2026-02-27 20:18:24 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 20:29:48 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 20:34:12 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 20:41:41 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 20:47:53 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 20:51:06 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 20:55:47 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 21:01:51 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 21:12:17 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 21:19:39 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 21:24:25 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 21:27:21 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 21:31:45 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 21:38:00 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 21:45:03 | stage=issue-36-stable | status=done | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
