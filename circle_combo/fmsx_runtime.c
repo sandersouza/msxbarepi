@@ -64,6 +64,7 @@ static const unsigned kFmsxAudioRate = 48000u;
 static unsigned g_boot_warmup_frames_remaining = 0u;
 static unsigned g_refresh_hz = 60u;
 static unsigned g_z80_turbo_mode = 0u;
+static boolean g_scc_cart_enabled = TRUE;
 
 static unsigned fmsx_runtime_boot_warmup_frames(void)
 {
@@ -100,6 +101,19 @@ static unsigned fmsx_runtime_z80_turbo_percent(void)
     case 2u: return 224u; /* MAX */
     default: return 100u; /* DES */
     }
+}
+
+static void fmsx_runtime_apply_audio_channels(void)
+{
+#if COMBO_FMSX_AUDIO
+    unsigned mask = (1u << SND_CHANNELS) - 1u;
+    if (!g_scc_cart_enabled)
+    {
+        const unsigned scc_mask = ((1u << SCC_CHANNELS) - 1u) << FIRST_SCC_CHANNEL;
+        mask &= ~scc_mask;
+    }
+    SetChannels(150, mask);
+#endif
 }
 
 static boolean fmsx_runtime_start(boolean boot_basic)
@@ -160,7 +174,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
 
 #if COMBO_FMSX_AUDIO
     InitSound(kFmsxAudioRate);
-    SetChannels(150, (1 << SND_CHANNELS) - 1);
+    fmsx_runtime_apply_audio_channels();
 #endif
 
     g_fmsx_status.running = TRUE;
@@ -297,6 +311,17 @@ void fmsx_runtime_set_z80_turbo_mode(unsigned mode)
 unsigned fmsx_runtime_get_z80_turbo_mode(void)
 {
     return g_z80_turbo_mode;
+}
+
+void fmsx_runtime_set_scc_cart_enabled(boolean enabled)
+{
+    g_scc_cart_enabled = enabled ? TRUE : FALSE;
+    fmsx_runtime_apply_audio_channels();
+}
+
+boolean fmsx_runtime_get_scc_cart_enabled(void)
+{
+    return g_scc_cart_enabled;
 }
 
 TFmsxRuntimeStatus fmsx_runtime_get_status(void)

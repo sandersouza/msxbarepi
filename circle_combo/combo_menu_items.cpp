@@ -24,28 +24,34 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
                                                      unsigned scanline_mode,
                                                      unsigned refresh_rate_hz,
                                                      unsigned z80_turbo_mode,
+                                                     boolean scc_cart_enabled,
                                                      boolean overlay_enabled,
                                                      boolean overlay_available,
                                                      boolean audio_muted,
                                                      unsigned *count)
 {
-    static TComboMenuItem settings_items[7];
+    static TComboMenuItem settings_items[12];
     static char overscan_label[] = "Overscan [000]";
     static const char *kWidescreenOff = "Widescreen [DES]";
     static const char *kWidescreenOn = "Widescreen [LIG]";
     static const char *kScanlineDes = "Scanlines [DES]";
     static const char *kScanlineLcd = "Scanlines [LCD]";
     static const char *kScanlineCrt = "Scanlines [CRT]";
-    static const char *kRefresh50 = "Refresh [50Hz]";
-    static const char *kRefresh60 = "Refresh [60Hz]";
+    static const char *kRefresh50 = "Padrao [PAL]";
+    static const char *kRefresh60 = "Padrao [NTSC]";
     static const char *kTurboDes = "Z80 Turbo [DES]";
     static const char *kTurboPan = "Z80 Turbo [PAN]";
     static const char *kTurboMax = "Z80 Turbo [MAX]";
+    static const char *kSccOff = "SCC Cart [DES]";
+    static const char *kSccOn = "SCC Cart [LIG]";
     static const char *kOverlayOff = "Debugger [DES]";
     static const char *kOverlayOn = "Debugger [LIG]";
     static const char *kOverlayNA = "Debugger [N/A]";
     static const char *kAudioMuteOff = "Audio Mute [DES]";
     static const char *kAudioMuteOn = "Audio Mute [LIG]";
+    static const char *kSeparator = "";
+    static const char *kBlankLine = "";
+    static const char *kSave = "Gravar";
 
     if (overscan_percent > 100u)
     {
@@ -72,10 +78,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     settings_items[0].action = ComboMenuActionOverscanChanged;
     settings_items[0].selectable = TRUE;
 
-    settings_items[1].label = widescreen_enabled ? kWidescreenOn : kWidescreenOff;
-    settings_items[1].action = ComboMenuActionToggleWidescreen;
-    settings_items[1].selectable = TRUE;
-
     const char *scanline_label = kScanlineDes;
     if (scanline_mode == 1u)
     {
@@ -85,6 +87,10 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     {
         scanline_label = kScanlineCrt;
     }
+
+    settings_items[1].label = widescreen_enabled ? kWidescreenOn : kWidescreenOff;
+    settings_items[1].action = ComboMenuActionToggleWidescreen;
+    settings_items[1].selectable = TRUE;
 
     settings_items[2].label = scanline_label;
     settings_items[2].action = ComboMenuActionCycleScanlines;
@@ -103,19 +109,39 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     {
         turbo_label = kTurboMax;
     }
-    settings_items[4].label = turbo_label;
-    settings_items[4].action = ComboMenuActionCycleZ80Turbo;
-    settings_items[4].selectable = TRUE;
+    settings_items[4].label = kSeparator;
+    settings_items[4].action = ComboMenuActionSeparator;
+    settings_items[4].selectable = FALSE;
 
-    settings_items[5].label = overlay_available
-        ? (overlay_enabled ? kOverlayOn : kOverlayOff)
-        : kOverlayNA;
-    settings_items[5].action = ComboMenuActionToggleOverlay;
+    settings_items[5].label = scc_cart_enabled ? kSccOn : kSccOff;
+    settings_items[5].action = ComboMenuActionToggleSccCart;
     settings_items[5].selectable = TRUE;
 
     settings_items[6].label = audio_muted ? kAudioMuteOn : kAudioMuteOff;
     settings_items[6].action = ComboMenuActionToggleAudioMute;
     settings_items[6].selectable = TRUE;
+
+    settings_items[7].label = kSeparator;
+    settings_items[7].action = ComboMenuActionSeparator;
+    settings_items[7].selectable = FALSE;
+
+    settings_items[8].label = turbo_label;
+    settings_items[8].action = ComboMenuActionCycleZ80Turbo;
+    settings_items[8].selectable = TRUE;
+
+    settings_items[9].label = overlay_available
+        ? (overlay_enabled ? kOverlayOn : kOverlayOff)
+        : kOverlayNA;
+    settings_items[9].action = ComboMenuActionToggleOverlay;
+    settings_items[9].selectable = TRUE;
+
+    settings_items[10].label = kBlankLine;
+    settings_items[10].action = ComboMenuActionNone;
+    settings_items[10].selectable = FALSE;
+
+    settings_items[11].label = kSave;
+    settings_items[11].action = ComboMenuActionSaveSettings;
+    settings_items[11].selectable = TRUE;
 
     if (count != 0)
     {

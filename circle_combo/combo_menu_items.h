@@ -5,6 +5,7 @@
 
 enum TComboMenuAction {
     ComboMenuActionNone = 0,
+    ComboMenuActionSeparator,
     ComboMenuActionCartridgeA,
     ComboMenuActionCartridgeB,
     ComboMenuActionDiskDriveA,
@@ -18,8 +19,10 @@ enum TComboMenuAction {
     ComboMenuActionCycleRefreshRatePrev,
     ComboMenuActionCycleZ80Turbo,
     ComboMenuActionCycleZ80TurboPrev,
+    ComboMenuActionToggleSccCart,
     ComboMenuActionToggleOverlay,
     ComboMenuActionToggleAudioMute,
+    ComboMenuActionSaveSettings,
     ComboMenuActionMsxBasic,
     ComboMenuActionReset
 };
@@ -36,6 +39,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
                                                      unsigned scanline_mode,
                                                      unsigned refresh_rate_hz,
                                                      unsigned z80_turbo_mode,
+                                                     boolean scc_cart_enabled,
                                                      boolean overlay_enabled,
                                                      boolean overlay_available,
                                                      boolean audio_muted,
