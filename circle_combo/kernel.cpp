@@ -733,6 +733,8 @@ void CComboKernel::RefillAudioQueue(void)
 
 	static const unsigned kFramesPerBatch = 256;
 	static const unsigned kRefillBudgetPerCall = 2048;
+	static const unsigned kQueueTargetFillPct = 75;
+	static const unsigned kQueueLowWaterPct = 25;
 	s16 buffer[kFramesPerBatch * 2];
 	unsigned call_peak = 0;
 
@@ -749,6 +751,29 @@ void CComboKernel::RefillAudioQueue(void)
 		return;
 	}
 
+	/* Keep queue near a target fill to reduce jitter while avoiding excess latency. */
+	const unsigned target_fill = (queue_size * kQueueTargetFillPct) / 100u;
+	const unsigned low_water = (queue_size * kQueueLowWaterPct) / 100u;
+	if (queue_avail >= target_fill)
+	{
+		return;
+	}
+
+	unsigned desired_write = target_fill - queue_avail;
+	if (desired_write > free_frames)
+	{
+		desired_write = free_frames;
+	}
+	if (queue_avail <= low_water)
+	{
+		/* After a hiccup, refill aggressively to recover audio continuity quickly. */
+		desired_write = free_frames;
+	}
+	if (refill_budget < desired_write)
+	{
+		refill_budget = desired_write;
+	}
+
 	while (free_frames > 0 && refill_budget > 0)
 	{
 		unsigned write_frames = free_frames < kFramesPerBatch ? free_frames : kFramesPerBatch;
@@ -759,11 +784,7 @@ void CComboKernel::RefillAudioQueue(void)
 		unsigned out_frames = write_frames;
 		if (m_EmulationPaused)
 		{
-			for (unsigned i = 0; i < write_frames; ++i)
-			{
-				buffer[(i * 2u) + 0u] = 0;
-				buffer[(i * 2u) + 1u] = 0;
-			}
+			memset(buffer, 0, write_frames * 2u * sizeof(s16));
 		}
 		else if (m_TestToneEnabled)
 		{
@@ -805,10 +826,6 @@ void CComboKernel::RefillAudioQueue(void)
 				if (i < got)
 				{
 					sample32 = (int) mono[i];
-				}
-				else if (got > 0u)
-				{
-					sample32 = (int) mono[got - 1u];
 				}
 				sample32 *= (int) gain;
 				if (boot_probe_active && m_BootToneFramesRemaining > 0u)
