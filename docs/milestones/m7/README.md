@@ -5,8 +5,8 @@
 - Título: Beta pública v0.1 - Performance e Boot
 - Estado: open
 - Due date: sem-data
-- Open issues: 6
-- Closed issues: 7
+- Open issues: 5
+- Closed issues: 8
 - URL: https://github.com/sandersouza/msxbarepi/milestone/7
 
 ## Descrição (GitHub)
@@ -19,5 +19,5 @@ Ajustes de performance e estabilidade para primeira versão beta pública (boot,
 
 ## Issues abertas por prioridade
 - `P0`: #35, #39
-- `P1`: #34, #38, #53
+- `P1`: #34, #38
 - `P2`: #40
