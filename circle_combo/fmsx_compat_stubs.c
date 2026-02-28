@@ -85,7 +85,7 @@ static int local_lookup_embedded(const char *path, const unsigned char **data, s
 {
     const char *name = local_basename(path);
     const int wants_msx_bios = local_str_ieq(name, "MSX.ROM");
-    if (wants_msx_bios && fmsx_runtime_get_boot_mode() == 2u)
+    if (wants_msx_bios && fmsx_runtime_use_embedded_bios())
     {
         *data = fmsx_embedded_msx_rom_start;
         *size = (size_t) (fmsx_embedded_msx_rom_end - fmsx_embedded_msx_rom_start);

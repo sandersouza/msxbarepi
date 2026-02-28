@@ -67,37 +67,15 @@ static unsigned g_boot_warmup_frames_remaining = 0u;
 static boolean g_boot_forced_turbo = FALSE;
 static unsigned g_refresh_hz = 60u;
 static unsigned g_boot_mode = (COMBO_FMSX_BOOT_PROFILE > 2) ? 0u : (unsigned) COMBO_FMSX_BOOT_PROFILE;
+static boolean g_use_embedded_bios = FALSE;
 static unsigned g_z80_turbo_mode = 0u;
 static boolean g_scc_cart_enabled = TRUE;
-
-static boolean fmsx_runtime_has_boot_media(void)
-{
-    if (ROMData[0] != 0 || ROMData[1] != 0)
-    {
-        return TRUE;
-    }
-
-    const unsigned char *disk_data = 0;
-    size_t disk_size = 0;
-    if (fmsx_vfs_lookup("DRIVEA.DSK", &disk_data, &disk_size) && disk_data != 0 && disk_size > 0u)
-    {
-        return TRUE;
-    }
-    if (fmsx_vfs_lookup("DRIVEB.DSK", &disk_data, &disk_size) && disk_data != 0 && disk_size > 0u)
-    {
-        return TRUE;
-    }
-
-    return FALSE;
-}
 
 static unsigned fmsx_runtime_boot_warmup_frames(void)
 {
     switch (g_boot_mode)
     {
-    case 1u:
-        /* FAST should stop before cartridge/disk boot starts. */
-        return fmsx_runtime_has_boot_media() ? 0u : 720u;
+    case 1u: return 720u;   /* FAST */
     case 2u: return 2400u;  /* GAME */
     default: return 0u;     /* NORM */
     }
@@ -195,7 +173,15 @@ static boolean fmsx_runtime_start(boolean boot_basic)
         ROMName[1] = 0;
     }
 
-    const boolean started = StartMSX(startup_mode, COMBO_FMSX_RAMMAPPER_PAGES, 2) ? TRUE : FALSE;
+    g_use_embedded_bios = (g_boot_mode == 2u) ? TRUE : FALSE;
+    boolean started = StartMSX(startup_mode, COMBO_FMSX_RAMMAPPER_PAGES, 2) ? TRUE : FALSE;
+    if (!started && g_use_embedded_bios)
+    {
+        /* GAME mode fallback: if forced C-BIOS cold-boot fails, retry once with normal lookup. */
+        g_use_embedded_bios = FALSE;
+        started = StartMSX(startup_mode, COMBO_FMSX_RAMMAPPER_PAGES, 2) ? TRUE : FALSE;
+    }
+    g_use_embedded_bios = FALSE;
 
     if (boot_basic)
     {
@@ -374,6 +360,11 @@ void fmsx_runtime_set_boot_mode(unsigned mode)
 unsigned fmsx_runtime_get_boot_mode(void)
 {
     return g_boot_mode;
+}
+
+boolean fmsx_runtime_use_embedded_bios(void)
+{
+    return g_use_embedded_bios ? TRUE : FALSE;
 }
 
 void fmsx_runtime_set_z80_turbo_mode(unsigned mode)
