@@ -3,7 +3,6 @@
 #include "fmsx_compat/streams/file_stream_transforms.h"
 #include "fmsx_compat/retro_dirent.h"
 #include "fmsx_virtual_fs.h"
-#include "fmsx_initramfs.h"
 
 extern const unsigned char fmsx_embedded_msx_rom_start[];
 extern const unsigned char fmsx_embedded_msx_rom_end[];
@@ -83,19 +82,20 @@ static const char *local_basename(const char *path)
 
 static int local_lookup_embedded(const char *path, const unsigned char **data, size_t *size)
 {
-	if (fmsx_vfs_lookup(path, data, size))
-	{
-		return 1;
-	}
+    const char *name = local_basename(path);
+    const int wants_msx_bios = local_str_ieq(name, "MSX.ROM");
 
-#if !COMBO_REQUIRE_CPIO_BIOS
-    if (fmsx_initramfs_files_mounted() > 0u)
+    if (fmsx_vfs_lookup(path, data, size))
     {
-        return 0;
+        /* If MSX.ROM exists but is truncated/corrupted, force embedded fallback. */
+        if (!(wants_msx_bios && (!data || !size || !*data || *size < 0x8000u)))
+        {
+            return 1;
+        }
     }
 
-    const char *name = local_basename(path);
-    if (local_str_ieq(name, "MSX.ROM"))
+#if !COMBO_REQUIRE_CPIO_BIOS
+    if (wants_msx_bios)
     {
         *data = fmsx_embedded_msx_rom_start;
         *size = (size_t) (fmsx_embedded_msx_rom_end - fmsx_embedded_msx_rom_start);

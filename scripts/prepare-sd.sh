@@ -31,6 +31,7 @@ CMDLINE_TXT="${CMDLINE_TXT:-${PROJECT_ROOT}/sdcard/cmdline.txt}"
 INITRAMFS_IMG="${INITRAMFS_IMG:-${PROJECT_ROOT}/sdcard/msx.cpio}"
 INITRAMFS_SRC_DIR="${INITRAMFS_SRC_DIR:-${PROJECT_ROOT}/roms/msx1}"
 FIRMWARE_DIR="${FIRMWARE_DIR:-${PROJECT_ROOT}/rpi-firmware}"
+SETTINGS_CFG="${SETTINGS_CFG:-${PROJECT_ROOT}/sdcard/MSXBARE.CFG}"
 
 plist_get() {
   local key="$1"
@@ -55,6 +56,27 @@ run_or_echo() {
   else
     "$@"
   fi
+}
+
+ensure_settings_cfg() {
+  if [ -f "$SETTINGS_CFG" ]; then
+    return 0
+  fi
+
+  echo "[INFO] Arquivo de configuracao nao encontrado; gerando default: ${SETTINGS_CFG}"
+  mkdir -p "$(dirname "$SETTINGS_CFG")"
+  cat > "$SETTINGS_CFG" <<'EOF'
+overscan=0
+widescreen=0
+scanline=0
+refresh=60
+z80_turbo=0
+rensha=0
+scc_cart=1
+debugger=1
+audio_mute=0
+#END
+EOF
 }
 
 select_with_fzf() {
@@ -282,6 +304,8 @@ elif [ -n "$INITRAMFS_IMG" ]; then
   echo "[INFO] Diretório de ROMs para initramfs nao encontrado: ${INITRAMFS_SRC_DIR} (pulando geracao automatica)"
 fi
 
+ensure_settings_cfg
+
 if [ -f "$KERNEL_IMG" ]; then
   run_or_echo cp "$KERNEL_IMG" "${TARGET_VOLUME}/kernel8.img"
   echo "[OK] Copiado: kernel8.img"
@@ -317,6 +341,13 @@ if [ -f "$INITRAMFS_IMG" ]; then
   echo "[OK] Copiado: msx.cpio"
 else
   echo "[WARN] Nao encontrado: ${INITRAMFS_IMG}"
+fi
+
+if [ -f "$SETTINGS_CFG" ]; then
+  run_or_echo cp "$SETTINGS_CFG" "${TARGET_VOLUME}/MSXBARE.CFG"
+  echo "[OK] Copiado: MSXBARE.CFG"
+else
+  echo "[WARN] Nao encontrado: ${SETTINGS_CFG}"
 fi
 
 if [ -n "$FIRMWARE_DIR" ]; then

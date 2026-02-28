@@ -55,14 +55,19 @@ static const char *local_basename(const char *path)
 
 static int local_lookup_embedded(const char *path, const unsigned char **data, size_t *size)
 {
+    const char *name = local_basename(path);
+    const int wants_msx_bios = local_str_ieq(name, "MSX.ROM");
+
     if (fmsx_vfs_lookup(path, data, size))
     {
-        return 1;
+        if (!(wants_msx_bios && (!data || !size || !*data || *size < 0x8000u)))
+        {
+            return 1;
+        }
     }
 
 #if !COMBO_REQUIRE_CPIO_BIOS
-    const char *name = local_basename(path);
-    if (local_str_ieq(name, "MSX.ROM"))
+    if (wants_msx_bios)
     {
         *data = fmsx_embedded_msx_rom_start;
         *size = (size_t) (fmsx_embedded_msx_rom_end - fmsx_embedded_msx_rom_start);
