@@ -27,6 +27,11 @@ COMBO_FMSX_CARTA_MAPPER ?= 255
 COMBO_FMSX_CARTB_MAPPER ?= 255
 COMBO_FMSX_BOOT_PROFILE ?= 1
 COMBO_BOOT_QUIET ?= 0
+COMBO_DEFER_USB_INIT_FRAMES ?= 90
+COMBO_DEFER_SETTINGS_LOAD_FRAMES ?= 0
+COMBO_DEFER_INITRAMFS_FULL_MOUNT_FRAMES ?= 120
+COMBO_SIZE_OPT ?= 1
+COMBO_FMSX_BOOT_MINIMAL_STARTUP ?= 1
 COMBO_ENABLE_DEBUG_OVERLAY ?= 1
 COMBO_TEST_TONE_DEFAULT ?= 0
 COMBO_DEBUG_OVERLAY_DEFAULT ?= 1
@@ -122,7 +127,6 @@ CONTEXT_UPDATER := ./scripts/update-ai-context.sh
 THIRD_PARTY_GUARD := ./scripts/check-third-party-pristine.sh
 
 .PHONY: all stable clean help m0 m0-circle-input m0-circle-input-full m0-hdmi-audio m0-hdmi-audio-full m0-hdmi-audio-integrated m0-hdmi-audio-integrated-full m0-combo m0-combo-full m0-combo-integrated m2-fmsx-bootstrap guard-third-party circle-configure circle-usbkeyboard-debug circle-sounddevices-debug
-.PHONY: m2-fmsx-normal m2-fmsx-fastboot m2-fmsx-gameboot
 
 all: stable
 
@@ -231,6 +235,11 @@ m2-fmsx-bootstrap: circle-configure
 		COMBO_FMSX_CARTB_MAPPER=$(COMBO_FMSX_CARTB_MAPPER) \
 		COMBO_FMSX_BOOT_PROFILE=$(COMBO_FMSX_BOOT_PROFILE) \
 		COMBO_BOOT_QUIET=$(COMBO_BOOT_QUIET) \
+		COMBO_DEFER_USB_INIT_FRAMES=$(COMBO_DEFER_USB_INIT_FRAMES) \
+		COMBO_DEFER_SETTINGS_LOAD_FRAMES=$(COMBO_DEFER_SETTINGS_LOAD_FRAMES) \
+		COMBO_DEFER_INITRAMFS_FULL_MOUNT_FRAMES=$(COMBO_DEFER_INITRAMFS_FULL_MOUNT_FRAMES) \
+		COMBO_SIZE_OPT=$(COMBO_SIZE_OPT) \
+		COMBO_FMSX_BOOT_MINIMAL_STARTUP=$(COMBO_FMSX_BOOT_MINIMAL_STARTUP) \
 		COMBO_ENABLE_DEBUG_OVERLAY=$(COMBO_ENABLE_DEBUG_OVERLAY) \
 		COMBO_TEST_TONE_DEFAULT=$(COMBO_TEST_TONE_DEFAULT) \
 		COMBO_DEBUG_OVERLAY_DEFAULT=$(COMBO_DEBUG_OVERLAY_DEFAULT) \
@@ -245,39 +254,6 @@ m2-fmsx-bootstrap: circle-configure
 	$(MAKE) -C circle_combo clean >/dev/null
 	bash $(CONTEXT_UPDATER) m2-bootstrap build-ok artifacts/kernel8-m2-fmsx-bootstrap.img
 	@echo "Artefato M2 bootstrap (fMSX core + combo loop): artifacts/kernel8-m2-fmsx-bootstrap.img"
-
-m2-fmsx-normal: circle-configure
-	$(MAKE) m2-fmsx-bootstrap \
-		COMBO_FMSX_BOOT_PROFILE=0 \
-		COMBO_BOOT_QUIET=0 \
-		COMBO_CARTA_ONLY=0 \
-		COMBO_FMSX_RAMMAPPER_KB=64 \
-		COMBO_FMSX_MEGARAM_ENABLED=0
-	cp artifacts/kernel8-m2-fmsx-bootstrap.img artifacts/kernel8-m2-normalboot.img
-	bash $(CONTEXT_UPDATER) m2-normalboot build-ok artifacts/kernel8-m2-normalboot.img
-	@echo "Artefato M2 NORMAL BOOT: artifacts/kernel8-m2-normalboot.img"
-
-m2-fmsx-fastboot: circle-configure
-	$(MAKE) m2-fmsx-bootstrap \
-		COMBO_FMSX_BOOT_PROFILE=1 \
-		COMBO_BOOT_QUIET=1 \
-		COMBO_CARTA_ONLY=0 \
-		COMBO_FMSX_RAMMAPPER_KB=64 \
-		COMBO_FMSX_MEGARAM_ENABLED=0
-	cp artifacts/kernel8-m2-fmsx-bootstrap.img artifacts/kernel8-m2-fastboot.img
-	bash $(CONTEXT_UPDATER) m2-fastboot build-ok artifacts/kernel8-m2-fastboot.img
-	@echo "Artefato M2 FAST BOOT: artifacts/kernel8-m2-fastboot.img"
-
-m2-fmsx-gameboot: circle-configure
-	$(MAKE) m2-fmsx-bootstrap \
-		COMBO_FMSX_BOOT_PROFILE=2 \
-		COMBO_BOOT_QUIET=1 \
-		COMBO_CARTA_ONLY=0 \
-		COMBO_FMSX_RAMMAPPER_KB=64 \
-		COMBO_FMSX_MEGARAM_ENABLED=0
-	cp artifacts/kernel8-m2-fmsx-bootstrap.img artifacts/kernel8-m2-gameboot.img
-	bash $(CONTEXT_UPDATER) m2-gameboot build-ok artifacts/kernel8-m2-gameboot.img
-	@echo "Artefato M2 GAME BOOT: artifacts/kernel8-m2-gameboot.img"
 
 m0-combo-integrated: circle-configure
 	@mkdir -p artifacts
@@ -367,8 +343,6 @@ help:
 	@echo "M0.3 combo integrado (experimental): make m0-combo-integrated"
 	@echo "M0.3 combo full (input+audio ativos): make m0-combo-full"
 	@echo "M2 bootstrap fMSX (experimental): make m2-fmsx-bootstrap"
-	@echo "M2 NORMAL BOOT preset: make m2-fmsx-normal"
-	@echo "M2 FAST BOOT preset: make m2-fmsx-fastboot"
-	@echo "M2 GAME BOOT preset: make m2-fmsx-gameboot"
+	@echo "Boot mode selecionavel em runtime: Settings -> Boot Mode [NORM/FAST/GAME]"
 	@echo "Guardrail third_party: make guard-third-party"
 	@echo "Bypass temporario (nao recomendado): ALLOW_DIRTY_THIRD_PARTY=1 make <target>"

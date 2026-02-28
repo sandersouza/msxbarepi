@@ -281,6 +281,11 @@ void CComboPauseMenu::SetAudioMuted(boolean enabled)
     }
 }
 
+boolean CComboPauseMenu::IsInSettings(void) const
+{
+    return m_InSettings;
+}
+
 void CComboPauseMenu::RequestRedraw(void)
 {
     m_ForceRedraw = TRUE;

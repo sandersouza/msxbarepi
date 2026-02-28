@@ -102,7 +102,9 @@ private:
     unsigned m_AudioClipMaxRuntime;
     unsigned m_AudioOutputGainPct;
     unsigned m_BootToneFramesRemaining;
+    unsigned m_UsbInitRetryTick;
     boolean m_AudioInitAttempted;
+    boolean m_UsbReady;
     u8 m_JoyBridgeBits;
     u8 m_JoyMappedBits;
     boolean m_DebugOverlayEnabled;
@@ -159,10 +161,14 @@ private:
     boolean m_DCacheEnabled;
     boolean m_ICacheEnabled;
     boolean m_SettingsStorageReady;
+    boolean m_SettingsLoadPending;
+    boolean m_InitramfsDeferredMountPending;
     boolean m_SettingsSavePending;
     unsigned m_SettingsSaveStage;
     unsigned m_SettingsSaveCode;
     unsigned m_SettingsSaveAux;
+    u64 m_BootStartUs;
+    unsigned m_BootToFmsxMs;
 
     static CComboKernel *s_Instance;
 };

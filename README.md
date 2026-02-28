@@ -100,6 +100,7 @@ make fastboot
 - Assim, BIOS/ROM/DSK devem vir do `initramfs` externo no SD/DTB.
 - Fallback de BIOS embutida (somente BIOS) permanece disponivel para bootstrap e usa por default:
   - `roms/cbios/cbios_main_msx1_br.rom`
+- Otimizacao de boot atual: o mount inicial do `initramfs` e minimo (BIOS + CARTx + DSKx) para reduzir tempo ate `fmsx_runtime_init()`; o restante dos arquivos e montado de forma adiada em runtime.
 
 Knobs de build relevantes no target `m2-fmsx-bootstrap`:
 
@@ -160,37 +161,30 @@ O script permite selecionar:
 Perfis de boot:
 - `NORMAL`: comportamento padrão.
 - `FAST BOOT`: acelera apenas o bootstrap inicial (frames acelerados + turbo Z80 MAX temporário), sem bypass de BIOS.
-- `GAME BOOT`: usa o fast boot e faz entrada direta no cartucho inserido em SLOT1/SLOT2.
+- `GAME BOOT`: replica o `FAST BOOT`, porém força a C-BIOS estática para `MSX.ROM`.
 - Default atual do configurador: `FAST BOOT`.
 
-Presets oficiais (reprodutiveis):
-
-```bash
-make m2-fmsx-normal
-make m2-fmsx-fastboot
-make m2-fmsx-gameboot
-```
-
-Artefatos gerados:
-- `artifacts/kernel8-m2-normalboot.img`
-- `artifacts/kernel8-m2-fastboot.img`
-- `artifacts/kernel8-m2-gameboot.img`
+Seleção de boot:
+- Use um build normal (`make m2-fmsx-bootstrap`) e escolha o modo em `Settings -> Boot Mode [NORM/FAST/GAME]`.
+- Para persistir no próximo boot, use `Gravar` no menu settings.
 
 Knobs adicionais relevantes:
 - `COMBO_FMSX_MEGARAM_ENABLED=0|1` (default `1`)
 - `COMBO_FMSX_CARTB_MAPPER=0..8|255` (default `255` = auto/default)
 - `COMBO_FMSX_BOOT_PROFILE=0|1|2` (default `1`; 0=`NORMAL`, 1=`FAST BOOT`, 2=`GAME BOOT`)
-- `COMBO_FMSX_BOOT_BURST_STEPS_FAST` (default `5`)
-- `COMBO_FMSX_BOOT_BURST_STEPS_GAME` (default `10`)
-- `COMBO_FMSX_BOOT_WARMUP_FRAMES_FAST` (default `720`)
-- `COMBO_FMSX_BOOT_WARMUP_FRAMES_GAME` (default `2400`)
+- `COMBO_FMSX_FAST_CUTOFF_FRAMES_MSX1|MSX2|MSX2P` (default `150`)
 - `COMBO_ENABLE_DEBUG_OVERLAY=0|1` (default `1`, quando `0` remove toggle/render do DBG no build)
 - `COMBO_BOOT_QUIET=0|1` (default `0`)
+- `COMBO_DEFER_USB_INIT_FRAMES=<n>` (default `90`; adia init USB/HID para reduzir tempo até primeiro frame)
+- `COMBO_DEFER_SETTINGS_LOAD_FRAMES=<n>` (default `0`; manter `0` para aplicar `MSXBARE.CFG` ainda no boot inicial)
+- `COMBO_DEFER_INITRAMFS_FULL_MOUNT_FRAMES=<n>` (default `120`; adia mount completo do `msx.cpio`)
+- `COMBO_SIZE_OPT=0|1` (default `1`; usa `-Os` + `-ffunction-sections/-fdata-sections` + `--gc-sections`)
+- `COMBO_FMSX_BOOT_MINIMAL_STARTUP=0|1` (default `1`; reduz probes opcionais no `StartMSX` durante bootstrap)
 
 Matriz de perfil (padrao atual):
 - `NORMAL`: profile `0`, sem frame-skip de boot, sem turbo forçado e sem bypass.
-- `FAST BOOT`: profile `1`, burst `5x` por `720` frames, turbo Z80 MAX apenas durante warmup, depois retorna ao turbo configurado.
-- `GAME BOOT`: profile `2`, burst `10x` por `2400` frames, turbo Z80 MAX durante warmup e jump direto para cartucho (`0x4000`) quando há ROM em SLOT1/SLOT2.
+- `FAST BOOT`: profile `1`, burst interno `4x` por cutoff dependente do modelo (`MSX1/MSX2/MSX2+`), turbo Z80 MAX apenas durante warmup.
+- `GAME BOOT`: profile `2`, mesma estratégia temporal do `FAST`, com C-BIOS estática forçada.
 
 ## Build default estavel (`make`)
 

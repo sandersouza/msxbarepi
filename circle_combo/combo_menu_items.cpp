@@ -91,9 +91,12 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     overscan_label[11] = (char) ('0' + ((overscan_percent / 10u) % 10u));
     overscan_label[12] = (char) ('0' + (overscan_percent % 10u));
 
-    settings_items[0].label = overscan_label;
-    settings_items[0].action = ComboMenuActionOverscanChanged;
-    settings_items[0].selectable = TRUE;
+    unsigned item_count = 0u;
+
+    settings_items[item_count].label = overscan_label;
+    settings_items[item_count].action = ComboMenuActionOverscanChanged;
+    settings_items[item_count].selectable = TRUE;
+    item_count++;
 
     const char *scanline_label = kScanlineDes;
     if (scanline_mode == 1u)
@@ -105,17 +108,20 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
         scanline_label = kScanlineCrt;
     }
 
-    settings_items[1].label = widescreen_enabled ? kWidescreenOn : kWidescreenOff;
-    settings_items[1].action = ComboMenuActionToggleWidescreen;
-    settings_items[1].selectable = TRUE;
+    settings_items[item_count].label = widescreen_enabled ? kWidescreenOn : kWidescreenOff;
+    settings_items[item_count].action = ComboMenuActionToggleWidescreen;
+    settings_items[item_count].selectable = TRUE;
+    item_count++;
 
-    settings_items[2].label = scanline_label;
-    settings_items[2].action = ComboMenuActionCycleScanlines;
-    settings_items[2].selectable = TRUE;
+    settings_items[item_count].label = scanline_label;
+    settings_items[item_count].action = ComboMenuActionCycleScanlines;
+    settings_items[item_count].selectable = TRUE;
+    item_count++;
 
-    settings_items[3].label = (refresh_rate_hz == 50u) ? kRefresh50 : kRefresh60;
-    settings_items[3].action = ComboMenuActionCycleRefreshRate;
-    settings_items[3].selectable = TRUE;
+    settings_items[item_count].label = (refresh_rate_hz == 50u) ? kRefresh50 : kRefresh60;
+    settings_items[item_count].action = ComboMenuActionCycleRefreshRate;
+    settings_items[item_count].selectable = TRUE;
+    item_count++;
 
     const char *turbo_label = kTurboDes;
     if (z80_turbo_mode == 1u)
@@ -126,21 +132,25 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     {
         turbo_label = kTurboMax;
     }
-    settings_items[4].label = kSeparator;
-    settings_items[4].action = ComboMenuActionSeparator;
-    settings_items[4].selectable = FALSE;
+    settings_items[item_count].label = kSeparator;
+    settings_items[item_count].action = ComboMenuActionSeparator;
+    settings_items[item_count].selectable = FALSE;
+    item_count++;
 
-    settings_items[5].label = scc_cart_enabled ? kSccOn : kSccOff;
-    settings_items[5].action = ComboMenuActionToggleSccCart;
-    settings_items[5].selectable = TRUE;
+    settings_items[item_count].label = scc_cart_enabled ? kSccOn : kSccOff;
+    settings_items[item_count].action = ComboMenuActionToggleSccCart;
+    settings_items[item_count].selectable = TRUE;
+    item_count++;
 
-    settings_items[6].label = audio_muted ? kAudioMuteOn : kAudioMuteOff;
-    settings_items[6].action = ComboMenuActionToggleAudioMute;
-    settings_items[6].selectable = TRUE;
+    settings_items[item_count].label = audio_muted ? kAudioMuteOn : kAudioMuteOff;
+    settings_items[item_count].action = ComboMenuActionToggleAudioMute;
+    settings_items[item_count].selectable = TRUE;
+    item_count++;
 
-    settings_items[7].label = kSeparator;
-    settings_items[7].action = ComboMenuActionSeparator;
-    settings_items[7].selectable = FALSE;
+    settings_items[item_count].label = kSeparator;
+    settings_items[item_count].action = ComboMenuActionSeparator;
+    settings_items[item_count].selectable = FALSE;
+    item_count++;
 
     const char *boot_label = kBootNorm;
     if (boot_mode == 1u)
@@ -151,13 +161,15 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     {
         boot_label = kBootGame;
     }
-    settings_items[8].label = boot_label;
-    settings_items[8].action = ComboMenuActionCycleBootMode;
-    settings_items[8].selectable = TRUE;
+    settings_items[item_count].label = boot_label;
+    settings_items[item_count].action = ComboMenuActionCycleBootMode;
+    settings_items[item_count].selectable = TRUE;
+    item_count++;
 
-    settings_items[9].label = turbo_label;
-    settings_items[9].action = ComboMenuActionCycleZ80Turbo;
-    settings_items[9].selectable = TRUE;
+    settings_items[item_count].label = turbo_label;
+    settings_items[item_count].action = ComboMenuActionCycleZ80Turbo;
+    settings_items[item_count].selectable = TRUE;
+    item_count++;
 
     const char *rensha_label = kRensha0;
     if (rensha_mode == 1u)
@@ -172,27 +184,32 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     {
         rensha_label = kRensha3;
     }
-    settings_items[10].label = rensha_label;
-    settings_items[10].action = ComboMenuActionCycleRensha;
-    settings_items[10].selectable = TRUE;
+    settings_items[item_count].label = rensha_label;
+    settings_items[item_count].action = ComboMenuActionCycleRensha;
+    settings_items[item_count].selectable = TRUE;
+    item_count++;
 
-    settings_items[11].label = overlay_available
-        ? (overlay_enabled ? kOverlayOn : kOverlayOff)
-        : kOverlayNA;
-    settings_items[11].action = ComboMenuActionToggleOverlay;
-    settings_items[11].selectable = TRUE;
+    if (overlay_available)
+    {
+        settings_items[item_count].label = overlay_enabled ? kOverlayOn : kOverlayOff;
+        settings_items[item_count].action = ComboMenuActionToggleOverlay;
+        settings_items[item_count].selectable = TRUE;
+        item_count++;
+    }
 
-    settings_items[12].label = kBlankLine;
-    settings_items[12].action = ComboMenuActionNone;
-    settings_items[12].selectable = FALSE;
+    settings_items[item_count].label = kBlankLine;
+    settings_items[item_count].action = ComboMenuActionNone;
+    settings_items[item_count].selectable = FALSE;
+    item_count++;
 
-    settings_items[13].label = kSave;
-    settings_items[13].action = ComboMenuActionSaveSettings;
-    settings_items[13].selectable = TRUE;
+    settings_items[item_count].label = kSave;
+    settings_items[item_count].action = ComboMenuActionSaveSettings;
+    settings_items[item_count].selectable = TRUE;
+    item_count++;
 
     if (count != 0)
     {
-        *count = (unsigned) (sizeof(settings_items) / sizeof(settings_items[0]));
+        *count = item_count;
     }
 
     return settings_items;

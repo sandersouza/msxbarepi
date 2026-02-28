@@ -382,6 +382,18 @@ static void FillRectScreen(CScreenDevice *screen,
 #define COMBO_ENABLE_SETTINGS_SAVE_EXPERIMENTAL 0
 #endif
 
+#ifndef COMBO_DEFER_USB_INIT_FRAMES
+#define COMBO_DEFER_USB_INIT_FRAMES 90u
+#endif
+
+#ifndef COMBO_DEFER_SETTINGS_LOAD_FRAMES
+#define COMBO_DEFER_SETTINGS_LOAD_FRAMES 0u
+#endif
+
+#ifndef COMBO_DEFER_INITRAMFS_FULL_MOUNT_FRAMES
+#define COMBO_DEFER_INITRAMFS_FULL_MOUNT_FRAMES 120u
+#endif
+
 CComboKernel *CComboKernel::s_Instance = 0;
 
 CComboKernel::CComboKernel(void)
@@ -411,7 +423,9 @@ CComboKernel::CComboKernel(void)
 	m_AudioClipMaxRuntime(16000),
 	m_AudioOutputGainPct(70),
 	m_BootToneFramesRemaining(0),
+	m_UsbInitRetryTick(0u),
 	m_AudioInitAttempted(FALSE),
+	m_UsbReady(FALSE),
 	m_JoyBridgeBits(0),
 	m_JoyMappedBits(ComboKeyboardJoyMask()),
 	m_DebugOverlayEnabled((COMBO_ENABLE_DEBUG_OVERLAY && COMBO_DEBUG_OVERLAY_DEFAULT) ? TRUE : FALSE),
@@ -465,10 +479,14 @@ CComboKernel::CComboKernel(void)
 	m_DCacheEnabled(FALSE),
 	m_ICacheEnabled(FALSE),
 	m_SettingsStorageReady(FALSE),
+	m_SettingsLoadPending(FALSE),
+	m_InitramfsDeferredMountPending(FALSE),
 	m_SettingsSavePending(FALSE),
 	m_SettingsSaveStage(0u),
 	m_SettingsSaveCode(0u),
-	m_SettingsSaveAux(0u)
+	m_SettingsSaveAux(0u),
+	m_BootStartUs(0u),
+	m_BootToFmsxMs(0u)
 {
 	s_Instance = this;
 	m_ActLED.Blink(5);
@@ -504,7 +522,6 @@ boolean CComboKernel::Initialize(void)
 
 	if (ok) ok = m_Interrupt.Initialize();
 	if (ok) ok = m_Timer.Initialize();
-	if (ok) ok = m_USBHCI.Initialize();
 	if (ok)
 	{
 		if (!m_EMMC.Initialize())
@@ -526,6 +543,8 @@ TComboShutdownMode CComboKernel::Run(void)
 	{
 		BootTrace("R0");
 	}
+	m_BootStartUs = CTimer::GetClockTicks64();
+	m_BootToFmsxMs = 0u;
 	m_Logger.Write(FromKernel, LogNotice, "Compile time: " __DATE__ " " __TIME__);
 	m_Logger.Write(FromKernel, LogNotice, "Combo standalone: HDMI audio + USB keyboard");
 	u64 sctlr_el1 = 0;
@@ -546,9 +565,10 @@ TComboShutdownMode CComboKernel::Run(void)
 		m_Logger.Write(FromKernel, LogNotice, "Audio init deferred until first fMSX frames");
 	}
 
-	m_Logger.Write(FromKernel, LogNotice, "Attach USB keyboard and type");
+	m_Logger.Write(FromKernel, LogNotice, "USB init deferred for faster first frame");
 	if (m_SettingsStorageReady)
 	{
+		/* Must be applied before fMSX init so boot/runtime settings take effect on first boot. */
 		if (f_mount(&m_SettingsFileSystem, kSettingsDrive, 1) == FR_OK)
 		{
 			LoadSettingsFromStorage();
@@ -568,7 +588,8 @@ TComboShutdownMode CComboKernel::Run(void)
 		}
 		unsigned mounted_files = 0;
 		#if COMBO_INITRAMFS_MOUNT
-		mounted_files = fmsx_initramfs_mount();
+		mounted_files = fmsx_initramfs_mount_boot_minimal();
+		m_InitramfsDeferredMountPending = TRUE;
 		#else
 		m_Logger.Write(FromKernel, LogNotice, "initramfs mount: disabled by build flag");
 		#endif
@@ -586,6 +607,10 @@ TComboShutdownMode CComboKernel::Run(void)
 			BootTrace("R3");
 		}
 		m_FmsxReady = fmsx_runtime_init();
+		{
+			const u64 boot_elapsed_us = CTimer::GetClockTicks64() - m_BootStartUs;
+			m_BootToFmsxMs = (unsigned) (boot_elapsed_us / 1000u);
+		}
 		if (!m_FmsxReady)
 		{
 			m_FmsxLastError = 1;
@@ -651,7 +676,80 @@ TComboShutdownMode CComboKernel::Run(void)
 				InitializeAudioOutput(fmsx_audio_enabled);
 			}
 		}
-		const boolean updated = m_USBHCI.UpdatePlugAndPlay();
+		if (m_SettingsLoadPending)
+		{
+			boolean should_load_settings = FALSE;
+			if (m_FmsxEnabled && m_FmsxReady)
+			{
+				should_load_settings = (m_FmsxFrames >= COMBO_DEFER_SETTINGS_LOAD_FRAMES) ? TRUE : FALSE;
+			}
+			else if (tick >= COMBO_DEFER_SETTINGS_LOAD_FRAMES)
+			{
+				should_load_settings = TRUE;
+			}
+			if (should_load_settings)
+			{
+				m_SettingsLoadPending = FALSE;
+				if (f_mount(&m_SettingsFileSystem, kSettingsDrive, 1) == FR_OK)
+				{
+					LoadSettingsFromStorage();
+				}
+				else
+				{
+					m_SettingsStorageReady = FALSE;
+					m_Logger.Write(FromKernel, LogWarning, "Settings mount failed on SD:; persistence disabled");
+				}
+			}
+		}
+		if (m_InitramfsDeferredMountPending)
+		{
+			boolean should_full_mount = FALSE;
+			if (m_FmsxEnabled && m_FmsxReady)
+			{
+				should_full_mount = (m_FmsxFrames >= COMBO_DEFER_INITRAMFS_FULL_MOUNT_FRAMES) ? TRUE : FALSE;
+			}
+			else if (tick >= COMBO_DEFER_INITRAMFS_FULL_MOUNT_FRAMES)
+			{
+				should_full_mount = TRUE;
+			}
+			if (should_full_mount)
+			{
+				const unsigned later_files = fmsx_initramfs_mount_remaining();
+				m_InitramfsDeferredMountPending = FALSE;
+				m_InitramfsFiles += later_files;
+				CString initramfs_line;
+				initramfs_line.Format("initramfs deferred files: +%u", later_files);
+				m_Logger.Write(FromKernel, LogNotice, initramfs_line);
+			}
+		}
+		if (!m_UsbReady)
+		{
+			boolean should_init_usb = FALSE;
+			if (m_FmsxEnabled && m_FmsxReady)
+			{
+				should_init_usb = (m_FmsxFrames >= COMBO_DEFER_USB_INIT_FRAMES) ? TRUE : FALSE;
+			}
+			else if (tick >= COMBO_DEFER_USB_INIT_FRAMES)
+			{
+				should_init_usb = TRUE;
+			}
+			if (should_init_usb && tick >= m_UsbInitRetryTick)
+			{
+				if (m_USBHCI.Initialize())
+				{
+					m_UsbReady = TRUE;
+					m_Logger.Write(FromKernel, LogNotice, "USB host ready");
+					m_Logger.Write(FromKernel, LogNotice, "Attach USB keyboard and type");
+				}
+				else
+				{
+					/* Retry later without blocking the emulation startup path. */
+					m_UsbInitRetryTick = tick + 300u;
+				}
+			}
+		}
+
+		const boolean updated = m_UsbReady ? m_USBHCI.UpdatePlugAndPlay() : FALSE;
 		if (updated)
 		{
 			m_PlugAndPlayCount++;
@@ -1181,10 +1279,11 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		m_FramePacingErrMaxUs > 999u ? 999u : m_FramePacingErrMaxUs);
 	WriteScreenText(line);
 
-	line.Format("\x1b[97m\x1b[49m\x1b[7;1HSD SV:%02u C:%03u A:%04u                             ",
+	line.Format("\x1b[97m\x1b[49m\x1b[7;1HSD SV:%02u C:%03u A:%04u BT:%04u                ",
 		m_SettingsSaveStage > 99u ? 99u : m_SettingsSaveStage,
 		m_SettingsSaveCode > 999u ? 999u : m_SettingsSaveCode,
-		m_SettingsSaveAux > 9999u ? 9999u : m_SettingsSaveAux);
+		m_SettingsSaveAux > 9999u ? 9999u : m_SettingsSaveAux,
+		m_BootToFmsxMs > 9999u ? 9999u : m_BootToFmsxMs);
 	WriteScreenText(line);
 
 	WriteScreenText("\x1b[0m");
@@ -2119,7 +2218,9 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	}
 	m_LastF12Pressed = key_state.f1_pressed;
 
-	if (key_state.pause_pressed)
+	const boolean esc_resume_pressed =
+		(key_state.menu_back_pressed && m_EmulationPaused && !m_PauseMenu.IsInSettings()) ? TRUE : FALSE;
+	if (key_state.pause_pressed || esc_resume_pressed)
 	{
 		const u64 now_us = CTimer::GetClockTicks64();
 		if (m_LastPauseToggleUs == 0u || (now_us - m_LastPauseToggleUs) >= 200000ull)
