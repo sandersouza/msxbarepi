@@ -36,6 +36,30 @@
 #define COMBO_FMSX_BOOT_PROFILE 0
 #endif
 
+#ifndef COMBO_FMSX_BOOT_WARMUP_FRAMES_FAST
+#define COMBO_FMSX_BOOT_WARMUP_FRAMES_FAST 720
+#endif
+
+#ifndef COMBO_FMSX_BOOT_WARMUP_FRAMES_GAME
+#define COMBO_FMSX_BOOT_WARMUP_FRAMES_GAME 2400
+#endif
+
+#ifndef COMBO_FMSX_BOOT_BURST_STEPS_FAST
+#define COMBO_FMSX_BOOT_BURST_STEPS_FAST 5
+#endif
+
+#ifndef COMBO_FMSX_BOOT_BURST_STEPS_GAME
+#define COMBO_FMSX_BOOT_BURST_STEPS_GAME 10
+#endif
+
+#if (COMBO_FMSX_BOOT_WARMUP_FRAMES_FAST < 0) || (COMBO_FMSX_BOOT_WARMUP_FRAMES_GAME < 0)
+#error "COMBO_FMSX_BOOT_WARMUP_FRAMES_* must be >= 0"
+#endif
+
+#if (COMBO_FMSX_BOOT_BURST_STEPS_FAST < 1) || (COMBO_FMSX_BOOT_BURST_STEPS_GAME < 1)
+#error "COMBO_FMSX_BOOT_BURST_STEPS_* must be >= 1"
+#endif
+
 #if (COMBO_FMSX_RAMMAPPER_KB == 64)
 #define COMBO_FMSX_RAMMAPPER_PAGES 4
 #elif (COMBO_FMSX_RAMMAPPER_KB == 256)
@@ -69,9 +93,9 @@ static boolean g_scc_cart_enabled = TRUE;
 static unsigned fmsx_runtime_boot_warmup_frames(void)
 {
 #if COMBO_FMSX_BOOT_PROFILE == 1
-    return 720u;
+    return (unsigned) COMBO_FMSX_BOOT_WARMUP_FRAMES_FAST;
 #elif COMBO_FMSX_BOOT_PROFILE == 2
-    return 2400u;
+    return (unsigned) COMBO_FMSX_BOOT_WARMUP_FRAMES_GAME;
 #else
     return 0u;
 #endif
@@ -80,9 +104,9 @@ static unsigned fmsx_runtime_boot_warmup_frames(void)
 static unsigned fmsx_runtime_boot_burst_steps(void)
 {
 #if COMBO_FMSX_BOOT_PROFILE == 1
-    return 4u;
+    return (unsigned) COMBO_FMSX_BOOT_BURST_STEPS_FAST;
 #elif COMBO_FMSX_BOOT_PROFILE == 2
-    return 8u;
+    return (unsigned) COMBO_FMSX_BOOT_BURST_STEPS_GAME;
 #else
     return 1u;
 #endif

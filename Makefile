@@ -122,6 +122,7 @@ CONTEXT_UPDATER := ./scripts/update-ai-context.sh
 THIRD_PARTY_GUARD := ./scripts/check-third-party-pristine.sh
 
 .PHONY: all stable clean help m0 m0-circle-input m0-circle-input-full m0-hdmi-audio m0-hdmi-audio-full m0-hdmi-audio-integrated m0-hdmi-audio-integrated-full m0-combo m0-combo-full m0-combo-integrated m2-fmsx-bootstrap guard-third-party circle-configure circle-usbkeyboard-debug circle-sounddevices-debug
+.PHONY: m2-fmsx-normal m2-fmsx-fastboot m2-fmsx-gameboot
 
 all: stable
 
@@ -245,6 +246,33 @@ m2-fmsx-bootstrap: circle-configure
 	bash $(CONTEXT_UPDATER) m2-bootstrap build-ok artifacts/kernel8-m2-fmsx-bootstrap.img
 	@echo "Artefato M2 bootstrap (fMSX core + combo loop): artifacts/kernel8-m2-fmsx-bootstrap.img"
 
+m2-fmsx-normal: circle-configure
+	$(MAKE) m2-fmsx-bootstrap \
+		COMBO_FMSX_BOOT_PROFILE=0 \
+		COMBO_BOOT_QUIET=0 \
+		COMBO_CARTA_ONLY=0
+	cp artifacts/kernel8-m2-fmsx-bootstrap.img artifacts/kernel8-m2-normalboot.img
+	bash $(CONTEXT_UPDATER) m2-normalboot build-ok artifacts/kernel8-m2-normalboot.img
+	@echo "Artefato M2 NORMAL BOOT: artifacts/kernel8-m2-normalboot.img"
+
+m2-fmsx-fastboot: circle-configure
+	$(MAKE) m2-fmsx-bootstrap \
+		COMBO_FMSX_BOOT_PROFILE=1 \
+		COMBO_BOOT_QUIET=1 \
+		COMBO_CARTA_ONLY=0
+	cp artifacts/kernel8-m2-fmsx-bootstrap.img artifacts/kernel8-m2-fastboot.img
+	bash $(CONTEXT_UPDATER) m2-fastboot build-ok artifacts/kernel8-m2-fastboot.img
+	@echo "Artefato M2 FAST BOOT: artifacts/kernel8-m2-fastboot.img"
+
+m2-fmsx-gameboot: circle-configure
+	$(MAKE) m2-fmsx-bootstrap \
+		COMBO_FMSX_BOOT_PROFILE=2 \
+		COMBO_BOOT_QUIET=1 \
+		COMBO_CARTA_ONLY=1
+	cp artifacts/kernel8-m2-fmsx-bootstrap.img artifacts/kernel8-m2-gameboot.img
+	bash $(CONTEXT_UPDATER) m2-gameboot build-ok artifacts/kernel8-m2-gameboot.img
+	@echo "Artefato M2 GAME BOOT: artifacts/kernel8-m2-gameboot.img"
+
 m0-combo-integrated: circle-configure
 	@mkdir -p artifacts
 	$(MAKE) -C third_party/circle/sample/08-usbkeyboard >/dev/null
@@ -333,5 +361,8 @@ help:
 	@echo "M0.3 combo integrado (experimental): make m0-combo-integrated"
 	@echo "M0.3 combo full (input+audio ativos): make m0-combo-full"
 	@echo "M2 bootstrap fMSX (experimental): make m2-fmsx-bootstrap"
+	@echo "M2 NORMAL BOOT preset: make m2-fmsx-normal"
+	@echo "M2 FAST BOOT preset: make m2-fmsx-fastboot"
+	@echo "M2 GAME BOOT preset: make m2-fmsx-gameboot"
 	@echo "Guardrail third_party: make guard-third-party"
 	@echo "Bypass temporario (nao recomendado): ALLOW_DIRTY_THIRD_PARTY=1 make <target>"

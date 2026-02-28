@@ -91,7 +91,7 @@ mapper_kb_choice="OFF"
 megaram_kb_choice="OFF"
 cart_guess_choice="AUTO"
 debug_choice="ON"
-boot_mode_choice="NORMAL"
+boot_mode_choice="FAST BOOT"
 carta_kind="AUTO"
 cartb_kind="AUTO"
 
@@ -218,7 +218,7 @@ else
   megaram_kb_choice="OFF"
   cart_guess_choice="AUTO"
   debug_choice="ON"
-  boot_mode_choice="NORMAL"
+  boot_mode_choice="FAST BOOT"
   carta_kind="AUTO"
   cartb_kind="AUTO"
 fi
