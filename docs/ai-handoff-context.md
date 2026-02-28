@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 28/02/2026 08:33
+Última atualização: 28/02/2026 09:09
 
 ## Objetivo deste arquivo
 
@@ -549,3 +549,11 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-02-28 08:33:53 | stage=m2-fastboot | status=build-ok | artifact=artifacts/kernel8-m2-fastboot.img
 - 2026-02-28 08:33:57 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
 - 2026-02-28 08:33:57 | stage=m2-gameboot | status=build-ok | artifact=artifacts/kernel8-m2-gameboot.img
+- 2026-02-28 09:05:39 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 09:05:39 | stage=m2-gameboot | status=build-ok | artifact=artifacts/kernel8-m2-gameboot.img
+- 2026-02-28 09:09:36 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 09:09:36 | stage=m2-normalboot | status=build-ok | artifact=artifacts/kernel8-m2-normalboot.img
+- 2026-02-28 09:09:41 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 09:09:41 | stage=m2-fastboot | status=build-ok | artifact=artifacts/kernel8-m2-fastboot.img
+- 2026-02-28 09:09:45 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 09:09:45 | stage=m2-gameboot | status=build-ok | artifact=artifacts/kernel8-m2-gameboot.img
