@@ -37,6 +37,18 @@
 #define COMBO_FMSX_BOOT_PROFILE 0
 #endif
 
+#ifndef COMBO_FMSX_FAST_CUTOFF_FRAMES_MSX1
+#define COMBO_FMSX_FAST_CUTOFF_FRAMES_MSX1 150u
+#endif
+
+#ifndef COMBO_FMSX_FAST_CUTOFF_FRAMES_MSX2
+#define COMBO_FMSX_FAST_CUTOFF_FRAMES_MSX2 150u
+#endif
+
+#ifndef COMBO_FMSX_FAST_CUTOFF_FRAMES_MSX2P
+#define COMBO_FMSX_FAST_CUTOFF_FRAMES_MSX2P 150u
+#endif
+
 #if (COMBO_FMSX_RAMMAPPER_KB == 64)
 #define COMBO_FMSX_RAMMAPPER_PAGES 4
 #elif (COMBO_FMSX_RAMMAPPER_KB == 256)
@@ -67,15 +79,27 @@ static unsigned g_boot_warmup_frames_remaining = 0u;
 static boolean g_boot_forced_turbo = FALSE;
 static unsigned g_refresh_hz = 60u;
 static unsigned g_boot_mode = (COMBO_FMSX_BOOT_PROFILE > 2) ? 0u : (unsigned) COMBO_FMSX_BOOT_PROFILE;
+static unsigned g_model_profile = FMSX_MODEL_PROFILE_MSX1;
 static boolean g_use_embedded_bios = FALSE;
 static unsigned g_z80_turbo_mode = 0u;
 static boolean g_scc_cart_enabled = TRUE;
+
+static unsigned fmsx_runtime_fast_cutoff_frames(void)
+{
+    switch (g_model_profile)
+    {
+    case FMSX_MODEL_PROFILE_MSX2:  return COMBO_FMSX_FAST_CUTOFF_FRAMES_MSX2;
+    case FMSX_MODEL_PROFILE_MSX2P: return COMBO_FMSX_FAST_CUTOFF_FRAMES_MSX2P;
+    case FMSX_MODEL_PROFILE_MSX1:
+    default: return COMBO_FMSX_FAST_CUTOFF_FRAMES_MSX1;
+    }
+}
 
 static unsigned fmsx_runtime_boot_warmup_frames(void)
 {
     switch (g_boot_mode)
     {
-    case 1u: return 150u;   /* FAST: keep burst until ~JY2 F:150 */
+    case 1u: return fmsx_runtime_fast_cutoff_frames(); /* FAST model-dependent cutoff */
     case 2u: return 2400u;  /* GAME */
     default: return 0u;     /* NORM */
     }
@@ -360,6 +384,20 @@ void fmsx_runtime_set_boot_mode(unsigned mode)
 unsigned fmsx_runtime_get_boot_mode(void)
 {
     return g_boot_mode;
+}
+
+void fmsx_runtime_set_model_profile(unsigned profile)
+{
+    if (profile > FMSX_MODEL_PROFILE_MSX2P)
+    {
+        profile = FMSX_MODEL_PROFILE_MSX1;
+    }
+    g_model_profile = profile;
+}
+
+unsigned fmsx_runtime_get_model_profile(void)
+{
+    return g_model_profile;
 }
 
 boolean fmsx_runtime_use_embedded_bios(void)
