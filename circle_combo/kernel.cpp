@@ -28,7 +28,7 @@ static const unsigned kScanlineModeOff = 0u;
 static const unsigned kScanlineModeLcd = 1u;
 static const unsigned kScanlineModeCrt = 2u;
 static const char kSettingsDrive[] = "SD:";
-static const char kSettingsPath[] = "SD:MSXBARE.CFG";
+static const char kSettingsPath[] = "SD:/MSXBARE.CFG";
 static const unsigned kZ80TurboModeDes = 0u;
 static const unsigned kZ80TurboModePan = 1u;
 static const unsigned kZ80TurboModeMax = 2u;
@@ -438,6 +438,7 @@ CComboKernel::CComboKernel(void)
 	m_DCacheEnabled(FALSE),
 	m_ICacheEnabled(FALSE),
 	m_SettingsStorageReady(FALSE),
+	m_SettingsSavePending(FALSE),
 	m_SettingsSaveStage(0u),
 	m_SettingsSaveCode(0u),
 	m_SettingsSaveAux(0u)
@@ -641,6 +642,12 @@ TComboShutdownMode CComboKernel::Run(void)
 		if (m_Keyboard != 0)
 		{
 			m_Keyboard->UpdateLEDs();
+		}
+
+		if (m_SettingsSavePending)
+		{
+			m_SettingsSavePending = FALSE;
+			SaveSettingsToStorage();
 		}
 
 		#if COMBO_ENABLE_FMSX
@@ -1543,13 +1550,6 @@ void CComboKernel::SaveSettingsToStorage(void)
 		return;
 	}
 
-	if (m_DeviceNameService.GetDevice("umsd1", TRUE) != 0)
-	{
-		UpdateSettingsSaveTelemetry(94u, 0u, 0u); /* blocked on USB boot/storage present */
-		m_Logger.Write(FromKernel, LogWarning, "Settings save blocked: USB mass storage detected (avoid SD write hang)");
-		return;
-	}
-
 	char buffer[512];
 	unsigned offset = 0u;
 
@@ -1577,64 +1577,56 @@ void CComboKernel::SaveSettingsToStorage(void)
 	APPEND_LINE_FMT("scc_cart=%u\n", m_SccCartEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("debugger=%u\n", m_DebugOverlayEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("audio_mute=%u\n", m_AudioMuted ? 1u : 0u);
+	APPEND_LINE_FMT("#END\n", 0u);
 
 #undef APPEND_LINE_FMT
 
-	UpdateSettingsSaveTelemetry(2u, offset, 0u); /* create */
+	/* Persist fixed-size block to keep parser/overwrite deterministic. */
+	const unsigned fixed_write_bytes = 512u;
+	if (offset > fixed_write_bytes)
+	{
+		offset = fixed_write_bytes;
+	}
+	memset(buffer + offset, '\n', fixed_write_bytes - offset);
+
+	UpdateSettingsSaveTelemetry(2u, fixed_write_bytes, 0u); /* open/create */
 	FIL file;
-	const FRESULT open_result = f_open(&file, kSettingsPath, FA_WRITE | FA_CREATE_ALWAYS);
+	const FRESULT open_result = f_open(&file, kSettingsPath, FA_WRITE | FA_OPEN_ALWAYS);
 	if (open_result != FR_OK)
 	{
-		UpdateSettingsSaveTelemetry(91u, 0u, 0u); /* create error */
+		UpdateSettingsSaveTelemetry(91u, open_result, 0u); /* open error */
 		m_Logger.Write(FromKernel, LogWarning, "Settings save failed (cannot open config file)");
 		return;
 	}
-	UpdateSettingsSaveTelemetry(21u, offset, 0u); /* open ok */
-
-	m_Logger.Write(FromKernel, LogNotice, "Settings save: write begin");
-	UpdateSettingsSaveTelemetry(3u, offset, 0u); /* write begin */
-	unsigned bytes_written = 0u;
-	unsigned write_pos = 0u;
-	while (write_pos < offset)
+	const FRESULT seek_result = f_lseek(&file, 0);
+	if (seek_result != FR_OK)
 	{
-		unsigned chunk = offset - write_pos;
-		if (chunk > 16u)
-		{
-			chunk = 16u;
-		}
-		if (m_DCacheEnabled)
-		{
-			CleanDataCacheRange((u64) (uintptr) (buffer + write_pos), (u64) chunk);
-		}
-		UINT wrote = 0u;
-		const FRESULT write_result = f_write(&file, buffer + write_pos, chunk, &wrote);
-		if (write_result != FR_OK || wrote == 0u)
-		{
-			break;
-		}
-		write_pos += wrote;
-		bytes_written += wrote;
-		UpdateSettingsSaveTelemetry(3u, write_pos, offset);
+		(void) f_close(&file);
+		UpdateSettingsSaveTelemetry(97u, seek_result, 0u);
+		m_Logger.Write(FromKernel, LogWarning, "Settings save failed (seek error)");
+		return;
 	}
-	m_Logger.Write(FromKernel, LogNotice, "Settings save: write end");
-	UpdateSettingsSaveTelemetry(4u, bytes_written, offset); /* write end */
-	m_Logger.Write(FromKernel, LogNotice, "Settings save: close begin");
-	UpdateSettingsSaveTelemetry(5u, bytes_written, 0u); /* close begin */
+
+	UpdateSettingsSaveTelemetry(3u, fixed_write_bytes, 0u); /* write begin */
+	UINT bytes_written = 0;
+	const FRESULT write_result = f_write(&file, buffer, fixed_write_bytes, &bytes_written);
+	UpdateSettingsSaveTelemetry(4u, bytes_written > 999u ? 999u : bytes_written, fixed_write_bytes); /* write end */
+
+	UpdateSettingsSaveTelemetry(5u, bytes_written > 999u ? 999u : bytes_written, 0u); /* close begin */
 	const FRESULT close_result = f_close(&file);
 	const unsigned close_ok = (close_result == FR_OK) ? 1u : 0u;
-	m_Logger.Write(FromKernel, LogNotice, "Settings save: close end");
-	UpdateSettingsSaveTelemetry(6u, close_ok, bytes_written); /* close end */
+	UpdateSettingsSaveTelemetry(6u, close_ok, bytes_written > 999u ? 999u : bytes_written); /* close end */
 
-	if (bytes_written == offset && close_ok != 0u)
+	if (write_result == FR_OK && bytes_written == fixed_write_bytes && close_ok != 0u)
 	{
-		UpdateSettingsSaveTelemetry(7u, bytes_written, offset); /* success */
+		UpdateSettingsSaveTelemetry(7u, bytes_written, fixed_write_bytes); /* success */
 		CString line_log;
 		line_log.Format("Settings saved to %s", kSettingsPath);
 		m_Logger.Write(FromKernel, LogNotice, line_log);
 	}
 	else
 	{
-		UpdateSettingsSaveTelemetry(92u, bytes_written, close_ok); /* write/close error */
+		UpdateSettingsSaveTelemetry(92u, write_result, close_ok); /* write/close error */
 		m_Logger.Write(FromKernel, LogWarning, "Settings save failed (write error)");
 	}
 }
@@ -1822,7 +1814,9 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 
 	case ComboMenuActionSaveSettings:
 		RefreshSettingsUiAfterAction();
-		SaveSettingsToStorage();
+		m_SettingsSavePending = TRUE;
+		UpdateSettingsSaveTelemetry(8u, 0u, 0u); /* queued */
+		m_Logger.Write(FromKernel, LogNotice, "Settings save queued");
 		break;
 
 	default:

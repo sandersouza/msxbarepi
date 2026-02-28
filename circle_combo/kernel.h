@@ -150,6 +150,7 @@ private:
     boolean m_DCacheEnabled;
     boolean m_ICacheEnabled;
     boolean m_SettingsStorageReady;
+    boolean m_SettingsSavePending;
     unsigned m_SettingsSaveStage;
     unsigned m_SettingsSaveCode;
     unsigned m_SettingsSaveAux;

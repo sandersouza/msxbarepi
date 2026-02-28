@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 28/02/2026 00:30
+Última atualização: 28/02/2026 07:00
 
 ## Objetivo deste arquivo
 
@@ -510,3 +510,18 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-02-28 00:22:38 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
 - 2026-02-28 00:25:26 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
 - 2026-02-28 00:30:56 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 00:42:05 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 03:46:00 | stage=issue-50-cfat-backend-iteration1 | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=persistencia migrada para CFATFileSystem com particao emmc1-1 e save experimental reativado para validacao em hardware
+- 2026-02-28 00:46:10 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 00:59:30 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 01:12:00 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 01:29:50 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 01:31:11 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 06:40:20 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 06:43:40 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 06:51:43 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 06:52:13 | stage=m7-issue-50 | status=in-review | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=persistencia-fat32-validada-sv07-512
+- 2026-02-28 06:52:51 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 06:53:53 | stage=m7-issue-50 | status=pr-open | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=pr-52-open-in-review
+- 2026-02-28 06:55:10 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 07:00:51 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img

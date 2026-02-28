@@ -5,8 +5,9 @@
 - Estado remoto: OPEN
 - Prioridade: P1
 - Labels: `priority:P1`, `area:boot`, `beta:v0.1`
-- Status no projeto: `Ready`
+- Status no projeto: `In review`
 - Última sincronização local: 2026-02-28
+- PR de revisão: #52
 
 ## Escopo
 - implementar persistência real de settings em FAT32 no SD do slot (nunca USB)
@@ -17,3 +18,10 @@
 ## Contexto
 - issue #48 foi estabilizada para remover freeze e encerrada com save desativado (`SV:95`)
 - esta issue assume a implementação definitiva de persistência FAT32
+
+## Progresso
+- 2026-02-28: persistência FAT32 validada em hardware (save + reload após reboot).
+  - backend final: FatFs (`SD:/MSXBARE.CFG`) com criação automática no primeiro save
+  - `Gravar` enfileira a operação; escrita executa no loop principal (evita lock no callback de input)
+  - escrita fixa de 512 bytes e leitura de settings na inicialização
+  - telemetria de validação usada no teste: `SV:07 C:512 A:0512`
