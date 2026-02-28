@@ -70,6 +70,7 @@ overscan=0
 widescreen=0
 scanline=0
 refresh=60
+boot_mode=1
 z80_turbo=0
 rensha=0
 scc_cart=1
