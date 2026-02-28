@@ -5,7 +5,7 @@
 - Estado remoto: OPEN
 - Prioridade: P1
 - Labels: `priority:P1`, `type:performance`, `area:video`, `area:audio`, `area:timing`, `beta:v0.1`
-- Status no projeto: `In progress`
+- Status no projeto: `In review`
 - Última sincronização local: 2026-02-27
 
 ## Progresso
@@ -15,3 +15,6 @@
 - 2026-02-28: iteração 2 aplicada (build OK).
   - espera híbrida de pacing (`usSleep` grosseiro + `SimpleusDelay` fino)
   - objetivo: reduzir oversleep do scheduler e estabilizar erro de deadline por frame
+- 2026-02-28: estabilizada em hardware (sem stuttering perceptível).
+  - branch sincronizada com `main` (incluindo merge da #53)
+  - pronta para revisão via PR
