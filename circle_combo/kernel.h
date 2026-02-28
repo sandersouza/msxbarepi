@@ -51,6 +51,7 @@ private:
     void RefreshSettingsUiAfterAction(void);
     void ResetEmulationRuntimeState(void);
     void UpdateJoystickFromRaw(unsigned char modifiers, const unsigned char raw_keys[6]);
+    void PushKeyboardStateToRuntime(boolean advance_rensha_phase);
     void SetDebugOverlayEnabled(boolean enabled);
     void UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux);
     void LoadSettingsFromStorage(void);
@@ -140,6 +141,10 @@ private:
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;
     unsigned m_Z80TurboMode;
+    boolean m_RenshaEnabled;
+    unsigned m_RenshaPhase;
+    unsigned char m_LastKeyboardModifiers;
+    unsigned char m_LastKeyboardRawKeys[6];
     boolean m_SccCartEnabled;
     u64 m_FrameIntervalUs;
     boolean m_FramePacingResetPending;

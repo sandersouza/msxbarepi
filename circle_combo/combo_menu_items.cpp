@@ -24,13 +24,14 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
                                                      unsigned scanline_mode,
                                                      unsigned refresh_rate_hz,
                                                      unsigned z80_turbo_mode,
+                                                     boolean rensha_enabled,
                                                      boolean scc_cart_enabled,
                                                      boolean overlay_enabled,
                                                      boolean overlay_available,
                                                      boolean audio_muted,
                                                      unsigned *count)
 {
-    static TComboMenuItem settings_items[12];
+    static TComboMenuItem settings_items[13];
     static char overscan_label[] = "Overscan [000]";
     static const char *kWidescreenOff = "Widescreen [DES]";
     static const char *kWidescreenOn = "Widescreen [LIG]";
@@ -42,6 +43,8 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     static const char *kTurboDes = "Z80 Turbo [DES]";
     static const char *kTurboPan = "Z80 Turbo [PAN]";
     static const char *kTurboMax = "Z80 Turbo [MAX]";
+    static const char *kRenshaOff = "Rensha [DES]";
+    static const char *kRenshaOn = "Rensha [LIG]";
     static const char *kSccOff = "SCC Cart [DES]";
     static const char *kSccOn = "SCC Cart [LIG]";
     static const char *kOverlayOff = "Debugger [DES]";
@@ -129,19 +132,23 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     settings_items[8].action = ComboMenuActionCycleZ80Turbo;
     settings_items[8].selectable = TRUE;
 
-    settings_items[9].label = overlay_available
-        ? (overlay_enabled ? kOverlayOn : kOverlayOff)
-        : kOverlayNA;
-    settings_items[9].action = ComboMenuActionToggleOverlay;
+    settings_items[9].label = rensha_enabled ? kRenshaOn : kRenshaOff;
+    settings_items[9].action = ComboMenuActionToggleRensha;
     settings_items[9].selectable = TRUE;
 
-    settings_items[10].label = kBlankLine;
-    settings_items[10].action = ComboMenuActionNone;
-    settings_items[10].selectable = FALSE;
+    settings_items[10].label = overlay_available
+        ? (overlay_enabled ? kOverlayOn : kOverlayOff)
+        : kOverlayNA;
+    settings_items[10].action = ComboMenuActionToggleOverlay;
+    settings_items[10].selectable = TRUE;
 
-    settings_items[11].label = kSave;
-    settings_items[11].action = ComboMenuActionSaveSettings;
-    settings_items[11].selectable = TRUE;
+    settings_items[11].label = kBlankLine;
+    settings_items[11].action = ComboMenuActionNone;
+    settings_items[11].selectable = FALSE;
+
+    settings_items[12].label = kSave;
+    settings_items[12].action = ComboMenuActionSaveSettings;
+    settings_items[12].selectable = TRUE;
 
     if (count != 0)
     {
