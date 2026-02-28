@@ -24,7 +24,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
                                                      unsigned scanline_mode,
                                                      unsigned refresh_rate_hz,
                                                      unsigned z80_turbo_mode,
-                                                     boolean rensha_enabled,
+                                                     unsigned rensha_mode,
                                                      boolean scc_cart_enabled,
                                                      boolean overlay_enabled,
                                                      boolean overlay_available,
@@ -43,8 +43,10 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     static const char *kTurboDes = "Z80 Turbo [DES]";
     static const char *kTurboPan = "Z80 Turbo [PAN]";
     static const char *kTurboMax = "Z80 Turbo [MAX]";
-    static const char *kRenshaOff = "Rensha [DES]";
-    static const char *kRenshaOn = "Rensha [LIG]";
+    static const char *kRensha0 = "Rensha [0]";
+    static const char *kRensha1 = "Rensha [1]";
+    static const char *kRensha2 = "Rensha [2]";
+    static const char *kRensha3 = "Rensha [3]";
     static const char *kSccOff = "SCC Cart [DES]";
     static const char *kSccOn = "SCC Cart [LIG]";
     static const char *kOverlayOff = "Debugger [DES]";
@@ -71,6 +73,10 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     if (z80_turbo_mode > 2u)
     {
         z80_turbo_mode = 0u;
+    }
+    if (rensha_mode > 3u)
+    {
+        rensha_mode = 0u;
     }
 
     overscan_label[10] = (char) ('0' + ((overscan_percent / 100u) % 10u));
@@ -132,8 +138,21 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     settings_items[8].action = ComboMenuActionCycleZ80Turbo;
     settings_items[8].selectable = TRUE;
 
-    settings_items[9].label = rensha_enabled ? kRenshaOn : kRenshaOff;
-    settings_items[9].action = ComboMenuActionToggleRensha;
+    const char *rensha_label = kRensha0;
+    if (rensha_mode == 1u)
+    {
+        rensha_label = kRensha1;
+    }
+    else if (rensha_mode == 2u)
+    {
+        rensha_label = kRensha2;
+    }
+    else if (rensha_mode == 3u)
+    {
+        rensha_label = kRensha3;
+    }
+    settings_items[9].label = rensha_label;
+    settings_items[9].action = ComboMenuActionCycleRensha;
     settings_items[9].selectable = TRUE;
 
     settings_items[10].label = overlay_available

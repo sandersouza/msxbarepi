@@ -141,7 +141,7 @@ private:
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;
     unsigned m_Z80TurboMode;
-    boolean m_RenshaEnabled;
+    unsigned m_RenshaMode;
     unsigned m_RenshaPhase;
     unsigned char m_LastKeyboardModifiers;
     unsigned char m_LastKeyboardRawKeys[6];

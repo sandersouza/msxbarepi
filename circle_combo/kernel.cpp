@@ -34,9 +34,8 @@ static const unsigned kZ80TurboModePan = 1u;
 static const unsigned kZ80TurboModeMax = 2u;
 static const u8 kJoyBridgeFireA = (u8) (1u << 4);
 static const unsigned char kHidKeySpace = 0x2Cu;
-/* Target Panasonic-like usability: ~6/s at 60Hz and ~5/s at 50Hz. */
-static const unsigned kRenshaPeriodFrames = 10u; /* 6Hz @60fps, 5Hz @50fps */
-static const unsigned kRenshaOnFrames = 1u;
+/* Rensha modes are expressed in pulses per 10 frames (0.5, 1.0, 1.5). */
+static const unsigned kRenshaRateDen = 20u; /* 1/20 pulse per frame unit */
 static const unsigned kRgb565LutSize = 65536u;
 
 static unsigned UMax(unsigned a, unsigned b)
@@ -433,7 +432,7 @@ CComboKernel::CComboKernel(void)
 	m_ScanlineMode(kScanlineModeOff),
 	m_RefreshRateHz(60u),
 	m_Z80TurboMode(kZ80TurboModeDes),
-	m_RenshaEnabled(FALSE),
+	m_RenshaMode(0u),
 	m_RenshaPhase(0u),
 	m_LastKeyboardModifiers(0u),
 	m_LastKeyboardRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
@@ -604,7 +603,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 	m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
-	m_PauseMenu.SetRenshaEnabled(m_RenshaEnabled);
+	m_PauseMenu.SetRenshaMode(m_RenshaMode);
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
 	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, COMBO_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
 	m_PauseMenu.SetAudioMuted(m_AudioMuted);
@@ -670,10 +669,15 @@ TComboShutdownMode CComboKernel::Run(void)
 			{
 				boolean rensha_fire_on = TRUE;
 				u8 joy_bits_runtime = m_JoyBridgeBits;
-				if (m_RenshaEnabled && (joy_bits_runtime & kJoyBridgeFireA))
+				const unsigned rate_num = (m_RenshaMode > 3u) ? 0u : m_RenshaMode;
+				if (rate_num > 0u && (joy_bits_runtime & kJoyBridgeFireA))
 				{
-					m_RenshaPhase = (m_RenshaPhase + 1u) % kRenshaPeriodFrames;
-					if (m_RenshaPhase >= kRenshaOnFrames)
+					m_RenshaPhase += rate_num;
+					if (m_RenshaPhase >= kRenshaRateDen)
+					{
+						m_RenshaPhase -= kRenshaRateDen;
+					}
+					else
 					{
 						rensha_fire_on = FALSE;
 						joy_bits_runtime &= (u8) ~kJoyBridgeFireA;
@@ -1526,7 +1530,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			}
 			else if (SettingsKeyEquals(line, key_len, "rensha"))
 			{
-				m_RenshaEnabled = value ? TRUE : FALSE;
+				m_RenshaMode = (value > 3u) ? 0u : value;
 			}
 			else if (SettingsKeyEquals(line, key_len, "scc_cart"))
 			{
@@ -1550,7 +1554,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 	m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
-	m_PauseMenu.SetRenshaEnabled(m_RenshaEnabled);
+	m_PauseMenu.SetRenshaMode(m_RenshaMode);
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
 	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, COMBO_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
 	m_PauseMenu.SetAudioMuted(m_AudioMuted);
@@ -1605,7 +1609,7 @@ void CComboKernel::SaveSettingsToStorage(void)
 	APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
 	APPEND_LINE_FMT("refresh=%u\n", m_RefreshRateHz);
 	APPEND_LINE_FMT("z80_turbo=%u\n", m_Z80TurboMode);
-	APPEND_LINE_FMT("rensha=%u\n", m_RenshaEnabled ? 1u : 0u);
+	APPEND_LINE_FMT("rensha=%u\n", m_RenshaMode);
 	APPEND_LINE_FMT("scc_cart=%u\n", m_SccCartEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("debugger=%u\n", m_DebugOverlayEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("audio_mute=%u\n", m_AudioMuted ? 1u : 0u);
@@ -1817,12 +1821,28 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		}
 		break;
 
-	case ComboMenuActionToggleRensha:
-		m_RenshaEnabled = m_RenshaEnabled ? FALSE : TRUE;
+	case ComboMenuActionCycleRensha:
+		m_RenshaMode = (m_RenshaMode >= 3u) ? 0u : (m_RenshaMode + 1u);
 		m_RenshaPhase = 0u;
-		m_PauseMenu.SetRenshaEnabled(m_RenshaEnabled);
+		m_PauseMenu.SetRenshaMode(m_RenshaMode);
 		RefreshSettingsUiAfterAction();
-		m_Logger.Write(FromKernel, LogNotice, m_RenshaEnabled ? "Settings: Rensha ON" : "Settings: Rensha OFF");
+		{
+			CString line;
+			line.Format("Settings: Rensha %u", m_RenshaMode);
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
+		break;
+
+	case ComboMenuActionCycleRenshaPrev:
+		m_RenshaMode = (m_RenshaMode == 0u) ? 3u : (m_RenshaMode - 1u);
+		m_RenshaPhase = 0u;
+		m_PauseMenu.SetRenshaMode(m_RenshaMode);
+		RefreshSettingsUiAfterAction();
+		{
+			CString line;
+			line.Format("Settings: Rensha %u", m_RenshaMode);
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
 		break;
 
 	case ComboMenuActionToggleOverlay:
@@ -1926,7 +1946,7 @@ void CComboKernel::PushKeyboardStateToRuntime(boolean rensha_fire_on)
 	{
 		raw_keys[i] = m_LastKeyboardRawKeys[i];
 	}
-	if (m_RenshaEnabled && !rensha_fire_on)
+	if (m_RenshaMode > 0u && !rensha_fire_on)
 	{
 		for (unsigned i = 0u; i < 6u; ++i)
 		{

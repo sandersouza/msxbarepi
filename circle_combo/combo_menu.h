@@ -18,7 +18,7 @@ public:
     unsigned GetRefreshRateHz(void) const;
     void SetZ80TurboMode(unsigned mode);
     unsigned GetZ80TurboMode(void) const;
-    void SetRenshaEnabled(boolean enabled);
+    void SetRenshaMode(unsigned mode);
     void SetSccCartEnabled(boolean enabled);
     void SetOverlayEnabled(boolean enabled, boolean available);
     void SetAudioMuted(boolean enabled);
@@ -52,7 +52,7 @@ private:
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;
     unsigned m_Z80TurboMode;
-    boolean m_RenshaEnabled;
+    unsigned m_RenshaMode;
     boolean m_SccCartEnabled;
     boolean m_OverlayEnabled;
     boolean m_OverlayAvailable;
@@ -64,7 +64,7 @@ private:
     unsigned m_LastDrawnScanlineMode;
     unsigned m_LastDrawnRefreshRateHz;
     unsigned m_LastDrawnZ80TurboMode;
-    boolean m_LastDrawnRensha;
+    unsigned m_LastDrawnRenshaMode;
     boolean m_LastDrawnSccCart;
     boolean m_LastDrawnOverlay;
     boolean m_LastDrawnOverlayAvailable;
