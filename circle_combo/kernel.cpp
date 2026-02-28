@@ -33,8 +33,8 @@ static const unsigned kZ80TurboModeDes = 0u;
 static const unsigned kZ80TurboModePan = 1u;
 static const unsigned kZ80TurboModeMax = 2u;
 static const unsigned char kHidKeySpace = 0x2Cu;
-/* Panasonic-like autofire cadence: short pulse, then gap. */
-static const unsigned kRenshaPeriodFrames = 4u; /* 15Hz @60fps, 12.5Hz @50fps */
+/* Intentionally slow/visible cadence for validation on hardware. */
+static const unsigned kRenshaPeriodFrames = 12u; /* 5Hz @60fps, ~4.2Hz @50fps */
 static const unsigned kRenshaOnFrames = 1u;
 static const unsigned kRgb565LutSize = 65536u;
 
