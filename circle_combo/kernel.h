@@ -40,6 +40,7 @@ public:
 
 private:
     void RefillAudioQueue(void);
+    void PrimeAudioSilenceBeforeReset(void);
     void InitializeAudioOutput(boolean fmsx_audio_enabled);
     void GenerateSamples(s16 *buffer, unsigned frames);
     void DrawDebugOverlay(unsigned tick);

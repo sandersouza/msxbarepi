@@ -1059,6 +1059,30 @@ void CComboKernel::RefillAudioQueue(void)
 	}
 }
 
+void CComboKernel::PrimeAudioSilenceBeforeReset(void)
+{
+	if (m_Sound == 0)
+	{
+		return;
+	}
+
+	/* Drop any pending samples and replace with a short silence window before reset. */
+	m_Sound->Flush();
+	static const unsigned kSilenceFrames = 512u;
+	s16 silence[kSilenceFrames * 2u];
+	memset(silence, 0, sizeof(silence));
+	const int bytes = (int) sizeof(silence);
+	const int written = m_Sound->Write(silence, (size_t) bytes);
+	if (written == bytes)
+	{
+		m_AudioWriteOps++;
+	}
+	else
+	{
+		m_AudioDropOps++;
+	}
+}
+
 void CComboKernel::GenerateSamples(s16 *buffer, unsigned frames)
 {
 	const s16 amplitude = 6000;
@@ -1781,6 +1805,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 	#if COMBO_ENABLE_FMSX
 		if (m_FmsxReady)
 		{
+			PrimeAudioSilenceBeforeReset();
 			if (fmsx_runtime_hard_reset())
 			{
 				ResetEmulationRuntimeState();

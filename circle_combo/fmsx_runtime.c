@@ -95,14 +95,19 @@ static unsigned fmsx_runtime_fast_cutoff_frames(void)
     }
 }
 
+static boolean fmsx_runtime_is_fast_like_boot(void)
+{
+    return (g_boot_mode == 1u || g_boot_mode == 2u) ? TRUE : FALSE;
+}
+
 static unsigned fmsx_runtime_boot_warmup_frames(void)
 {
-    switch (g_boot_mode)
+    if (fmsx_runtime_is_fast_like_boot())
     {
-    case 1u: return fmsx_runtime_fast_cutoff_frames(); /* FAST model-dependent cutoff */
-    case 2u: return 2400u;  /* GAME */
-    default: return 0u;     /* NORM */
+        /* FAST/GAME share the same model-dependent cutoff. */
+        return fmsx_runtime_fast_cutoff_frames();
     }
+    return 0u; /* NORM */
 }
 
 static unsigned fmsx_runtime_boot_burst_steps(void)
@@ -110,7 +115,7 @@ static unsigned fmsx_runtime_boot_burst_steps(void)
     switch (g_boot_mode)
     {
     case 1u: return 4u; /* FAST */
-    case 2u: return 8u; /* GAME */
+    case 2u: return 4u; /* GAME follows FAST profile */
     default: return 1u; /* NORM */
     }
 }
@@ -132,17 +137,7 @@ static unsigned fmsx_runtime_z80_turbo_percent(void)
 
 static void fmsx_runtime_apply_game_boot_override(void)
 {
-    if (g_boot_mode != 2u)
-    {
-        return;
-    }
-
-    /* GAME mode: jump directly to cartridge entry if SLOT1/2 has ROM loaded. */
-    if (ROMData[0] != 0 || ROMData[1] != 0)
-    {
-        CPU.PC.W = 0x4000u;
-        CPU.IFF &= (uint8_t) ~IFF_HALT;
-    }
+    /* GAME now mirrors FAST boot behavior; no PC override needed. */
 }
 
 static void fmsx_runtime_apply_audio_channels(void)
@@ -187,6 +182,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     startup_mode &= ~MSX_GUESSB;
 #endif
 
+    const boolean game_mode = (g_boot_mode == 2u) ? TRUE : FALSE;
     const char *saved_carta = 0;
     const char *saved_cartb = 0;
     if (boot_basic)
@@ -197,14 +193,8 @@ static boolean fmsx_runtime_start(boolean boot_basic)
         ROMName[1] = 0;
     }
 
-    g_use_embedded_bios = (g_boot_mode == 2u) ? TRUE : FALSE;
+    g_use_embedded_bios = game_mode ? TRUE : FALSE;
     boolean started = StartMSX(startup_mode, COMBO_FMSX_RAMMAPPER_PAGES, 2) ? TRUE : FALSE;
-    if (!started && g_use_embedded_bios)
-    {
-        /* GAME mode fallback: if forced C-BIOS cold-boot fails, retry once with normal lookup. */
-        g_use_embedded_bios = FALSE;
-        started = StartMSX(startup_mode, COMBO_FMSX_RAMMAPPER_PAGES, 2) ? TRUE : FALSE;
-    }
     g_use_embedded_bios = FALSE;
 
     if (boot_basic)
@@ -281,29 +271,15 @@ boolean fmsx_runtime_hard_reset(void)
     {
         return FALSE;
     }
-
-    const int mode_after = ResetMSX(Mode, RAMPages, VRAMPages);
-    if ((mode_after & MSX_MODEL) != (Mode & MSX_MODEL))
-    {
-        g_fmsx_status.last_error = 2;
-        return FALSE;
-    }
-
-    g_fmsx_status.frames = 0u;
-    g_fmsx_status.last_pc = 0;
-    g_fmsx_status.last_error = 0;
-    g_boot_warmup_frames_remaining = fmsx_runtime_boot_warmup_frames();
-    g_boot_forced_turbo = (g_boot_warmup_frames_remaining > 0u);
-    if (g_boot_forced_turbo)
-    {
-        fmsx_cpu_set_turbo_percent(224u);
-    }
-    else
-    {
-        fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
-    }
-    fmsx_runtime_apply_game_boot_override();
-    return TRUE;
+    /*
+     * Use a full restart instead of ResetMSX() so boot-mode policy is always reapplied:
+     * - NORM/FAST prefer MSX.ROM from initramfs and fallback to embedded C-BIOS only if missing.
+     * - GAME mirrors FAST startup but forces embedded C-BIOS for MSX.ROM.
+     */
+    TrashMSX();
+    g_fmsx_status.initialized = FALSE;
+    g_fmsx_status.running = FALSE;
+    return fmsx_runtime_start(FALSE);
 }
 
 boolean fmsx_runtime_step_frame(void)
