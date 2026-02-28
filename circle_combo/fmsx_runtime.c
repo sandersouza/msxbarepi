@@ -3,6 +3,7 @@
 #include "../third_party/fmsx/fMSX/MSX.h"
 #include "../third_party/fmsx/Z80/Z80.h"
 #include "../third_party/fmsx/EMULib/Sound.h"
+#include "fmsx_virtual_fs.h"
 
 #ifndef COMBO_FMSX_AUDIO
 #define COMBO_FMSX_AUDIO 1
@@ -69,11 +70,34 @@ static unsigned g_boot_mode = (COMBO_FMSX_BOOT_PROFILE > 2) ? 0u : (unsigned) CO
 static unsigned g_z80_turbo_mode = 0u;
 static boolean g_scc_cart_enabled = TRUE;
 
+static boolean fmsx_runtime_has_boot_media(void)
+{
+    if (ROMData[0] != 0 || ROMData[1] != 0)
+    {
+        return TRUE;
+    }
+
+    const unsigned char *disk_data = 0;
+    size_t disk_size = 0;
+    if (fmsx_vfs_lookup("DRIVEA.DSK", &disk_data, &disk_size) && disk_data != 0 && disk_size > 0u)
+    {
+        return TRUE;
+    }
+    if (fmsx_vfs_lookup("DRIVEB.DSK", &disk_data, &disk_size) && disk_data != 0 && disk_size > 0u)
+    {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
 static unsigned fmsx_runtime_boot_warmup_frames(void)
 {
     switch (g_boot_mode)
     {
-    case 1u: return 720u;   /* FAST */
+    case 1u:
+        /* FAST should stop before cartridge/disk boot starts. */
+        return fmsx_runtime_has_boot_media() ? 0u : 720u;
     case 2u: return 2400u;  /* GAME */
     default: return 0u;     /* NORM */
     }

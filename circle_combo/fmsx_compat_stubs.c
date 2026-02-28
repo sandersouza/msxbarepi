@@ -3,6 +3,7 @@
 #include "fmsx_compat/streams/file_stream_transforms.h"
 #include "fmsx_compat/retro_dirent.h"
 #include "fmsx_virtual_fs.h"
+#include "fmsx_runtime.h"
 
 extern const unsigned char fmsx_embedded_msx_rom_start[];
 extern const unsigned char fmsx_embedded_msx_rom_end[];
@@ -84,6 +85,12 @@ static int local_lookup_embedded(const char *path, const unsigned char **data, s
 {
     const char *name = local_basename(path);
     const int wants_msx_bios = local_str_ieq(name, "MSX.ROM");
+    if (wants_msx_bios && fmsx_runtime_get_boot_mode() == 2u)
+    {
+        *data = fmsx_embedded_msx_rom_start;
+        *size = (size_t) (fmsx_embedded_msx_rom_end - fmsx_embedded_msx_rom_start);
+        return 1;
+    }
 
     if (fmsx_vfs_lookup(path, data, size))
     {
