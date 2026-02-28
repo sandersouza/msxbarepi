@@ -16,6 +16,8 @@ public:
     void SetScanlineMode(unsigned mode);
     void SetRefreshRateHz(unsigned hz);
     unsigned GetRefreshRateHz(void) const;
+    void SetZ80TurboMode(unsigned mode);
+    unsigned GetZ80TurboMode(void) const;
     void SetOverlayEnabled(boolean enabled, boolean available);
     void SetAudioMuted(boolean enabled);
     void RequestRedraw(void);
@@ -47,6 +49,7 @@ private:
     boolean m_WidescreenEnabled;
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;
+    unsigned m_Z80TurboMode;
     boolean m_OverlayEnabled;
     boolean m_OverlayAvailable;
     boolean m_AudioMuted;
@@ -56,6 +59,7 @@ private:
     boolean m_LastDrawnWidescreen;
     unsigned m_LastDrawnScanlineMode;
     unsigned m_LastDrawnRefreshRateHz;
+    unsigned m_LastDrawnZ80TurboMode;
     boolean m_LastDrawnOverlay;
     boolean m_LastDrawnOverlayAvailable;
     boolean m_LastDrawnAudioMuted;

@@ -26,6 +26,9 @@ static const unsigned kOverscanMaxScalePct = 100u;
 static const unsigned kScanlineModeOff = 0u;
 static const unsigned kScanlineModeLcd = 1u;
 static const unsigned kScanlineModeCrt = 2u;
+static const unsigned kZ80TurboModeDes = 0u;
+static const unsigned kZ80TurboModePan = 1u;
+static const unsigned kZ80TurboModeMax = 2u;
 static const unsigned kRgb565LutSize = 65536u;
 
 static unsigned UMax(unsigned a, unsigned b)
@@ -41,6 +44,20 @@ static unsigned UMin(unsigned a, unsigned b)
 static u64 FrameIntervalFromRefreshHz(unsigned hz)
 {
 	return (hz == 50u) ? kFrameInterval50Us : kFrameInterval60Us;
+}
+
+static unsigned Z80TurboPercentFromMode(unsigned mode)
+{
+	switch (mode)
+	{
+	case kZ80TurboModePan:
+		return 150u;  /* ~5.37MHz over 3.58MHz base */
+	case kZ80TurboModeMax:
+		return 224u;  /* ~8.00MHz over 3.58MHz base */
+	case kZ80TurboModeDes:
+	default:
+		return 100u;
+	}
 }
 
 static u16 s_DimLutHalf[kRgb565LutSize];
@@ -361,6 +378,7 @@ CComboKernel::CComboKernel(void)
 	m_WidescreenEnabled(FALSE),
 	m_ScanlineMode(kScanlineModeOff),
 	m_RefreshRateHz(60u),
+	m_Z80TurboMode(kZ80TurboModeDes),
 	m_FrameIntervalUs(FrameIntervalFromRefreshHz(60u)),
 	m_FramePacingResetPending(FALSE),
 	m_AudioMuted(FALSE),
@@ -498,11 +516,13 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetWidescreenEnabled(m_WidescreenEnabled);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
+	m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
 	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, COMBO_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
 	m_PauseMenu.SetAudioMuted(m_AudioMuted);
 #if COMBO_ENABLE_FMSX
 	fmsx_runtime_set_overscan(m_OverscanPercent > 0u ? TRUE : FALSE);
 	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
+	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
 #endif
 
 	u64 next_frame_us = CTimer::GetClockTicks64();
@@ -1405,6 +1425,34 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		{
 			CString line;
 			line.Format("Settings: Refresh %uHz", m_RefreshRateHz);
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
+		break;
+
+	case ComboMenuActionCycleZ80Turbo:
+		m_Z80TurboMode = (m_Z80TurboMode + 1u) % 3u;
+		m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
+		RefreshSettingsUiAfterAction();
+	#if COMBO_ENABLE_FMSX
+		fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
+	#endif
+		{
+			CString line;
+			line.Format("Settings: Z80 Turbo %u%%", Z80TurboPercentFromMode(m_Z80TurboMode));
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
+		break;
+
+	case ComboMenuActionCycleZ80TurboPrev:
+		m_Z80TurboMode = (m_Z80TurboMode == 0u) ? 2u : (m_Z80TurboMode - 1u);
+		m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
+		RefreshSettingsUiAfterAction();
+	#if COMBO_ENABLE_FMSX
+		fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
+	#endif
+		{
+			CString line;
+			line.Format("Settings: Z80 Turbo %u%%", Z80TurboPercentFromMode(m_Z80TurboMode));
 			m_Logger.Write(FromKernel, LogNotice, line);
 		}
 		break;

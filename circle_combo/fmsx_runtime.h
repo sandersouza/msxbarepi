@@ -40,6 +40,8 @@ void fmsx_runtime_set_joystick_bits(u8 bridge_bits);
 void fmsx_runtime_set_keyboard_raw(u8 modifiers, const unsigned char raw_keys[6]);
 void fmsx_runtime_set_overscan(boolean enabled);
 void fmsx_runtime_set_refresh_hz(unsigned hz);
+void fmsx_runtime_set_z80_turbo_mode(unsigned mode);
+unsigned fmsx_runtime_get_z80_turbo_mode(void);
 TFmsxRuntimeStatus fmsx_runtime_get_status(void);
 unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsigned *height);
 unsigned fmsx_audio_pull_samples(int16_t *dst, unsigned max_samples);

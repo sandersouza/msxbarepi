@@ -130,6 +130,7 @@ private:
     boolean m_WidescreenEnabled;
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;
+    unsigned m_Z80TurboMode;
     u64 m_FrameIntervalUs;
     boolean m_FramePacingResetPending;
     boolean m_AudioMuted;
