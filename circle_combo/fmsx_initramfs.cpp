@@ -97,6 +97,49 @@ static int local_streq(const char *a, const char *b)
     return *a == '\0' && *b == '\0';
 }
 
+static int local_str_ieq(const char *a, const char *b)
+{
+    if (!a || !b)
+    {
+        return 0;
+    }
+
+    while (*a && *b)
+    {
+        char ca = *a;
+        char cb = *b;
+        if (ca >= 'A' && ca <= 'Z') ca = (char) (ca + ('a' - 'A'));
+        if (cb >= 'A' && cb <= 'Z') cb = (char) (cb + ('a' - 'A'));
+        if (ca != cb)
+        {
+            return 0;
+        }
+        ++a;
+        ++b;
+    }
+
+    return *a == '\0' && *b == '\0';
+}
+
+static const char *local_basename(const char *path)
+{
+    if (!path)
+    {
+        return "";
+    }
+
+    const char *name = path;
+    for (const char *p = path; *p; ++p)
+    {
+        if (*p == '/' || *p == '\\')
+        {
+            name = p + 1;
+        }
+    }
+
+    return name;
+}
+
 static int fdt_find_initrd(const void *dtb_addr, u64 *out_start, u64 *out_end)
 {
     if (!dtb_addr || !out_start || !out_end)
@@ -251,10 +294,40 @@ static int fdt_find_initrd(const void *dtb_addr, u64 *out_start, u64 *out_end)
     return 0;
 }
 
-unsigned fmsx_initramfs_mount(void)
+static int fmsx_initramfs_is_boot_minimal_name(const char *name)
 {
-    fmsx_vfs_reset();
-    g_fmsx_initramfs_files_mounted = 0u;
+    const char *base = local_basename(name);
+    static const char *kBootNames[] =
+    {
+        "MSX.ROM",
+        "MSX2.ROM",
+        "MSX2EXT.ROM",
+        "MSX2P.ROM",
+        "MSX2PEXT.ROM",
+        "CARTA.ROM",
+        "CARTB.ROM",
+        "DISKA.DSK",
+        "DISKB.DSK"
+    };
+
+    for (unsigned i = 0; i < (sizeof(kBootNames) / sizeof(kBootNames[0])); ++i)
+    {
+        if (local_str_ieq(base, kBootNames[i]))
+        {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static unsigned fmsx_initramfs_mount_internal(int reset_vfs, int minimal_only)
+{
+    if (reset_vfs)
+    {
+        fmsx_vfs_reset();
+        g_fmsx_initramfs_files_mounted = 0u;
+    }
 
     const unsigned char *cursor = 0;
     const unsigned char *limit = 0;
@@ -354,7 +427,8 @@ unsigned fmsx_initramfs_mount(void)
 
         if (file_size > 0)
         {
-            if (fmsx_vfs_add_file(name, data_ptr, file_size))
+            if ((!minimal_only || fmsx_initramfs_is_boot_minimal_name(name))
+                && fmsx_vfs_add_file(name, data_ptr, file_size))
             {
                 mounted++;
             }
@@ -369,8 +443,25 @@ unsigned fmsx_initramfs_mount(void)
         cursor += total_size;
     }
 
-    g_fmsx_initramfs_files_mounted = mounted;
+    g_fmsx_initramfs_files_mounted += mounted;
     return mounted;
+}
+
+unsigned fmsx_initramfs_mount(void)
+{
+    g_fmsx_initramfs_files_mounted = 0u;
+    return fmsx_initramfs_mount_internal(1, 0);
+}
+
+unsigned fmsx_initramfs_mount_boot_minimal(void)
+{
+    g_fmsx_initramfs_files_mounted = 0u;
+    return fmsx_initramfs_mount_internal(1, 1);
+}
+
+unsigned fmsx_initramfs_mount_remaining(void)
+{
+    return fmsx_initramfs_mount_internal(0, 0);
 }
 
 unsigned fmsx_initramfs_files_mounted(void)

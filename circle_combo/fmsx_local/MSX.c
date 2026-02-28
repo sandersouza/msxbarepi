@@ -569,6 +569,7 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   /* Change to the program directory */
   if(ProgDir && chdir(ProgDir)) { }
 
+#ifndef FMSX_BAREMETAL_BOOT_MINIMAL_STARTUP
   /* Try loading font */
   if(FNTName)
     J=LoadFNT(FNTName);
@@ -634,6 +635,9 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
     else if(LoadCart("GMASTER.ROM",0,0))
       FirstCart=1; // load game in slot B
   }
+#else
+  if(log_cb) log_cb(1,"StartMSX: minimal startup (skip optional ROM probes)\n");
+#endif
 
   /* We are now back to working directory */
   if(WorkDir && chdir(WorkDir)) { }

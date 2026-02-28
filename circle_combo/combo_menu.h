@@ -24,6 +24,7 @@ public:
     void SetSccCartEnabled(boolean enabled);
     void SetOverlayEnabled(boolean enabled, boolean available);
     void SetAudioMuted(boolean enabled);
+    boolean IsInSettings(void) const;
     void RequestRedraw(void);
     boolean ConsumeBackgroundRestoreRequest(void);
     TComboMenuAction ProcessInput(boolean paused,

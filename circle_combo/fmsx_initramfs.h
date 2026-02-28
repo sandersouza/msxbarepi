@@ -6,6 +6,8 @@ extern "C" {
 #endif
 
 unsigned fmsx_initramfs_mount(void);
+unsigned fmsx_initramfs_mount_boot_minimal(void);
+unsigned fmsx_initramfs_mount_remaining(void);
 unsigned fmsx_initramfs_files_mounted(void);
 
 #ifdef __cplusplus
