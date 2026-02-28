@@ -20,6 +20,9 @@ static const unsigned kQueueMs = 120;
 static const u64 kFrameInterval60Us = 16667ull;
 static const u64 kFrameInterval50Us = 20000ull;
 static const u64 kDebugOverlayIntervalUs = 200000ull;
+static const u64 kFramePacingGuardUs = 300ull;
+static const u64 kFramePacingSleepTargetUs = 1200ull;
+static const u64 kFramePacingSpinThresholdUs = 80ull;
 static const uintptr kDCacheLineSize = 64u;
 static const u16 kLetterboxColor565 = 0x0000u;
 static const unsigned kOverscanSafeScalePct = 92u;
@@ -652,20 +655,22 @@ TComboShutdownMode CComboKernel::Run(void)
 			SaveSettingsToStorage();
 		}
 
-		/* Reduce busy-loop jitter while keeping frequent service for USB/audio paths. */
+		/* Hybrid wait: coarse sleep first, then short busy delay for tighter frame deadline. */
 		if (m_FmsxReady && !m_EmulationPaused)
 		{
 			now_us = CTimer::GetClockTicks64();
-			if (next_frame_us > now_us + 300ull)
+			if (next_frame_us > now_us + kFramePacingGuardUs)
 			{
 				const u64 slack_us = next_frame_us - now_us;
-				if (slack_us > 2000ull)
+				if (slack_us > kFramePacingSleepTargetUs + kFramePacingGuardUs)
 				{
-					m_Scheduler.usSleep(1000);
+					m_Scheduler.usSleep((unsigned) (slack_us - kFramePacingSleepTargetUs));
 				}
-				else if (slack_us > 600ull)
+				now_us = CTimer::GetClockTicks64();
+				const u64 fine_slack_us = next_frame_us > now_us ? (next_frame_us - now_us) : 0ull;
+				if (fine_slack_us > kFramePacingSpinThresholdUs + kFramePacingGuardUs)
 				{
-					m_Scheduler.usSleep((unsigned) (slack_us - 300ull));
+					CTimer::SimpleusDelay((unsigned) (fine_slack_us - kFramePacingGuardUs));
 				}
 			}
 		}
