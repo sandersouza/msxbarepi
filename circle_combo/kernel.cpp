@@ -2206,6 +2206,19 @@ void CComboKernel::PushKeyboardStateToRuntime(boolean rensha_fire_on)
 
 void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned char raw_keys[6])
 {
+	boolean same_report = (m_LastKeyboardModifiers == modifiers) ? TRUE : FALSE;
+	for (unsigned i = 0u; same_report && i < 6u; ++i)
+	{
+		if (m_LastKeyboardRawKeys[i] != raw_keys[i])
+		{
+			same_report = FALSE;
+		}
+	}
+	if (same_report)
+	{
+		return;
+	}
+
 	TComboKeyboardInputState key_state;
 	ComboDecodeKeyboardRaw(modifiers, raw_keys, &key_state);
 

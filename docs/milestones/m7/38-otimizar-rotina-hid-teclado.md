@@ -5,4 +5,9 @@
 - Estado remoto: OPEN
 - Prioridade: P1
 - Labels: `priority:P1`, `type:performance`, `area:input`, `beta:v0.1`
-- Última sincronização local: 2026-02-27
+- Última sincronização local: 2026-02-28
+
+## Progresso local
+
+- [x] Auditoria do caminho HID -> menu -> runtime: sem gargalo crítico identificado
+- [x] Otimização segura aplicada: deduplicação de report HID em `UpdateJoystickFromRaw()` (early-return para payload idêntico), reduzindo trabalho redundante em bursts repetidos de teclado USB
