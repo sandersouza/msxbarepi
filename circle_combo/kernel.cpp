@@ -34,8 +34,8 @@ static const unsigned kZ80TurboModePan = 1u;
 static const unsigned kZ80TurboModeMax = 2u;
 static const u8 kJoyBridgeFireA = (u8) (1u << 4);
 static const unsigned char kHidKeySpace = 0x2Cu;
-/* Intentionally slow/visible cadence for validation on hardware. */
-static const unsigned kRenshaPeriodFrames = 12u; /* 5Hz @60fps, ~4.2Hz @50fps */
+/* Target Panasonic-like usability: ~6/s at 60Hz and ~5/s at 50Hz. */
+static const unsigned kRenshaPeriodFrames = 10u; /* 6Hz @60fps, 5Hz @50fps */
 static const unsigned kRenshaOnFrames = 1u;
 static const unsigned kRgb565LutSize = 65536u;
 
