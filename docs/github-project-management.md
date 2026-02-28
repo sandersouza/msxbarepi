@@ -7,9 +7,16 @@ Data de referência desta versão: 27 de fevereiro de 2026.
 
 ## Regras operacionais
 - Criar branch de issue somente quando formos atuar nela.
+- Toda branch criada para trabalho deve ser criada/vinculada pela issue de origem via `gh issue develop`.
 - Sempre atualizar as tasks concluídas diretamente na issue remota.
+- Sempre atualizar o campo `Status` do item no projeto `MSX BarePI` durante o ciclo:
+  - ao iniciar trabalho: `In progress`
+  - ao estabilizar e entrar em testes: `In review`
+  - se testes falharem: voltar para `In progress`
+  - ao concluir e seguir para a próxima: `Done`
 - Manter `docs/milestones/` sincronizado com milestones/issues remotas.
 - Ao estabilizar uma issue, abrir PR `issue-branch -> main` e registrar o link para review.
+- Ao concluir/estabilizar uma issue, é obrigatório abrir o PR da branch da issue para `main` e enviar o link de aprovação ao usuário antes de avançar para a próxima issue.
 - Sincronizar branches locais/remotas com `git fetch --prune`.
 - Se uma branch remota for deletada, a branch local correspondente deve ser removida somente após confirmação explícita do usuário.
 - Nunca alterar/deletar/reescrever a branch `main`.
@@ -31,9 +38,12 @@ Data de referência desta versão: 27 de fevereiro de 2026.
 1. Selecionar issue alvo no GitHub.
 2. Criar branch somente nesse momento:
 ```bash
-git checkout main
+gh issue develop <numero> -R sandersouza/msxbarepi --name issue/<numero>-<slug> --base main --checkout
 git pull --ff-only
-git checkout -b issue/<numero>-<slug>
+```
+2.1 Validar vínculo branch <-> issue:
+```bash
+gh issue develop --list <numero> -R sandersouza/msxbarepi
 ```
 3. Implementar, validar build e atualizar docs locais da issue/milestone.
 4. Marcar progresso/checklists na issue remota (`gh issue comment` e checklist no corpo da issue).
@@ -41,13 +51,38 @@ git checkout -b issue/<numero>-<slug>
 ```bash
 gh issue edit <numero> -R sandersouza/msxbarepi --add-project "MSX BarePI"
 ```
+5.1 Atualizar `Status` no projeto para `In progress` ao começar:
+```bash
+# 1) localizar IDs
+PROJECT_ID=$(gh project view 3 --owner sandersouza --format json --jq '.id')
+STATUS_FIELD_ID=$(gh project field-list 3 --owner sandersouza --format json --jq '.fields[] | select(.name=="Status") | .id')
+ITEM_ID=$(gh project item-list 3 --owner sandersouza --limit 200 --format json --jq '.items[] | select(.content.type=="Issue" and .content.number==<numero>) | .id')
+
+# 2) setar In progress
+INPROGRESS_OPTION_ID=$(gh project field-list 3 --owner sandersouza --format json --jq '.fields[] | select(.name=="Status") | .options[] | select(.name=="In progress") | .id')
+gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$STATUS_FIELD_ID" --single-select-option-id "$INPROGRESS_OPTION_ID"
+```
 6. Quando estabilizada em hardware, abrir PR para `main`:
 ```bash
 gh pr create -B main -H issue/<numero>-<slug> --fill
 ```
+6.1 Ao entrar em fase de teste/review, atualizar `Status` para `In review`:
+```bash
+INREVIEW_OPTION_ID=$(gh project field-list 3 --owner sandersouza --format json --jq '.fields[] | select(.name=="Status") | .options[] | select(.name=="In review") | .id')
+gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$STATUS_FIELD_ID" --single-select-option-id "$INREVIEW_OPTION_ID"
+```
+6.2 Se teste falhar, rollback de status para `In progress`:
+```bash
+gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$STATUS_FIELD_ID" --single-select-option-id "$INPROGRESS_OPTION_ID"
+```
 7. Vincular também o PR ao projeto `MSX BarePI` e registrar link para review na issue e no arquivo local:
 ```bash
 gh pr edit <numero-pr> -R sandersouza/msxbarepi --add-project "MSX BarePI"
+```
+8. Após abrir o PR e compartilhar o link de review com o usuário, ao concluir a issue e iniciar a próxima, atualizar `Status` para `Done`:
+```bash
+DONE_OPTION_ID=$(gh project field-list 3 --owner sandersouza --format json --jq '.fields[] | select(.name=="Status") | .options[] | select(.name=="Done") | .id')
+gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$STATUS_FIELD_ID" --single-select-option-id "$DONE_OPTION_ID"
 ```
 
 ## Rotina de sincronização

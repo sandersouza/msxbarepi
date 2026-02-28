@@ -46,6 +46,9 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Novas diretrizes técnicas/processuais identificadas durante o desenvolvimento devem ser registradas no `AGENTS.md`
 - Gestão de projeto no GitHub deve seguir `docs/github-project-management.md` (fonte de verdade para fluxo de issues/milestones/branches/PRs)
 - Manter espelho local das milestones/issues em `docs/milestones/` sincronizado com o remoto
+- Toda branch de trabalho de issue deve ser criada/vinculada via issue de origem (GitHub/`gh issue develop`)
+- Durante execução de issue, manter status do item no projeto atualizado: `In progress` -> `In review` -> `Done`, com rollback para `In progress` se testes falharem
+- Sempre que uma issue for dada como concluída/estável, abrir PR da branch da issue para `main` e enviar ao usuário o link para aprovação/review antes de seguir para a próxima issue
 - Sincronizar branches locais com remotas (`git fetch --prune`); se branch remota for removida, propor remoção da local correspondente
 - Antes de deletar qualquer branch local, confirmar explicitamente com o usuário
 - Nunca alterar, deletar ou reescrever a branch `main`

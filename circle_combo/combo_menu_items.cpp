@@ -2,12 +2,10 @@
 
 static const TComboMenuItem kRootItems[] =
 {
-    { "Cartridge A", ComboMenuActionCartridgeA, TRUE },
-    { "Cartridge B", ComboMenuActionCartridgeB, TRUE },
-    { "Disk Drive A", ComboMenuActionDiskDriveA, TRUE },
-    { "Disk Drive B", ComboMenuActionDiskDriveB, TRUE },
+    { "Cartridge", ComboMenuActionCartridgeA, TRUE },
+    { "Disk Drive", ComboMenuActionDiskDriveA, TRUE },
     { "Settings", ComboMenuActionSettings, TRUE },
-    { "MSX BASIC", ComboMenuActionMsxBasic, TRUE },
+    { "MSX Basic", ComboMenuActionMsxBasic, TRUE },
     { "Reset", ComboMenuActionReset, TRUE }
 };
 
