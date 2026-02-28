@@ -61,6 +61,7 @@ extern void fmsx_video_set_overscan(boolean enabled);
 static TFmsxRuntimeStatus g_fmsx_status = { FALSE, FALSE, 0u, 0, 0 };
 static const unsigned kFmsxAudioRate = 48000u;
 static unsigned g_boot_warmup_frames_remaining = 0u;
+static unsigned g_refresh_hz = 60u;
 
 static unsigned fmsx_runtime_boot_warmup_frames(void)
 {
@@ -84,6 +85,11 @@ static unsigned fmsx_runtime_boot_burst_steps(void)
 #endif
 }
 
+static unsigned fmsx_runtime_effective_refresh_hz(void)
+{
+    return (g_refresh_hz == 50u) ? 50u : 60u;
+}
+
 static boolean fmsx_runtime_start(boolean boot_basic)
 {
     g_fmsx_status.initialized = TRUE;
@@ -92,7 +98,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     g_fmsx_status.last_pc = 0;
     g_fmsx_status.last_error = 0;
 
-    int startup_mode = MSX_MSX1 | MSX_NTSC | MSX_JOY1;
+    int startup_mode = MSX_MSX1 | (fmsx_runtime_effective_refresh_hz() == 50u ? MSX_PAL : MSX_NTSC) | MSX_JOY1;
 #if COMBO_FMSX_MSX1_TEXT80
     startup_mode |= MSX_FIXEDFONT;
 #endif
@@ -238,7 +244,7 @@ boolean fmsx_runtime_step_frame(void)
 #if COMBO_FMSX_AUDIO
     if (g_boot_warmup_frames_remaining == 0u)
     {
-        RenderAndPlayAudio(kFmsxAudioRate / 60u);
+        RenderAndPlayAudio(kFmsxAudioRate / fmsx_runtime_effective_refresh_hz());
     }
 #endif
     return TRUE;
@@ -257,6 +263,11 @@ void fmsx_runtime_shutdown(void)
 void fmsx_runtime_set_overscan(boolean enabled)
 {
     fmsx_video_set_overscan(enabled);
+}
+
+void fmsx_runtime_set_refresh_hz(unsigned hz)
+{
+    g_refresh_hz = (hz == 50u) ? 50u : 60u;
 }
 
 TFmsxRuntimeStatus fmsx_runtime_get_status(void)

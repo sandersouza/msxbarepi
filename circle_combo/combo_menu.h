@@ -14,6 +14,8 @@ public:
     unsigned GetOverscanPercent(void) const;
     void SetWidescreenEnabled(boolean enabled);
     void SetScanlineMode(unsigned mode);
+    void SetRefreshRateHz(unsigned hz);
+    unsigned GetRefreshRateHz(void) const;
     void SetOverlayEnabled(boolean enabled, boolean available);
     void SetAudioMuted(boolean enabled);
     void RequestRedraw(void);
@@ -44,6 +46,7 @@ private:
     unsigned m_OverscanPercent;
     boolean m_WidescreenEnabled;
     unsigned m_ScanlineMode;
+    unsigned m_RefreshRateHz;
     boolean m_OverlayEnabled;
     boolean m_OverlayAvailable;
     boolean m_AudioMuted;
@@ -52,6 +55,7 @@ private:
     unsigned m_LastDrawnOverscanPercent;
     boolean m_LastDrawnWidescreen;
     unsigned m_LastDrawnScanlineMode;
+    unsigned m_LastDrawnRefreshRateHz;
     boolean m_LastDrawnOverlay;
     boolean m_LastDrawnOverlayAvailable;
     boolean m_LastDrawnAudioMuted;

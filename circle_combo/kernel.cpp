@@ -16,7 +16,8 @@ static const unsigned kSampleRate = 48000;
 static const unsigned kChunkSize = 384 * 10;
 static const unsigned kQueueMs = 120;
 /* 16667us caps cadence at <=60fps (1000000/60 truncated would run slightly >60). */
-static const u64 kFmsxFrameIntervalUs = 16667ull;
+static const u64 kFrameInterval60Us = 16667ull;
+static const u64 kFrameInterval50Us = 20000ull;
 static const u64 kDebugOverlayIntervalUs = 200000ull;
 static const uintptr kDCacheLineSize = 64u;
 static const u16 kLetterboxColor565 = 0x0000u;
@@ -35,6 +36,11 @@ static unsigned UMax(unsigned a, unsigned b)
 static unsigned UMin(unsigned a, unsigned b)
 {
 	return a < b ? a : b;
+}
+
+static u64 FrameIntervalFromRefreshHz(unsigned hz)
+{
+	return (hz == 50u) ? kFrameInterval50Us : kFrameInterval60Us;
 }
 
 static u16 s_DimLutHalf[kRgb565LutSize];
@@ -354,6 +360,9 @@ CComboKernel::CComboKernel(void)
 	m_OverscanPercent(0u),
 	m_WidescreenEnabled(FALSE),
 	m_ScanlineMode(kScanlineModeOff),
+	m_RefreshRateHz(60u),
+	m_FrameIntervalUs(FrameIntervalFromRefreshHz(60u)),
+	m_FramePacingResetPending(FALSE),
 	m_AudioMuted(FALSE),
 	m_FmsxFallbackPattern(FALSE),
 	m_TestToneEnabled(COMBO_TEST_TONE_DEFAULT ? TRUE : FALSE),
@@ -488,16 +497,23 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetOverscanPercent(m_OverscanPercent);
 	m_PauseMenu.SetWidescreenEnabled(m_WidescreenEnabled);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
+	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, COMBO_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
 	m_PauseMenu.SetAudioMuted(m_AudioMuted);
 #if COMBO_ENABLE_FMSX
 	fmsx_runtime_set_overscan(m_OverscanPercent > 0u ? TRUE : FALSE);
+	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
 #endif
 
 	u64 next_frame_us = CTimer::GetClockTicks64();
 	for (unsigned tick = 0; ; ++tick)
 	{
 		u64 now_us = CTimer::GetClockTicks64();
+		if (m_FramePacingResetPending)
+		{
+			next_frame_us = now_us + m_FrameIntervalUs;
+			m_FramePacingResetPending = FALSE;
+		}
 		if (!m_AudioInitAttempted && (m_TestToneEnabled || fmsx_audio_enabled))
 		{
 			if (m_TestToneEnabled || !m_FmsxEnabled || !m_FmsxReady || m_FmsxFrames >= 2u)
@@ -584,7 +600,7 @@ TComboShutdownMode CComboKernel::Run(void)
 					}
 
 				}
-				next_frame_us += kFmsxFrameIntervalUs;
+				next_frame_us += m_FrameIntervalUs;
 				catchup_steps++;
 				now_us = CTimer::GetClockTicks64();
 			}
@@ -594,9 +610,9 @@ TComboShutdownMode CComboKernel::Run(void)
 				BlitFmsxFrame(FALSE);
 			}
 
-			if (now_us > next_frame_us + (kFmsxFrameIntervalUs * 12ull))
+			if (now_us > next_frame_us + (m_FrameIntervalUs * 12ull))
 			{
-				next_frame_us = now_us - (kFmsxFrameIntervalUs * 2ull);
+				next_frame_us = now_us - (m_FrameIntervalUs * 2ull);
 			}
 		}
 		#endif
@@ -1358,6 +1374,38 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		else
 		{
 			m_Logger.Write(FromKernel, LogNotice, "Settings: Scanlines CRT");
+		}
+		break;
+
+	case ComboMenuActionCycleRefreshRate:
+		m_RefreshRateHz = (m_RefreshRateHz == 50u) ? 60u : 50u;
+		m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
+		m_FramePacingResetPending = TRUE;
+		m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
+		RefreshSettingsUiAfterAction();
+	#if COMBO_ENABLE_FMSX
+		fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
+	#endif
+		{
+			CString line;
+			line.Format("Settings: Refresh %uHz", m_RefreshRateHz);
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
+		break;
+
+	case ComboMenuActionCycleRefreshRatePrev:
+		m_RefreshRateHz = (m_RefreshRateHz == 50u) ? 60u : 50u;
+		m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
+		m_FramePacingResetPending = TRUE;
+		m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
+		RefreshSettingsUiAfterAction();
+	#if COMBO_ENABLE_FMSX
+		fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
+	#endif
+		{
+			CString line;
+			line.Format("Settings: Refresh %uHz", m_RefreshRateHz);
+			m_Logger.Write(FromKernel, LogNotice, line);
 		}
 		break;
 
