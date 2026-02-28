@@ -1505,9 +1505,24 @@ void CComboKernel::LoadSettingsFromStorage(void)
 		return;
 	}
 
-	FIL file;
-	if (f_open(&file, kSettingsPath, FA_READ) != FR_OK)
+	FILINFO file_info;
+	const FRESULT stat_result = f_stat(kSettingsPath, &file_info);
+	if (stat_result == FR_NO_FILE)
 	{
+		m_Logger.Write(FromKernel, LogNotice, "Settings file not found; using defaults");
+		return;
+	}
+	if (stat_result != FR_OK)
+	{
+		m_Logger.Write(FromKernel, LogWarning, "Settings stat failed; using defaults");
+		return;
+	}
+
+	FIL file;
+	const FRESULT open_result = f_open(&file, kSettingsPath, FA_READ);
+	if (open_result != FR_OK)
+	{
+		m_Logger.Write(FromKernel, LogWarning, "Settings open failed; using defaults");
 		return;
 	}
 
@@ -1517,9 +1532,17 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	(void) f_close(&file);
 	if (read_result != FR_OK || bytes_read == 0u)
 	{
+		m_Logger.Write(FromKernel, LogWarning, "Settings read failed; using defaults");
 		return;
 	}
 	buffer[bytes_read] = '\0';
+
+	/* Corruption guard: only parse files written by SaveSettingsToStorage(). */
+	if (strstr(buffer, "#END") == 0)
+	{
+		m_Logger.Write(FromKernel, LogWarning, "Settings file invalid/corrupt; using defaults");
+		return;
+	}
 
 	char *line = buffer;
 	while (*line != '\0')
