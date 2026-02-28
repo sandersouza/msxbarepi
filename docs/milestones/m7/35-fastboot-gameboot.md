@@ -24,3 +24,7 @@
   - `COMBO_FMSX_BOOT_BURST_STEPS_GAME=10`
   - `COMBO_FMSX_BOOT_WARMUP_FRAMES_FAST=720`
   - `COMBO_FMSX_BOOT_WARMUP_FRAMES_GAME=2400`
+- Estratégia de boot refinada:
+  - `NORMAL`: sem aceleração de bootstrap.
+  - `FAST BOOT`: turbo MAX + burst apenas durante warmup, com retorno automático ao turbo selecionado.
+  - `GAME BOOT`: igual ao fast, com entrada direta no cartucho (SLOT1/SLOT2), sem forçar `CARTA_ONLY`.

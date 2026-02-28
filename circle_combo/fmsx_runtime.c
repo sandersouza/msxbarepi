@@ -86,6 +86,7 @@ extern void fmsx_video_set_overscan(boolean enabled);
 static TFmsxRuntimeStatus g_fmsx_status = { FALSE, FALSE, 0u, 0, 0 };
 static const unsigned kFmsxAudioRate = 48000u;
 static unsigned g_boot_warmup_frames_remaining = 0u;
+static boolean g_boot_fast_mode_active = FALSE;
 static unsigned g_refresh_hz = 60u;
 static unsigned g_z80_turbo_mode = 0u;
 static boolean g_scc_cart_enabled = TRUE;
@@ -125,6 +126,26 @@ static unsigned fmsx_runtime_z80_turbo_percent(void)
     case 2u: return 224u; /* MAX */
     default: return 100u; /* DES */
     }
+}
+
+static boolean fmsx_runtime_boot_profile_is_fast(void)
+{
+#if (COMBO_FMSX_BOOT_PROFILE == 1) || (COMBO_FMSX_BOOT_PROFILE == 2)
+    return TRUE;
+#else
+    return FALSE;
+#endif
+}
+
+static void fmsx_runtime_apply_boot_entry_override(void)
+{
+#if COMBO_FMSX_BOOT_PROFILE == 2
+    /* GAME BOOT: salta o fluxo de BASIC e entra no cartucho. */
+    if (ROMName[0] || ROMName[1])
+    {
+        CPU.PC.W = 0x4000;
+    }
+#endif
 }
 
 static void fmsx_runtime_apply_audio_channels(void)
@@ -194,7 +215,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     }
 
     UPeriod = 100;
-    fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+    fmsx_runtime_apply_boot_entry_override();
 
 #if COMBO_FMSX_AUDIO
     InitSound(kFmsxAudioRate);
@@ -203,6 +224,15 @@ static boolean fmsx_runtime_start(boolean boot_basic)
 
     g_fmsx_status.running = TRUE;
     g_boot_warmup_frames_remaining = fmsx_runtime_boot_warmup_frames();
+    g_boot_fast_mode_active = (g_boot_warmup_frames_remaining > 0u) && fmsx_runtime_boot_profile_is_fast();
+    if (g_boot_fast_mode_active)
+    {
+        fmsx_cpu_set_turbo_percent(224u);
+    }
+    else
+    {
+        fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+    }
     return TRUE;
 }
 
@@ -257,7 +287,16 @@ boolean fmsx_runtime_hard_reset(void)
     g_fmsx_status.last_pc = 0;
     g_fmsx_status.last_error = 0;
     g_boot_warmup_frames_remaining = fmsx_runtime_boot_warmup_frames();
-    fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+    g_boot_fast_mode_active = (g_boot_warmup_frames_remaining > 0u) && fmsx_runtime_boot_profile_is_fast();
+    fmsx_runtime_apply_boot_entry_override();
+    if (g_boot_fast_mode_active)
+    {
+        fmsx_cpu_set_turbo_percent(224u);
+    }
+    else
+    {
+        fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+    }
     return TRUE;
 }
 
@@ -290,6 +329,11 @@ boolean fmsx_runtime_step_frame(void)
         if (g_boot_warmup_frames_remaining > 0u)
         {
             g_boot_warmup_frames_remaining--;
+            if ((g_boot_warmup_frames_remaining == 0u) && g_boot_fast_mode_active)
+            {
+                g_boot_fast_mode_active = FALSE;
+                fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+            }
         }
     }
 
@@ -329,7 +373,10 @@ void fmsx_runtime_set_z80_turbo_mode(unsigned mode)
         mode = 0u;
     }
     g_z80_turbo_mode = mode;
-    fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+    if (!g_boot_fast_mode_active)
+    {
+        fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+    }
 }
 
 unsigned fmsx_runtime_get_z80_turbo_mode(void)

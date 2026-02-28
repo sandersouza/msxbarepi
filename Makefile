@@ -268,7 +268,7 @@ m2-fmsx-gameboot: circle-configure
 	$(MAKE) m2-fmsx-bootstrap \
 		COMBO_FMSX_BOOT_PROFILE=2 \
 		COMBO_BOOT_QUIET=1 \
-		COMBO_CARTA_ONLY=1
+		COMBO_CARTA_ONLY=0
 	cp artifacts/kernel8-m2-fmsx-bootstrap.img artifacts/kernel8-m2-gameboot.img
 	bash $(CONTEXT_UPDATER) m2-gameboot build-ok artifacts/kernel8-m2-gameboot.img
 	@echo "Artefato M2 GAME BOOT: artifacts/kernel8-m2-gameboot.img"

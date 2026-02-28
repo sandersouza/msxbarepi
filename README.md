@@ -159,8 +159,8 @@ O script permite selecionar:
 
 Perfis de boot:
 - `NORMAL`: comportamento padrão.
-- `FAST BOOT`: acelera os frames iniciais até entrar no BASIC ou iniciar carregamento de mídia.
-- `GAME BOOT`: modo cartucho-only (`CARTA`) com aceleração agressiva de bootstrap para entrar no jogo o mais rápido possível.
+- `FAST BOOT`: acelera apenas o bootstrap inicial (frames acelerados + turbo Z80 MAX temporário), sem bypass de BIOS.
+- `GAME BOOT`: usa o fast boot e faz entrada direta no cartucho inserido em SLOT1/SLOT2.
 - Default atual do configurador: `FAST BOOT`.
 
 Presets oficiais (reprodutiveis):
@@ -188,9 +188,9 @@ Knobs adicionais relevantes:
 - `COMBO_BOOT_QUIET=0|1` (default `0`)
 
 Matriz de perfil (padrao atual):
-- `NORMAL`: profile `0`, burst `1x`, warmup `0`, melhor fidelidade de inicializacao.
-- `FAST BOOT`: profile `1`, burst `5x`, warmup `720` frames emulados (acelera bootstrap sem forcar `CARTA`).
-- `GAME BOOT`: profile `2`, burst `10x`, warmup `2400` frames emulados + `CARTA only=1` para fluxo direto de cartucho.
+- `NORMAL`: profile `0`, sem frame-skip de boot, sem turbo forçado e sem bypass.
+- `FAST BOOT`: profile `1`, burst `5x` por `720` frames, turbo Z80 MAX apenas durante warmup, depois retorna ao turbo configurado.
+- `GAME BOOT`: profile `2`, burst `10x` por `2400` frames, turbo Z80 MAX durante warmup e jump direto para cartucho (`0x4000`) quando há ROM em SLOT1/SLOT2.
 
 ## Build default estavel (`make`)
 
