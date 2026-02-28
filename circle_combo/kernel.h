@@ -18,6 +18,10 @@
 #include <circle/types.h>
 #include <circle/usb/usbhcidevice.h>
 #include <circle/usb/usbkeyboard.h>
+#include <SDCard/emmc.h>
+extern "C" {
+#include <fatfs/ff.h>
+}
 
 enum TComboShutdownMode {
     ComboShutdownNone,
@@ -48,6 +52,9 @@ private:
     void ResetEmulationRuntimeState(void);
     void UpdateJoystickFromRaw(unsigned char modifiers, const unsigned char raw_keys[6]);
     void SetDebugOverlayEnabled(boolean enabled);
+    void UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux);
+    void LoadSettingsFromStorage(void);
+    void SaveSettingsToStorage(void);
 
     static void KeyPressedHandler(const char *text);
     static void KeyStatusRawHandler(unsigned char modifiers, const unsigned char raw_keys[6], void *context);
@@ -68,6 +75,8 @@ private:
     CLogger m_Logger;
     CScheduler m_Scheduler;
     CUSBHCIDevice m_USBHCI;
+    CEMMCDevice m_EMMC;
+    FATFS m_SettingsFileSystem;
 
     CSoundBaseDevice *m_Sound;
     CUSBKeyboardDevice *m_Keyboard;
@@ -140,6 +149,10 @@ private:
     boolean m_MmuEnabled;
     boolean m_DCacheEnabled;
     boolean m_ICacheEnabled;
+    boolean m_SettingsStorageReady;
+    unsigned m_SettingsSaveStage;
+    unsigned m_SettingsSaveCode;
+    unsigned m_SettingsSaveAux;
 
     static CComboKernel *s_Instance;
 };

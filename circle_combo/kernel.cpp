@@ -8,6 +8,7 @@
 #include <circle/sound/hdmisoundbasedevice.h>
 #include <circle/startup.h>
 #include <circle/string.h>
+#include <circle/synchronize.h>
 #include <circle/util.h>
 #include <assert.h>
 
@@ -26,6 +27,8 @@ static const unsigned kOverscanMaxScalePct = 100u;
 static const unsigned kScanlineModeOff = 0u;
 static const unsigned kScanlineModeLcd = 1u;
 static const unsigned kScanlineModeCrt = 2u;
+static const char kSettingsDrive[] = "SD:";
+static const char kSettingsPath[] = "SD:MSXBARE.CFG";
 static const unsigned kZ80TurboModeDes = 0u;
 static const unsigned kZ80TurboModePan = 1u;
 static const unsigned kZ80TurboModeMax = 2u;
@@ -58,6 +61,47 @@ static unsigned Z80TurboPercentFromMode(unsigned mode)
 	default:
 		return 100u;
 	}
+}
+
+static unsigned ParseUintValue(const char *text)
+{
+	if (text == 0)
+	{
+		return 0u;
+	}
+
+	unsigned value = 0u;
+	while (*text == ' ' || *text == '\t')
+	{
+		++text;
+	}
+
+	while (*text >= '0' && *text <= '9')
+	{
+		value = (value * 10u) + (unsigned) (*text - '0');
+		++text;
+	}
+
+	return value;
+}
+
+static int SettingsKeyEquals(const char *key, unsigned key_len, const char *literal)
+{
+	if (key == 0 || literal == 0)
+	{
+		return 0;
+	}
+
+	unsigned i = 0u;
+	for (; i < key_len; ++i)
+	{
+		if (literal[i] == '\0' || key[i] != literal[i])
+		{
+			return 0;
+		}
+	}
+
+	return literal[i] == '\0';
 }
 
 static u16 s_DimLutHalf[kRgb565LutSize];
@@ -314,6 +358,10 @@ static void FillRectScreen(CScreenDevice *screen,
 #define COMBO_ENABLE_DEBUG_OVERLAY 1
 #endif
 
+#ifndef COMBO_ENABLE_SETTINGS_SAVE_EXPERIMENTAL
+#define COMBO_ENABLE_SETTINGS_SAVE_EXPERIMENTAL 0
+#endif
+
 CComboKernel *CComboKernel::s_Instance = 0;
 
 CComboKernel::CComboKernel(void)
@@ -322,6 +370,7 @@ CComboKernel::CComboKernel(void)
 	m_Timer(&m_Interrupt),
 	m_Logger(m_Options.GetLogLevel(), &m_Timer),
 	m_USBHCI(&m_Interrupt, &m_Timer, TRUE),
+	m_EMMC(&m_Interrupt, &m_Timer, &m_ActLED),
 	m_Sound(0),
 	m_Keyboard(0),
 	m_KeyboardRemovedHandle(0),
@@ -387,7 +436,11 @@ CComboKernel::CComboKernel(void)
 	m_TestToneEnabled(COMBO_TEST_TONE_DEFAULT ? TRUE : FALSE),
 	m_MmuEnabled(FALSE),
 	m_DCacheEnabled(FALSE),
-	m_ICacheEnabled(FALSE)
+	m_ICacheEnabled(FALSE),
+	m_SettingsStorageReady(FALSE),
+	m_SettingsSaveStage(0u),
+	m_SettingsSaveCode(0u),
+	m_SettingsSaveAux(0u)
 {
 	s_Instance = this;
 	m_ActLED.Blink(5);
@@ -424,6 +477,17 @@ boolean CComboKernel::Initialize(void)
 	if (ok) ok = m_Interrupt.Initialize();
 	if (ok) ok = m_Timer.Initialize();
 	if (ok) ok = m_USBHCI.Initialize();
+	if (ok)
+	{
+		if (!m_EMMC.Initialize())
+		{
+			m_Logger.Write(FromKernel, LogWarning, "SD storage init failed; settings persistence disabled");
+		}
+		else
+		{
+			m_SettingsStorageReady = TRUE;
+		}
+	}
 
 	return ok;
 }
@@ -455,6 +519,18 @@ TComboShutdownMode CComboKernel::Run(void)
 	}
 
 	m_Logger.Write(FromKernel, LogNotice, "Attach USB keyboard and type");
+	if (m_SettingsStorageReady)
+	{
+		if (f_mount(&m_SettingsFileSystem, kSettingsDrive, 1) == FR_OK)
+		{
+			LoadSettingsFromStorage();
+		}
+		else
+		{
+			m_SettingsStorageReady = FALSE;
+			m_Logger.Write(FromKernel, LogWarning, "Settings mount failed on SD:; persistence disabled");
+		}
+	}
 #if COMBO_ENABLE_FMSX
 	if (m_FmsxEnabled)
 	{
@@ -978,11 +1054,17 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		m_InitramfsFiles);
 	WriteScreenText(line);
 
-	line.Format("\x1b[97m\x1b[49m\x1b[6;1HJY2 F:%06lu PC:%04X R:%04u L:%04u          ",
+	line.Format("\x1b[97m\x1b[49m\x1b[6;1HJY2 F:%06lu PC:%04X R:%04u L:%04u                  ",
 		m_FmsxFrames,
 		(unsigned) (m_FmsxLastPC & 0xFFFF),
 		m_FmsxPcRepeatCount > 9999u ? 9999u : m_FmsxPcRepeatCount,
 		audio_stats.ring_level > 9999u ? 9999u : audio_stats.ring_level);
+	WriteScreenText(line);
+
+	line.Format("\x1b[97m\x1b[49m\x1b[7;1HSD SV:%02u C:%03u A:%04u                             ",
+		m_SettingsSaveStage > 99u ? 99u : m_SettingsSaveStage,
+		m_SettingsSaveCode > 999u ? 999u : m_SettingsSaveCode,
+		m_SettingsSaveAux > 9999u ? 9999u : m_SettingsSaveAux);
 	WriteScreenText(line);
 
 	WriteScreenText("\x1b[0m");
@@ -1323,6 +1405,240 @@ void CComboKernel::RefreshSettingsUiAfterAction(void)
 	}
 }
 
+void CComboKernel::UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux)
+{
+	m_SettingsSaveStage = stage;
+	m_SettingsSaveCode = code;
+	m_SettingsSaveAux = aux;
+#if COMBO_ENABLE_DEBUG_OVERLAY
+	if (m_DebugOverlayEnabled)
+	{
+		DrawDebugOverlay((unsigned) (m_FmsxFrames & 0xFFFFFFFFu));
+	}
+#endif
+}
+
+void CComboKernel::LoadSettingsFromStorage(void)
+{
+	if (!m_SettingsStorageReady)
+	{
+		return;
+	}
+
+	FIL file;
+	if (f_open(&file, kSettingsPath, FA_READ) != FR_OK)
+	{
+		return;
+	}
+
+	char buffer[512];
+	UINT bytes_read = 0;
+	const FRESULT read_result = f_read(&file, buffer, sizeof(buffer) - 1u, &bytes_read);
+	(void) f_close(&file);
+	if (read_result != FR_OK || bytes_read == 0u)
+	{
+		return;
+	}
+	buffer[bytes_read] = '\0';
+
+	char *line = buffer;
+	while (*line != '\0')
+	{
+		while (*line == '\r' || *line == '\n')
+		{
+			++line;
+		}
+		if (*line == '\0')
+		{
+			break;
+		}
+
+		char *line_end = line;
+		while (*line_end != '\0' && *line_end != '\r' && *line_end != '\n')
+		{
+			++line_end;
+		}
+
+		char *eq = line;
+		while (eq < line_end && *eq != '=')
+		{
+			++eq;
+		}
+
+		if (eq < line_end)
+		{
+			const unsigned key_len = (unsigned) (eq - line);
+			const unsigned value = ParseUintValue(eq + 1);
+			if (SettingsKeyEquals(line, key_len, "overscan"))
+			{
+				const unsigned clamped = value > 100u ? 100u : value;
+				m_OverscanPercent = (clamped / 10u) * 10u;
+			}
+			else if (SettingsKeyEquals(line, key_len, "widescreen"))
+			{
+				m_WidescreenEnabled = value ? TRUE : FALSE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "scanline"))
+			{
+				m_ScanlineMode = value > 2u ? 2u : value;
+			}
+			else if (SettingsKeyEquals(line, key_len, "refresh"))
+			{
+				m_RefreshRateHz = (value == 50u) ? 50u : 60u;
+				m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
+			}
+			else if (SettingsKeyEquals(line, key_len, "z80_turbo"))
+			{
+				m_Z80TurboMode = value > 2u ? 0u : value;
+			}
+			else if (SettingsKeyEquals(line, key_len, "scc_cart"))
+			{
+				m_SccCartEnabled = value ? TRUE : FALSE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "debugger"))
+			{
+				m_DebugOverlayEnabled = value ? TRUE : FALSE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "audio_mute"))
+			{
+				m_AudioMuted = value ? TRUE : FALSE;
+			}
+		}
+
+		line = line_end;
+	}
+
+	m_PauseMenu.SetOverscanPercent(m_OverscanPercent);
+	m_PauseMenu.SetWidescreenEnabled(m_WidescreenEnabled);
+	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
+	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
+	m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
+	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
+	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, COMBO_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
+	m_PauseMenu.SetAudioMuted(m_AudioMuted);
+#if COMBO_ENABLE_FMSX
+	fmsx_runtime_set_overscan(m_OverscanPercent > 0u ? TRUE : FALSE);
+	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
+	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
+	fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
+#endif
+
+	CString line_log;
+	line_log.Format("Settings loaded from %s", kSettingsPath);
+	m_Logger.Write(FromKernel, LogNotice, line_log);
+}
+
+void CComboKernel::SaveSettingsToStorage(void)
+{
+	UpdateSettingsSaveTelemetry(1u, 0u, 0u); /* begin */
+#if !COMBO_ENABLE_SETTINGS_SAVE_EXPERIMENTAL
+	UpdateSettingsSaveTelemetry(95u, 0u, 0u); /* save disabled fail-safe */
+	m_Logger.Write(FromKernel, LogWarning, "Settings save disabled (experimental backend OFF)");
+	return;
+#endif
+	if (!m_SettingsStorageReady)
+	{
+		UpdateSettingsSaveTelemetry(90u, 0u, 0u); /* storage unavailable */
+		m_Logger.Write(FromKernel, LogWarning, "Settings save unavailable (storage not mounted)");
+		return;
+	}
+
+	if (m_DeviceNameService.GetDevice("umsd1", TRUE) != 0)
+	{
+		UpdateSettingsSaveTelemetry(94u, 0u, 0u); /* blocked on USB boot/storage present */
+		m_Logger.Write(FromKernel, LogWarning, "Settings save blocked: USB mass storage detected (avoid SD write hang)");
+		return;
+	}
+
+	char buffer[512];
+	unsigned offset = 0u;
+
+#define APPEND_LINE_FMT(fmt, value) \
+	do { \
+		CString line; \
+		line.Format(fmt, value); \
+		const char *text = (const char *) line; \
+		if (text != 0) \
+		{ \
+			const unsigned len = (unsigned) strlen(text); \
+			if (offset + len < sizeof(buffer)) \
+			{ \
+				memcpy(buffer + offset, text, len); \
+				offset += len; \
+			} \
+		} \
+	} while (0)
+
+	APPEND_LINE_FMT("overscan=%u\n", m_OverscanPercent);
+	APPEND_LINE_FMT("widescreen=%u\n", m_WidescreenEnabled ? 1u : 0u);
+	APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
+	APPEND_LINE_FMT("refresh=%u\n", m_RefreshRateHz);
+	APPEND_LINE_FMT("z80_turbo=%u\n", m_Z80TurboMode);
+	APPEND_LINE_FMT("scc_cart=%u\n", m_SccCartEnabled ? 1u : 0u);
+	APPEND_LINE_FMT("debugger=%u\n", m_DebugOverlayEnabled ? 1u : 0u);
+	APPEND_LINE_FMT("audio_mute=%u\n", m_AudioMuted ? 1u : 0u);
+
+#undef APPEND_LINE_FMT
+
+	UpdateSettingsSaveTelemetry(2u, offset, 0u); /* create */
+	FIL file;
+	const FRESULT open_result = f_open(&file, kSettingsPath, FA_WRITE | FA_CREATE_ALWAYS);
+	if (open_result != FR_OK)
+	{
+		UpdateSettingsSaveTelemetry(91u, 0u, 0u); /* create error */
+		m_Logger.Write(FromKernel, LogWarning, "Settings save failed (cannot open config file)");
+		return;
+	}
+	UpdateSettingsSaveTelemetry(21u, offset, 0u); /* open ok */
+
+	m_Logger.Write(FromKernel, LogNotice, "Settings save: write begin");
+	UpdateSettingsSaveTelemetry(3u, offset, 0u); /* write begin */
+	unsigned bytes_written = 0u;
+	unsigned write_pos = 0u;
+	while (write_pos < offset)
+	{
+		unsigned chunk = offset - write_pos;
+		if (chunk > 16u)
+		{
+			chunk = 16u;
+		}
+		if (m_DCacheEnabled)
+		{
+			CleanDataCacheRange((u64) (uintptr) (buffer + write_pos), (u64) chunk);
+		}
+		UINT wrote = 0u;
+		const FRESULT write_result = f_write(&file, buffer + write_pos, chunk, &wrote);
+		if (write_result != FR_OK || wrote == 0u)
+		{
+			break;
+		}
+		write_pos += wrote;
+		bytes_written += wrote;
+		UpdateSettingsSaveTelemetry(3u, write_pos, offset);
+	}
+	m_Logger.Write(FromKernel, LogNotice, "Settings save: write end");
+	UpdateSettingsSaveTelemetry(4u, bytes_written, offset); /* write end */
+	m_Logger.Write(FromKernel, LogNotice, "Settings save: close begin");
+	UpdateSettingsSaveTelemetry(5u, bytes_written, 0u); /* close begin */
+	const FRESULT close_result = f_close(&file);
+	const unsigned close_ok = (close_result == FR_OK) ? 1u : 0u;
+	m_Logger.Write(FromKernel, LogNotice, "Settings save: close end");
+	UpdateSettingsSaveTelemetry(6u, close_ok, bytes_written); /* close end */
+
+	if (bytes_written == offset && close_ok != 0u)
+	{
+		UpdateSettingsSaveTelemetry(7u, bytes_written, offset); /* success */
+		CString line_log;
+		line_log.Format("Settings saved to %s", kSettingsPath);
+		m_Logger.Write(FromKernel, LogNotice, line_log);
+	}
+	else
+	{
+		UpdateSettingsSaveTelemetry(92u, bytes_written, close_ok); /* write/close error */
+		m_Logger.Write(FromKernel, LogWarning, "Settings save failed (write error)");
+	}
+}
+
 void CComboKernel::HandleMenuAction(TComboMenuAction action)
 {
 	switch (action)
@@ -1506,7 +1822,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 
 	case ComboMenuActionSaveSettings:
 		RefreshSettingsUiAfterAction();
-		m_Logger.Write(FromKernel, LogNotice, "Settings: Gravar (placeholder, persistencia sera implementada na issue #48)");
+		SaveSettingsToStorage();
 		break;
 
 	default:
@@ -1537,6 +1853,7 @@ void CComboKernel::ClearDebugOverlay(void)
 	WriteScreenText("\x1b[4;1H                                                                                ");
 	WriteScreenText("\x1b[5;1H                                                                                ");
 	WriteScreenText("\x1b[6;1H                                                                                ");
+	WriteScreenText("\x1b[7;1H                                                                                ");
 	WriteScreenText("\x1b[0m");
 }
 
