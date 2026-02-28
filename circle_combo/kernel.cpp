@@ -32,7 +32,7 @@ static const char kSettingsPath[] = "SD:/MSXBARE.CFG";
 static const unsigned kZ80TurboModeDes = 0u;
 static const unsigned kZ80TurboModePan = 1u;
 static const unsigned kZ80TurboModeMax = 2u;
-static const unsigned char kHidKeySpace = 0x2Cu;
+static const u8 kJoyBridgeFireA = (u8) (1u << 4);
 /* Intentionally slow/visible cadence for validation on hardware. */
 static const unsigned kRenshaPeriodFrames = 12u; /* 5Hz @60fps, ~4.2Hz @50fps */
 static const unsigned kRenshaOnFrames = 1u;
@@ -106,39 +106,6 @@ static int SettingsKeyEquals(const char *key, unsigned key_len, const char *lite
 	}
 
 	return literal[i] == '\0';
-}
-
-static boolean RawKeysHasHid(const unsigned char raw_keys[6], unsigned char hid)
-{
-	if (raw_keys == 0)
-	{
-		return FALSE;
-	}
-
-	for (unsigned i = 0u; i < 6u; ++i)
-	{
-		if (raw_keys[i] == hid)
-		{
-			return TRUE;
-		}
-	}
-	return FALSE;
-}
-
-static void RawKeysRemoveHid(unsigned char raw_keys[6], unsigned char hid)
-{
-	if (raw_keys == 0)
-	{
-		return;
-	}
-
-	for (unsigned i = 0u; i < 6u; ++i)
-	{
-		if (raw_keys[i] == hid)
-		{
-			raw_keys[i] = 0u;
-		}
-	}
 }
 
 static u16 s_DimLutHalf[kRgb565LutSize];
@@ -701,7 +668,20 @@ TComboShutdownMode CComboKernel::Run(void)
 			while (now_us >= next_frame_us && catchup_steps < max_catchup_steps)
 			{
 				PushKeyboardStateToRuntime(TRUE);
-				fmsx_runtime_set_joystick_bits(m_JoyBridgeBits);
+				u8 joy_bits_runtime = m_JoyBridgeBits;
+				if (m_RenshaEnabled && (joy_bits_runtime & kJoyBridgeFireA))
+				{
+					m_RenshaPhase = (m_RenshaPhase + 1u) % kRenshaPeriodFrames;
+					if (m_RenshaPhase >= kRenshaOnFrames)
+					{
+						joy_bits_runtime &= (u8) ~kJoyBridgeFireA;
+					}
+				}
+				else
+				{
+					m_RenshaPhase = 0u;
+				}
+				fmsx_runtime_set_joystick_bits(joy_bits_runtime);
 				if (fmsx_runtime_step_frame())
 				{
 					stepped_fmsx = TRUE;
@@ -1938,26 +1918,11 @@ void CComboKernel::BootTrace(const char *tag)
 void CComboKernel::PushKeyboardStateToRuntime(boolean advance_rensha_phase)
 {
 #if COMBO_ENABLE_FMSX
+	(void) advance_rensha_phase;
 	unsigned char raw_keys[6];
 	for (unsigned i = 0u; i < 6u; ++i)
 	{
 		raw_keys[i] = m_LastKeyboardRawKeys[i];
-	}
-
-	if (m_RenshaEnabled && RawKeysHasHid(raw_keys, kHidKeySpace))
-	{
-		if (advance_rensha_phase)
-		{
-			m_RenshaPhase = (m_RenshaPhase + 1u) % kRenshaPeriodFrames;
-		}
-		if (m_RenshaPhase >= kRenshaOnFrames)
-		{
-			RawKeysRemoveHid(raw_keys, kHidKeySpace);
-		}
-	}
-	else if (advance_rensha_phase)
-	{
-		m_RenshaPhase = 0u;
 	}
 
 	fmsx_runtime_set_keyboard_raw(m_LastKeyboardModifiers, raw_keys);
