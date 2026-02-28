@@ -7,6 +7,7 @@
 - Labels: `priority:P1`, `area:boot`, `beta:v0.1`
 - Status no projeto: `In review`
 - Última sincronização local: 2026-02-28
+- PR de revisão: #52
 
 ## Escopo
 - implementar persistência real de settings em FAT32 no SD do slot (nunca USB)
