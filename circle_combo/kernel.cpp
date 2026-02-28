@@ -1581,7 +1581,7 @@ void CComboKernel::SaveSettingsToStorage(void)
 
 #undef APPEND_LINE_FMT
 
-	/* Avoid FAT allocation path at runtime: write full sector into pre-existing file. */
+	/* Persist fixed-size block to keep parser/overwrite deterministic. */
 	const unsigned fixed_write_bytes = 512u;
 	if (offset > fixed_write_bytes)
 	{
@@ -1589,22 +1589,13 @@ void CComboKernel::SaveSettingsToStorage(void)
 	}
 	memset(buffer + offset, '\n', fixed_write_bytes - offset);
 
-	UpdateSettingsSaveTelemetry(2u, fixed_write_bytes, 0u); /* open existing */
+	UpdateSettingsSaveTelemetry(2u, fixed_write_bytes, 0u); /* open/create */
 	FIL file;
-	const FRESULT open_result = f_open(&file, kSettingsPath, FA_WRITE | FA_OPEN_EXISTING);
+	const FRESULT open_result = f_open(&file, kSettingsPath, FA_WRITE | FA_OPEN_ALWAYS);
 	if (open_result != FR_OK)
 	{
 		UpdateSettingsSaveTelemetry(91u, open_result, 0u); /* open error */
 		m_Logger.Write(FromKernel, LogWarning, "Settings save failed (cannot open config file)");
-		return;
-	}
-
-	const DWORD file_size = f_size(&file);
-	if (file_size < fixed_write_bytes)
-	{
-		(void) f_close(&file);
-		UpdateSettingsSaveTelemetry(96u, file_size > 999u ? 999u : (unsigned) file_size, fixed_write_bytes);
-		m_Logger.Write(FromKernel, LogWarning, "Settings save failed (config template too small)");
 		return;
 	}
 	const FRESULT seek_result = f_lseek(&file, 0);
