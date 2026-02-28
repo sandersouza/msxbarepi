@@ -338,6 +338,46 @@ void fmsx_runtime_shutdown(void)
     g_fmsx_status.running = FALSE;
 }
 
+boolean fmsx_runtime_save_state(void *dst, unsigned capacity, unsigned *saved_size)
+{
+    if (saved_size != 0)
+    {
+        *saved_size = 0u;
+    }
+    if (!g_fmsx_status.running || dst == 0 || capacity == 0u)
+    {
+        return FALSE;
+    }
+
+    const unsigned bytes = SaveState((unsigned char *) dst, capacity);
+    if (saved_size != 0)
+    {
+        *saved_size = bytes;
+    }
+    return (bytes > 0u && bytes <= capacity) ? TRUE : FALSE;
+}
+
+boolean fmsx_runtime_load_state(const void *src, unsigned size)
+{
+    if (!g_fmsx_status.running || src == 0 || size == 0u)
+    {
+        return FALSE;
+    }
+
+    const unsigned consumed = LoadState((unsigned char *) src, size);
+    if (consumed == 0u || consumed > size)
+    {
+        return FALSE;
+    }
+
+    g_boot_warmup_frames_remaining = 0u;
+    g_boot_forced_turbo = FALSE;
+    fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+    fmsx_runtime_apply_audio_channels();
+    g_fmsx_status.last_pc = (int) CPU.PC.W;
+    return TRUE;
+}
+
 void fmsx_runtime_set_overscan(boolean enabled)
 {
     fmsx_video_set_overscan(enabled);

@@ -57,6 +57,10 @@ private:
     void UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux);
     void LoadSettingsFromStorage(void);
     void SaveSettingsToStorage(void);
+    boolean EnsureStateIoBuffer(unsigned min_capacity);
+    boolean EnsureStateStorageDirectory(void);
+    void SaveEmulatorStateToStorage(void);
+    void LoadEmulatorStateFromStorage(void);
 
     static void KeyPressedHandler(const char *text);
     static void KeyStatusRawHandler(unsigned char modifiers, const unsigned char raw_keys[6], void *context);
@@ -164,11 +168,15 @@ private:
     boolean m_SettingsLoadPending;
     boolean m_InitramfsDeferredMountPending;
     boolean m_SettingsSavePending;
+    boolean m_StateSavePending;
+    boolean m_StateLoadPending;
     unsigned m_SettingsSaveStage;
     unsigned m_SettingsSaveCode;
     unsigned m_SettingsSaveAux;
     u64 m_BootStartUs;
     unsigned m_BootToFmsxMs;
+    u8 *m_StateIoBuffer;
+    unsigned m_StateIoBufferCapacity;
 
     static CComboKernel *s_Instance;
 };

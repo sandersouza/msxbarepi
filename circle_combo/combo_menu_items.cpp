@@ -2,9 +2,14 @@
 
 static const TComboMenuItem kRootItems[] =
 {
-    { "Cartridge", ComboMenuActionCartridgeA, TRUE },
-    { "Disk Drive", ComboMenuActionDiskDriveA, TRUE },
-    { "Settings", ComboMenuActionSettings, TRUE },
+    { "Carregar Cartuchos", ComboMenuActionCartridgeA, TRUE },
+    { "Carregar Disquetes", ComboMenuActionDiskDriveA, TRUE },
+    { "", ComboMenuActionSeparator, FALSE },
+    { "Gravar Estado", ComboMenuActionSaveState, TRUE },
+    { "Carregar Estado", ComboMenuActionLoadState, TRUE },
+    { "", ComboMenuActionSeparator, FALSE },
+    { "Ajustes", ComboMenuActionSettings, TRUE },
+    { "", ComboMenuActionSeparator, FALSE },
     { "MSX Basic", ComboMenuActionMsxBasic, TRUE },
     { "Reset", ComboMenuActionReset, TRUE }
 };
