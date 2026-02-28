@@ -75,7 +75,7 @@ static unsigned fmsx_runtime_boot_warmup_frames(void)
 {
     switch (g_boot_mode)
     {
-    case 1u: return 720u;   /* FAST */
+    case 1u: return 300u;   /* FAST: keep burst until ~JY2 F:300 */
     case 2u: return 2400u;  /* GAME */
     default: return 0u;     /* NORM */
     }
@@ -369,16 +369,7 @@ boolean fmsx_runtime_use_embedded_bios(void)
 
 void fmsx_runtime_notify_media_probe(void)
 {
-    /* FAST mode must end exactly when BIOS starts probing SLOT/DISK. */
-    if (g_boot_mode == 1u && g_boot_warmup_frames_remaining > 0u)
-    {
-        g_boot_warmup_frames_remaining = 0u;
-        if (g_boot_forced_turbo)
-        {
-            g_boot_forced_turbo = FALSE;
-            fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
-        }
-    }
+    /* Disabled by strategy: FAST cutoff is now frame-based (F:300). */
 }
 
 void fmsx_runtime_set_z80_turbo_mode(unsigned mode)
