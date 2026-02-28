@@ -129,6 +129,9 @@ private:
     unsigned m_OverscanPercent;
     boolean m_WidescreenEnabled;
     unsigned m_ScanlineMode;
+    unsigned m_RefreshRateHz;
+    u64 m_FrameIntervalUs;
+    boolean m_FramePacingResetPending;
     boolean m_AudioMuted;
     boolean m_FmsxFallbackPattern;
     boolean m_TestToneEnabled;

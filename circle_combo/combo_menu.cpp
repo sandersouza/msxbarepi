@@ -73,6 +73,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_OverscanPercent(0u),
     m_WidescreenEnabled(FALSE),
     m_ScanlineMode(0u),
+    m_RefreshRateHz(60u),
     m_OverlayEnabled(FALSE),
     m_OverlayAvailable(FALSE),
     m_AudioMuted(FALSE),
@@ -81,6 +82,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnOverscanPercent(0u),
     m_LastDrawnWidescreen(FALSE),
     m_LastDrawnScanlineMode(0u),
+    m_LastDrawnRefreshRateHz(60u),
     m_LastDrawnOverlay(FALSE),
     m_LastDrawnOverlayAvailable(FALSE),
     m_LastDrawnAudioMuted(FALSE),
@@ -112,6 +114,7 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnOverscanPercent = m_OverscanPercent;
     m_LastDrawnWidescreen = m_WidescreenEnabled;
     m_LastDrawnScanlineMode = m_ScanlineMode;
+    m_LastDrawnRefreshRateHz = m_RefreshRateHz;
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
     m_LastDrawnAudioMuted = m_AudioMuted;
@@ -167,6 +170,25 @@ void CComboPauseMenu::SetScanlineMode(unsigned mode)
     }
 }
 
+void CComboPauseMenu::SetRefreshRateHz(unsigned hz)
+{
+    if (hz != 50u)
+    {
+        hz = 60u;
+    }
+
+    if (m_RefreshRateHz != hz)
+    {
+        m_RefreshRateHz = hz;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+unsigned CComboPauseMenu::GetRefreshRateHz(void) const
+{
+    return m_RefreshRateHz;
+}
+
 void CComboPauseMenu::SetOverlayEnabled(boolean enabled, boolean available)
 {
     if (m_OverlayEnabled != enabled || m_OverlayAvailable != available)
@@ -206,6 +228,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_OverscanPercent,
             m_WidescreenEnabled,
             m_ScanlineMode,
+            m_RefreshRateHz,
             m_OverlayEnabled,
             m_OverlayAvailable,
             m_AudioMuted,
@@ -384,6 +407,22 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
+        else if (items[m_Selected].action == ComboMenuActionCycleRefreshRate)
+        {
+            if (left_edge)
+            {
+                action = ComboMenuActionCycleRefreshRatePrev;
+                m_ForceRedraw = TRUE;
+                m_RequestBackgroundRestore = TRUE;
+            }
+            else if (right_edge || enter_edge)
+            {
+                action = ComboMenuActionCycleRefreshRate;
+                m_ForceRedraw = TRUE;
+                m_RequestBackgroundRestore = TRUE;
+            }
+            handled_settings_input = enter_edge || left_edge || right_edge;
+        }
         else if ((items[m_Selected].action == ComboMenuActionToggleWidescreen)
               || (items[m_Selected].action == ComboMenuActionToggleOverlay)
               || (items[m_Selected].action == ComboMenuActionToggleAudioMute))
@@ -513,6 +552,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnOverscanPercent == m_OverscanPercent
      && m_LastDrawnWidescreen == m_WidescreenEnabled
      && m_LastDrawnScanlineMode == m_ScanlineMode
+     && m_LastDrawnRefreshRateHz == m_RefreshRateHz
      && m_LastDrawnOverlay == m_OverlayEnabled
      && m_LastDrawnOverlayAvailable == m_OverlayAvailable
      && m_LastDrawnAudioMuted == m_AudioMuted)
@@ -582,6 +622,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnOverscanPercent = m_OverscanPercent;
     m_LastDrawnWidescreen = m_WidescreenEnabled;
     m_LastDrawnScanlineMode = m_ScanlineMode;
+    m_LastDrawnRefreshRateHz = m_RefreshRateHz;
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
     m_LastDrawnAudioMuted = m_AudioMuted;

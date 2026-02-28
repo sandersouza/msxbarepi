@@ -10,10 +10,11 @@ Data de referência desta versão: 27 de fevereiro de 2026.
 - Toda branch criada para trabalho deve ser criada/vinculada pela issue de origem via `gh issue develop`.
 - Sempre atualizar as tasks concluídas diretamente na issue remota.
 - Sempre atualizar o campo `Status` do item no projeto `MSX BarePI` durante o ciclo:
+  - ao iniciar uma milestone: mover todas as issues abertas da milestone para `Ready`
   - ao iniciar trabalho: `In progress`
   - ao estabilizar e entrar em testes: `In review`
   - se testes falharem: voltar para `In progress`
-  - ao concluir e seguir para a próxima: `Done`
+  - ao concluir/fechar issue e seguir para a próxima: `Done`
 - Manter `docs/milestones/` sincronizado com milestones/issues remotas.
 - Ao estabilizar uma issue, abrir PR `issue-branch -> main` e registrar o link para review.
 - Ao concluir/estabilizar uma issue, é obrigatório abrir o PR da branch da issue para `main` e enviar o link de aprovação ao usuário antes de avançar para a próxima issue.
@@ -62,6 +63,14 @@ ITEM_ID=$(gh project item-list 3 --owner sandersouza --limit 200 --format json -
 # 2) setar In progress
 INPROGRESS_OPTION_ID=$(gh project field-list 3 --owner sandersouza --format json --jq '.fields[] | select(.name=="Status") | .options[] | select(.name=="In progress") | .id')
 gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$STATUS_FIELD_ID" --single-select-option-id "$INPROGRESS_OPTION_ID"
+```
+5.2 Ao iniciar milestone, preparar board em massa para `Ready` (issues abertas da milestone):
+```bash
+READY_OPTION_ID=$(gh project field-list 3 --owner sandersouza --format json --jq '.fields[] | select(.name=="Status") | .options[] | select(.name=="Ready") | .id')
+for N in $(gh issue list -R sandersouza/msxbarepi --state open -L 200 --json number,milestone --jq '.[] | select(.milestone!=null and .milestone.title=="<milestone-title>") | .number'); do
+  ITEM_ID=$(gh project item-list 3 --owner sandersouza --limit 200 --format json --jq ".items[] | select(.content.type==\"Issue\" and .content.number==$N) | .id")
+  gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$STATUS_FIELD_ID" --single-select-option-id "$READY_OPTION_ID"
+done
 ```
 6. Quando estabilizada em hardware, abrir PR para `main`:
 ```bash

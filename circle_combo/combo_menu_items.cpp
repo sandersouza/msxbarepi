@@ -22,18 +22,21 @@ const TComboMenuItem *combo_menu_root_items_get(unsigned *count)
 const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
                                                      boolean widescreen_enabled,
                                                      unsigned scanline_mode,
+                                                     unsigned refresh_rate_hz,
                                                      boolean overlay_enabled,
                                                      boolean overlay_available,
                                                      boolean audio_muted,
                                                      unsigned *count)
 {
-    static TComboMenuItem settings_items[5];
+    static TComboMenuItem settings_items[6];
     static char overscan_label[] = "Overscan [000]";
     static const char *kWidescreenOff = "Widescreen [DES]";
     static const char *kWidescreenOn = "Widescreen [LIG]";
     static const char *kScanlineDes = "Scanlines [DES]";
     static const char *kScanlineLcd = "Scanlines [LCD]";
     static const char *kScanlineCrt = "Scanlines [CRT]";
+    static const char *kRefresh50 = "Refresh [50Hz]";
+    static const char *kRefresh60 = "Refresh [60Hz]";
     static const char *kOverlayOff = "Debugger [DES]";
     static const char *kOverlayOn = "Debugger [LIG]";
     static const char *kOverlayNA = "Debugger [N/A]";
@@ -47,6 +50,10 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     if (scanline_mode > 2u)
     {
         scanline_mode = 2u;
+    }
+    if (refresh_rate_hz != 50u)
+    {
+        refresh_rate_hz = 60u;
     }
 
     overscan_label[10] = (char) ('0' + ((overscan_percent / 100u) % 10u));
@@ -75,15 +82,19 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     settings_items[2].action = ComboMenuActionCycleScanlines;
     settings_items[2].selectable = TRUE;
 
-    settings_items[3].label = overlay_available
-        ? (overlay_enabled ? kOverlayOn : kOverlayOff)
-        : kOverlayNA;
-    settings_items[3].action = ComboMenuActionToggleOverlay;
+    settings_items[3].label = (refresh_rate_hz == 50u) ? kRefresh50 : kRefresh60;
+    settings_items[3].action = ComboMenuActionCycleRefreshRate;
     settings_items[3].selectable = TRUE;
 
-    settings_items[4].label = audio_muted ? kAudioMuteOn : kAudioMuteOff;
-    settings_items[4].action = ComboMenuActionToggleAudioMute;
+    settings_items[4].label = overlay_available
+        ? (overlay_enabled ? kOverlayOn : kOverlayOff)
+        : kOverlayNA;
+    settings_items[4].action = ComboMenuActionToggleOverlay;
     settings_items[4].selectable = TRUE;
+
+    settings_items[5].label = audio_muted ? kAudioMuteOn : kAudioMuteOff;
+    settings_items[5].action = ComboMenuActionToggleAudioMute;
+    settings_items[5].selectable = TRUE;
 
     if (count != 0)
     {
