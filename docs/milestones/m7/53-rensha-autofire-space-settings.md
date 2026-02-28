@@ -11,7 +11,7 @@
 
 ## Escopo
 - adicionar item `Rensha` no menu Settings, abaixo de `Z80 Turbo`
-- implementar auto-fire Panasonic-style (FIREA com fallback SPACE)
+- implementar auto-fire Panasonic-style (gate por frame em `FIREA`, com fallback em `SPACE`)
 - manter sync estável em 50/60Hz sem regressão de FPS/áudio
 
 ## Critérios de aceite
