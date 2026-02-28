@@ -51,7 +51,7 @@ private:
     void RefreshSettingsUiAfterAction(void);
     void ResetEmulationRuntimeState(void);
     void UpdateJoystickFromRaw(unsigned char modifiers, const unsigned char raw_keys[6]);
-    void PushKeyboardStateToRuntime(boolean advance_rensha_phase);
+    void PushKeyboardStateToRuntime(boolean rensha_fire_on);
     void SetDebugOverlayEnabled(boolean enabled);
     void UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux);
     void LoadSettingsFromStorage(void);

@@ -33,6 +33,7 @@ static const unsigned kZ80TurboModeDes = 0u;
 static const unsigned kZ80TurboModePan = 1u;
 static const unsigned kZ80TurboModeMax = 2u;
 static const u8 kJoyBridgeFireA = (u8) (1u << 4);
+static const unsigned char kHidKeySpace = 0x2Cu;
 /* Intentionally slow/visible cadence for validation on hardware. */
 static const unsigned kRenshaPeriodFrames = 12u; /* 5Hz @60fps, ~4.2Hz @50fps */
 static const unsigned kRenshaOnFrames = 1u;
@@ -667,13 +668,14 @@ TComboShutdownMode CComboKernel::Run(void)
 			const unsigned max_catchup_steps = 2u;
 			while (now_us >= next_frame_us && catchup_steps < max_catchup_steps)
 			{
-				PushKeyboardStateToRuntime(TRUE);
+				boolean rensha_fire_on = TRUE;
 				u8 joy_bits_runtime = m_JoyBridgeBits;
 				if (m_RenshaEnabled && (joy_bits_runtime & kJoyBridgeFireA))
 				{
 					m_RenshaPhase = (m_RenshaPhase + 1u) % kRenshaPeriodFrames;
 					if (m_RenshaPhase >= kRenshaOnFrames)
 					{
+						rensha_fire_on = FALSE;
 						joy_bits_runtime &= (u8) ~kJoyBridgeFireA;
 					}
 				}
@@ -681,6 +683,7 @@ TComboShutdownMode CComboKernel::Run(void)
 				{
 					m_RenshaPhase = 0u;
 				}
+				PushKeyboardStateToRuntime(rensha_fire_on);
 				fmsx_runtime_set_joystick_bits(joy_bits_runtime);
 				if (fmsx_runtime_step_frame())
 				{
@@ -1915,19 +1918,28 @@ void CComboKernel::BootTrace(const char *tag)
 	m_Logger.Write(FromKernel, LogNotice, line);
 }
 
-void CComboKernel::PushKeyboardStateToRuntime(boolean advance_rensha_phase)
+void CComboKernel::PushKeyboardStateToRuntime(boolean rensha_fire_on)
 {
 #if COMBO_ENABLE_FMSX
-	(void) advance_rensha_phase;
 	unsigned char raw_keys[6];
 	for (unsigned i = 0u; i < 6u; ++i)
 	{
 		raw_keys[i] = m_LastKeyboardRawKeys[i];
 	}
+	if (m_RenshaEnabled && !rensha_fire_on)
+	{
+		for (unsigned i = 0u; i < 6u; ++i)
+		{
+			if (raw_keys[i] == kHidKeySpace)
+			{
+				raw_keys[i] = 0u;
+			}
+		}
+	}
 
 	fmsx_runtime_set_keyboard_raw(m_LastKeyboardModifiers, raw_keys);
 #else
-	(void) advance_rensha_phase;
+	(void) rensha_fire_on;
 #endif
 }
 
