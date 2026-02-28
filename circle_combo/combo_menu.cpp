@@ -74,6 +74,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_WidescreenEnabled(FALSE),
     m_ScanlineMode(0u),
     m_RefreshRateHz(60u),
+    m_BootMode(0u),
     m_Z80TurboMode(0u),
     m_RenshaMode(0u),
     m_SccCartEnabled(TRUE),
@@ -86,6 +87,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnWidescreen(FALSE),
     m_LastDrawnScanlineMode(0u),
     m_LastDrawnRefreshRateHz(60u),
+    m_LastDrawnBootMode(0u),
     m_LastDrawnZ80TurboMode(0u),
     m_LastDrawnRenshaMode(0u),
     m_LastDrawnSccCart(TRUE),
@@ -121,6 +123,7 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnWidescreen = m_WidescreenEnabled;
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
+    m_LastDrawnBootMode = m_BootMode;
     m_LastDrawnZ80TurboMode = m_Z80TurboMode;
     m_LastDrawnRenshaMode = m_RenshaMode;
     m_LastDrawnSccCart = m_SccCartEnabled;
@@ -196,6 +199,25 @@ void CComboPauseMenu::SetRefreshRateHz(unsigned hz)
 unsigned CComboPauseMenu::GetRefreshRateHz(void) const
 {
     return m_RefreshRateHz;
+}
+
+void CComboPauseMenu::SetBootMode(unsigned mode)
+{
+    if (mode > 2u)
+    {
+        mode = 0u;
+    }
+
+    if (m_BootMode != mode)
+    {
+        m_BootMode = mode;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+unsigned CComboPauseMenu::GetBootMode(void) const
+{
+    return m_BootMode;
 }
 
 void CComboPauseMenu::SetZ80TurboMode(unsigned mode)
@@ -280,6 +302,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_WidescreenEnabled,
             m_ScanlineMode,
             m_RefreshRateHz,
+            m_BootMode,
             m_Z80TurboMode,
             m_RenshaMode,
             m_SccCartEnabled,
@@ -477,6 +500,22 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
+        else if (items[m_Selected].action == ComboMenuActionCycleBootMode)
+        {
+            if (left_edge)
+            {
+                action = ComboMenuActionCycleBootModePrev;
+                m_ForceRedraw = TRUE;
+                m_RequestBackgroundRestore = TRUE;
+            }
+            else if (right_edge || enter_edge)
+            {
+                action = ComboMenuActionCycleBootMode;
+                m_ForceRedraw = TRUE;
+                m_RequestBackgroundRestore = TRUE;
+            }
+            handled_settings_input = enter_edge || left_edge || right_edge;
+        }
         else if (items[m_Selected].action == ComboMenuActionCycleZ80Turbo)
         {
             if (left_edge)
@@ -649,6 +688,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnWidescreen == m_WidescreenEnabled
      && m_LastDrawnScanlineMode == m_ScanlineMode
      && m_LastDrawnRefreshRateHz == m_RefreshRateHz
+     && m_LastDrawnBootMode == m_BootMode
      && m_LastDrawnZ80TurboMode == m_Z80TurboMode
      && m_LastDrawnRenshaMode == m_RenshaMode
      && m_LastDrawnSccCart == m_SccCartEnabled
@@ -735,6 +775,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnWidescreen = m_WidescreenEnabled;
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
+    m_LastDrawnBootMode = m_BootMode;
     m_LastDrawnZ80TurboMode = m_Z80TurboMode;
     m_LastDrawnRenshaMode = m_RenshaMode;
     m_LastDrawnSccCart = m_SccCartEnabled;

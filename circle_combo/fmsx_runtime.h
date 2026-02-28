@@ -31,6 +31,10 @@ typedef struct {
     unsigned last_msx;
 } TFmsxKeyboardDebug;
 
+#define FMSX_MODEL_PROFILE_MSX1  0u
+#define FMSX_MODEL_PROFILE_MSX2  1u
+#define FMSX_MODEL_PROFILE_MSX2P 2u
+
 boolean fmsx_runtime_init(void);
 boolean fmsx_runtime_reboot_basic(void);
 boolean fmsx_runtime_hard_reset(void);
@@ -40,6 +44,12 @@ void fmsx_runtime_set_joystick_bits(u8 bridge_bits);
 void fmsx_runtime_set_keyboard_raw(u8 modifiers, const unsigned char raw_keys[6]);
 void fmsx_runtime_set_overscan(boolean enabled);
 void fmsx_runtime_set_refresh_hz(unsigned hz);
+void fmsx_runtime_set_boot_mode(unsigned mode);
+unsigned fmsx_runtime_get_boot_mode(void);
+void fmsx_runtime_set_model_profile(unsigned profile);
+unsigned fmsx_runtime_get_model_profile(void);
+boolean fmsx_runtime_use_embedded_bios(void);
+void fmsx_runtime_notify_media_probe(void);
 void fmsx_runtime_set_z80_turbo_mode(unsigned mode);
 unsigned fmsx_runtime_get_z80_turbo_mode(void);
 void fmsx_runtime_set_scc_cart_enabled(boolean enabled);

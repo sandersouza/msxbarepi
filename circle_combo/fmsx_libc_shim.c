@@ -5,6 +5,7 @@
 #include "fmsx_compat/errno.h"
 #include "fmsx_compat/sys/stat.h"
 #include "fmsx_virtual_fs.h"
+#include "fmsx_runtime.h"
 
 extern const unsigned char fmsx_embedded_msx_rom_start[];
 extern const unsigned char fmsx_embedded_msx_rom_end[];
@@ -55,14 +56,22 @@ static const char *local_basename(const char *path)
 
 static int local_lookup_embedded(const char *path, const unsigned char **data, size_t *size)
 {
+    const char *name = local_basename(path);
+    const int wants_msx_bios = local_str_ieq(name, "MSX.ROM");
+    if (wants_msx_bios && fmsx_runtime_get_boot_mode() == 2u && fmsx_runtime_use_embedded_bios())
+    {
+        *data = fmsx_embedded_msx_rom_start;
+        *size = (size_t) (fmsx_embedded_msx_rom_end - fmsx_embedded_msx_rom_start);
+        return 1;
+    }
+
     if (fmsx_vfs_lookup(path, data, size))
     {
         return 1;
     }
 
 #if !COMBO_REQUIRE_CPIO_BIOS
-    const char *name = local_basename(path);
-    if (local_str_ieq(name, "MSX.ROM"))
+    if (wants_msx_bios)
     {
         *data = fmsx_embedded_msx_rom_start;
         *size = (size_t) (fmsx_embedded_msx_rom_end - fmsx_embedded_msx_rom_start);

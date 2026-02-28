@@ -30,6 +30,9 @@ static const unsigned kOverscanMaxScalePct = 100u;
 static const unsigned kScanlineModeOff = 0u;
 static const unsigned kScanlineModeLcd = 1u;
 static const unsigned kScanlineModeCrt = 2u;
+static const unsigned kBootModeNorm = 0u;
+static const unsigned kBootModeFast = 1u;
+static const unsigned kBootModeGame = 2u;
 static const char kSettingsDrive[] = "SD:";
 static const char kSettingsPath[] = "SD:/MSXBARE.CFG";
 static const unsigned kZ80TurboModeDes = 0u;
@@ -67,6 +70,16 @@ static unsigned Z80TurboPercentFromMode(unsigned mode)
 	case kZ80TurboModeDes:
 	default:
 		return 100u;
+	}
+}
+
+static const char *BootModeLabelFromMode(unsigned mode)
+{
+	switch (mode)
+	{
+	case kBootModeFast: return "FAST";
+	case kBootModeGame: return "GAME";
+	default: return "NORM";
 	}
 }
 
@@ -436,6 +449,7 @@ CComboKernel::CComboKernel(void)
 	m_WidescreenEnabled(FALSE),
 	m_ScanlineMode(kScanlineModeOff),
 	m_RefreshRateHz(60u),
+	m_BootMode((COMBO_FMSX_BOOT_PROFILE > 2) ? kBootModeNorm : (unsigned) COMBO_FMSX_BOOT_PROFILE),
 	m_Z80TurboMode(kZ80TurboModeDes),
 	m_RenshaMode(0u),
 	m_RenshaPhase(0u),
@@ -607,6 +621,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetWidescreenEnabled(m_WidescreenEnabled);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
+	m_PauseMenu.SetBootMode(m_BootMode);
 	m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
 	m_PauseMenu.SetRenshaMode(m_RenshaMode);
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
@@ -615,6 +630,7 @@ TComboShutdownMode CComboKernel::Run(void)
 #if COMBO_ENABLE_FMSX
 	fmsx_runtime_set_overscan(m_OverscanPercent > 0u ? TRUE : FALSE);
 	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
+	fmsx_runtime_set_boot_mode(m_BootMode);
 	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
 	fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
 #endif
@@ -1040,6 +1056,30 @@ void CComboKernel::RefillAudioQueue(void)
 	else
 	{
 		m_AudioPeak = 0u;
+	}
+}
+
+void CComboKernel::PrimeAudioSilenceBeforeReset(void)
+{
+	if (m_Sound == 0)
+	{
+		return;
+	}
+
+	/* Drop any pending samples and replace with a short silence window before reset. */
+	m_Sound->Flush();
+	static const unsigned kSilenceFrames = 512u;
+	s16 silence[kSilenceFrames * 2u];
+	memset(silence, 0, sizeof(silence));
+	const int bytes = (int) sizeof(silence);
+	const int written = m_Sound->Write(silence, (size_t) bytes);
+	if (written == bytes)
+	{
+		m_AudioWriteOps++;
+	}
+	else
+	{
+		m_AudioDropOps++;
 	}
 }
 
@@ -1505,9 +1545,24 @@ void CComboKernel::LoadSettingsFromStorage(void)
 		return;
 	}
 
-	FIL file;
-	if (f_open(&file, kSettingsPath, FA_READ) != FR_OK)
+	FILINFO file_info;
+	const FRESULT stat_result = f_stat(kSettingsPath, &file_info);
+	if (stat_result == FR_NO_FILE)
 	{
+		m_Logger.Write(FromKernel, LogNotice, "Settings file not found; using defaults");
+		return;
+	}
+	if (stat_result != FR_OK)
+	{
+		m_Logger.Write(FromKernel, LogWarning, "Settings stat failed; using defaults");
+		return;
+	}
+
+	FIL file;
+	const FRESULT open_result = f_open(&file, kSettingsPath, FA_READ);
+	if (open_result != FR_OK)
+	{
+		m_Logger.Write(FromKernel, LogWarning, "Settings open failed; using defaults");
 		return;
 	}
 
@@ -1517,9 +1572,17 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	(void) f_close(&file);
 	if (read_result != FR_OK || bytes_read == 0u)
 	{
+		m_Logger.Write(FromKernel, LogWarning, "Settings read failed; using defaults");
 		return;
 	}
 	buffer[bytes_read] = '\0';
+
+	/* Corruption guard: only parse files written by SaveSettingsToStorage(). */
+	if (strstr(buffer, "#END") == 0)
+	{
+		m_Logger.Write(FromKernel, LogWarning, "Settings file invalid/corrupt; using defaults");
+		return;
+	}
 
 	char *line = buffer;
 	while (*line != '\0')
@@ -1567,6 +1630,10 @@ void CComboKernel::LoadSettingsFromStorage(void)
 				m_RefreshRateHz = (value == 50u) ? 50u : 60u;
 				m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
 			}
+			else if (SettingsKeyEquals(line, key_len, "boot_mode"))
+			{
+				m_BootMode = (value > 2u) ? kBootModeNorm : value;
+			}
 			else if (SettingsKeyEquals(line, key_len, "z80_turbo"))
 			{
 				m_Z80TurboMode = value > 2u ? 0u : value;
@@ -1596,6 +1663,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetWidescreenEnabled(m_WidescreenEnabled);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
+	m_PauseMenu.SetBootMode(m_BootMode);
 	m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
 	m_PauseMenu.SetRenshaMode(m_RenshaMode);
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
@@ -1604,6 +1672,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 #if COMBO_ENABLE_FMSX
 	fmsx_runtime_set_overscan(m_OverscanPercent > 0u ? TRUE : FALSE);
 	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
+	fmsx_runtime_set_boot_mode(m_BootMode);
 	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
 	fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
 #endif
@@ -1651,6 +1720,7 @@ void CComboKernel::SaveSettingsToStorage(void)
 	APPEND_LINE_FMT("widescreen=%u\n", m_WidescreenEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
 	APPEND_LINE_FMT("refresh=%u\n", m_RefreshRateHz);
+	APPEND_LINE_FMT("boot_mode=%u\n", m_BootMode);
 	APPEND_LINE_FMT("z80_turbo=%u\n", m_Z80TurboMode);
 	APPEND_LINE_FMT("rensha=%u\n", m_RenshaMode);
 	APPEND_LINE_FMT("scc_cart=%u\n", m_SccCartEnabled ? 1u : 0u);
@@ -1735,6 +1805,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 	#if COMBO_ENABLE_FMSX
 		if (m_FmsxReady)
 		{
+			PrimeAudioSilenceBeforeReset();
 			if (fmsx_runtime_hard_reset())
 			{
 				ResetEmulationRuntimeState();
@@ -1832,6 +1903,34 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		{
 			CString line;
 			line.Format("Settings: Refresh %uHz", m_RefreshRateHz);
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
+		break;
+
+	case ComboMenuActionCycleBootMode:
+		m_BootMode = (m_BootMode + 1u) % 3u;
+		m_PauseMenu.SetBootMode(m_BootMode);
+		RefreshSettingsUiAfterAction();
+	#if COMBO_ENABLE_FMSX
+		fmsx_runtime_set_boot_mode(m_BootMode);
+	#endif
+		{
+			CString line;
+			line.Format("Settings: Boot Mode %s", BootModeLabelFromMode(m_BootMode));
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
+		break;
+
+	case ComboMenuActionCycleBootModePrev:
+		m_BootMode = (m_BootMode == 0u) ? 2u : (m_BootMode - 1u);
+		m_PauseMenu.SetBootMode(m_BootMode);
+		RefreshSettingsUiAfterAction();
+	#if COMBO_ENABLE_FMSX
+		fmsx_runtime_set_boot_mode(m_BootMode);
+	#endif
+		{
+			CString line;
+			line.Format("Settings: Boot Mode %s", BootModeLabelFromMode(m_BootMode));
 			m_Logger.Write(FromKernel, LogNotice, line);
 		}
 		break;

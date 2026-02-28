@@ -40,6 +40,7 @@ public:
 
 private:
     void RefillAudioQueue(void);
+    void PrimeAudioSilenceBeforeReset(void);
     void InitializeAudioOutput(boolean fmsx_audio_enabled);
     void GenerateSamples(s16 *buffer, unsigned frames);
     void DrawDebugOverlay(unsigned tick);
@@ -142,6 +143,7 @@ private:
     boolean m_WidescreenEnabled;
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;
+    unsigned m_BootMode;
     unsigned m_Z80TurboMode;
     unsigned m_RenshaMode;
     unsigned m_RenshaPhase;

@@ -159,16 +159,38 @@ O script permite selecionar:
 
 Perfis de boot:
 - `NORMAL`: comportamento padrão.
-- `FAST BOOT`: acelera os frames iniciais até entrar no BASIC ou iniciar carregamento de mídia.
-- `GAME BOOT`: modo cartucho-only (`CARTA`) com aceleração agressiva de bootstrap para entrar no jogo o mais rápido possível.
+- `FAST BOOT`: acelera apenas o bootstrap inicial (frames acelerados + turbo Z80 MAX temporário), sem bypass de BIOS.
+- `GAME BOOT`: usa o fast boot e faz entrada direta no cartucho inserido em SLOT1/SLOT2.
 - Default atual do configurador: `FAST BOOT`.
+
+Presets oficiais (reprodutiveis):
+
+```bash
+make m2-fmsx-normal
+make m2-fmsx-fastboot
+make m2-fmsx-gameboot
+```
+
+Artefatos gerados:
+- `artifacts/kernel8-m2-normalboot.img`
+- `artifacts/kernel8-m2-fastboot.img`
+- `artifacts/kernel8-m2-gameboot.img`
 
 Knobs adicionais relevantes:
 - `COMBO_FMSX_MEGARAM_ENABLED=0|1` (default `1`)
 - `COMBO_FMSX_CARTB_MAPPER=0..8|255` (default `255` = auto/default)
 - `COMBO_FMSX_BOOT_PROFILE=0|1|2` (default `1`; 0=`NORMAL`, 1=`FAST BOOT`, 2=`GAME BOOT`)
+- `COMBO_FMSX_BOOT_BURST_STEPS_FAST` (default `5`)
+- `COMBO_FMSX_BOOT_BURST_STEPS_GAME` (default `10`)
+- `COMBO_FMSX_BOOT_WARMUP_FRAMES_FAST` (default `720`)
+- `COMBO_FMSX_BOOT_WARMUP_FRAMES_GAME` (default `2400`)
 - `COMBO_ENABLE_DEBUG_OVERLAY=0|1` (default `1`, quando `0` remove toggle/render do DBG no build)
 - `COMBO_BOOT_QUIET=0|1` (default `0`)
+
+Matriz de perfil (padrao atual):
+- `NORMAL`: profile `0`, sem frame-skip de boot, sem turbo forçado e sem bypass.
+- `FAST BOOT`: profile `1`, burst `5x` por `720` frames, turbo Z80 MAX apenas durante warmup, depois retorna ao turbo configurado.
+- `GAME BOOT`: profile `2`, burst `10x` por `2400` frames, turbo Z80 MAX durante warmup e jump direto para cartucho (`0x4000`) quando há ROM em SLOT1/SLOT2.
 
 ## Build default estavel (`make`)
 
