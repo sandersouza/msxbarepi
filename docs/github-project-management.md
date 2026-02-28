@@ -9,6 +9,7 @@ Data de referência desta versão: 27 de fevereiro de 2026.
 - Criar branch de issue somente quando formos atuar nela.
 - Toda branch criada para trabalho deve ser criada/vinculada pela issue de origem via `gh issue develop`.
 - Sempre atualizar as tasks concluídas diretamente na issue remota.
+- Para issues de performance (`type:performance`), anexar evidência da suíte em `docs/performance-regression-suite.md` antes de mover para `In review`.
 - Sempre atualizar o campo `Status` do item no projeto `MSX BarePI` durante o ciclo:
   - ao iniciar uma milestone: mover todas as issues abertas da milestone para `Ready`
   - ao iniciar trabalho: `In progress`
@@ -28,6 +29,7 @@ Data de referência desta versão: 27 de fevereiro de 2026.
 - Projeto oficial (GitHub Projects): `MSX BarePI`
 - URL do projeto: `https://github.com/users/sandersouza/projects/3`
 - Branch de trabalho por issue ativa: `issue/<numero>-<slug-curto>`
+- Branch de release: `release/<versao>` (obrigatório; não usar branch de release fora do prefixo `release/`)
 - Estrutura local:
   - `docs/milestones/m<numero-da-milestone>/`
   - Arquivo por issue: `<numero>-<slug>.md`
@@ -48,6 +50,7 @@ git pull --ff-only
 gh issue develop --list <numero> -R sandersouza/msxbarepi
 ```
 3. Implementar, validar build e atualizar docs locais da issue/milestone.
+3.1 Se a issue for `type:performance`, gerar sessão baseline/candidate com `scripts/perf-regression.sh` e registrar comparação no comentário da issue/PR.
 4. Marcar progresso/checklists na issue remota (`gh issue comment` e checklist no corpo da issue).
 5. Garantir vínculo da issue ao projeto `MSX BarePI`:
 ```bash
@@ -112,6 +115,7 @@ git fetch --prune
   - Identificar branches locais órfãs (remota deletada) após `fetch --prune`.
   - Antes de apagar branch local órfã, solicitar confirmação do usuário.
   - Não executar nenhuma ação destrutiva na `main`.
+  - Em releases, garantir que a branch remota siga `release/<versao>` e ajustar `target` da release/tag para essa branch.
 
 ## Escopos do GitHub CLI
 - Escopos atuais detectados: `repo`, `read:org`, `gist`.

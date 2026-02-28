@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 28/02/2026 11:49
+Última atualização: 28/02/2026 12:34
 
 ## Objetivo deste arquivo
 
@@ -590,3 +590,13 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-02-28 11:32:00 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
 - 2026-02-28 11:33:49 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
 - 2026-02-28 11:49:56 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 12:10:26 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 12:10:26 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-28 12:30:25 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 12:30:25 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-28 12:30:36 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 12:30:36 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-28 12:31:39 | stage=m7-issue-40 | status=in-review | artifact=docs/performance-regression-suite.md | note=benchmark-suite-script-template-compare
+- 2026-02-28 12:33:02 | stage=release-1.0.1rc0 | status=published | artifact=https://github.com/sandersouza/msxbarepi/releases/tag/1.0.1rc0 | note=binary-focused-notes
+- 2026-02-28 12:33:28 | stage=m7-issues-38-40 | status=done | artifact=https://github.com/sandersouza/msxbarepi/pull/58 | note=pr58-merged-issues-done
+- 2026-02-28 12:34:54 | stage=release-branch-policy | status=updated | artifact=release/1.0.1rc0 | note=migrated-branch-prefix-release-slash

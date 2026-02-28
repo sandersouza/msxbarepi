@@ -16,3 +16,8 @@ Espelho local de milestones/issues do GitHub para planejamento técnico e handof
 - `m5` (Estabilização e Performance)
 - `m6` (Review da documentação)
 - `m7` (Beta pública v0.1 - Performance e Boot)
+- `m8` (Load de ROMs e Discos)
+- `m9` (Hardware e Periféricos Físicos)
+- `m10` (Release: Suporte MSX2)
+- `m11` (Release: Suporte MSX2+)
+- `m12` (Release: Hardware MSX em Settings)

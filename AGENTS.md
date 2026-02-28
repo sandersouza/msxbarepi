@@ -47,6 +47,7 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Gestão de projeto no GitHub deve seguir `docs/github-project-management.md` (fonte de verdade para fluxo de issues/milestones/branches/PRs)
 - Manter espelho local das milestones/issues em `docs/milestones/` sincronizado com o remoto
 - Toda branch de trabalho de issue deve ser criada/vinculada via issue de origem (GitHub/`gh issue develop`)
+- Toda branch de release deve usar o padrão obrigatório `release/<versao>` (ex.: `release/1.0.1rc0`)
 - Durante execução de issue, manter status do item no projeto atualizado: `In progress` -> `In review` -> `Done`, com rollback para `In progress` se testes falharem
 - Ao concluir/fechar uma issue, garantir que o item correspondente no projeto seja movido para `Done` no mesmo ciclo
 - Ao iniciar uma milestone, preparar o board movendo as issues abertas da milestone para `Ready`; em seguida, mover apenas a issue ativa para `In progress`
