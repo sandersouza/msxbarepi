@@ -43,6 +43,7 @@ void fmsx_runtime_set_refresh_hz(unsigned hz);
 void fmsx_runtime_set_boot_mode(unsigned mode);
 unsigned fmsx_runtime_get_boot_mode(void);
 boolean fmsx_runtime_use_embedded_bios(void);
+void fmsx_runtime_notify_media_probe(void);
 void fmsx_runtime_set_z80_turbo_mode(unsigned mode);
 unsigned fmsx_runtime_get_z80_turbo_mode(void);
 void fmsx_runtime_set_scc_cart_enabled(boolean enabled);

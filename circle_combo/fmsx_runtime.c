@@ -367,6 +367,20 @@ boolean fmsx_runtime_use_embedded_bios(void)
     return g_use_embedded_bios ? TRUE : FALSE;
 }
 
+void fmsx_runtime_notify_media_probe(void)
+{
+    /* FAST mode must end exactly when BIOS starts probing SLOT/DISK. */
+    if (g_boot_mode == 1u && g_boot_warmup_frames_remaining > 0u)
+    {
+        g_boot_warmup_frames_remaining = 0u;
+        if (g_boot_forced_turbo)
+        {
+            g_boot_forced_turbo = FALSE;
+            fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+        }
+    }
+}
+
 void fmsx_runtime_set_z80_turbo_mode(unsigned mode)
 {
     if (mode > 2u)

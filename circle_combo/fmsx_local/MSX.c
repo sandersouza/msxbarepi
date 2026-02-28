@@ -33,6 +33,7 @@
 #include <streams/file_stream_transforms.h>
 
 extern retro_log_printf_t log_cb;
+extern void fmsx_runtime_notify_media_probe(void);
 
 #define RGB2INT(R,G,B)    ((B)|((int)(G)<<8)|((int)(R)<<16))
 
@@ -1131,8 +1132,10 @@ uint8_t RdZ80(uint16_t A)
       case 0x7FF9: case 0xBFF9: case 0x7F81: case 0x7FB9: /* TRACK  */
       case 0x7FFA: case 0xBFFA: case 0x7F82: case 0x7FBA: /* SECTOR */
       case 0x7FFB: case 0xBFFB: case 0x7F83: case 0x7FBB: /* DATA   */
+        fmsx_runtime_notify_media_probe();
         return(Read1793(&FDC,A&0x0003));
       case 0x7FFF: case 0xBFFF: case 0x7F84: case 0x7FBC: /* SYSTEM */
+        fmsx_runtime_notify_media_probe();
         return(Read1793(&FDC,WD1793_READY));
     }
 
@@ -1154,7 +1157,7 @@ uint8_t RdZ80(uint16_t A)
 void WrZ80(uint16_t A,uint8_t V)
 {
   /* Secondary slot selector */
-  if(A==0xFFFF) { SSlot(V);return; }
+  if(A==0xFFFF) { fmsx_runtime_notify_media_probe(); SSlot(V);return; }
 
   /* Floppy disk controller */
   /* 7FF8h..7FFFh Standard DiskROM  */
@@ -1169,18 +1172,22 @@ void WrZ80(uint16_t A,uint8_t V)
       case 0x7FF9: case 0xBFF9: case 0x7F81: case 0x7FB9: /* TRACK   */
       case 0x7FFA: case 0xBFFA: case 0x7F82: case 0x7FBA: /* SECTOR  */
       case 0x7FFB: case 0xBFFB: case 0x7F83: case 0x7FBB: /* DATA    */
+        fmsx_runtime_notify_media_probe();
         Write1793(&FDC,A&0x0003,V);
         return;
       case 0xBFFC: /* Standard/MSX-DOS */
       case 0x7FFC: /* Side: [xxxxxxxS] */
+        fmsx_runtime_notify_media_probe();
         Write1793(&FDC,WD1793_SYSTEM,FDC.Drive|S_DENSITY|(V&0x01? 0:S_SIDE));
         return;
       case 0xBFFD: /* Standard/MSX-DOS  */
       case 0x7FFD: /* Drive: [xxxxxxxD] */
+        fmsx_runtime_notify_media_probe();
         Write1793(&FDC,WD1793_SYSTEM,(V&0x01)|S_DENSITY|(FDC.Side? 0:S_SIDE));
         return;
       case 0x7FBC: /* Arabic/SV738 */
       case 0x7F84: /* Side/Drive/Motor: [xxxxMSDD] */
+        fmsx_runtime_notify_media_probe();
         Write1793(&FDC,WD1793_SYSTEM,(V&0x03)|S_DENSITY|(V&0x04? 0:S_SIDE));
         return;
     }
@@ -1336,6 +1343,7 @@ case 0xD2: /* FDC sector  */
 case 0xD3: /* FDC data    */
 case 0xD4: /* FDC IRQ/DRQ */
   /* Brazilian DiskROM I/O ports */
+  fmsx_runtime_notify_media_probe();
   return(Read1793(&FDC,Port-0xD0));
 
   }
@@ -1504,6 +1512,7 @@ case 0xA8: /* Primary slot state   */
 case 0xA9: /* Keyboard port        */
 case 0xAA: /* General IO register  */
 case 0xAB: /* PPI control register */
+  if (Port == 0xA8) fmsx_runtime_notify_media_probe();
   /* Write to PPI */
   Write8255(&PPI,Port-0xA8,Value);
   /* If general I/O register has changed... */
@@ -1533,11 +1542,13 @@ case 0xD1: /* FDC track   */
 case 0xD2: /* FDC sector  */
 case 0xD3: /* FDC data    */
   /* Brazilian DiskROM I/O ports */
+  fmsx_runtime_notify_media_probe();
   Write1793(&FDC,Port-0xD0,Value);
   return;
 
 case 0xD4: /* FDC system  */
   /* Brazilian DiskROM drive/side: [xxxSxxDx] */
+  fmsx_runtime_notify_media_probe();
   Value=((Value&0x02)>>1)|S_DENSITY|(Value&0x10? 0:S_SIDE);
   Write1793(&FDC,WD1793_SYSTEM,Value);
   return;
