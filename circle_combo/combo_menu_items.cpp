@@ -32,7 +32,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
                                                      boolean audio_muted,
                                                      unsigned *count)
 {
-    static TComboMenuItem settings_items[14];
+    static TComboMenuItem settings_items[16];
     static char overscan_label[] = "Overscan [000]";
     static const char *kWidescreenOff = "Widescreen [DES]";
     static const char *kWidescreenOn = "Widescreen [LIG]";
@@ -58,6 +58,8 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     static const char *kOverlayNA = "Debugger [N/A]";
     static const char *kAudioMuteOff = "Audio Mute [DES]";
     static const char *kAudioMuteOn = "Audio Mute [LIG]";
+    static const char *kSaveState = "Save State";
+    static const char *kLoadState = "Load State";
     static const char *kSeparator = "";
     static const char *kBlankLine = "";
     static const char *kSave = "Gravar";
@@ -196,6 +198,16 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
         settings_items[item_count].selectable = TRUE;
         item_count++;
     }
+
+    settings_items[item_count].label = kSaveState;
+    settings_items[item_count].action = ComboMenuActionSaveState;
+    settings_items[item_count].selectable = TRUE;
+    item_count++;
+
+    settings_items[item_count].label = kLoadState;
+    settings_items[item_count].action = ComboMenuActionLoadState;
+    settings_items[item_count].selectable = TRUE;
+    item_count++;
 
     settings_items[item_count].label = kBlankLine;
     settings_items[item_count].action = ComboMenuActionNone;

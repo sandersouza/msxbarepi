@@ -57,6 +57,9 @@ private:
     void UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux);
     void LoadSettingsFromStorage(void);
     void SaveSettingsToStorage(void);
+    boolean EnsureStateStorageDirectory(void);
+    void SaveEmulatorStateToStorage(void);
+    void LoadEmulatorStateFromStorage(void);
 
     static void KeyPressedHandler(const char *text);
     static void KeyStatusRawHandler(unsigned char modifiers, const unsigned char raw_keys[6], void *context);

@@ -26,6 +26,8 @@ enum TComboMenuAction {
     ComboMenuActionToggleSccCart,
     ComboMenuActionToggleOverlay,
     ComboMenuActionToggleAudioMute,
+    ComboMenuActionSaveState,
+    ComboMenuActionLoadState,
     ComboMenuActionSaveSettings,
     ComboMenuActionMsxBasic,
     ComboMenuActionReset

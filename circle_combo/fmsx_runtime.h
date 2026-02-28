@@ -40,6 +40,8 @@ boolean fmsx_runtime_reboot_basic(void);
 boolean fmsx_runtime_hard_reset(void);
 boolean fmsx_runtime_step_frame(void);
 void fmsx_runtime_shutdown(void);
+boolean fmsx_runtime_save_state(void *dst, unsigned capacity, unsigned *saved_size);
+boolean fmsx_runtime_load_state(const void *src, unsigned size);
 void fmsx_runtime_set_joystick_bits(u8 bridge_bits);
 void fmsx_runtime_set_keyboard_raw(u8 modifiers, const unsigned char raw_keys[6]);
 void fmsx_runtime_set_overscan(boolean enabled);
