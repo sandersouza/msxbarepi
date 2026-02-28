@@ -37,7 +37,7 @@ static const char kSettingsDrive[] = "SD:";
 static const char kSettingsPath[] = "SD:/MSXBARE.CFG";
 static const char kStateDirPath[] = "SD:/states";
 static const char kStatePath[] = "SD:/states/slot-last.sav";
-static const unsigned kStateBufferBytes = 2u * 1024u * 1024u;
+static const unsigned kStateBufferMaxBytes = 2u * 1024u * 1024u;
 static const unsigned kZ80TurboModeDes = 0u;
 static const unsigned kZ80TurboModePan = 1u;
 static const unsigned kZ80TurboModeMax = 2u;
@@ -130,7 +130,6 @@ static int SettingsKeyEquals(const char *key, unsigned key_len, const char *lite
 static u16 s_DimLutHalf[kRgb565LutSize];
 static u16 s_DimLut85[kRgb565LutSize];
 static boolean s_DimLutReady = FALSE;
-static u8 s_StateIoBuffer[kStateBufferBytes];
 
 static void EnsureDimLutReady(void)
 {
@@ -486,11 +485,15 @@ CComboKernel::CComboKernel(void)
 	m_SettingsLoadPending(FALSE),
 	m_InitramfsDeferredMountPending(FALSE),
 	m_SettingsSavePending(FALSE),
+	m_StateSavePending(FALSE),
+	m_StateLoadPending(FALSE),
 	m_SettingsSaveStage(0u),
 	m_SettingsSaveCode(0u),
 	m_SettingsSaveAux(0u),
 	m_BootStartUs(0u),
-	m_BootToFmsxMs(0u)
+	m_BootToFmsxMs(0u),
+	m_StateIoBuffer(0),
+	m_StateIoBufferCapacity(0u)
 {
 	s_Instance = this;
 	m_ActLED.Blink(5);
@@ -498,6 +501,12 @@ CComboKernel::CComboKernel(void)
 
 CComboKernel::~CComboKernel(void)
 {
+	if (m_StateIoBuffer != 0)
+	{
+		delete[] m_StateIoBuffer;
+		m_StateIoBuffer = 0;
+		m_StateIoBufferCapacity = 0u;
+	}
 	s_Instance = 0;
 }
 
@@ -780,6 +789,16 @@ TComboShutdownMode CComboKernel::Run(void)
 		{
 			m_SettingsSavePending = FALSE;
 			SaveSettingsToStorage();
+		}
+		if (m_StateSavePending)
+		{
+			m_StateSavePending = FALSE;
+			SaveEmulatorStateToStorage();
+		}
+		if (m_StateLoadPending)
+		{
+			m_StateLoadPending = FALSE;
+			LoadEmulatorStateFromStorage();
 		}
 
 		/* Hybrid wait: coarse sleep first, then short busy delay for tighter frame deadline. */
@@ -1883,6 +1902,31 @@ void CComboKernel::SaveSettingsToStorage(void)
 	}
 }
 
+boolean CComboKernel::EnsureStateIoBuffer(unsigned min_capacity)
+{
+	if (min_capacity == 0u || min_capacity > kStateBufferMaxBytes)
+	{
+		return FALSE;
+	}
+	if (m_StateIoBuffer != 0 && m_StateIoBufferCapacity >= min_capacity)
+	{
+		return TRUE;
+	}
+
+	u8 *new_buffer = new u8[min_capacity];
+	if (new_buffer == 0)
+	{
+		return FALSE;
+	}
+	if (m_StateIoBuffer != 0)
+	{
+		delete[] m_StateIoBuffer;
+	}
+	m_StateIoBuffer = new_buffer;
+	m_StateIoBufferCapacity = min_capacity;
+	return (m_StateIoBuffer != 0) ? TRUE : FALSE;
+}
+
 boolean CComboKernel::EnsureStateStorageDirectory(void)
 {
 	if (!m_SettingsStorageReady)
@@ -1907,47 +1951,75 @@ boolean CComboKernel::EnsureStateStorageDirectory(void)
 
 void CComboKernel::SaveEmulatorStateToStorage(void)
 {
+	UpdateSettingsSaveTelemetry(32u, 0u, 0u); /* save-state begin */
 #if !COMBO_ENABLE_FMSX
+	UpdateSettingsSaveTelemetry(93u, 1u, 0u);
 	m_Logger.Write(FromKernel, LogWarning, "Save State indisponivel neste build");
 	return;
 #else
 	if (!m_FmsxReady)
 	{
+		UpdateSettingsSaveTelemetry(93u, 2u, 0u);
 		m_Logger.Write(FromKernel, LogWarning, "Save State falhou: runtime fMSX inativo");
 		return;
 	}
 	if (!EnsureStateStorageDirectory())
 	{
+		UpdateSettingsSaveTelemetry(93u, 3u, 0u);
 		m_Logger.Write(FromKernel, LogWarning, "Save State falhou: armazenamento SD indisponivel");
 		return;
 	}
-
 	unsigned state_bytes = 0u;
-	if (!fmsx_runtime_save_state(s_StateIoBuffer, kStateBufferBytes, &state_bytes) || state_bytes == 0u)
+	static const unsigned kSaveTryCapacities[] = {
+		512u * 1024u,
+		1024u * 1024u,
+		1536u * 1024u,
+		2u * 1024u * 1024u
+	};
+	boolean serialized = FALSE;
+	for (unsigned i = 0u; i < (unsigned) (sizeof(kSaveTryCapacities) / sizeof(kSaveTryCapacities[0])); ++i)
 	{
+		const unsigned try_capacity = kSaveTryCapacities[i];
+		if (!EnsureStateIoBuffer(try_capacity))
+		{
+			continue;
+		}
+		if (fmsx_runtime_save_state(m_StateIoBuffer, try_capacity, &state_bytes) && state_bytes > 0u)
+		{
+			serialized = TRUE;
+			break;
+		}
+	}
+	if (!serialized)
+	{
+		UpdateSettingsSaveTelemetry(93u, 5u, 0u);
 		m_Logger.Write(FromKernel, LogWarning, "Save State falhou: serializacao do estado");
 		return;
 	}
+	UpdateSettingsSaveTelemetry(33u, state_bytes > 999u ? 999u : state_bytes, 0u);
 
 	FIL file;
 	const FRESULT open_result = f_open(&file, kStatePath, FA_WRITE | FA_CREATE_ALWAYS);
 	if (open_result != FR_OK)
 	{
+		UpdateSettingsSaveTelemetry(93u, 6u, open_result);
 		m_Logger.Write(FromKernel, LogWarning, "Save State falhou: nao foi possivel criar arquivo");
 		return;
 	}
 
 	UINT bytes_written = 0u;
-	const FRESULT write_result = f_write(&file, s_StateIoBuffer, state_bytes, &bytes_written);
+	const FRESULT write_result = f_write(&file, m_StateIoBuffer, state_bytes, &bytes_written);
 	const FRESULT close_result = f_close(&file);
 	if (write_result == FR_OK && close_result == FR_OK && bytes_written == state_bytes)
 	{
+		UpdateSettingsSaveTelemetry(34u, bytes_written > 999u ? 999u : bytes_written, 0u);
 		CString line;
 		line.Format("Save State OK: %u bytes em %s", state_bytes, kStatePath);
 		m_Logger.Write(FromKernel, LogNotice, line);
 	}
 	else
 	{
+		UpdateSettingsSaveTelemetry(93u, 7u, bytes_written > 999u ? 999u : bytes_written);
 		m_Logger.Write(FromKernel, LogWarning, "Save State falhou: erro de escrita no SD");
 	}
 #endif
@@ -1955,30 +2027,35 @@ void CComboKernel::SaveEmulatorStateToStorage(void)
 
 void CComboKernel::LoadEmulatorStateFromStorage(void)
 {
+	UpdateSettingsSaveTelemetry(42u, 0u, 0u); /* load-state begin */
 #if !COMBO_ENABLE_FMSX
+	UpdateSettingsSaveTelemetry(94u, 1u, 0u);
 	m_Logger.Write(FromKernel, LogWarning, "Load State indisponivel neste build");
 	return;
 #else
 	if (!m_FmsxReady)
 	{
+		UpdateSettingsSaveTelemetry(94u, 2u, 0u);
 		m_Logger.Write(FromKernel, LogWarning, "Load State falhou: runtime fMSX inativo");
 		return;
 	}
 	if (!m_SettingsStorageReady)
 	{
+		UpdateSettingsSaveTelemetry(94u, 3u, 0u);
 		m_Logger.Write(FromKernel, LogWarning, "Load State falhou: armazenamento SD indisponivel");
 		return;
 	}
-
 	FILINFO file_info;
 	const FRESULT stat_result = f_stat(kStatePath, &file_info);
 	if (stat_result == FR_NO_FILE)
 	{
+		UpdateSettingsSaveTelemetry(94u, 5u, 0u);
 		m_Logger.Write(FromKernel, LogWarning, "Load State falhou: arquivo inexistente");
 		return;
 	}
 	if (stat_result != FR_OK)
 	{
+		UpdateSettingsSaveTelemetry(94u, 6u, stat_result);
 		m_Logger.Write(FromKernel, LogWarning, "Load State falhou: erro ao consultar arquivo");
 		return;
 	}
@@ -1987,35 +2064,63 @@ void CComboKernel::LoadEmulatorStateFromStorage(void)
 	const FRESULT open_result = f_open(&file, kStatePath, FA_READ);
 	if (open_result != FR_OK)
 	{
+		UpdateSettingsSaveTelemetry(94u, 7u, open_result);
 		m_Logger.Write(FromKernel, LogWarning, "Load State falhou: nao foi possivel abrir arquivo");
 		return;
 	}
 
 	const unsigned file_size = (unsigned) f_size(&file);
-	if (file_size == 0u || file_size > kStateBufferBytes)
+	if (file_size == 0u || file_size > kStateBufferMaxBytes)
 	{
 		(void) f_close(&file);
+		UpdateSettingsSaveTelemetry(94u, 8u, file_size > 999u ? 999u : file_size);
 		m_Logger.Write(FromKernel, LogWarning, "Load State falhou: tamanho invalido");
 		return;
 	}
+	if (!EnsureStateIoBuffer(file_size))
+	{
+		(void) f_close(&file);
+		UpdateSettingsSaveTelemetry(94u, 4u, file_size > 999u ? 999u : file_size);
+		m_Logger.Write(FromKernel, LogWarning, "Load State falhou: memoria insuficiente");
+		return;
+	}
+	UpdateSettingsSaveTelemetry(43u, file_size > 999u ? 999u : file_size, 0u);
 
 	UINT bytes_read = 0u;
-	const FRESULT read_result = f_read(&file, s_StateIoBuffer, file_size, &bytes_read);
+	const FRESULT read_result = f_read(&file, m_StateIoBuffer, file_size, &bytes_read);
 	const FRESULT close_result = f_close(&file);
 	if (read_result != FR_OK || close_result != FR_OK || bytes_read != file_size)
 	{
+		UpdateSettingsSaveTelemetry(94u, 9u, bytes_read > 999u ? 999u : bytes_read);
 		m_Logger.Write(FromKernel, LogWarning, "Load State falhou: erro de leitura no SD");
 		return;
 	}
 
-	if (!fmsx_runtime_load_state(s_StateIoBuffer, file_size))
+	if (!fmsx_runtime_load_state(m_StateIoBuffer, file_size))
 	{
+		UpdateSettingsSaveTelemetry(94u, 10u, 0u);
 		m_Logger.Write(FromKernel, LogWarning, "Load State falhou: arquivo invalido/corrompido");
 		return;
 	}
 
-	m_PauseNeedsBackgroundRedraw = TRUE;
+	/* Render one restored frame immediately so pause menu returns over the new state viewport. */
+	PushKeyboardStateToRuntime(TRUE);
+	fmsx_runtime_set_joystick_bits(m_JoyBridgeBits);
+	if (fmsx_runtime_step_frame())
+	{
+		const TFmsxRuntimeStatus runtime_status = fmsx_runtime_get_status();
+		m_FmsxFrames = runtime_status.frames;
+		m_FmsxLastError = runtime_status.last_error;
+		m_FmsxLastPC = runtime_status.last_pc;
+		BlitFmsxFrame(TRUE);
+		m_PauseNeedsBackgroundRedraw = FALSE;
+	}
+	else
+	{
+		m_PauseNeedsBackgroundRedraw = TRUE;
+	}
 	m_PauseMenu.RequestRedraw();
+	UpdateSettingsSaveTelemetry(44u, file_size > 999u ? 999u : file_size, 0u);
 	CString line;
 	line.Format("Load State OK: %u bytes de %s", file_size, kStatePath);
 	m_Logger.Write(FromKernel, LogNotice, line);
@@ -2258,12 +2363,16 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 
 	case ComboMenuActionSaveState:
 		RefreshSettingsUiAfterAction();
-		SaveEmulatorStateToStorage();
+		m_StateSavePending = TRUE;
+		UpdateSettingsSaveTelemetry(31u, 0u, 0u); /* save-state queued */
+		m_Logger.Write(FromKernel, LogNotice, "Save State queued");
 		break;
 
 	case ComboMenuActionLoadState:
 		RefreshSettingsUiAfterAction();
-		LoadEmulatorStateFromStorage();
+		m_StateLoadPending = TRUE;
+		UpdateSettingsSaveTelemetry(41u, 0u, 0u); /* load-state queued */
+		m_Logger.Write(FromKernel, LogNotice, "Load State queued");
 		break;
 
 	case ComboMenuActionSaveSettings:

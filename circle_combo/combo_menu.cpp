@@ -717,7 +717,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         const unsigned y = box_y + (row * cell_h);
         const unsigned text_len = ComboStrLen(items[i].label);
         const boolean settings_row = m_InSettings;
-        const boolean separator_row = settings_row && (items[i].action == ComboMenuActionSeparator);
+        const boolean separator_row = (items[i].action == ComboMenuActionSeparator);
 
         if (items[i].selectable && i == m_Selected && box_cols > 4u)
         {
