@@ -49,6 +49,7 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Toda branch de trabalho de issue deve ser criada/vinculada via issue de origem (GitHub/`gh issue develop`)
 - Durante execução de issue, manter status do item no projeto atualizado: `In progress` -> `In review` -> `Done`, com rollback para `In progress` se testes falharem
 - Sempre que uma issue for dada como concluída/estável, abrir PR da branch da issue para `main` e enviar ao usuário o link para aprovação/review antes de seguir para a próxima issue
+- Ao abrir PR de uma issue, aplicar também as labels pertinentes no PR (prioridade/tipo/área/beta) e garantir que estejam consistentes com a issue de origem
 - Sincronizar branches locais com remotas (`git fetch --prune`); se branch remota for removida, propor remoção da local correspondente
 - Antes de deletar qualquer branch local, confirmar explicitamente com o usuário
 - Nunca alterar, deletar ou reescrever a branch `main`

@@ -17,6 +17,7 @@ Data de referência desta versão: 27 de fevereiro de 2026.
 - Manter `docs/milestones/` sincronizado com milestones/issues remotas.
 - Ao estabilizar uma issue, abrir PR `issue-branch -> main` e registrar o link para review.
 - Ao concluir/estabilizar uma issue, é obrigatório abrir o PR da branch da issue para `main` e enviar o link de aprovação ao usuário antes de avançar para a próxima issue.
+- Ao abrir o PR, aplicar as mesmas labels relevantes da issue no PR (ex.: `priority:*`, `type:*`, `area:*`, `beta:*`).
 - Sincronizar branches locais/remotas com `git fetch --prune`.
 - Se uma branch remota for deletada, a branch local correspondente deve ser removida somente após confirmação explícita do usuário.
 - Nunca alterar/deletar/reescrever a branch `main`.
@@ -75,8 +76,9 @@ gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$STA
 ```bash
 gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$STATUS_FIELD_ID" --single-select-option-id "$INPROGRESS_OPTION_ID"
 ```
-7. Vincular também o PR ao projeto `MSX BarePI` e registrar link para review na issue e no arquivo local:
+7. Aplicar labels do PR e vincular também o PR ao projeto `MSX BarePI`; registrar link para review na issue e no arquivo local:
 ```bash
+gh pr edit <numero-pr> -R sandersouza/msxbarepi --add-label "priority:P0" --add-label "type:performance" --add-label "area:video"
 gh pr edit <numero-pr> -R sandersouza/msxbarepi --add-project "MSX BarePI"
 ```
 8. Após abrir o PR e compartilhar o link de review com o usuário, ao concluir a issue e iniciar a próxima, atualizar `Status` para `Done`:
