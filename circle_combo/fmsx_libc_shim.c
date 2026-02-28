@@ -58,7 +58,7 @@ static int local_lookup_embedded(const char *path, const unsigned char **data, s
 {
     const char *name = local_basename(path);
     const int wants_msx_bios = local_str_ieq(name, "MSX.ROM");
-    if (wants_msx_bios && fmsx_runtime_use_embedded_bios())
+    if (wants_msx_bios && fmsx_runtime_get_boot_mode() == 2u && fmsx_runtime_use_embedded_bios())
     {
         *data = fmsx_embedded_msx_rom_start;
         *size = (size_t) (fmsx_embedded_msx_rom_end - fmsx_embedded_msx_rom_start);
@@ -67,10 +67,7 @@ static int local_lookup_embedded(const char *path, const unsigned char **data, s
 
     if (fmsx_vfs_lookup(path, data, size))
     {
-        if (!(wants_msx_bios && (!data || !size || !*data || *size < 0x8000u)))
-        {
-            return 1;
-        }
+        return 1;
     }
 
 #if !COMBO_REQUIRE_CPIO_BIOS
