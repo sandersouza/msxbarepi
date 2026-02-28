@@ -11,6 +11,8 @@ public:
 
     void Reset(void);
     void SetOverscanPercent(unsigned percent);
+    void SetLanguage(unsigned language);
+    unsigned GetLanguage(void) const;
     unsigned GetOverscanPercent(void) const;
     void SetWidescreenEnabled(boolean enabled);
     void SetScanlineMode(unsigned mode);
@@ -51,6 +53,7 @@ private:
     boolean m_Visible;
     boolean m_InSettings;
     unsigned m_OverscanPercent;
+    unsigned m_Language;
     boolean m_WidescreenEnabled;
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;
@@ -64,6 +67,7 @@ private:
     boolean m_LastBackPressed;
     boolean m_LastDrawnInSettings;
     unsigned m_LastDrawnOverscanPercent;
+    unsigned m_LastDrawnLanguage;
     boolean m_LastDrawnWidescreen;
     unsigned m_LastDrawnScanlineMode;
     unsigned m_LastDrawnRefreshRateHz;

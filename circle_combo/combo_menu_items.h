@@ -11,6 +11,8 @@ enum TComboMenuAction {
     ComboMenuActionDiskDriveA,
     ComboMenuActionDiskDriveB,
     ComboMenuActionSettings,
+    ComboMenuActionCycleLanguage,
+    ComboMenuActionCycleLanguagePrev,
     ComboMenuActionOverscanChanged,
     ComboMenuActionToggleWidescreen,
     ComboMenuActionCycleScanlines,
@@ -26,6 +28,8 @@ enum TComboMenuAction {
     ComboMenuActionToggleSccCart,
     ComboMenuActionToggleOverlay,
     ComboMenuActionToggleAudioMute,
+    ComboMenuActionSaveState,
+    ComboMenuActionLoadState,
     ComboMenuActionSaveSettings,
     ComboMenuActionMsxBasic,
     ComboMenuActionReset
@@ -37,8 +41,9 @@ typedef struct {
     boolean selectable;
 } TComboMenuItem;
 
-const TComboMenuItem *combo_menu_root_items_get(unsigned *count);
+const TComboMenuItem *combo_menu_root_items_get(unsigned language, unsigned *count);
 const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
+                                                     unsigned language,
                                                      boolean widescreen_enabled,
                                                      unsigned scanline_mode,
                                                      unsigned refresh_rate_hz,

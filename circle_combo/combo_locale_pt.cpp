@@ -1,0 +1,33 @@
+#include "combo_locale.h"
+
+extern const TComboLocaleStrings g_ComboLocalePT = {
+    "MENU DE PAUSA",
+    "CONFIGURACOES",
+    "Carregar Cartucho",
+    "Carregar Disquete",
+    "Salvar Estado",
+    "Carregar Estado",
+    "Configuracoes",
+    "MSX Basic",
+    "Resetar",
+    "Idioma",
+    "Overscan",
+    "Widescreen",
+    "Scanlines",
+    "Padrao",
+    "Modo de Boot",
+    "Z80 Turbo",
+    "Rensha",
+    "SCC Cart",
+    "Debugger",
+    "Sileciar Audio",
+    "Gravar",
+    "DES",
+    "LIG",
+    "N/A",
+    "DES",
+    "LCD",
+    "CRT",
+    "NTSC",
+    "PAL"
+};

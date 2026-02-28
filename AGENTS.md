@@ -29,6 +29,7 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Usar `third_party/fmsx` e `third_party/circle` como fontes de consulta prioritárias para novas implementações e correções (especialmente core, vídeo, áudio, timers, GPIO e periféricos do Raspberry Pi), evitando reinventar a roda quando houver solução já validada
 - Antes de implementar drivers/periféricos sensíveis (ex.: áudio PWM/HDMI, DMA, clocks), consultar primeiro referências em `third_party/circle` e registrar no código/documentação qual arquivo/classe foi usado como base conceitual
 - Sempre que o fluxo de boot exigir novos arquivos no SD, atualizar `scripts/prepare-sd.sh` para copiar esses arquivos automaticamente
+- Sempre que uma nova opção/label de menu for criada ou alterada, atualizar todos os idiomas suportados no sistema de locales (mínimo: `PT`, `EN`, `ES`) na mesma mudança
 - Ao finalizar qualquer build para teste, sempre informar ao usuário o comando de preparação do SD **sem** `DRY_RUN=1` (ex.: `KERNEL_IMG=... FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh`)
 - Todo comando para terminal deve ser entregue em bloco de código Markdown com linguagem `bash` (```bash ... ```), inclusive quando houver múltiplos comandos; evitar links/markup dentro de comandos para não quebrar copy/paste
 - Quando houver trade-off de estabilidade vs desempenho (ex.: otimização do frontend do renderer), manter knobs de build explícitos no `Makefile` e documentados no `README.md`

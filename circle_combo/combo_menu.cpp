@@ -1,4 +1,5 @@
 #include "combo_menu.h"
+#include "combo_locale.h"
 
 
 static unsigned ComboStrLen(const char *text)
@@ -71,6 +72,7 @@ CComboPauseMenu::CComboPauseMenu(void)
   m_Visible(FALSE),
     m_InSettings(FALSE),
     m_OverscanPercent(0u),
+    m_Language(ComboLanguageEN),
     m_WidescreenEnabled(FALSE),
     m_ScanlineMode(0u),
     m_RefreshRateHz(60u),
@@ -84,6 +86,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastBackPressed(FALSE),
     m_LastDrawnInSettings(FALSE),
     m_LastDrawnOverscanPercent(0u),
+    m_LastDrawnLanguage(ComboLanguageEN),
     m_LastDrawnWidescreen(FALSE),
     m_LastDrawnScanlineMode(0u),
     m_LastDrawnRefreshRateHz(60u),
@@ -120,6 +123,7 @@ void CComboPauseMenu::Reset(void)
     m_LastBackPressed = FALSE;
     m_LastDrawnInSettings = FALSE;
     m_LastDrawnOverscanPercent = m_OverscanPercent;
+    m_LastDrawnLanguage = m_Language;
     m_LastDrawnWidescreen = m_WidescreenEnabled;
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
@@ -152,6 +156,21 @@ void CComboPauseMenu::SetOverscanPercent(unsigned percent)
         m_OverscanPercent = percent;
         m_ForceRedraw = TRUE;
     }
+}
+
+void CComboPauseMenu::SetLanguage(unsigned language)
+{
+    language = combo_locale_clamp_language(language);
+    if (m_Language != language)
+    {
+        m_Language = language;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+unsigned CComboPauseMenu::GetLanguage(void) const
+{
+    return m_Language;
 }
 
 unsigned CComboPauseMenu::GetOverscanPercent(void) const
@@ -304,6 +323,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
     {
         return combo_menu_settings_items_get(
             m_OverscanPercent,
+            m_Language,
             m_WidescreenEnabled,
             m_ScanlineMode,
             m_RefreshRateHz,
@@ -317,7 +337,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             count);
     }
 
-    return combo_menu_root_items_get(count);
+    return combo_menu_root_items_get(m_Language, count);
 }
 
 unsigned CComboPauseMenu::FindFirstSelectable(void) const
@@ -537,6 +557,22 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
+        else if (items[m_Selected].action == ComboMenuActionCycleLanguage)
+        {
+            if (left_edge)
+            {
+                action = ComboMenuActionCycleLanguagePrev;
+                m_ForceRedraw = TRUE;
+                m_RequestBackgroundRestore = TRUE;
+            }
+            else if (right_edge || enter_edge)
+            {
+                action = ComboMenuActionCycleLanguage;
+                m_ForceRedraw = TRUE;
+                m_RequestBackgroundRestore = TRUE;
+            }
+            handled_settings_input = enter_edge || left_edge || right_edge;
+        }
         else if (items[m_Selected].action == ComboMenuActionToggleSccCart)
         {
             if (enter_edge || left_edge || right_edge)
@@ -610,8 +646,6 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
 void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, unsigned screen_width, unsigned screen_height,
                              unsigned anchor_x, unsigned anchor_y, unsigned anchor_w, unsigned anchor_h)
 {
-    static const char kRootTitle[] = "PAUSE MENU";
-    static const char kSettingsTitle[] = "SETTINGS";
     const TGfxTextStyle title_style = { BRIGHT_WHITE_COLOR, BLACK_COLOR, TRUE };
     const TGfxTextStyle normal_style = { BRIGHT_WHITE_COLOR, BLACK_COLOR, FALSE };
     const TGfxTextStyle selected_style = { BLACK_COLOR, BRIGHT_WHITE_COLOR, FALSE };
@@ -637,7 +671,12 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         return;
     }
 
-    const char *title = m_InSettings ? kSettingsTitle : kRootTitle;
+    const TComboLocaleStrings *locale = combo_locale_get(m_Language);
+    if (locale == 0)
+    {
+        locale = combo_locale_get(ComboLanguageEN);
+    }
+    const char *title = m_InSettings ? locale->title_settings : locale->title_pause;
 
     unsigned char_w = renderer->GetCharWidth();
     unsigned char_h = renderer->GetCharHeight();
@@ -690,6 +729,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnSelected == m_Selected
      && m_LastDrawnInSettings == m_InSettings
      && m_LastDrawnOverscanPercent == m_OverscanPercent
+     && m_LastDrawnLanguage == m_Language
      && m_LastDrawnWidescreen == m_WidescreenEnabled
      && m_LastDrawnScanlineMode == m_ScanlineMode
      && m_LastDrawnRefreshRateHz == m_RefreshRateHz
@@ -717,7 +757,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         const unsigned y = box_y + (row * cell_h);
         const unsigned text_len = ComboStrLen(items[i].label);
         const boolean settings_row = m_InSettings;
-        const boolean separator_row = settings_row && (items[i].action == ComboMenuActionSeparator);
+        const boolean separator_row = (items[i].action == ComboMenuActionSeparator);
 
         if (items[i].selectable && i == m_Selected && box_cols > 4u)
         {
@@ -777,6 +817,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnSelected = m_Selected;
     m_LastDrawnInSettings = m_InSettings;
     m_LastDrawnOverscanPercent = m_OverscanPercent;
+    m_LastDrawnLanguage = m_Language;
     m_LastDrawnWidescreen = m_WidescreenEnabled;
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;

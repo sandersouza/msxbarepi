@@ -8,6 +8,7 @@ Data de referência desta versão: 27 de fevereiro de 2026.
 ## Regras operacionais
 - Criar branch de issue somente quando formos atuar nela.
 - Toda branch criada para trabalho deve ser criada/vinculada pela issue de origem via `gh issue develop`.
+- Novas opções/labels de menu devem refletir em todos os idiomas existentes no locale (`PT`, `EN`, `ES`) no mesmo PR/issue.
 - Sempre atualizar as tasks concluídas diretamente na issue remota.
 - Para issues de performance (`type:performance`), anexar evidência da suíte em `docs/performance-regression-suite.md` antes de mover para `In review`.
 - Sempre atualizar o campo `Status` do item no projeto `MSX BarePI` durante o ciclo:

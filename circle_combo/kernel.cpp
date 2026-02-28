@@ -1,5 +1,6 @@
 #include "kernel.h"
 #include "keyboard_input.h"
+#include "combo_locale.h"
 #if COMBO_ENABLE_FMSX
 #include "fmsx_runtime.h"
 #include "fmsx_initramfs.h"
@@ -460,6 +461,7 @@ CComboKernel::CComboKernel(void)
 	m_BlitMapDstH(0),
 	m_BlitMapValid(FALSE),
 	m_OverscanPercent(0u),
+	m_Language(ComboLanguagePT),
 	m_WidescreenEnabled(FALSE),
 	m_ScanlineMode(kScanlineModeOff),
 	m_RefreshRateHz(60u),
@@ -643,6 +645,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	}
 	m_Logger.Write(FromKernel, LogNotice, "Overlay toggle: F11 | Pause: F12");
 	m_PauseMenu.SetOverscanPercent(m_OverscanPercent);
+	m_PauseMenu.SetLanguage(m_Language);
 	m_PauseMenu.SetWidescreenEnabled(m_WidescreenEnabled);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
@@ -1720,6 +1723,10 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			{
 				m_WidescreenEnabled = value ? TRUE : FALSE;
 			}
+			else if (SettingsKeyEquals(line, key_len, "language"))
+			{
+				m_Language = combo_locale_clamp_language(value);
+			}
 			else if (SettingsKeyEquals(line, key_len, "scanline"))
 			{
 				m_ScanlineMode = value > 2u ? 2u : value;
@@ -1759,6 +1766,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	}
 
 	m_PauseMenu.SetOverscanPercent(m_OverscanPercent);
+	m_PauseMenu.SetLanguage(m_Language);
 	m_PauseMenu.SetWidescreenEnabled(m_WidescreenEnabled);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
@@ -1816,6 +1824,7 @@ void CComboKernel::SaveSettingsToStorage(void)
 	} while (0)
 
 	APPEND_LINE_FMT("overscan=%u\n", m_OverscanPercent);
+	APPEND_LINE_FMT("language=%u\n", m_Language);
 	APPEND_LINE_FMT("widescreen=%u\n", m_WidescreenEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
 	APPEND_LINE_FMT("refresh=%u\n", m_RefreshRateHz);
@@ -1927,6 +1936,28 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		{
 			CString line;
 			line.Format("Settings: Overscan %u", m_OverscanPercent);
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
+		break;
+
+	case ComboMenuActionCycleLanguage:
+		m_Language = (m_Language >= ComboLanguageES) ? ComboLanguagePT : (m_Language + 1u);
+		m_PauseMenu.SetLanguage(m_Language);
+		RefreshSettingsUiAfterAction();
+		{
+			CString line;
+			line.Format("Settings: Language %s", combo_locale_language_code(m_Language));
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
+		break;
+
+	case ComboMenuActionCycleLanguagePrev:
+		m_Language = (m_Language == ComboLanguagePT) ? ComboLanguageES : (m_Language - 1u);
+		m_PauseMenu.SetLanguage(m_Language);
+		RefreshSettingsUiAfterAction();
+		{
+			CString line;
+			line.Format("Settings: Language %s", combo_locale_language_code(m_Language));
 			m_Logger.Write(FromKernel, LogNotice, line);
 		}
 		break;
