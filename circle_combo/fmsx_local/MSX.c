@@ -80,6 +80,35 @@ int  RAMPages    = 4;              /* Number of RAM pages    */
 int  VRAMPages   = 2;              /* Number of VRAM pages   */
 int  VRAMPageMask = 0x01;          /* VRAM page mask */
 uint8_t ExitNow     = 0;           /* 1 = Exit the emulator  */
+unsigned FmsxTurboPercent = 100u;  /* Effective Z80 clock scale (%) */
+
+static int fmsx_scale_cycles(int cycles)
+{
+  long long scaled;
+
+  if(cycles <= 0) return 1;
+  if(FmsxTurboPercent < 100u) FmsxTurboPercent = 100u;
+  if(FmsxTurboPercent > 300u) FmsxTurboPercent = 300u;
+
+  scaled = ((long long)cycles * (long long)FmsxTurboPercent) / 100ll;
+  if(scaled < 1ll) scaled = 1ll;
+  if(scaled > 0x7FFFFFFFll) scaled = 0x7FFFFFFFll;
+  return (int)scaled;
+}
+
+void fmsx_cpu_set_turbo_percent(unsigned percent)
+{
+  int base_vperiod;
+
+  if(percent < 100u) percent = 100u;
+  if(percent > 300u) percent = 300u;
+  FmsxTurboPercent = percent;
+
+  base_vperiod = (VIDEO(MSX_PAL)? VPERIOD_PAL:VPERIOD_NTSC)/6;
+  VPeriod = fmsx_scale_cycles(base_vperiod);
+  HPeriod = fmsx_scale_cycles(HPERIOD/6);
+  CPU.IPeriod = fmsx_scale_cycles(CPU_H240);
+}
 
 /** Main hardware: CPU, RAM, VRAM, mappers *******************/
 Z80 CPU;                           /* Z80 CPU state and regs */
@@ -876,9 +905,9 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   ROMType[1]     = ROMTYPE(1);
 
   /* Set CPU timings */
-  VPeriod        = (VIDEO(MSX_PAL)? VPERIOD_PAL:VPERIOD_NTSC)/6;
-  HPeriod        = HPERIOD/6;
-  CPU.IPeriod    = CPU_H240;
+  VPeriod        = fmsx_scale_cycles((VIDEO(MSX_PAL)? VPERIOD_PAL:VPERIOD_NTSC)/6);
+  HPeriod        = fmsx_scale_cycles(HPERIOD/6);
+  CPU.IPeriod    = fmsx_scale_cycles(CPU_H240);
   CPU.IAutoReset = 0;
 
   /* Numbers of RAM pages should be power of 2 */
@@ -2162,7 +2191,7 @@ uint16_t LoopZ80(Z80 *R)
   if(!(VDPStatus[2]&0x20))
   {
     /* HRefresh takes most of the scanline */
-    R->IPeriod=!ScrMode||(ScrMode==MAXSCREEN+1)? CPU_H240:CPU_H256;
+    R->IPeriod=fmsx_scale_cycles(!ScrMode||(ScrMode==MAXSCREEN+1)? CPU_H240:CPU_H256);
 
     /* New scanline */
     ScanLine=ScanLine<(PALVideo? 312:261)? ScanLine+1:0;
@@ -2247,14 +2276,14 @@ uint16_t LoopZ80(Z80 *R)
   /*********************************/
 
   /* HBlank takes HPeriod-HRefresh */
-  R->IPeriod=!ScrMode||(ScrMode==MAXSCREEN+1)? CPU_H240:CPU_H256;
+  R->IPeriod=fmsx_scale_cycles(!ScrMode||(ScrMode==MAXSCREEN+1)? CPU_H240:CPU_H256);
   R->IPeriod=HPeriod-R->IPeriod;
 
   /* If last scanline of VBlank, see if we need to wait more */
   J=PALVideo? 313:262;
   if(ScanLine>=J-1)
   {
-    J*=CPU_HPERIOD;
+    J*=HPeriod;
     if(VPeriod>J) R->IPeriod+=VPeriod-J;
   }
 

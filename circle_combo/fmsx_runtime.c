@@ -54,6 +54,7 @@ extern uint8_t UPeriod;
 extern int Mode;
 extern int RAMPages;
 extern int VRAMPages;
+extern void fmsx_cpu_set_turbo_percent(unsigned percent);
 extern unsigned fmsx_video_get_latest(const u16 **pixels, unsigned *width, unsigned *height);
 extern const char *ROMName[];
 extern void fmsx_video_set_overscan(boolean enabled);
@@ -62,6 +63,7 @@ static TFmsxRuntimeStatus g_fmsx_status = { FALSE, FALSE, 0u, 0, 0 };
 static const unsigned kFmsxAudioRate = 48000u;
 static unsigned g_boot_warmup_frames_remaining = 0u;
 static unsigned g_refresh_hz = 60u;
+static unsigned g_z80_turbo_mode = 0u;
 
 static unsigned fmsx_runtime_boot_warmup_frames(void)
 {
@@ -88,6 +90,16 @@ static unsigned fmsx_runtime_boot_burst_steps(void)
 static unsigned fmsx_runtime_effective_refresh_hz(void)
 {
     return (g_refresh_hz == 50u) ? 50u : 60u;
+}
+
+static unsigned fmsx_runtime_z80_turbo_percent(void)
+{
+    switch (g_z80_turbo_mode)
+    {
+    case 1u: return 150u; /* PAN */
+    case 2u: return 224u; /* MAX */
+    default: return 100u; /* DES */
+    }
 }
 
 static boolean fmsx_runtime_start(boolean boot_basic)
@@ -144,6 +156,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     }
 
     UPeriod = 100;
+    fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
 
 #if COMBO_FMSX_AUDIO
     InitSound(kFmsxAudioRate);
@@ -206,6 +219,7 @@ boolean fmsx_runtime_hard_reset(void)
     g_fmsx_status.last_pc = 0;
     g_fmsx_status.last_error = 0;
     g_boot_warmup_frames_remaining = fmsx_runtime_boot_warmup_frames();
+    fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
     return TRUE;
 }
 
@@ -268,6 +282,21 @@ void fmsx_runtime_set_overscan(boolean enabled)
 void fmsx_runtime_set_refresh_hz(unsigned hz)
 {
     g_refresh_hz = (hz == 50u) ? 50u : 60u;
+}
+
+void fmsx_runtime_set_z80_turbo_mode(unsigned mode)
+{
+    if (mode > 2u)
+    {
+        mode = 0u;
+    }
+    g_z80_turbo_mode = mode;
+    fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+}
+
+unsigned fmsx_runtime_get_z80_turbo_mode(void)
+{
+    return g_z80_turbo_mode;
 }
 
 TFmsxRuntimeStatus fmsx_runtime_get_status(void)
