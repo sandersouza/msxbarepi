@@ -131,6 +131,7 @@ private:
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;
     unsigned m_Z80TurboMode;
+    boolean m_SccCartEnabled;
     u64 m_FrameIntervalUs;
     boolean m_FramePacingResetPending;
     boolean m_AudioMuted;

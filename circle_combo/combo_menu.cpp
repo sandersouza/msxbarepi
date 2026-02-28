@@ -75,6 +75,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_ScanlineMode(0u),
     m_RefreshRateHz(60u),
     m_Z80TurboMode(0u),
+    m_SccCartEnabled(TRUE),
     m_OverlayEnabled(FALSE),
     m_OverlayAvailable(FALSE),
     m_AudioMuted(FALSE),
@@ -85,6 +86,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnScanlineMode(0u),
     m_LastDrawnRefreshRateHz(60u),
     m_LastDrawnZ80TurboMode(0u),
+    m_LastDrawnSccCart(TRUE),
     m_LastDrawnOverlay(FALSE),
     m_LastDrawnOverlayAvailable(FALSE),
     m_LastDrawnAudioMuted(FALSE),
@@ -118,6 +120,7 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
     m_LastDrawnZ80TurboMode = m_Z80TurboMode;
+    m_LastDrawnSccCart = m_SccCartEnabled;
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
     m_LastDrawnAudioMuted = m_AudioMuted;
@@ -211,6 +214,16 @@ unsigned CComboPauseMenu::GetZ80TurboMode(void) const
     return m_Z80TurboMode;
 }
 
+void CComboPauseMenu::SetSccCartEnabled(boolean enabled)
+{
+    enabled = enabled ? TRUE : FALSE;
+    if (m_SccCartEnabled != enabled)
+    {
+        m_SccCartEnabled = enabled;
+        m_ForceRedraw = TRUE;
+    }
+}
+
 void CComboPauseMenu::SetOverlayEnabled(boolean enabled, boolean available)
 {
     if (m_OverlayEnabled != enabled || m_OverlayAvailable != available)
@@ -252,6 +265,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_ScanlineMode,
             m_RefreshRateHz,
             m_Z80TurboMode,
+            m_SccCartEnabled,
             m_OverlayEnabled,
             m_OverlayAvailable,
             m_AudioMuted,
@@ -462,6 +476,16 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
+        else if (items[m_Selected].action == ComboMenuActionToggleSccCart)
+        {
+            if (enter_edge || left_edge || right_edge)
+            {
+                action = items[m_Selected].action;
+                m_ForceRedraw = TRUE;
+                m_RequestBackgroundRestore = TRUE;
+            }
+            handled_settings_input = enter_edge || left_edge || right_edge;
+        }
         else if ((items[m_Selected].action == ComboMenuActionToggleWidescreen)
               || (items[m_Selected].action == ComboMenuActionToggleOverlay)
               || (items[m_Selected].action == ComboMenuActionToggleAudioMute))
@@ -593,6 +617,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnScanlineMode == m_ScanlineMode
      && m_LastDrawnRefreshRateHz == m_RefreshRateHz
      && m_LastDrawnZ80TurboMode == m_Z80TurboMode
+     && m_LastDrawnSccCart == m_SccCartEnabled
      && m_LastDrawnOverlay == m_OverlayEnabled
      && m_LastDrawnOverlayAvailable == m_OverlayAvailable
      && m_LastDrawnAudioMuted == m_AudioMuted)
@@ -613,10 +638,23 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         const unsigned y = box_y + (row * cell_h);
         const unsigned text_len = ComboStrLen(items[i].label);
         const boolean settings_row = m_InSettings;
+        const boolean separator_row = settings_row && (items[i].action == ComboMenuActionSeparator);
 
-        if (items[i].selectable && i == m_Selected && box_cols > 2u)
+        if (items[i].selectable && i == m_Selected && box_cols > 4u)
         {
-            renderer->FillRect(box_x + cell_w, y, (box_cols - 2u) * cell_w, cell_h, BRIGHT_WHITE_COLOR);
+            renderer->FillRect(box_x + (2u * cell_w), y, (box_cols - 4u) * cell_w, cell_h, BRIGHT_WHITE_COLOR);
+        }
+
+        if (separator_row)
+        {
+            const unsigned line_x = box_x + (2u * cell_w);
+            const unsigned line_w = (box_cols > 4u) ? ((box_cols - 4u) * cell_w) : 0u;
+            const unsigned line_y = y + (cell_h / 2u);
+            if (line_w > 0u)
+            {
+                renderer->FillRect(line_x, line_y, line_w, 2u, BRIGHT_WHITE_COLOR);
+            }
+            continue;
         }
 
         if (settings_row)
@@ -624,8 +662,8 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
             const unsigned split = ComboFindFlagStart(items[i].label);
             const unsigned left_len = split < text_len ? split : text_len;
             const unsigned flag_len = split < text_len ? (text_len - split) : 0u;
-            const unsigned inner_left_col = 1u;
-            const unsigned inner_right_col = box_cols > 0u ? (box_cols - 2u) : 0u;
+            const unsigned inner_left_col = 2u;
+            const unsigned inner_right_col = box_cols > 2u ? (box_cols - 3u) : 0u;
             const unsigned x_left = box_x + (inner_left_col * cell_w);
             const unsigned x_flag = flag_len > 0u
                 ? box_x + ((inner_right_col + 1u - flag_len) * cell_w)
@@ -664,6 +702,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
     m_LastDrawnZ80TurboMode = m_Z80TurboMode;
+    m_LastDrawnSccCart = m_SccCartEnabled;
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
     m_LastDrawnAudioMuted = m_AudioMuted;

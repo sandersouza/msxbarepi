@@ -42,6 +42,8 @@ void fmsx_runtime_set_overscan(boolean enabled);
 void fmsx_runtime_set_refresh_hz(unsigned hz);
 void fmsx_runtime_set_z80_turbo_mode(unsigned mode);
 unsigned fmsx_runtime_get_z80_turbo_mode(void);
+void fmsx_runtime_set_scc_cart_enabled(boolean enabled);
+boolean fmsx_runtime_get_scc_cart_enabled(void);
 TFmsxRuntimeStatus fmsx_runtime_get_status(void);
 unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsigned *height);
 unsigned fmsx_audio_pull_samples(int16_t *dst, unsigned max_samples);

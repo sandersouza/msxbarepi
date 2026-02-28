@@ -379,6 +379,7 @@ CComboKernel::CComboKernel(void)
 	m_ScanlineMode(kScanlineModeOff),
 	m_RefreshRateHz(60u),
 	m_Z80TurboMode(kZ80TurboModeDes),
+	m_SccCartEnabled(TRUE),
 	m_FrameIntervalUs(FrameIntervalFromRefreshHz(60u)),
 	m_FramePacingResetPending(FALSE),
 	m_AudioMuted(FALSE),
@@ -517,12 +518,14 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 	m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
+	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
 	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, COMBO_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
 	m_PauseMenu.SetAudioMuted(m_AudioMuted);
 #if COMBO_ENABLE_FMSX
 	fmsx_runtime_set_overscan(m_OverscanPercent > 0u ? TRUE : FALSE);
 	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
 	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
+	fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
 #endif
 
 	u64 next_frame_us = CTimer::GetClockTicks64();
@@ -1489,6 +1492,21 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		m_PauseMenu.SetAudioMuted(m_AudioMuted);
 		RefreshSettingsUiAfterAction();
 		m_Logger.Write(FromKernel, LogNotice, m_AudioMuted ? "Settings: Audio mute ON" : "Settings: Audio mute OFF");
+		break;
+
+	case ComboMenuActionToggleSccCart:
+		m_SccCartEnabled = m_SccCartEnabled ? FALSE : TRUE;
+		m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
+		RefreshSettingsUiAfterAction();
+	#if COMBO_ENABLE_FMSX
+		fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
+	#endif
+		m_Logger.Write(FromKernel, LogNotice, m_SccCartEnabled ? "Settings: SCC Cart ON" : "Settings: SCC Cart OFF");
+		break;
+
+	case ComboMenuActionSaveSettings:
+		RefreshSettingsUiAfterAction();
+		m_Logger.Write(FromKernel, LogNotice, "Settings: Gravar (placeholder, persistencia sera implementada na issue #48)");
 		break;
 
 	default:
