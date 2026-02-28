@@ -412,6 +412,8 @@ CComboKernel::CComboKernel(void)
 	m_LastOverlayUs(0),
 	m_FmsxFpsWindowStartFrames(0),
 	m_FmsxFpsX10(0),
+	m_FramePacingErrAvgUs(0u),
+	m_FramePacingErrMaxUs(0u),
 	m_FmsxBlankFrames(0),
 	m_InitramfsFiles(0),
 	m_FmsxBoxX(0),
@@ -650,14 +652,47 @@ TComboShutdownMode CComboKernel::Run(void)
 			SaveSettingsToStorage();
 		}
 
+		/* Reduce busy-loop jitter while keeping frequent service for USB/audio paths. */
+		if (m_FmsxReady && !m_EmulationPaused)
+		{
+			now_us = CTimer::GetClockTicks64();
+			if (next_frame_us > now_us + 300ull)
+			{
+				const u64 slack_us = next_frame_us - now_us;
+				if (slack_us > 2000ull)
+				{
+					m_Scheduler.usSleep(1000);
+				}
+				else if (slack_us > 600ull)
+				{
+					m_Scheduler.usSleep((unsigned) (slack_us - 300ull));
+				}
+			}
+		}
+
 		#if COMBO_ENABLE_FMSX
 		if (m_FmsxReady && !m_EmulationPaused)
 		{
+			now_us = CTimer::GetClockTicks64();
 			boolean stepped_fmsx = FALSE;
 			unsigned catchup_steps = 0;
 			const unsigned max_catchup_steps = 2u;
 			while (now_us >= next_frame_us && catchup_steps < max_catchup_steps)
 			{
+				const unsigned pacing_err_us = (unsigned) ((now_us - next_frame_us) > 999u ? 999u : (now_us - next_frame_us));
+				if (m_FramePacingErrAvgUs == 0u)
+				{
+					m_FramePacingErrAvgUs = pacing_err_us;
+				}
+				else
+				{
+					m_FramePacingErrAvgUs = ((m_FramePacingErrAvgUs * 7u) + pacing_err_us) / 8u;
+				}
+				if (pacing_err_us > m_FramePacingErrMaxUs)
+				{
+					m_FramePacingErrMaxUs = pacing_err_us;
+				}
+
 				fmsx_runtime_set_joystick_bits(m_JoyBridgeBits);
 				if (fmsx_runtime_step_frame())
 				{
@@ -680,6 +715,7 @@ TComboShutdownMode CComboKernel::Run(void)
 							m_FmsxFpsX10 = (unsigned) (((u64) elapsed_frames * 10000000ull) / elapsed_us);
 							m_FmsxFpsWindowStartUs = now_us;
 							m_FmsxFpsWindowStartFrames = m_FmsxFrames;
+							m_FramePacingErrMaxUs = 0u;
 						}
 					}
 
@@ -1061,11 +1097,13 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		m_InitramfsFiles);
 	WriteScreenText(line);
 
-	line.Format("\x1b[97m\x1b[49m\x1b[6;1HJY2 F:%06lu PC:%04X R:%04u L:%04u                  ",
+	line.Format("\x1b[97m\x1b[49m\x1b[6;1HJY2 F:%06lu PC:%04X R:%04u L:%04u JP:%03u/%03u      ",
 		m_FmsxFrames,
 		(unsigned) (m_FmsxLastPC & 0xFFFF),
 		m_FmsxPcRepeatCount > 9999u ? 9999u : m_FmsxPcRepeatCount,
-		audio_stats.ring_level > 9999u ? 9999u : audio_stats.ring_level);
+		audio_stats.ring_level > 9999u ? 9999u : audio_stats.ring_level,
+		m_FramePacingErrAvgUs > 999u ? 999u : m_FramePacingErrAvgUs,
+		m_FramePacingErrMaxUs > 999u ? 999u : m_FramePacingErrMaxUs);
 	WriteScreenText(line);
 
 	line.Format("\x1b[97m\x1b[49m\x1b[7;1HSD SV:%02u C:%03u A:%04u                             ",

@@ -121,6 +121,8 @@ private:
     u64 m_LastOverlayUs;
     unsigned long m_FmsxFpsWindowStartFrames;
     unsigned m_FmsxFpsX10;
+    unsigned m_FramePacingErrAvgUs;
+    unsigned m_FramePacingErrMaxUs;
     unsigned m_FmsxBlankFrames;
     unsigned m_InitramfsFiles;
     unsigned m_FmsxBoxX;
