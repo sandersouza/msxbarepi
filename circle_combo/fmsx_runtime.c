@@ -75,7 +75,7 @@ static unsigned fmsx_runtime_boot_warmup_frames(void)
 {
     switch (g_boot_mode)
     {
-    case 1u: return 300u;   /* FAST: keep burst until ~JY2 F:300 */
+    case 1u: return 150u;   /* FAST: keep burst until ~JY2 F:150 */
     case 2u: return 2400u;  /* GAME */
     default: return 0u;     /* NORM */
     }
