@@ -2022,7 +2022,6 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	{
 		m_LastKeyboardRawKeys[i] = raw_keys[i];
 	}
-	PushKeyboardStateToRuntime(FALSE);
 }
 
 void CComboKernel::KeyStatusRawHandler(unsigned char modifiers, const unsigned char raw_keys[6], void *context)
