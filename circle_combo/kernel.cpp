@@ -20,6 +20,9 @@ static const unsigned kQueueMs = 120;
 static const u64 kFrameInterval60Us = 16667ull;
 static const u64 kFrameInterval50Us = 20000ull;
 static const u64 kDebugOverlayIntervalUs = 200000ull;
+static const u64 kFramePacingGuardUs = 300ull;
+static const u64 kFramePacingSleepTargetUs = 1200ull;
+static const u64 kFramePacingSpinThresholdUs = 80ull;
 static const uintptr kDCacheLineSize = 64u;
 static const u16 kLetterboxColor565 = 0x0000u;
 static const unsigned kOverscanSafeScalePct = 92u;
@@ -416,6 +419,8 @@ CComboKernel::CComboKernel(void)
 	m_LastOverlayUs(0),
 	m_FmsxFpsWindowStartFrames(0),
 	m_FmsxFpsX10(0),
+	m_FramePacingErrAvgUs(0u),
+	m_FramePacingErrMaxUs(0u),
 	m_FmsxBlankFrames(0),
 	m_InitramfsFiles(0),
 	m_FmsxBoxX(0),
@@ -659,14 +664,49 @@ TComboShutdownMode CComboKernel::Run(void)
 			SaveSettingsToStorage();
 		}
 
+		/* Hybrid wait: coarse sleep first, then short busy delay for tighter frame deadline. */
+		if (m_FmsxReady && !m_EmulationPaused)
+		{
+			now_us = CTimer::GetClockTicks64();
+			if (next_frame_us > now_us + kFramePacingGuardUs)
+			{
+				const u64 slack_us = next_frame_us - now_us;
+				if (slack_us > kFramePacingSleepTargetUs + kFramePacingGuardUs)
+				{
+					m_Scheduler.usSleep((unsigned) (slack_us - kFramePacingSleepTargetUs));
+				}
+				now_us = CTimer::GetClockTicks64();
+				const u64 fine_slack_us = next_frame_us > now_us ? (next_frame_us - now_us) : 0ull;
+				if (fine_slack_us > kFramePacingSpinThresholdUs + kFramePacingGuardUs)
+				{
+					CTimer::SimpleusDelay((unsigned) (fine_slack_us - kFramePacingGuardUs));
+				}
+			}
+		}
+
 		#if COMBO_ENABLE_FMSX
 		if (m_FmsxReady && !m_EmulationPaused)
 		{
+			now_us = CTimer::GetClockTicks64();
 			boolean stepped_fmsx = FALSE;
 			unsigned catchup_steps = 0;
 			const unsigned max_catchup_steps = 2u;
 			while (now_us >= next_frame_us && catchup_steps < max_catchup_steps)
 			{
+				const unsigned pacing_err_us = (unsigned) ((now_us - next_frame_us) > 999u ? 999u : (now_us - next_frame_us));
+				if (m_FramePacingErrAvgUs == 0u)
+				{
+					m_FramePacingErrAvgUs = pacing_err_us;
+				}
+				else
+				{
+					m_FramePacingErrAvgUs = ((m_FramePacingErrAvgUs * 7u) + pacing_err_us) / 8u;
+				}
+				if (pacing_err_us > m_FramePacingErrMaxUs)
+				{
+					m_FramePacingErrMaxUs = pacing_err_us;
+				}
+
 				boolean rensha_fire_on = TRUE;
 				u8 joy_bits_runtime = m_JoyBridgeBits;
 				const unsigned rate_num = (m_RenshaMode > 3u) ? 0u : m_RenshaMode;
@@ -710,6 +750,7 @@ TComboShutdownMode CComboKernel::Run(void)
 							m_FmsxFpsX10 = (unsigned) (((u64) elapsed_frames * 10000000ull) / elapsed_us);
 							m_FmsxFpsWindowStartUs = now_us;
 							m_FmsxFpsWindowStartFrames = m_FmsxFrames;
+							m_FramePacingErrMaxUs = 0u;
 						}
 					}
 
@@ -1091,11 +1132,13 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		m_InitramfsFiles);
 	WriteScreenText(line);
 
-	line.Format("\x1b[97m\x1b[49m\x1b[6;1HJY2 F:%06lu PC:%04X R:%04u L:%04u                  ",
+	line.Format("\x1b[97m\x1b[49m\x1b[6;1HJY2 F:%06lu PC:%04X R:%04u L:%04u JP:%03u/%03u      ",
 		m_FmsxFrames,
 		(unsigned) (m_FmsxLastPC & 0xFFFF),
 		m_FmsxPcRepeatCount > 9999u ? 9999u : m_FmsxPcRepeatCount,
-		audio_stats.ring_level > 9999u ? 9999u : audio_stats.ring_level);
+		audio_stats.ring_level > 9999u ? 9999u : audio_stats.ring_level,
+		m_FramePacingErrAvgUs > 999u ? 999u : m_FramePacingErrAvgUs,
+		m_FramePacingErrMaxUs > 999u ? 999u : m_FramePacingErrMaxUs);
 	WriteScreenText(line);
 
 	line.Format("\x1b[97m\x1b[49m\x1b[7;1HSD SV:%02u C:%03u A:%04u                             ",
