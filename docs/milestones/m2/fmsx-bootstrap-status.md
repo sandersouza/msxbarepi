@@ -88,7 +88,7 @@
 
 ## Impacto
 - `make m0-combo` permanece estável e gera artefato testável.
-- `make m2-fmsx-bootstrap` gera imagem experimental com core integrado no loop.
+- `make default` gera imagem experimental com core integrado no loop em `artifacts/kernel8-fmsx-bootstrap.img`.
 - Overlay debug com toggle (`F1`) e input/audio continuam funcionando.
 - Áudio de teste contínuo foi desativado por padrão (`COMBO_TEST_TONE_DEFAULT=0`).
 

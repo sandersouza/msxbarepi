@@ -1,7 +1,7 @@
 PROJECT := msxbare
 BUILD_DIR := build
 
-.DEFAULT_GOAL := stable
+.DEFAULT_GOAL := default
 
 FB_WIDTH ?= 1024
 FB_HEIGHT ?= 768
@@ -19,9 +19,9 @@ COMBO_EMBED_INITRAMFS ?= 0
 COMBO_EMBEDDED_BIOS_PATH ?= ../roms/cbios/cbios_main_msx1_br.rom
 COMBO_SUPPRESS_WARNINGS ?= 1
 COMBO_FMSX_MSX1_TEXT80 ?= 1
-COMBO_FMSX_RAMMAPPER_KB ?= 256
+COMBO_FMSX_RAMMAPPER_KB ?= 64
 COMBO_FMSX_MEGARAM_KB ?= 256
-COMBO_FMSX_MEGARAM_ENABLED ?= 1
+COMBO_FMSX_MEGARAM_ENABLED ?= 0
 COMBO_FMSX_CART_GUESS ?= 1
 COMBO_FMSX_CARTA_MAPPER ?= 255
 COMBO_FMSX_CARTB_MAPPER ?= 255
@@ -32,9 +32,9 @@ COMBO_DEFER_SETTINGS_LOAD_FRAMES ?= 0
 COMBO_DEFER_INITRAMFS_FULL_MOUNT_FRAMES ?= 120
 COMBO_SIZE_OPT ?= 1
 COMBO_FMSX_BOOT_MINIMAL_STARTUP ?= 1
-COMBO_ENABLE_DEBUG_OVERLAY ?= 1
+COMBO_ENABLE_DEBUG_OVERLAY ?= 0
 COMBO_TEST_TONE_DEFAULT ?= 0
-COMBO_DEBUG_OVERLAY_DEFAULT ?= 1
+COMBO_DEBUG_OVERLAY_DEFAULT ?= 0
 COMBO_DEBUG_OVERLAY_COMPACT ?= 1
 
 CROSS ?= $(shell \
@@ -123,98 +123,19 @@ OBJECTS := $(patsubst %.c,$(BUILD_DIR)/%.o,$(SOURCES_C)) \
 
 TARGET_ELF := $(BUILD_DIR)/kernel8.elf
 TARGET_IMG := $(BUILD_DIR)/kernel8.img
+FMSX_BOOTSTRAP_ARTIFACT := artifacts/kernel8-fmsx-bootstrap.img
+DEFAULT_ARTIFACT := artifacts/kernel8-default.img
+INITRAMFS_IN ?= roms/msx1
+INITRAMFS_OUT ?= sdcard/msx.cpio
 CONTEXT_UPDATER := ./scripts/update-ai-context.sh
 THIRD_PARTY_GUARD := ./scripts/check-third-party-pristine.sh
 
-.PHONY: all stable clean help m0 m0-circle-input m0-circle-input-full m0-hdmi-audio m0-hdmi-audio-full m0-hdmi-audio-integrated m0-hdmi-audio-integrated-full m0-combo m0-combo-full m0-combo-integrated m2-fmsx-bootstrap guard-third-party circle-configure circle-usbkeyboard-debug circle-sounddevices-debug
+.PHONY: all default clean help guard-third-party circle-configure sdcard initramfs package
 
-all: stable
+all: default
 
-stable: circle-configure
+default: circle-configure
 	@mkdir -p artifacts
-	$(MAKE) m2-fmsx-bootstrap \
-		COMBO_ENABLE_DEBUG_OVERLAY=0 \
-		COMBO_DEBUG_OVERLAY_DEFAULT=0 \
-		COMBO_FMSX_BOOT_PROFILE=1 \
-		COMBO_FMSX_RAMMAPPER_KB=64 \
-		COMBO_FMSX_MEGARAM_ENABLED=0
-	cp artifacts/kernel8-m2-fmsx-bootstrap.img artifacts/kernel8.img
-	bash $(CONTEXT_UPDATER) stable default-ok artifacts/kernel8.img
-	@echo "Artefato default estavel: artifacts/kernel8.img"
-
-m0: $(TARGET_IMG)
-	@mkdir -p artifacts
-	cp $(TARGET_IMG) artifacts/kernel8-m0.img
-	bash $(CONTEXT_UPDATER) m0 ok artifacts/kernel8-m0.img
-	@echo "Artefato M0 gerado: artifacts/kernel8-m0.img"
-
-m0-circle-input: circle-configure
-	@mkdir -p artifacts
-	$(MAKE) -C third_party/circle/sample/08-usbkeyboard >/dev/null
-	$(MAKE) clean
-	$(MAKE) CIRCLE_INPUT=1 CIRCLE_INPUT_SAFE=1
-	cp $(TARGET_IMG) artifacts/kernel8-m0-circle-input.img
-	bash $(CONTEXT_UPDATER) m0.1-input-safe ok artifacts/kernel8-m0-circle-input.img
-	@echo "Artefato M0.1 safe (boot sem travar): artifacts/kernel8-m0-circle-input.img"
-
-m0-circle-input-full: circle-configure
-	@mkdir -p artifacts
-	$(MAKE) -C third_party/circle/sample/08-usbkeyboard >/dev/null
-	$(MAKE) clean
-	$(MAKE) CIRCLE_INPUT=1 CIRCLE_INPUT_SAFE=0
-	cp $(TARGET_IMG) artifacts/kernel8-m0-circle-input-full.img
-	bash $(CONTEXT_UPDATER) m0.1-input-full ok artifacts/kernel8-m0-circle-input-full.img
-	@echo "Artefato M0.1 full (experimental): artifacts/kernel8-m0-circle-input-full.img"
-
-m0-hdmi-audio: circle-configure
-	@mkdir -p artifacts
-	$(MAKE) -C third_party/circle/sample/34-sounddevices
-	@img=$$(ls third_party/circle/sample/34-sounddevices/kernel8*.img 2>/dev/null | head -n1); \
-	if [ -z "$$img" ]; then \
-		echo "Erro: imagem do sample 34-sounddevices nao encontrada"; \
-		exit 1; \
-	fi; \
-	cp "$$img" artifacts/kernel8-m0-hdmi-audio.img
-	bash $(CONTEXT_UPDATER) m0.2-audio-safe-standalone ok artifacts/kernel8-m0-hdmi-audio.img
-	@echo "Artefato M0.2 audio safe (standalone Circle): artifacts/kernel8-m0-hdmi-audio.img"
-
-m0-hdmi-audio-full: circle-configure
-	$(MAKE) m0-hdmi-audio-integrated-full
-
-m0-hdmi-audio-integrated: circle-configure
-	@mkdir -p artifacts
-	$(MAKE) -C third_party/circle/sample/34-sounddevices >/dev/null
-	$(MAKE) clean
-	$(MAKE) CIRCLE_AUDIO=1 CIRCLE_AUDIO_SAFE=1
-	cp $(TARGET_IMG) artifacts/kernel8-m0-hdmi-audio-integrated.img
-	bash $(CONTEXT_UPDATER) m0.2-audio-integrated-safe ok artifacts/kernel8-m0-hdmi-audio-integrated.img
-	@echo "Artefato M0.2 audio integrado safe (experimental): artifacts/kernel8-m0-hdmi-audio-integrated.img"
-
-m0-hdmi-audio-integrated-full: circle-configure
-	@mkdir -p artifacts
-	$(MAKE) -C third_party/circle/sample/34-sounddevices >/dev/null
-	$(MAKE) clean
-	$(MAKE) CIRCLE_AUDIO=1 CIRCLE_AUDIO_SAFE=0
-	cp $(TARGET_IMG) artifacts/kernel8-m0-hdmi-audio-full.img
-	bash $(CONTEXT_UPDATER) m0.2-audio-full ok artifacts/kernel8-m0-hdmi-audio-full.img
-	@echo "Artefato M0.2 audio full (experimental): artifacts/kernel8-m0-hdmi-audio-full.img"
-
-m0-combo: circle-configure
-	@mkdir -p artifacts build/circle_combo
-	$(MAKE) -C circle_combo clean >/dev/null
-	$(MAKE) -C circle_combo
-	@img=$$(ls circle_combo/kernel8*.img 2>/dev/null | head -n1); \
-	if [ -z "$$img" ]; then \
-		echo "Erro: imagem do combo standalone nao encontrada"; \
-		exit 1; \
-	fi; \
-	cp "$$img" build/circle_combo/kernel8.img; \
-	cp build/circle_combo/kernel8.img artifacts/kernel8-m0-combo.img
-	$(MAKE) -C circle_combo clean >/dev/null
-	bash $(CONTEXT_UPDATER) m0.3-combo-standalone ok artifacts/kernel8-m0-combo.img
-	@echo "Artefato M0.3 combo standalone (audio HDMI + USB teclado): artifacts/kernel8-m0-combo.img"
-
-m2-fmsx-bootstrap: circle-configure
 	@mkdir -p artifacts build/circle_combo
 	$(MAKE) -C circle_combo clean >/dev/null
 	$(MAKE) -C circle_combo CHECK_DEPS=0 COMBO_ENABLE_FMSX=1 \
@@ -246,64 +167,22 @@ m2-fmsx-bootstrap: circle-configure
 		COMBO_DEBUG_OVERLAY_COMPACT=$(COMBO_DEBUG_OVERLAY_COMPACT)
 	@img=$$(ls circle_combo/kernel8*.img 2>/dev/null | head -n1); \
 	if [ -z "$$img" ]; then \
-		echo "Erro: imagem do bootstrap M2 fMSX nao encontrada"; \
+		echo "Erro: imagem do bootstrap fMSX nao encontrada"; \
 		exit 1; \
 	fi; \
 	cp "$$img" build/circle_combo/kernel8.img; \
-	cp build/circle_combo/kernel8.img artifacts/kernel8-m2-fmsx-bootstrap.img
+	cp build/circle_combo/kernel8.img $(FMSX_BOOTSTRAP_ARTIFACT)
 	$(MAKE) -C circle_combo clean >/dev/null
-	bash $(CONTEXT_UPDATER) m2-bootstrap build-ok artifacts/kernel8-m2-fmsx-bootstrap.img
-	@echo "Artefato M2 bootstrap (fMSX core + combo loop): artifacts/kernel8-m2-fmsx-bootstrap.img"
-
-m0-combo-integrated: circle-configure
-	@mkdir -p artifacts
-	$(MAKE) -C third_party/circle/sample/08-usbkeyboard >/dev/null
-	$(MAKE) -C third_party/circle/sample/34-sounddevices >/dev/null
-	$(MAKE) clean
-	$(MAKE) CIRCLE_INPUT=1 CIRCLE_INPUT_SAFE=1 CIRCLE_AUDIO=1 CIRCLE_AUDIO_SAFE=0
-	cp $(TARGET_IMG) artifacts/kernel8-m0-combo-integrated.img
-	bash $(CONTEXT_UPDATER) m0.3-combo-integrated ok artifacts/kernel8-m0-combo-integrated.img
-	@echo "Artefato M0.3 combo integrado (experimental): artifacts/kernel8-m0-combo-integrated.img"
-
-m0-combo-full: circle-configure
-	@mkdir -p artifacts
-	$(MAKE) -C third_party/circle/sample/08-usbkeyboard >/dev/null
-	$(MAKE) -C third_party/circle/sample/34-sounddevices >/dev/null
-	$(MAKE) clean
-	$(MAKE) CIRCLE_INPUT=1 CIRCLE_INPUT_SAFE=0 CIRCLE_AUDIO=1 CIRCLE_AUDIO_SAFE=0
-	cp $(TARGET_IMG) artifacts/kernel8-m0-combo-full.img
-	bash $(CONTEXT_UPDATER) m0.3-combo-full ok artifacts/kernel8-m0-combo-full.img
-	@echo "Artefato M0.3 combo full (input+audio ativos): artifacts/kernel8-m0-combo-full.img"
+	bash $(CONTEXT_UPDATER) default build-ok $(FMSX_BOOTSTRAP_ARTIFACT)
+	cp $(FMSX_BOOTSTRAP_ARTIFACT) $(DEFAULT_ARTIFACT)
+	bash $(CONTEXT_UPDATER) default default-ok $(DEFAULT_ARTIFACT)
+	@echo "Artefato default estavel: $(DEFAULT_ARTIFACT)"
 
 guard-third-party:
 	bash $(THIRD_PARTY_GUARD)
 
 circle-configure: guard-third-party
 	cd third_party/circle && ./configure -r 3 -p $(CROSS) -f
-
-circle-usbkeyboard-debug: circle-configure
-	@mkdir -p artifacts
-	$(MAKE) -C third_party/circle/sample/08-usbkeyboard
-	@img=$$(ls third_party/circle/sample/08-usbkeyboard/kernel8*.img 2>/dev/null | head -n1); \
-	if [ -z "$$img" ]; then \
-		echo "Erro: imagem do sample 08-usbkeyboard nao encontrada"; \
-		exit 1; \
-	fi; \
-	cp "$$img" artifacts/kernel8-circle-usbkeyboard-debug.img
-	bash $(CONTEXT_UPDATER) circle-usbkeyboard-debug ok artifacts/kernel8-circle-usbkeyboard-debug.img
-	@echo "Artefato Circle USB keyboard: artifacts/kernel8-circle-usbkeyboard-debug.img"
-
-circle-sounddevices-debug: circle-configure
-	@mkdir -p artifacts
-	$(MAKE) -C third_party/circle/sample/34-sounddevices
-	@img=$$(ls third_party/circle/sample/34-sounddevices/kernel8*.img 2>/dev/null | head -n1); \
-	if [ -z "$$img" ]; then \
-		echo "Erro: imagem do sample 34-sounddevices nao encontrada"; \
-		exit 1; \
-	fi; \
-	cp "$$img" artifacts/kernel8-circle-sounddevices-debug.img
-	bash $(CONTEXT_UPDATER) circle-sounddevices-debug ok artifacts/kernel8-circle-sounddevices-debug.img
-	@echo "Artefato Circle sounddevices: artifacts/kernel8-circle-sounddevices-debug.img"
 
 $(BUILD_DIR):
 	@mkdir -p $(BUILD_DIR)/boot $(BUILD_DIR)/src
@@ -327,22 +206,23 @@ $(TARGET_IMG): $(TARGET_ELF)
 clean:
 	rm -rf $(BUILD_DIR)
 
+sdcard:
+	./scripts/prepare-sd.sh
+
+initramfs:
+	./scripts/make-initramfs.sh $(INITRAMFS_IN) $(INITRAMFS_OUT)
+
+package: default initramfs
+	./scripts/make-sdcard-package.sh
+
 help:
-	@echo "Targets: all, m0, m0-circle-input, m0-circle-input-full, m0-hdmi-audio, m0-hdmi-audio-full, m0-combo, m0-combo-integrated, m0-combo-full, clean, circle-usbkeyboard-debug, circle-sounddevices-debug"
-	@echo "Default (make): perfil estavel M2 -> artifacts/kernel8.img"
+	@echo "Targets: all (default), clean, sdcard, initramfs, package, help"
+	@echo "Default (make): perfil estavel -> artifacts/kernel8-default.img"
+	@echo "SD card prep: make sdcard"
+	@echo "Initramfs: make initramfs INITRAMFS_IN=roms/msx1 INITRAMFS_OUT=sdcard/msx.cpio"
+	@echo "SD package zip: make package -> artifacts/sdcard-package-YYYYMMDDHHMM.zip"
 	@echo "Cross prefix auto: aarch64-none-elf- | aarch64-elf-"
 	@echo "Override: make CROSS=aarch64-elf-"
-	@echo "Framebuffer: make FB_WIDTH=1024 FB_HEIGHT=768"
-	@echo "Debug logs: make DEBUG=1"
-	@echo "Circle input safe (nao trava boot): make m0-circle-input"
-	@echo "Circle input full (experimental): make m0-circle-input-full"
-	@echo "Circle HDMI audio safe (standalone): make m0-hdmi-audio"
-	@echo "Circle HDMI audio integrado safe (experimental): make m0-hdmi-audio-integrated"
-	@echo "Circle HDMI audio integrado full (experimental): make m0-hdmi-audio-full"
-	@echo "M0.3 combo standalone (audio HDMI + USB teclado): make m0-combo"
-	@echo "M0.3 combo integrado (experimental): make m0-combo-integrated"
-	@echo "M0.3 combo full (input+audio ativos): make m0-combo-full"
-	@echo "M2 bootstrap fMSX (experimental): make m2-fmsx-bootstrap"
+	@echo "Use flags COMBO_*/DEBUG/FB_* conforme necessario"
 	@echo "Boot mode selecionavel em runtime: Settings -> Boot Mode [NORM/FAST/GAME]"
-	@echo "Guardrail third_party: make guard-third-party"
-	@echo "Bypass temporario (nao recomendado): ALLOW_DIRTY_THIRD_PARTY=1 make <target>"
+	@echo "Bypass temporario (nao recomendado): ALLOW_DIRTY_THIRD_PARTY=1 make"

@@ -61,7 +61,7 @@ init_cmd() {
   require_cmd shasum
 
   local tag=""
-  local make_target="m2-fmsx-bootstrap"
+  local make_target="default"
   local make_flags=""
 
   while [[ $# -gt 0 ]]; do
@@ -113,7 +113,7 @@ init_cmd() {
   local build_end
   build_end="$(date +%s)"
 
-  local artifact="$ROOT_DIR/artifacts/kernel8-m2-fmsx-bootstrap.img"
+  local artifact="$ROOT_DIR/artifacts/kernel8-fmsx-bootstrap.img"
   if [[ "$make_target" == "stable" ]]; then
     artifact="$ROOT_DIR/artifacts/kernel8.img"
   fi

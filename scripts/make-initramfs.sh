@@ -26,7 +26,7 @@ mkdir -p "$(dirname "$OUT_ABS")"
 TMP_DIR="$(mktemp -d)"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-cp -R "$IN_DIR"/. "$TMP_DIR"/
+cp -R "$IN_DIR"/*.ROM "$TMP_DIR"/
 
 (
   cd "$TMP_DIR"

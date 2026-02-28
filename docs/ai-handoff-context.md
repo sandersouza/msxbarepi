@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 28/02/2026 12:34
+Última atualização: 28/02/2026 14:56
 
 ## Objetivo deste arquivo
 
@@ -68,7 +68,7 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - `make m0-circle-input-full`
 - `make m0-hdmi-audio`
 - `make m0-hdmi-audio-full`
-- `make m2-fmsx-bootstrap`
+- `make default`
 
 ### Preparar SD (sempre sem DRY_RUN)
 
@@ -77,7 +77,7 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - `KERNEL_IMG=artifacts/kernel8-m0-circle-input-full.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh`
 - `KERNEL_IMG=artifacts/kernel8-m0-hdmi-audio.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh`
 - `KERNEL_IMG=artifacts/kernel8-m0-hdmi-audio-full.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh`
-- `KERNEL_IMG=artifacts/kernel8-m2-fmsx-bootstrap.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh`
+- `KERNEL_IMG=artifacts/kernel8-fmsx-bootstrap.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh`
 
 ## Convenções e decisões já tomadas
 
@@ -105,7 +105,7 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - Correção aplicada: `LoopZ80()` não encerra mais em `ScanLine==192`; `INT_QUIT` do frame-step agora ocorre após janela de VBlank
 - Áudio fMSX reativado no combo: `COMBO_FMSX_AUDIO=1` (default), `WriteAudio()` agora alimenta ring buffer PCM e kernel drena para HDMI (`CHDMISoundBaseDevice`)
 - Correção adicional de áudio: `fmsx_runtime_step_frame()` agora chama `RenderAndPlayAudio(48000/60)` e `fmsx_runtime_init()` chama `InitSound(48000)`
-- Correção de build: `Makefile` raiz passou a repassar flags `COMBO_*` para `circle_combo` no target `m2-fmsx-bootstrap` (antes alguns knobs não chegavam ao sub-build)
+- Correção de build: `Makefile` raiz passou a repassar flags `COMBO_*` para `circle_combo` no target `default` (antes alguns knobs não chegavam ao sub-build)
 - Telemetria de áudio adicionada no overlay: linha `EV` mostra `A:WWWW/PPPP` (samples escritos/puxados) e linha `JY2` mostra `L` (nível do ring buffer)
 - Ajuste adicional no mixer de áudio: após `InitSound(48000)`, runtime agora chama `SetChannels(255/MAXCHANNELS, (1<<SND_CHANNELS)-1)` (padrão usado no `libretro.c`) para garantir canais habilitados
 - Ajuste de ganho no mixer EMULib: `SetChannels()` atualizado para volume mestre `255` com todos os canais habilitados (evita quantização excessiva para zero)
@@ -600,3 +600,39 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-02-28 12:33:02 | stage=release-1.0.1rc0 | status=published | artifact=https://github.com/sandersouza/msxbarepi/releases/tag/1.0.1rc0 | note=binary-focused-notes
 - 2026-02-28 12:33:28 | stage=m7-issues-38-40 | status=done | artifact=https://github.com/sandersouza/msxbarepi/pull/58 | note=pr58-merged-issues-done
 - 2026-02-28 12:34:54 | stage=release-branch-policy | status=updated | artifact=release/1.0.1rc0 | note=migrated-branch-prefix-release-slash
+- 2026-02-28 12:55:52 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 12:55:52 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-28 14:01:15 | stage=release-dev-debug-toolkit | status=planned | artifact=https://github.com/sandersouza/msxbarepi/milestone/14 | note=milestone14-issues91-98-ready
+- 2026-02-28 14:02:53 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 14:02:53 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
+- 2026-02-28 14:08:21 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 14:08:21 | stage=stable | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 14:10:59 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 14:10:59 | stage=stable | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 14:16:09 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 14:16:09 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 14:16:33 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 14:16:33 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 14:19:10 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 14:19:10 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 14:19:25 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 14:19:25 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 14:19:46 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 14:19:46 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 14:22:30 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 14:22:30 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 14:23:21 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 14:23:21 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 14:26:33 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 14:26:33 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 14:42:53 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 14:42:53 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 14:43:58 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 14:43:58 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 14:45:16 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 14:45:16 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 14:48:46 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 14:48:46 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 14:51:16 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 14:51:16 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 14:56:24 | stage=default | status=issue-created | artifact=Issue #99 criada (Save/Load State) na milestone Load de ROMs e Discos; espelho local em docs/milestones/m8/99-save-state-load-state-settings-persistencia-sd.md

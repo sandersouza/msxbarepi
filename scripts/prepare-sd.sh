@@ -25,12 +25,12 @@ DRY_RUN="${DRY_RUN:-0}"
 NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
 AUTO_CONFIRM="${AUTO_CONFIRM:-0}"
 
-KERNEL_IMG="${KERNEL_IMG:-}"
+KERNEL_IMG="${KERNEL_IMG:-${PROJECT_ROOT}/artifacts/kernel8-default.img}"
 CONFIG_TXT="${CONFIG_TXT:-${PROJECT_ROOT}/sdcard/config.txt}"
 CMDLINE_TXT="${CMDLINE_TXT:-${PROJECT_ROOT}/sdcard/cmdline.txt}"
 INITRAMFS_IMG="${INITRAMFS_IMG:-${PROJECT_ROOT}/sdcard/msx.cpio}"
 INITRAMFS_SRC_DIR="${INITRAMFS_SRC_DIR:-${PROJECT_ROOT}/roms/msx1}"
-FIRMWARE_DIR="${FIRMWARE_DIR:-${PROJECT_ROOT}/rpi-firmware}"
+FIRMWARE_DIR="${FIRMWARE_DIR:-${PROJECT_ROOT}/rpi-firmware/}"
 SETTINGS_CFG="${SETTINGS_CFG:-${PROJECT_ROOT}/sdcard/MSXBARE.CFG}"
 
 plist_get() {
@@ -223,35 +223,7 @@ if [ -z "$target_disk" ]; then
   exit 1
 fi
 
-kernel_img_from_user=0
-if [ -n "$KERNEL_IMG" ]; then
-  kernel_img_from_user=1
-fi
-
-if [ "$kernel_img_from_user" -eq 0 ]; then
-  artifact_candidates=()
-  while IFS= read -r img; do
-    [ -z "$img" ] && continue
-    artifact_candidates+=("$img")
-  done < <(find "${PROJECT_ROOT}/artifacts" -maxdepth 1 -type f -name '*.img' 2>/dev/null | sort)
-
-  if [ "${#artifact_candidates[@]}" -gt 0 ]; then
-    echo
-    echo "Selecione o kernel (.img) em artifacts/:"
-    selected_kernel="$(select_with_fzf "Kernel > " "Use setas e Enter para selecionar o kernel" "${artifact_candidates[@]}")" || {
-      echo "[ABORTADO] Selecao de kernel cancelada."
-      exit 1
-    }
-    KERNEL_IMG="$selected_kernel"
-    echo "[INFO] Kernel selecionado: ${KERNEL_IMG}"
-    echo
-  else
-    KERNEL_IMG="${PROJECT_ROOT}/build/kernel8.img"
-    echo
-    echo "[INFO] Nenhum kernel em artifacts/. Usando padrao: ${KERNEL_IMG}"
-    echo
-  fi
-fi
+echo "[INFO] KERNEL_IMG padrao: ${KERNEL_IMG}"
 
 if [ "$AUTO_CONFIRM" = "1" ] && [ "$DRY_RUN" = "1" ]; then
   echo "[INFO] CAPTCHA ignorado (AUTO_CONFIRM=1 com DRY_RUN=1)."

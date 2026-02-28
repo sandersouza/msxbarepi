@@ -102,7 +102,7 @@ make fastboot
   - `roms/cbios/cbios_main_msx1_br.rom`
 - Otimizacao de boot atual: o mount inicial do `initramfs` e minimo (BIOS + CARTx + DSKx) para reduzir tempo ate `fmsx_runtime_init()`; o restante dos arquivos e montado de forma adiada em runtime.
 
-Knobs de build relevantes no target `m2-fmsx-bootstrap`:
+Knobs de build relevantes no target `default`:
 
 - `COMBO_EMBED_INITRAMFS=0|1`:
   - `0` (default): nao embute `msx.cpio` no kernel
@@ -134,13 +134,13 @@ Nota importante:
 Exemplo (mapper e MegaRAM em 1024KB):
 
 ```bash
-make m2-fmsx-bootstrap COMBO_FMSX_RAMMAPPER_KB=1024 COMBO_FMSX_MEGARAM_KB=1024
+make default COMBO_FMSX_RAMMAPPER_KB=1024 COMBO_FMSX_MEGARAM_KB=1024
 ```
 
 Exemplo para cartucho 256KB em `CARTA.ROM` com mapper guess habilitado:
 
 ```bash
-make m2-fmsx-bootstrap COMBO_FMSX_RAMMAPPER_KB=256 COMBO_FMSX_MEGARAM_KB=256 COMBO_FMSX_CART_GUESS=1
+make default COMBO_FMSX_RAMMAPPER_KB=256 COMBO_FMSX_MEGARAM_KB=256 COMBO_FMSX_CART_GUESS=1
 ```
 
 ## Build configuravel (menu interativo)
@@ -165,8 +165,9 @@ Perfis de boot:
 - Default atual do configurador: `FAST BOOT`.
 
 Seleção de boot:
-- Use um build normal (`make m2-fmsx-bootstrap`) e escolha o modo em `Settings -> Boot Mode [NORM/FAST/GAME]`.
+- Use um build normal (`make default`) e escolha o modo em `Settings -> Boot Mode [NORM/FAST/GAME]`.
 - Para persistir no próximo boot, use `Gravar` no menu settings.
+- Artefato gerado por esse target: `artifacts/kernel8-fmsx-bootstrap.img`.
 
 Knobs adicionais relevantes:
 - `COMBO_FMSX_MEGARAM_ENABLED=0|1` (default `1`)
@@ -188,7 +189,7 @@ Matriz de perfil (padrao atual):
 
 ## Build default estavel (`make`)
 
-O comando abaixo agora gera por padrão o artefato estavel em `artifacts/kernel8.img`:
+O comando abaixo agora gera por padrão o artefato estavel em `artifacts/kernel8-default.img`:
 
 ```bash
 make
@@ -226,7 +227,7 @@ Submenu `Settings` (mock inicial):
 Exemplo (fallback para outra BIOS):
 
 ```bash
-make m2-fmsx-bootstrap COMBO_EMBEDDED_BIOS_PATH=../roms/cbios/cbios_main_msx1_eu.rom
+make default COMBO_EMBEDDED_BIOS_PATH=../roms/cbios/cbios_main_msx1_eu.rom
 ```
 
 Esse preset gera `artifacts/kernel8-fastboot.img` e usa:
@@ -358,6 +359,18 @@ Script interativo com TUI (`fzf`) e proteções para evitar seleção de disco i
 brew install fzf
 scripts/prepare-sd.sh
 ```
+
+Empacotar tudo para SD em um ZIP (kernel + config + cmdline + msx.cpio + firmware):
+
+```bash
+make package
+```
+
+Saída padrão: `artifacts/sdcard-package-YYYYMMDDHHMM.zip`
+
+Defaults do script:
+- `KERNEL_IMG=artifacts/kernel8-default.img`
+- `FIRMWARE_DIR=rpi-firmware/`
 
 Opcionalmente, para copiar firmwares alternativos no mesmo passo:
 

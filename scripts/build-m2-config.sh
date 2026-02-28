@@ -262,7 +262,7 @@ elif [ "$boot_mode_choice" = "GAME BOOT" ]; then
 fi
 
 cmd=(
-  make m2-fmsx-bootstrap
+  make default
   COMBO_SUPPRESS_WARNINGS=1
   COMBO_INITRAMFS_MOUNT=1
   COMBO_REQUIRE_CPIO_BIOS=0
@@ -305,4 +305,4 @@ echo "Executando build..."
 "${cmd[@]}"
 
 echo
-echo "Build finalizado: artifacts/kernel8-m2-fmsx-bootstrap.img"
+echo "Build finalizado: artifacts/kernel8-fmsx-bootstrap.img"

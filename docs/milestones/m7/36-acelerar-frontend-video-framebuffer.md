@@ -11,4 +11,4 @@
 - 2026-02-27: otimização #1 aplicada no hot path de blit.
   - removida branch por pixel no loop interno (seleção por linha: copy/LCD/CRT)
   - dim CRT 85% otimizado via lookup tables RGB565 por canal
-  - build de validação OK (`m2-fmsx-bootstrap` com guard-third-party)
+  - build de validação OK (`default` com guard-third-party)
