@@ -1140,6 +1140,10 @@ uint8_t RdZ80(uint16_t A)
     }
 
   I = CartMap[PS][SS]; /* Cartridge number      */
+  if (I < 2 && A >= 0x4000 && A < 0xC000)
+  {
+    fmsx_runtime_notify_media_probe();
+  }
   if(I<2 && SCCOn[I] && ((A&0xD800)==0x9800))
   {
     J=A&0x00FF;
@@ -1156,8 +1160,10 @@ uint8_t RdZ80(uint16_t A)
 /*************************************************************/
 void WrZ80(uint16_t A,uint8_t V)
 {
+  uint8_t J,PS,SS,I;
+
   /* Secondary slot selector */
-  if(A==0xFFFF) { fmsx_runtime_notify_media_probe(); SSlot(V);return; }
+  if(A==0xFFFF) { SSlot(V);return; }
 
   /* Floppy disk controller */
   /* 7FF8h..7FFFh Standard DiskROM  */
@@ -1194,6 +1200,15 @@ void WrZ80(uint16_t A,uint8_t V)
 
   /* Write to RAM, if enabled */
   if(EnWrite[A>>14]) { RAM[A>>13][A&0x1FFF]=V;return; }
+
+  J  = A>>14;
+  PS = PSL[J];
+  SS = SSL[J];
+  I  = CartMap[PS][SS];
+  if (I < 2 && A >= 0x4000 && A < 0xC000)
+  {
+    fmsx_runtime_notify_media_probe();
+  }
 
   /* Switch MegaROM pages */
   if((A>0x3FFF)&&(A<0xC000)) MapROM(A,V);
@@ -1512,7 +1527,6 @@ case 0xA8: /* Primary slot state   */
 case 0xA9: /* Keyboard port        */
 case 0xAA: /* General IO register  */
 case 0xAB: /* PPI control register */
-  if (Port == 0xA8) fmsx_runtime_notify_media_probe();
   /* Write to PPI */
   Write8255(&PPI,Port-0xA8,Value);
   /* If general I/O register has changed... */
