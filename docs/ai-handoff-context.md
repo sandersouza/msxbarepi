@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 27/02/2026 23:19
+Última atualização: 28/02/2026 00:30
 
 ## Objetivo deste arquivo
 
@@ -495,3 +495,18 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-02-27 22:46:34 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
 - 2026-02-27 23:12:22 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
 - 2026-02-27 23:19:57 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 23:44:17 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 00:00:00 | stage=issue-48-settings-persistence | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=settings save/load implementado via SD (emmc1-1 + CFATFileSystem); menu Gravar persiste MSXBARE.CFG e boot recarrega opcoes
+- 2026-02-28 03:36:56 | stage=issue-48-stabilized-no-freeze | status=done | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=issue #48 encerrada com Gravar sem freeze e save desativado por seguranca (SV:95); persistencia FAT32 real movida para issue #50 (Ready)
+- 2026-02-27 23:45:12 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 23:49:25 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 23:52:13 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 23:56:55 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-27 23:58:31 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 00:03:58 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 00:15:10 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 00:18:09 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 00:20:26 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 00:22:38 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 00:25:26 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
+- 2026-02-28 00:30:56 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
