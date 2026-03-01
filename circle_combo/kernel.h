@@ -153,6 +153,7 @@ private:
     boolean m_WidescreenEnabled;
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;
+    boolean m_DiskRomEnabled;
     unsigned m_BootMode;
     unsigned m_Z80TurboMode;
     unsigned m_RenshaMode;
@@ -162,7 +163,6 @@ private:
     boolean m_SccCartEnabled;
     u64 m_FrameIntervalUs;
     boolean m_FramePacingResetPending;
-    boolean m_AudioMuted;
     boolean m_FmsxFallbackPattern;
     boolean m_TestToneEnabled;
     boolean m_MmuEnabled;

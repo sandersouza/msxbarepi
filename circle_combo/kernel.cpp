@@ -540,6 +540,7 @@ CComboKernel::CComboKernel(void)
 	m_WidescreenEnabled(FALSE),
 	m_ScanlineMode(kScanlineModeOff),
 	m_RefreshRateHz(60u),
+	m_DiskRomEnabled(TRUE),
 	m_BootMode((COMBO_FMSX_BOOT_PROFILE > 2) ? kBootModeNorm : (unsigned) COMBO_FMSX_BOOT_PROFILE),
 	m_Z80TurboMode(kZ80TurboModeDes),
 	m_RenshaMode(0u),
@@ -549,7 +550,6 @@ CComboKernel::CComboKernel(void)
 	m_SccCartEnabled(TRUE),
 	m_FrameIntervalUs(FrameIntervalFromRefreshHz(60u)),
 	m_FramePacingResetPending(FALSE),
-	m_AudioMuted(FALSE),
 	m_FmsxFallbackPattern(FALSE),
 	m_TestToneEnabled(COMBO_TEST_TONE_DEFAULT ? TRUE : FALSE),
 	m_MmuEnabled(FALSE),
@@ -741,12 +741,12 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetWidescreenEnabled(m_WidescreenEnabled);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
+	m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
 	m_PauseMenu.SetBootMode(m_BootMode);
 	m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
 	m_PauseMenu.SetRenshaMode(m_RenshaMode);
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
 	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, COMBO_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
-	m_PauseMenu.SetAudioMuted(m_AudioMuted);
 	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
 #if COMBO_ENABLE_FMSX
 	ApplyRuntimeSettingsToFmsx();
@@ -1274,7 +1274,7 @@ void CComboKernel::RefillAudioQueue(void)
 				if (sample32 > clip_max) sample32 = clip_max;
 				if (sample32 < -clip_max) sample32 = -clip_max;
 				sample32 = (sample32 * (int) m_AudioOutputGainPct) / 100;
-				if (m_AudioMuted)
+				if (m_AudioOutputGainPct == 0u)
 				{
 					sample32 = 0;
 				}
@@ -1792,6 +1792,7 @@ void CComboKernel::ApplyRuntimeSettingsToFmsx(void)
 	}
 	fmsx_runtime_set_overscan(m_OverscanPercent > 0u ? TRUE : FALSE);
 	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
+	fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 	fmsx_runtime_set_boot_mode(m_BootMode);
 	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
 	fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
@@ -1922,6 +1923,10 @@ void CComboKernel::LoadSettingsFromStorage(void)
 				m_RefreshRateHz = (value == 50u) ? 50u : 60u;
 				m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
 			}
+			else if (SettingsKeyEquals(line, key_len, "disk_rom"))
+			{
+				m_DiskRomEnabled = value ? TRUE : FALSE;
+			}
 			else if (SettingsKeyEquals(line, key_len, "boot_mode"))
 			{
 				m_BootMode = (value > 2u) ? kBootModeNorm : value;
@@ -1944,7 +1949,11 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			}
 			else if (SettingsKeyEquals(line, key_len, "audio_mute"))
 			{
-				m_AudioMuted = value ? TRUE : FALSE;
+				/* Backward compatibility: old audio_mute maps to gain=0. */
+				if (value != 0u)
+				{
+					m_AudioOutputGainPct = 0u;
+				}
 			}
 			else if (SettingsKeyEquals(line, key_len, "audio_gain"))
 			{
@@ -1960,16 +1969,17 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetWidescreenEnabled(m_WidescreenEnabled);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
+	m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
 	m_PauseMenu.SetBootMode(m_BootMode);
 	m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
 	m_PauseMenu.SetRenshaMode(m_RenshaMode);
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
 	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, COMBO_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
-	m_PauseMenu.SetAudioMuted(m_AudioMuted);
 	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
 #if COMBO_ENABLE_FMSX
 	fmsx_runtime_set_overscan(m_OverscanPercent > 0u ? TRUE : FALSE);
 	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
+	fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 	fmsx_runtime_set_boot_mode(m_BootMode);
 	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
 	fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
@@ -2019,12 +2029,12 @@ void CComboKernel::SaveSettingsToStorage(void)
 	APPEND_LINE_FMT("widescreen=%u\n", m_WidescreenEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
 	APPEND_LINE_FMT("refresh=%u\n", m_RefreshRateHz);
+	APPEND_LINE_FMT("disk_rom=%u\n", m_DiskRomEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("boot_mode=%u\n", m_BootMode);
 	APPEND_LINE_FMT("z80_turbo=%u\n", m_Z80TurboMode);
 	APPEND_LINE_FMT("rensha=%u\n", m_RenshaMode);
 	APPEND_LINE_FMT("scc_cart=%u\n", m_SccCartEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("debugger=%u\n", m_DebugOverlayEnabled ? 1u : 0u);
-	APPEND_LINE_FMT("audio_mute=%u\n", m_AudioMuted ? 1u : 0u);
 	APPEND_LINE_FMT("audio_gain=%u\n", m_AudioOutputGainPct > 100u ? 100u : m_AudioOutputGainPct);
 	APPEND_LINE_FMT("#END\n", 0u);
 
@@ -2326,6 +2336,22 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 					break;
 				}
 				UpdateLoadDiagTelemetry(2002u); /* path set */
+				if (rom_path[0] == '\0')
+				{
+					if (fmsx_runtime_unload_cartridge(slot_index))
+					{
+						UpdateLoadDiagTelemetry(2005u); /* unload cart ok */
+						CString line;
+						line.Format("Unload ROM: SLOT%u", slot_index + 1u);
+						m_Logger.Write(FromKernel, LogNotice, line);
+					}
+					else
+					{
+						UpdateLoadDiagTelemetry(9007u); /* unload cart fail */
+						m_Logger.Write(FromKernel, LogWarning, "Unload ROM falhou");
+					}
+					break;
+				}
 
 				PrimeAudioSilenceBeforeReset();
 				const unsigned active_boot_mode = fmsx_runtime_get_active_boot_mode();
@@ -2348,6 +2374,57 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 				{
 					UpdateLoadDiagTelemetry(9004u); /* load cart fail */
 					m_Logger.Write(FromKernel, LogWarning, use_boot_profile_reset ? "Load ROM falhou: hard reset" : "Load ROM falhou: LoadCart");
+				}
+			}
+		}
+	#endif
+		break;
+
+	case ComboMenuActionDiskDriveA:
+	case ComboMenuActionDiskDriveB:
+	#if COMBO_ENABLE_FMSX
+		if (m_FmsxReady)
+		{
+			unsigned drive_index = 0u;
+			char disk_path[192];
+			disk_path[0] = '\0';
+			if (m_PauseMenu.ConsumePendingDiskSelection(&drive_index, disk_path, sizeof(disk_path)))
+			{
+				UpdateLoadDiagTelemetry(3001u); /* menu consumed disk selection */
+				if (drive_index > 1u)
+				{
+					drive_index = (action == ComboMenuActionDiskDriveB) ? 1u : 0u;
+				}
+				if (disk_path[0] == '\0')
+				{
+					UpdateLoadDiagTelemetry(3002u); /* unload requested */
+					if (fmsx_runtime_unload_disk(drive_index))
+					{
+						UpdateLoadDiagTelemetry(3005u); /* unload disk ok */
+						CString line;
+						line.Format("Unload DSK: DRIVE%u", drive_index + 1u);
+						m_Logger.Write(FromKernel, LogNotice, line);
+					}
+					else
+					{
+						UpdateLoadDiagTelemetry(9008u); /* unload disk fail */
+						m_Logger.Write(FromKernel, LogWarning, "Unload DSK falhou");
+					}
+					break;
+				}
+				UpdateLoadDiagTelemetry(3002u); /* load requested */
+				const boolean load_ok = fmsx_runtime_load_disk(drive_index, disk_path);
+				if (load_ok)
+				{
+					UpdateLoadDiagTelemetry(3004u); /* hot swap ok */
+					CString line;
+					line.Format("Load DSK: DRIVE%u <= %s", drive_index + 1u, disk_path);
+					m_Logger.Write(FromKernel, LogNotice, line);
+				}
+				else
+				{
+					UpdateLoadDiagTelemetry(9006u); /* hot swap failed */
+					m_Logger.Write(FromKernel, LogWarning, "Load DSK falhou: hot swap");
 				}
 			}
 		}
@@ -2499,6 +2576,16 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		}
 		break;
 
+	case ComboMenuActionToggleDiskRom:
+		m_DiskRomEnabled = m_DiskRomEnabled ? FALSE : TRUE;
+		m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
+		RefreshSettingsUiAfterAction();
+	#if COMBO_ENABLE_FMSX
+		fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
+	#endif
+		m_Logger.Write(FromKernel, LogNotice, m_DiskRomEnabled ? "Settings: Disk ROM ON" : "Settings: Disk ROM OFF");
+		break;
+
 	case ComboMenuActionCycleBootMode:
 		m_BootMode = (m_BootMode + 1u) % 3u;
 		m_PauseMenu.SetBootMode(m_BootMode);
@@ -2589,19 +2676,19 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 	#endif
 		break;
 
-	case ComboMenuActionToggleAudioMute:
-		m_AudioMuted = m_AudioMuted ? FALSE : TRUE;
-		m_PauseMenu.SetAudioMuted(m_AudioMuted);
-		RefreshSettingsUiAfterAction();
-		m_Logger.Write(FromKernel, LogNotice, m_AudioMuted ? "Settings: Audio mute ON" : "Settings: Audio mute OFF");
-		break;
-
 	case ComboMenuActionAudioGainChanged:
 		m_AudioOutputGainPct = m_PauseMenu.GetAudioGainPercent();
 		RefreshSettingsUiAfterAction();
 		{
 			CString line;
-			line.Format("Settings: Audio gain %u%%", m_AudioOutputGainPct);
+			if (m_AudioOutputGainPct == 0u)
+			{
+				line.Format("Settings: Audio gain OFF");
+			}
+			else
+			{
+				line.Format("Settings: Audio gain %u%%", m_AudioOutputGainPct);
+			}
 			m_Logger.Write(FromKernel, LogNotice, line);
 		}
 		break;
@@ -2778,15 +2865,22 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 		key_state.menu_left_pressed,
 		key_state.menu_right_pressed,
 		key_state.menu_enter_pressed,
-		key_state.menu_back_pressed);
+		key_state.menu_back_pressed,
+		key_state.menu_delete_pressed);
 	const boolean defer_heavy_action =
 		(menu_action == ComboMenuActionCartridgeA)
 		|| (menu_action == ComboMenuActionCartridgeB)
+		|| (menu_action == ComboMenuActionDiskDriveA)
+		|| (menu_action == ComboMenuActionDiskDriveB)
 		|| (menu_action == ComboMenuActionReset)
 		|| (menu_action == ComboMenuActionMsxBasic);
 	if (menu_action == ComboMenuActionCartridgeA || menu_action == ComboMenuActionCartridgeB)
 	{
 		UpdateLoadDiagTelemetry(1991u); /* menu action propagated to kernel */
+	}
+	else if (menu_action == ComboMenuActionDiskDriveA || menu_action == ComboMenuActionDiskDriveB)
+	{
+		UpdateLoadDiagTelemetry(2991u); /* disk menu action propagated to kernel */
 	}
 	if (m_PauseMenu.ConsumeBackgroundRestoreRequest())
 	{

@@ -18,6 +18,8 @@ public:
     void SetScanlineMode(unsigned mode);
     void SetRefreshRateHz(unsigned hz);
     unsigned GetRefreshRateHz(void) const;
+    void SetDiskRomEnabled(boolean enabled);
+    boolean IsDiskRomEnabled(void) const;
     void SetBootMode(unsigned mode);
     unsigned GetBootMode(void) const;
     void SetZ80TurboMode(unsigned mode);
@@ -25,11 +27,11 @@ public:
     void SetRenshaMode(unsigned mode);
     void SetSccCartEnabled(boolean enabled);
     void SetOverlayEnabled(boolean enabled, boolean available);
-    void SetAudioMuted(boolean enabled);
     void SetAudioGainPercent(unsigned percent);
     void SetLoadRomSlotNames(const char *slot1_name, const char *slot2_name);
     void SetLoadDiskDriveNames(const char *drive1_name, const char *drive2_name);
     boolean ConsumePendingRomSelection(unsigned *slot_index, char *path, unsigned path_size);
+    boolean ConsumePendingDiskSelection(unsigned *drive_index, char *path, unsigned path_size);
     unsigned GetAudioGainPercent(void) const;
     boolean IsInSettings(void) const;
     void RequestRedraw(void);
@@ -40,7 +42,8 @@ public:
                                  boolean left_pressed,
                                  boolean right_pressed,
                                  boolean enter_pressed,
-                                 boolean back_pressed);
+                                 boolean back_pressed,
+                                 boolean delete_pressed);
     void Render(boolean visible, CGfxTextBoxRenderer *renderer, unsigned screen_width, unsigned screen_height,
                 unsigned anchor_x, unsigned anchor_y, unsigned anchor_w, unsigned anchor_h);
 
@@ -80,13 +83,13 @@ private:
     boolean m_WidescreenEnabled;
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;
+    boolean m_DiskRomEnabled;
     unsigned m_BootMode;
     unsigned m_Z80TurboMode;
     unsigned m_RenshaMode;
     boolean m_SccCartEnabled;
     boolean m_OverlayEnabled;
     boolean m_OverlayAvailable;
-    boolean m_AudioMuted;
     unsigned m_AudioGainPercent;
     char m_LoadRomSlot1Name[16];
     char m_LoadRomSlot2Name[16];
@@ -108,6 +111,9 @@ private:
     boolean m_HasPendingRomSelection;
     unsigned m_PendingRomSlot;
     char m_PendingRomPath[192];
+    boolean m_HasPendingDiskSelection;
+    unsigned m_PendingDiskDrive;
+    char m_PendingDiskPath[192];
     boolean m_LastBackPressed;
     unsigned m_LastDrawnView;
     unsigned m_LastDrawnOverscanPercent;
@@ -115,13 +121,13 @@ private:
     boolean m_LastDrawnWidescreen;
     unsigned m_LastDrawnScanlineMode;
     unsigned m_LastDrawnRefreshRateHz;
+    boolean m_LastDrawnDiskRomEnabled;
     unsigned m_LastDrawnBootMode;
     unsigned m_LastDrawnZ80TurboMode;
     unsigned m_LastDrawnRenshaMode;
     boolean m_LastDrawnSccCart;
     boolean m_LastDrawnOverlay;
     boolean m_LastDrawnOverlayAvailable;
-    boolean m_LastDrawnAudioMuted;
     unsigned m_LastDrawnAudioGainPercent;
     char m_LastDrawnLoadRomSlot1Name[16];
     char m_LastDrawnLoadRomSlot2Name[16];
@@ -139,6 +145,7 @@ private:
     boolean m_LastLeftPressed;
     boolean m_LastRightPressed;
     boolean m_LastEnterPressed;
+    boolean m_LastDeletePressed;
 };
 
 #endif

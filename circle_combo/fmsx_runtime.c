@@ -67,27 +67,70 @@ extern uint8_t UPeriod;
 extern int Mode;
 extern int RAMPages;
 extern int VRAMPages;
+extern uint8_t DiskROMLoaded;
 extern void fmsx_cpu_set_turbo_percent(unsigned percent);
 extern unsigned fmsx_video_get_latest(const u16 **pixels, unsigned *width, unsigned *height);
 extern const char *ROMName[];
 extern uint8_t *ROMData[];
+extern uint8_t ROMMask[];
+extern uint8_t *MemMap[4][4][8];
+extern uint8_t *EmptyRAM;
 extern const char *DSKName[];
 extern FDIDisk FDD[];
 extern void fmsx_video_set_overscan(boolean enabled);
 
 static TFmsxRuntimeStatus g_fmsx_status = { FALSE, FALSE, 0u, 0, 0 };
 static char g_cartridge_path[2][192] = {{0}};
+static char g_disk_path[2][192] = {{0}};
 static volatile unsigned g_load_diag_stage = 0u;
 static const unsigned kFmsxAudioRate = 48000u;
 static unsigned g_boot_warmup_frames_remaining = 0u;
 static boolean g_boot_forced_turbo = FALSE;
 static unsigned g_refresh_hz = 60u;
+static boolean g_disk_rom_enabled = TRUE;
 static unsigned g_boot_mode = (COMBO_FMSX_BOOT_PROFILE > 2) ? 0u : (unsigned) COMBO_FMSX_BOOT_PROFILE;
 static unsigned g_active_boot_mode = (COMBO_FMSX_BOOT_PROFILE > 2) ? 0u : (unsigned) COMBO_FMSX_BOOT_PROFILE;
 static unsigned g_model_profile = FMSX_MODEL_PROFILE_MSX1;
 static boolean g_use_embedded_bios = FALSE;
 static unsigned g_z80_turbo_mode = 0u;
 static boolean g_scc_cart_enabled = TRUE;
+
+static boolean fmsx_runtime_find_slot_map(unsigned slot, unsigned *out_ps, unsigned *out_ss)
+{
+    /* Must match fMSX CartMap in MSX.c */
+    static const uint8_t kCartMap[4][4] = {
+        { 255u, 3u, 4u, 5u },
+        { 0u,   0u, 0u, 0u },
+        { 1u,   1u, 1u, 1u },
+        { 2u, 255u, 255u, 255u }
+    };
+
+    for (unsigned ps = 0u; ps < 4u; ++ps)
+    {
+        for (unsigned ss = 0u; ss < 4u; ++ss)
+        {
+            if (kCartMap[ps][ss] == slot)
+            {
+                if (out_ps != 0) *out_ps = ps;
+                if (out_ss != 0) *out_ss = ss;
+                return TRUE;
+            }
+        }
+    }
+    return FALSE;
+}
+
+static void fmsx_runtime_force_disk_rom_off_mapping(void)
+{
+    /*
+     * fMSX may keep DiskROM mapped even when MSX_PATCHBDOS is toggled off.
+     * Enforce OFF policy by unmapping slot 3:1 pages 2-3 explicitly.
+     */
+    MemMap[3][1][2] = EmptyRAM;
+    MemMap[3][1][3] = EmptyRAM;
+    DiskROMLoaded = 0u;
+    Mode &= ~MSX_PATCHBDOS;
+}
 
 static unsigned fmsx_runtime_fast_cutoff_frames(void)
 {
@@ -169,6 +212,24 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     g_fmsx_status.last_error = 0;
 
     int startup_mode = MSX_MSX1 | (fmsx_runtime_effective_refresh_hz() == 50u ? MSX_PAL : MSX_NTSC) | MSX_JOY1;
+    if (g_disk_rom_enabled)
+    {
+        /*
+         * Keep DISK.ROM loaded but without BDOS patch hooks.
+         * We still force a PATCHBDOS transition so ResetMSX() reloads DISK.ROM
+         * deterministically, then leaves hooks disabled (WD1793 path).
+         */
+        startup_mode &= ~MSX_PATCHBDOS;
+        Mode |= MSX_PATCHBDOS;
+    }
+    else
+    {
+        /*
+         * Force opposite transition when Disk ROM is OFF as well, so the
+         * disable path is applied deterministically.
+         */
+        Mode |= MSX_PATCHBDOS;
+    }
 #if COMBO_FMSX_MSX1_TEXT80
     startup_mode |= MSX_FIXEDFONT;
 #endif
@@ -216,6 +277,11 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     {
         g_fmsx_status.last_error = 1;
         return FALSE;
+    }
+
+    if (!g_disk_rom_enabled)
+    {
+        fmsx_runtime_force_disk_rom_off_mapping();
     }
 
     UPeriod = 100;
@@ -280,6 +346,17 @@ boolean fmsx_runtime_hard_reset(void)
     {
         return FALSE;
     }
+    char saved_disk_path[2][192];
+    for (unsigned i = 0u; i < 2u; ++i)
+    {
+        unsigned n = 0u;
+        while (n + 1u < sizeof(saved_disk_path[i]) && g_disk_path[i][n] != '\0')
+        {
+            saved_disk_path[i][n] = g_disk_path[i][n];
+            ++n;
+        }
+        saved_disk_path[i][n] = '\0';
+    }
     fmsx_runtime_set_load_diag(2201u); /* hard_reset before TrashMSX */
     /*
      * Use a full restart instead of ResetMSX() so boot-mode policy is always reapplied:
@@ -290,7 +367,41 @@ boolean fmsx_runtime_hard_reset(void)
     fmsx_runtime_set_load_diag(2202u); /* hard_reset after TrashMSX */
     g_fmsx_status.initialized = FALSE;
     g_fmsx_status.running = FALSE;
-    const boolean ok = fmsx_runtime_start(FALSE);
+    /* Restore drive paths before StartMSX so disk boot can happen during BIOS startup. */
+    for (unsigned i = 0u; i < 2u; ++i)
+    {
+        if (saved_disk_path[i][0] != '\0')
+        {
+            (void) fmsx_runtime_set_disk_path(i, saved_disk_path[i]);
+        }
+        else
+        {
+            (void) fmsx_runtime_set_disk_path(i, 0);
+        }
+    }
+    boolean ok = fmsx_runtime_start(FALSE);
+    if (ok)
+    {
+        /*
+         * Defensive restore: if any drive did not come back mounted after StartMSX,
+         * reload it now to guarantee persistence across menu hard-reset.
+         */
+        for (unsigned i = 0u; i < 2u; ++i)
+        {
+            if (saved_disk_path[i][0] == '\0')
+            {
+                continue;
+            }
+            if (FDD[i].Data == 0 || DSKName[i] == 0)
+            {
+                if (!fmsx_runtime_load_disk(i, saved_disk_path[i]))
+                {
+                    ok = FALSE;
+                    break;
+                }
+            }
+        }
+    }
     fmsx_runtime_set_load_diag(ok ? 2203u : 9203u);
     return ok;
 }
@@ -399,6 +510,42 @@ void fmsx_runtime_set_overscan(boolean enabled)
 void fmsx_runtime_set_refresh_hz(unsigned hz)
 {
     g_refresh_hz = (hz == 50u) ? 50u : 60u;
+}
+
+void fmsx_runtime_set_disk_rom_enabled(boolean enabled)
+{
+    const boolean desired = enabled ? TRUE : FALSE;
+    if (g_disk_rom_enabled == desired)
+    {
+        if (!desired && g_fmsx_status.running)
+        {
+            fmsx_runtime_force_disk_rom_off_mapping();
+        }
+        return;
+    }
+    g_disk_rom_enabled = desired;
+    if (!g_fmsx_status.running)
+    {
+        return;
+    }
+
+    int new_mode = Mode & ~MSX_PATCHBDOS;
+    if (g_disk_rom_enabled)
+    {
+        /* Force transition so ResetMSX() reloads DISK.ROM with hooks disabled. */
+        Mode |= MSX_PATCHBDOS;
+        new_mode = Mode & ~MSX_PATCHBDOS;
+    }
+    (void) ResetMSX(new_mode, RAMPages, VRAMPages);
+    if (!g_disk_rom_enabled)
+    {
+        fmsx_runtime_force_disk_rom_off_mapping();
+    }
+}
+
+boolean fmsx_runtime_get_disk_rom_enabled(void)
+{
+    return g_disk_rom_enabled ? TRUE : FALSE;
 }
 
 void fmsx_runtime_set_boot_mode(unsigned mode)
@@ -530,6 +677,37 @@ boolean fmsx_runtime_set_cartridge_path(unsigned slot_index, const char *path)
     return TRUE;
 }
 
+boolean fmsx_runtime_set_disk_path(unsigned drive_index, const char *path)
+{
+    if (drive_index > 1u)
+    {
+        return FALSE;
+    }
+
+    if (path == 0 || path[0] == '\0')
+    {
+        g_disk_path[drive_index][0] = '\0';
+        DSKName[drive_index] = 0;
+        return TRUE;
+    }
+
+    unsigned n = 0u;
+    while (path[n] != '\0' && n + 1u < sizeof(g_disk_path[drive_index]))
+    {
+        g_disk_path[drive_index][n] = path[n];
+        ++n;
+    }
+    g_disk_path[drive_index][n] = '\0';
+
+    if (path[n] != '\0')
+    {
+        return FALSE;
+    }
+
+    DSKName[drive_index] = g_disk_path[drive_index];
+    return TRUE;
+}
+
 boolean fmsx_runtime_load_cartridge(unsigned slot_index, const char *path)
 {
     if (slot_index > 1u || path == 0 || path[0] == '\0' || !g_fmsx_status.running)
@@ -550,6 +728,101 @@ boolean fmsx_runtime_load_cartridge(unsigned slot_index, const char *path)
         return FALSE;
     }
     fmsx_runtime_set_load_diag(2302u); /* LoadCart ok */
+    g_fmsx_status.last_pc = (int) CPU.PC.W;
+    return TRUE;
+}
+
+boolean fmsx_runtime_load_disk(unsigned drive_index, const char *path)
+{
+    if (drive_index > 1u || path == 0 || path[0] == '\0' || !g_fmsx_status.running)
+    {
+        return FALSE;
+    }
+
+    char old_path[192];
+    unsigned old_n = 0u;
+    while (old_n + 1u < sizeof(old_path) && g_disk_path[drive_index][old_n] != '\0')
+    {
+        old_path[old_n] = g_disk_path[drive_index][old_n];
+        ++old_n;
+    }
+    old_path[old_n] = '\0';
+
+    if (!fmsx_runtime_set_disk_path(drive_index, path))
+    {
+        return FALSE;
+    }
+
+    fmsx_runtime_set_load_diag(2401u); /* before ChangeDisk */
+    if (!ChangeDisk((uint8_t) drive_index, DSKName[drive_index]))
+    {
+        fmsx_runtime_set_load_diag(9401u); /* ChangeDisk failed */
+        (void) fmsx_runtime_set_disk_path(drive_index, old_path[0] != '\0' ? old_path : 0);
+        if (old_path[0] != '\0')
+        {
+            (void) ChangeDisk((uint8_t) drive_index, DSKName[drive_index]);
+        }
+        return FALSE;
+    }
+    if (FDD[drive_index].Data == 0
+     || FDD[drive_index].Tracks <= 0
+     || FDD[drive_index].Sectors <= 0
+     || FDD[drive_index].SecSize <= 0)
+    {
+        fmsx_runtime_set_load_diag(9402u); /* geometry invalid */
+        (void) ChangeDisk((uint8_t) drive_index, 0);
+        (void) fmsx_runtime_set_disk_path(drive_index, old_path[0] != '\0' ? old_path : 0);
+        if (old_path[0] != '\0')
+        {
+            (void) ChangeDisk((uint8_t) drive_index, DSKName[drive_index]);
+        }
+        return FALSE;
+    }
+
+    fmsx_runtime_set_load_diag(2402u); /* ChangeDisk ok */
+    g_fmsx_status.last_pc = (int) CPU.PC.W;
+    return TRUE;
+}
+
+boolean fmsx_runtime_unload_cartridge(unsigned slot_index)
+{
+    if (slot_index > 1u || !g_fmsx_status.running)
+    {
+        return FALSE;
+    }
+    unsigned ps = 0u;
+    unsigned ss = 0u;
+    if (!fmsx_runtime_find_slot_map(slot_index, &ps, &ss))
+    {
+        return FALSE;
+    }
+
+    ROMMask[slot_index] = 0;
+    ROMName[slot_index] = 0;
+    g_cartridge_path[slot_index][0] = '\0';
+    for (unsigned page = 0u; page < 8u; ++page)
+    {
+        MemMap[ps][ss][page] = EmptyRAM;
+    }
+
+    g_fmsx_status.last_pc = (int) CPU.PC.W;
+    return TRUE;
+}
+
+boolean fmsx_runtime_unload_disk(unsigned drive_index)
+{
+    if (drive_index > 1u || !g_fmsx_status.running)
+    {
+        return FALSE;
+    }
+
+    if (!ChangeDisk((uint8_t) drive_index, 0))
+    {
+        return FALSE;
+    }
+
+    DSKName[drive_index] = 0;
+    g_disk_path[drive_index][0] = '\0';
     g_fmsx_status.last_pc = (int) CPU.PC.W;
     return TRUE;
 }

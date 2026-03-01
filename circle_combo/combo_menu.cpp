@@ -403,13 +403,13 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_WidescreenEnabled(FALSE),
     m_ScanlineMode(0u),
     m_RefreshRateHz(60u),
+    m_DiskRomEnabled(TRUE),
     m_BootMode(0u),
     m_Z80TurboMode(0u),
     m_RenshaMode(0u),
     m_SccCartEnabled(TRUE),
     m_OverlayEnabled(FALSE),
     m_OverlayAvailable(FALSE),
-    m_AudioMuted(FALSE),
     m_AudioGainPercent(50u),
     m_LoadRomSlot1Name{0},
     m_LoadRomSlot2Name{0},
@@ -431,6 +431,9 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_HasPendingRomSelection(FALSE),
     m_PendingRomSlot(0u),
     m_PendingRomPath{0},
+    m_HasPendingDiskSelection(FALSE),
+    m_PendingDiskDrive(0u),
+    m_PendingDiskPath{0},
     m_LastBackPressed(FALSE),
     m_LastDrawnView(MenuViewRoot),
     m_LastDrawnOverscanPercent(0u),
@@ -438,13 +441,13 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnWidescreen(FALSE),
     m_LastDrawnScanlineMode(0u),
     m_LastDrawnRefreshRateHz(60u),
+    m_LastDrawnDiskRomEnabled(TRUE),
     m_LastDrawnBootMode(0u),
     m_LastDrawnZ80TurboMode(0u),
     m_LastDrawnRenshaMode(0u),
     m_LastDrawnSccCart(TRUE),
     m_LastDrawnOverlay(FALSE),
     m_LastDrawnOverlayAvailable(FALSE),
-    m_LastDrawnAudioMuted(FALSE),
     m_LastDrawnAudioGainPercent(50u),
     m_LastDrawnLoadRomSlot1Name{0},
     m_LastDrawnLoadRomSlot2Name{0},
@@ -461,7 +464,8 @@ CComboPauseMenu::CComboPauseMenu(void)
   m_LastDownPressed(FALSE),
   m_LastLeftPressed(FALSE),
   m_LastRightPressed(FALSE),
-  m_LastEnterPressed(FALSE)
+  m_LastEnterPressed(FALSE),
+  m_LastDeletePressed(FALSE)
 {
     CopySmallText(m_LoadRomSlot1Name, sizeof(m_LoadRomSlot1Name), "");
     CopySmallText(m_LoadRomSlot2Name, sizeof(m_LoadRomSlot2Name), "");
@@ -472,6 +476,9 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_HasPendingRomSelection = FALSE;
     m_PendingRomSlot = 0u;
     CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), "");
+    m_HasPendingDiskSelection = FALSE;
+    m_PendingDiskDrive = 0u;
+    CopySmallText(m_PendingDiskPath, sizeof(m_PendingDiskPath), "");
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), "");
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), "");
     CopySmallText(m_LastDrawnLoadDiskDrive1Name, sizeof(m_LastDrawnLoadDiskDrive1Name), "");
@@ -493,13 +500,13 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnWidescreen = m_WidescreenEnabled;
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
+    m_LastDrawnDiskRomEnabled = m_DiskRomEnabled;
     m_LastDrawnBootMode = m_BootMode;
     m_LastDrawnZ80TurboMode = m_Z80TurboMode;
     m_LastDrawnRenshaMode = m_RenshaMode;
     m_LastDrawnSccCart = m_SccCartEnabled;
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
-    m_LastDrawnAudioMuted = m_AudioMuted;
     m_LastDrawnAudioGainPercent = m_AudioGainPercent;
     m_RomBrowserSlot = 0u;
     m_BrowserMode = BrowserModeRom;
@@ -515,6 +522,9 @@ void CComboPauseMenu::Reset(void)
     m_HasPendingRomSelection = FALSE;
     m_PendingRomSlot = 0u;
     CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), "");
+    m_HasPendingDiskSelection = FALSE;
+    m_PendingDiskDrive = 0u;
+    CopySmallText(m_PendingDiskPath, sizeof(m_PendingDiskPath), "");
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), m_LoadRomSlot1Name);
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), m_LoadRomSlot2Name);
     CopySmallText(m_LastDrawnLoadDiskDrive1Name, sizeof(m_LastDrawnLoadDiskDrive1Name), m_LoadDiskDrive1Name);
@@ -527,6 +537,7 @@ void CComboPauseMenu::Reset(void)
     m_LastLeftPressed = FALSE;
     m_LastRightPressed = FALSE;
     m_LastEnterPressed = FALSE;
+    m_LastDeletePressed = FALSE;
 }
 
 void CComboPauseMenu::SetOverscanPercent(unsigned percent)
@@ -605,6 +616,21 @@ unsigned CComboPauseMenu::GetRefreshRateHz(void) const
     return m_RefreshRateHz;
 }
 
+void CComboPauseMenu::SetDiskRomEnabled(boolean enabled)
+{
+    enabled = enabled ? TRUE : FALSE;
+    if (m_DiskRomEnabled != enabled)
+    {
+        m_DiskRomEnabled = enabled;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+boolean CComboPauseMenu::IsDiskRomEnabled(void) const
+{
+    return m_DiskRomEnabled ? TRUE : FALSE;
+}
+
 void CComboPauseMenu::SetBootMode(unsigned mode)
 {
     if (mode > 2u)
@@ -672,15 +698,6 @@ void CComboPauseMenu::SetOverlayEnabled(boolean enabled, boolean available)
     {
         m_OverlayEnabled = enabled;
         m_OverlayAvailable = available;
-        m_ForceRedraw = TRUE;
-    }
-}
-
-void CComboPauseMenu::SetAudioMuted(boolean enabled)
-{
-    if (m_AudioMuted != enabled)
-    {
-        m_AudioMuted = enabled;
         m_ForceRedraw = TRUE;
     }
 }
@@ -761,6 +778,26 @@ boolean CComboPauseMenu::ConsumePendingRomSelection(unsigned *slot_index, char *
     return TRUE;
 }
 
+boolean CComboPauseMenu::ConsumePendingDiskSelection(unsigned *drive_index, char *path, unsigned path_size)
+{
+    if (!m_HasPendingDiskSelection)
+    {
+        return FALSE;
+    }
+    if (drive_index != 0)
+    {
+        *drive_index = m_PendingDiskDrive;
+    }
+    if (path != 0 && path_size > 0u)
+    {
+        CopySmallText(path, path_size, m_PendingDiskPath);
+    }
+    m_HasPendingDiskSelection = FALSE;
+    m_PendingDiskDrive = 0u;
+    CopySmallText(m_PendingDiskPath, sizeof(m_PendingDiskPath), "");
+    return TRUE;
+}
+
 boolean CComboPauseMenu::IsInSettings(void) const
 {
     return (m_View != MenuViewRoot) ? TRUE : FALSE;
@@ -788,13 +825,13 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_WidescreenEnabled,
             m_ScanlineMode,
             m_RefreshRateHz,
+            m_DiskRomEnabled,
             m_BootMode,
             m_Z80TurboMode,
             m_RenshaMode,
             m_SccCartEnabled,
             m_OverlayEnabled,
             m_OverlayAvailable,
-            m_AudioMuted,
             m_AudioGainPercent,
             count);
     }
@@ -916,7 +953,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                                                boolean left_pressed,
                                                boolean right_pressed,
                                                boolean enter_pressed,
-                                               boolean back_pressed)
+                                               boolean back_pressed,
+                                               boolean delete_pressed)
 {
     if (!paused)
     {
@@ -926,6 +964,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_LastLeftPressed = left_pressed;
         m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
+        m_LastDeletePressed = delete_pressed;
         return ComboMenuActionNone;
     }
 
@@ -939,6 +978,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_LastLeftPressed = left_pressed;
         m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
+        m_LastDeletePressed = delete_pressed;
         return ComboMenuActionNone;
     }
 
@@ -965,6 +1005,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_LastLeftPressed = left_pressed;
         m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
+        m_LastDeletePressed = delete_pressed;
         return ComboMenuActionNone;
     }
 
@@ -1037,6 +1078,23 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                     m_PendingRomSlot = m_RomBrowserSlot;
                     CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), m_RomBrowserPaths[abs]);
                     action = (m_RomBrowserSlot == 0u) ? ComboMenuActionCartridgeA : ComboMenuActionCartridgeB;
+                    m_View = MenuViewLoadRom;
+                    m_Selected = (m_RomBrowserSlot == 0u) ? 0u : 1u;
+                    m_ForceRedraw = TRUE;
+                    m_RequestBackgroundRestore = TRUE;
+                }
+                else if (abs < m_RomBrowserCount
+                      && !m_RomBrowserIsDir[abs]
+                      && m_BrowserMode == BrowserModeDisk)
+                {
+                    m_HasPendingDiskSelection = TRUE;
+                    m_PendingDiskDrive = m_RomBrowserSlot;
+                    CopySmallText(m_PendingDiskPath, sizeof(m_PendingDiskPath), m_RomBrowserPaths[abs]);
+                    action = (m_RomBrowserSlot == 0u) ? ComboMenuActionDiskDriveA : ComboMenuActionDiskDriveB;
+                    m_View = MenuViewLoadDisk;
+                    m_Selected = (m_RomBrowserSlot == 0u) ? 0u : 1u;
+                    m_ForceRedraw = TRUE;
+                    m_RequestBackgroundRestore = TRUE;
                 }
             }
         }
@@ -1047,6 +1105,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_LastLeftPressed = left_pressed;
         m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
+        m_LastDeletePressed = delete_pressed;
         return action;
     }
 
@@ -1223,8 +1282,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
         else if ((items[m_Selected].action == ComboMenuActionToggleWidescreen)
-              || (items[m_Selected].action == ComboMenuActionToggleOverlay)
-              || (items[m_Selected].action == ComboMenuActionToggleAudioMute))
+              || (items[m_Selected].action == ComboMenuActionToggleDiskRom)
+              || (items[m_Selected].action == ComboMenuActionToggleOverlay))
         {
             if (enter_edge || left_edge || right_edge)
             {
@@ -1292,12 +1351,33 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         }
     }
 
+    if (delete_pressed && !m_LastDeletePressed && items[m_Selected].selectable)
+    {
+        if (m_View == MenuViewLoadRom
+              && (items[m_Selected].action == ComboMenuActionCartridgeA || items[m_Selected].action == ComboMenuActionCartridgeB))
+        {
+            m_HasPendingRomSelection = TRUE;
+            m_PendingRomSlot = (items[m_Selected].action == ComboMenuActionCartridgeA) ? 0u : 1u;
+            CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), "");
+            action = items[m_Selected].action;
+        }
+        else if (m_View == MenuViewLoadDisk
+              && (items[m_Selected].action == ComboMenuActionDiskDriveA || items[m_Selected].action == ComboMenuActionDiskDriveB))
+        {
+            m_HasPendingDiskSelection = TRUE;
+            m_PendingDiskDrive = (items[m_Selected].action == ComboMenuActionDiskDriveA) ? 0u : 1u;
+            CopySmallText(m_PendingDiskPath, sizeof(m_PendingDiskPath), "");
+            action = items[m_Selected].action;
+        }
+    }
+
     m_LastBackPressed = back_pressed;
     m_LastUpPressed = up_pressed;
     m_LastDownPressed = down_pressed;
     m_LastLeftPressed = left_pressed;
     m_LastRightPressed = right_pressed;
     m_LastEnterPressed = enter_pressed;
+    m_LastDeletePressed = delete_pressed;
 
     return action;
 }
@@ -1389,7 +1469,8 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     }
 
     const unsigned box_cols = content_cols;
-    const unsigned box_rows = item_count + 3u;
+    const boolean has_unload_hint = (m_View == MenuViewLoadRom || m_View == MenuViewLoadDisk) ? TRUE : FALSE;
+    const unsigned box_rows = item_count + 3u + (has_unload_hint ? 2u : 0u);
     const unsigned box_w_px = box_cols * cell_w;
     const unsigned box_h_px = box_rows * cell_h;
 
@@ -1418,13 +1499,13 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnWidescreen == m_WidescreenEnabled
      && m_LastDrawnScanlineMode == m_ScanlineMode
      && m_LastDrawnRefreshRateHz == m_RefreshRateHz
+     && m_LastDrawnDiskRomEnabled == m_DiskRomEnabled
      && m_LastDrawnBootMode == m_BootMode
      && m_LastDrawnZ80TurboMode == m_Z80TurboMode
      && m_LastDrawnRenshaMode == m_RenshaMode
      && m_LastDrawnSccCart == m_SccCartEnabled
      && m_LastDrawnOverlay == m_OverlayEnabled
      && m_LastDrawnOverlayAvailable == m_OverlayAvailable
-     && m_LastDrawnAudioMuted == m_AudioMuted
      && m_LastDrawnAudioGainPercent == m_AudioGainPercent
      && ComboTextEquals(m_LastDrawnLoadRomSlot1Name, m_LoadRomSlot1Name)
      && ComboTextEquals(m_LastDrawnLoadRomSlot2Name, m_LoadRomSlot2Name)
@@ -1534,6 +1615,20 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         }
     }
 
+    if (has_unload_hint)
+    {
+        const char *hint = (m_View == MenuViewLoadDisk) ? locale->load_disk_unload_hint : locale->load_rom_unload_hint;
+        if (hint == 0 || hint[0] == '\0')
+        {
+            hint = (m_View == MenuViewLoadDisk) ? "[DEL] Eject Disk" : "[DEL] Unload ROM";
+        }
+        const unsigned hint_len = ComboStrLen(hint);
+        const unsigned hint_row = item_count + 3u; /* one blank line above */
+        const unsigned hint_y = box_y + (hint_row * cell_h);
+        const unsigned hint_x = box_x + ((box_cols - hint_len) / 2u) * cell_w;
+        renderer->DrawText(hint_x, hint_y, hint, normal_style, scale_x, scale_y);
+    }
+
     m_Row = box_y;
     m_Col = box_x;
     m_LastDrawnSelected = m_Selected;
@@ -1543,13 +1638,13 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnWidescreen = m_WidescreenEnabled;
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
+    m_LastDrawnDiskRomEnabled = m_DiskRomEnabled;
     m_LastDrawnBootMode = m_BootMode;
     m_LastDrawnZ80TurboMode = m_Z80TurboMode;
     m_LastDrawnRenshaMode = m_RenshaMode;
     m_LastDrawnSccCart = m_SccCartEnabled;
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
-    m_LastDrawnAudioMuted = m_AudioMuted;
     m_LastDrawnAudioGainPercent = m_AudioGainPercent;
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), m_LoadRomSlot1Name);
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), m_LoadRomSlot2Name);
