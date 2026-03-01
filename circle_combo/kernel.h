@@ -50,12 +50,14 @@ private:
     void WriteScreenText(const char *text);
     void BlitFmsxFrame(boolean force_redraw);
     void HandleMenuAction(TComboMenuAction action);
+    void ApplyRuntimeSettingsToFmsx(void);
     void RefreshSettingsUiAfterAction(void);
     void ResetEmulationRuntimeState(void);
     void UpdateJoystickFromRaw(unsigned char modifiers, const unsigned char raw_keys[6]);
     void PushKeyboardStateToRuntime(boolean rensha_fire_on);
     void SetDebugOverlayEnabled(boolean enabled);
     void UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux);
+    void UpdateLoadDiagTelemetry(unsigned stage);
     void LoadSettingsFromStorage(void);
     void SaveSettingsToStorage(void);
     boolean EnsureStateIoBuffer(unsigned min_capacity);
@@ -174,6 +176,7 @@ private:
     boolean m_StateLoadPending;
     boolean m_MediaCatalogStarted;
     boolean m_MediaCatalogSummaryLogged;
+    volatile unsigned m_PendingMenuAction;
     unsigned m_SettingsSaveStage;
     unsigned m_SettingsSaveCode;
     unsigned m_SettingsSaveAux;

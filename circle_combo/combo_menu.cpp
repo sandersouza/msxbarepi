@@ -428,6 +428,9 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_RomBrowserItems{{0}},
     m_RomBrowserItemLabels{{0}},
     m_RomBrowserEmptyLabel{0},
+    m_HasPendingRomSelection(FALSE),
+    m_PendingRomSlot(0u),
+    m_PendingRomPath{0},
     m_LastBackPressed(FALSE),
     m_LastDrawnView(MenuViewRoot),
     m_LastDrawnOverscanPercent(0u),
@@ -466,6 +469,9 @@ CComboPauseMenu::CComboPauseMenu(void)
     CopySmallText(m_LoadDiskDrive2Name, sizeof(m_LoadDiskDrive2Name), "");
     CopySmallText(m_RomBrowserCurrentDir, sizeof(m_RomBrowserCurrentDir), kRomsRootPath);
     CopySmallText(m_RomBrowserEmptyLabel, sizeof(m_RomBrowserEmptyLabel), "");
+    m_HasPendingRomSelection = FALSE;
+    m_PendingRomSlot = 0u;
+    CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), "");
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), "");
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), "");
     CopySmallText(m_LastDrawnLoadDiskDrive1Name, sizeof(m_LastDrawnLoadDiskDrive1Name), "");
@@ -506,6 +512,9 @@ void CComboPauseMenu::Reset(void)
         m_RomBrowserIsDir[i] = FALSE;
         m_RomBrowserIsParent[i] = FALSE;
     }
+    m_HasPendingRomSelection = FALSE;
+    m_PendingRomSlot = 0u;
+    CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), "");
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), m_LoadRomSlot1Name);
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), m_LoadRomSlot2Name);
     CopySmallText(m_LastDrawnLoadDiskDrive1Name, sizeof(m_LastDrawnLoadDiskDrive1Name), m_LoadDiskDrive1Name);
@@ -732,6 +741,26 @@ unsigned CComboPauseMenu::GetAudioGainPercent(void) const
     return m_AudioGainPercent;
 }
 
+boolean CComboPauseMenu::ConsumePendingRomSelection(unsigned *slot_index, char *path, unsigned path_size)
+{
+    if (!m_HasPendingRomSelection)
+    {
+        return FALSE;
+    }
+    if (slot_index != 0)
+    {
+        *slot_index = m_PendingRomSlot;
+    }
+    if (path != 0 && path_size > 0u)
+    {
+        CopySmallText(path, path_size, m_PendingRomPath);
+    }
+    m_HasPendingRomSelection = FALSE;
+    m_PendingRomSlot = 0u;
+    CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), "");
+    return TRUE;
+}
+
 boolean CComboPauseMenu::IsInSettings(void) const
 {
     return (m_View != MenuViewRoot) ? TRUE : FALSE;
@@ -944,6 +973,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_Selected = FindFirstSelectable();
     }
 
+    TComboMenuAction action = ComboMenuActionNone;
+
     if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser)
     {
         if (m_RomBrowserCount > 0u)
@@ -998,6 +1029,15 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                     m_ForceRedraw = TRUE;
                     m_RequestBackgroundRestore = TRUE;
                 }
+                else if (abs < m_RomBrowserCount
+                      && !m_RomBrowserIsDir[abs]
+                      && m_BrowserMode == BrowserModeRom)
+                {
+                    m_HasPendingRomSelection = TRUE;
+                    m_PendingRomSlot = m_RomBrowserSlot;
+                    CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), m_RomBrowserPaths[abs]);
+                    action = (m_RomBrowserSlot == 0u) ? ComboMenuActionCartridgeA : ComboMenuActionCartridgeB;
+                }
             }
         }
 
@@ -1007,7 +1047,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_LastLeftPressed = left_pressed;
         m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
-        return ComboMenuActionNone;
+        return action;
     }
 
     if (up_pressed && !m_LastUpPressed)
@@ -1020,7 +1060,6 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_Selected = FindNextSelectable(m_Selected);
     }
 
-    TComboMenuAction action = ComboMenuActionNone;
     boolean handled_settings_input = FALSE;
     if (m_View == MenuViewSettings && items[m_Selected].selectable)
     {

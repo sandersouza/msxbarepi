@@ -563,6 +563,7 @@ CComboKernel::CComboKernel(void)
 	m_StateLoadPending(FALSE),
 	m_MediaCatalogStarted(FALSE),
 	m_MediaCatalogSummaryLogged(FALSE),
+	m_PendingMenuAction((unsigned) ComboMenuActionNone),
 	m_SettingsSaveStage(0u),
 	m_SettingsSaveCode(0u),
 	m_SettingsSaveAux(0u),
@@ -748,11 +749,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetAudioMuted(m_AudioMuted);
 	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
 #if COMBO_ENABLE_FMSX
-	fmsx_runtime_set_overscan(m_OverscanPercent > 0u ? TRUE : FALSE);
-	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
-	fmsx_runtime_set_boot_mode(m_BootMode);
-	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
-	fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
+	ApplyRuntimeSettingsToFmsx();
 #endif
 
 	u64 next_frame_us = CTimer::GetClockTicks64();
@@ -906,6 +903,12 @@ TComboShutdownMode CComboKernel::Run(void)
 		{
 			m_StateLoadPending = FALSE;
 			LoadEmulatorStateFromStorage();
+		}
+		if (m_PendingMenuAction != (unsigned) ComboMenuActionNone)
+		{
+			const TComboMenuAction deferred_action = (TComboMenuAction) m_PendingMenuAction;
+			m_PendingMenuAction = (unsigned) ComboMenuActionNone;
+			HandleMenuAction(deferred_action);
 		}
 
 		/* Hybrid wait: coarse sleep first, then short busy delay for tighter frame deadline. */
@@ -1379,9 +1382,11 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 	CString line;
 	TFmsxAudioStats audio_stats = { 0, 0, 0, 0, 0 };
 	TFmsxKeyboardDebug kbd_stats = { 0, 0 };
+	unsigned load_diag = 0u;
 #if COMBO_ENABLE_FMSX
 	fmsx_audio_get_stats(&audio_stats);
 	fmsx_keyboard_get_debug(&kbd_stats);
+	load_diag = fmsx_runtime_get_load_diag();
 #endif
 
 	line.Format("\x1b[97m\x1b[49m\x1b[1;1HTXTDBG OS:%02u M:%u C:%u I:%u PAU:%u      ", tick & 0xFFu, m_MmuEnabled ? 1u : 0u, m_DCacheEnabled ? 1u : 0u, m_ICacheEnabled ? 1u : 0u, m_EmulationPaused ? 1u : 0u);
@@ -1432,10 +1437,11 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		m_FramePacingErrMaxUs > 999u ? 999u : m_FramePacingErrMaxUs);
 	WriteScreenText(line);
 
-	line.Format("\x1b[97m\x1b[49m\x1b[7;1HSD SV:%02u C:%03u A:%04u BT:%04u                ",
+	line.Format("\x1b[97m\x1b[49m\x1b[7;1HSD SV:%02u C:%03u A:%04u LD:%04u BT:%04u        ",
 		m_SettingsSaveStage > 99u ? 99u : m_SettingsSaveStage,
 		m_SettingsSaveCode > 999u ? 999u : m_SettingsSaveCode,
 		m_SettingsSaveAux > 9999u ? 9999u : m_SettingsSaveAux,
+		load_diag > 9999u ? 9999u : load_diag,
 		m_BootToFmsxMs > 9999u ? 9999u : m_BootToFmsxMs);
 	WriteScreenText(line);
 
@@ -1777,6 +1783,21 @@ void CComboKernel::RefreshSettingsUiAfterAction(void)
 	}
 }
 
+void CComboKernel::ApplyRuntimeSettingsToFmsx(void)
+{
+#if COMBO_ENABLE_FMSX
+	if (!m_FmsxReady)
+	{
+		return;
+	}
+	fmsx_runtime_set_overscan(m_OverscanPercent > 0u ? TRUE : FALSE);
+	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
+	fmsx_runtime_set_boot_mode(m_BootMode);
+	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
+	fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
+#endif
+}
+
 void CComboKernel::UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux)
 {
 	m_SettingsSaveStage = stage;
@@ -1787,6 +1808,21 @@ void CComboKernel::UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, un
 	{
 		DrawDebugOverlay((unsigned) (m_FmsxFrames & 0xFFFFFFFFu));
 	}
+#endif
+}
+
+void CComboKernel::UpdateLoadDiagTelemetry(unsigned stage)
+{
+#if COMBO_ENABLE_FMSX
+	fmsx_runtime_set_load_diag(stage);
+#if COMBO_ENABLE_DEBUG_OVERLAY
+	if (m_DebugOverlayEnabled)
+	{
+		DrawDebugOverlay((unsigned) (m_FmsxFrames & 0xFFFFFFFFu));
+	}
+#endif
+#else
+	(void) stage;
 #endif
 }
 
@@ -2268,6 +2304,56 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 {
 	switch (action)
 	{
+	case ComboMenuActionCartridgeA:
+	case ComboMenuActionCartridgeB:
+	#if COMBO_ENABLE_FMSX
+		if (m_FmsxReady)
+		{
+			unsigned slot_index = 0u;
+			char rom_path[192];
+			rom_path[0] = '\0';
+			if (m_PauseMenu.ConsumePendingRomSelection(&slot_index, rom_path, sizeof(rom_path)))
+			{
+				UpdateLoadDiagTelemetry(2001u); /* menu consumed selection */
+				if (slot_index > 1u)
+				{
+					slot_index = (action == ComboMenuActionCartridgeB) ? 1u : 0u;
+				}
+				if (!fmsx_runtime_set_cartridge_path(slot_index, rom_path))
+				{
+					UpdateLoadDiagTelemetry(9001u); /* set_cartridge_path failed */
+					m_Logger.Write(FromKernel, LogWarning, "Load ROM falhou: caminho invalido");
+					break;
+				}
+				UpdateLoadDiagTelemetry(2002u); /* path set */
+
+				PrimeAudioSilenceBeforeReset();
+				const unsigned active_boot_mode = fmsx_runtime_get_active_boot_mode();
+				const boolean use_boot_profile_reset = (m_BootMode != active_boot_mode) ? TRUE : FALSE;
+				UpdateLoadDiagTelemetry(use_boot_profile_reset ? 2010u : 2003u);
+				const boolean load_ok = use_boot_profile_reset
+					? fmsx_runtime_hard_reset()
+					: fmsx_runtime_load_cartridge(slot_index, rom_path);
+				if (load_ok)
+				{
+					UpdateLoadDiagTelemetry(2004u); /* load cart ok */
+					fmsx_runtime_set_boot_mode(m_BootMode);
+					ResetEmulationRuntimeState();
+					ApplyRuntimeSettingsToFmsx();
+					CString line;
+					line.Format("Load ROM: SLOT%u <= %s", slot_index + 1u, rom_path);
+					m_Logger.Write(FromKernel, LogNotice, line);
+				}
+				else
+				{
+					UpdateLoadDiagTelemetry(9004u); /* load cart fail */
+					m_Logger.Write(FromKernel, LogWarning, use_boot_profile_reset ? "Load ROM falhou: hard reset" : "Load ROM falhou: LoadCart");
+				}
+			}
+		}
+	#endif
+		break;
+
 	case ComboMenuActionMsxBasic:
 	#if COMBO_ENABLE_FMSX
 		if (m_FmsxReady)
@@ -2693,11 +2779,32 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 		key_state.menu_right_pressed,
 		key_state.menu_enter_pressed,
 		key_state.menu_back_pressed);
+	const boolean defer_heavy_action =
+		(menu_action == ComboMenuActionCartridgeA)
+		|| (menu_action == ComboMenuActionCartridgeB)
+		|| (menu_action == ComboMenuActionReset)
+		|| (menu_action == ComboMenuActionMsxBasic);
+	if (menu_action == ComboMenuActionCartridgeA || menu_action == ComboMenuActionCartridgeB)
+	{
+		UpdateLoadDiagTelemetry(1991u); /* menu action propagated to kernel */
+	}
 	if (m_PauseMenu.ConsumeBackgroundRestoreRequest())
 	{
 		m_PauseNeedsBackgroundRedraw = TRUE;
 	}
-	HandleMenuAction(menu_action);
+	if (defer_heavy_action)
+	{
+		/* Heavy media load path runs in main loop to avoid USB callback hard-locks. */
+		if (m_PendingMenuAction == (unsigned) ComboMenuActionNone)
+		{
+			m_PendingMenuAction = (unsigned) menu_action;
+		}
+	}
+	else
+	{
+		/* Keep settings toggles/cycles immediate so state never gets stale/overwritten. */
+		HandleMenuAction(menu_action);
+	}
 
 	m_JoyBridgeBits = key_state.bridge_bits;
 	m_JoyMappedBits = (u8) (~key_state.bridge_bits) & ComboKeyboardJoyMask();

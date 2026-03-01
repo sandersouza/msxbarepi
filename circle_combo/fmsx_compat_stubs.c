@@ -4,11 +4,14 @@
 #include "fmsx_compat/retro_dirent.h"
 #include "fmsx_virtual_fs.h"
 #include "fmsx_runtime.h"
+#include <fatfs/ff.h>
 
 extern const unsigned char fmsx_embedded_msx_rom_start[];
 extern const unsigned char fmsx_embedded_msx_rom_end[];
 
 static RFILE g_rfile_pool[8];
+static FIL g_rfile_fatfs_pool[8];
+static unsigned char g_rfile_from_fatfs[8] = { 0 };
 
 static size_t local_strlen(const char *s)
 {
@@ -61,6 +64,18 @@ static int local_str_ieq(const char *a, const char *b)
     }
 
     return *a == '\0' && *b == '\0';
+}
+
+static int local_is_sd_path(const char *path)
+{
+    if (!path)
+    {
+        return 0;
+    }
+    return ((path[0] == 'S' || path[0] == 's')
+         && (path[1] == 'D' || path[1] == 'd')
+         && path[2] == ':'
+         && (path[3] == '/' || path[3] == '\\')) ? 1 : 0;
 }
 
 static const char *local_basename(const char *path)
@@ -120,11 +135,28 @@ static RFILE *local_alloc_rfile(void)
             g_rfile_pool[i].size = 0;
             g_rfile_pool[i].pos = 0;
             g_rfile_pool[i].writable = 0;
+            g_rfile_from_fatfs[i] = 0u;
             return &g_rfile_pool[i];
         }
     }
 
     return 0;
+}
+
+static int local_rfile_index(const RFILE *stream)
+{
+    if (!stream)
+    {
+        return -1;
+    }
+    for (unsigned i = 0; i < (sizeof(g_rfile_pool) / sizeof(g_rfile_pool[0])); ++i)
+    {
+        if (stream == &g_rfile_pool[i])
+        {
+            return (int) i;
+        }
+    }
+    return -1;
 }
 
 size_t strlcpy(char *dst, const char *src, size_t dsize)
@@ -169,23 +201,50 @@ RFILE *rfopen(const char *path, const char *mode)
         return 0;
     }
 
-    const unsigned char *data = 0;
-    size_t size = 0;
-    if (!local_lookup_embedded(path, &data, &size))
-    {
-        return 0;
-    }
-
     RFILE *stream = local_alloc_rfile();
     if (!stream)
     {
         return 0;
     }
+    const int index = local_rfile_index(stream);
+    if (index < 0)
+    {
+        stream->in_use = 0;
+        return 0;
+    }
 
-    stream->data = data;
-    stream->size = size;
+    const unsigned char *data = 0;
+    size_t size = 0;
+    if (local_lookup_embedded(path, &data, &size))
+    {
+        stream->data = data;
+        stream->size = size;
+        stream->pos = 0;
+        stream->writable = 0;
+        g_rfile_from_fatfs[(unsigned) index] = 0u;
+        return stream;
+    }
+
+    if (!local_is_sd_path(path))
+    {
+        stream->in_use = 0;
+        return 0;
+    }
+
+    fmsx_runtime_set_load_diag(1u); /* RFOPEN */
+    if (f_open(&g_rfile_fatfs_pool[(unsigned) index], path, FA_READ) != FR_OK)
+    {
+        fmsx_runtime_set_load_diag(1001u); /* RFOPEN fail */
+        stream->in_use = 0;
+        return 0;
+    }
+
+    stream->data = 0;
+    stream->size = (size_t) f_size(&g_rfile_fatfs_pool[(unsigned) index]);
     stream->pos = 0;
     stream->writable = 0;
+    g_rfile_from_fatfs[(unsigned) index] = 1u;
+    fmsx_runtime_set_load_diag(11u); /* RFOPEN ok */
     return stream;
 }
 
@@ -196,6 +255,13 @@ int rfclose(RFILE *stream)
         return -1;
     }
 
+    const int index = local_rfile_index(stream);
+    if (index >= 0 && g_rfile_from_fatfs[(unsigned) index] != 0u)
+    {
+        (void) f_close(&g_rfile_fatfs_pool[(unsigned) index]);
+        g_rfile_from_fatfs[(unsigned) index] = 0u;
+        fmsx_runtime_set_load_diag(4u); /* RFCLOSE */
+    }
     stream->in_use = 0;
     return 0;
 }
@@ -205,6 +271,28 @@ size_t rfread(void *ptr, size_t size, size_t nmemb, RFILE *stream)
     if (!ptr || !stream || !stream->in_use || size == 0u || nmemb == 0u)
     {
         return 0;
+    }
+
+    const int index = local_rfile_index(stream);
+    if (index >= 0 && g_rfile_from_fatfs[(unsigned) index] != 0u)
+    {
+        const size_t total = size * nmemb;
+        const size_t remain = stream->size > stream->pos ? (stream->size - stream->pos) : 0u;
+        const size_t want = total < remain ? total : remain;
+        UINT bytes_read = 0u;
+        if (want == 0u)
+        {
+            return 0u;
+        }
+        fmsx_runtime_set_load_diag(2u); /* RFREAD */
+        if (f_read(&g_rfile_fatfs_pool[(unsigned) index], ptr, (UINT) want, &bytes_read) != FR_OK)
+        {
+            fmsx_runtime_set_load_diag(1002u); /* RFREAD fail */
+            return 0u;
+        }
+        stream->pos += (size_t) bytes_read;
+        fmsx_runtime_set_load_diag(12u); /* RFREAD ok */
+        return size ? ((size_t) bytes_read / size) : 0u;
     }
 
     const size_t total = size * nmemb;
@@ -250,6 +338,17 @@ int rfseek(RFILE *stream, long offset, int origin)
         pos = stream->size;
     }
 
+    const int index = local_rfile_index(stream);
+    if (index >= 0 && g_rfile_from_fatfs[(unsigned) index] != 0u)
+    {
+        fmsx_runtime_set_load_diag(3u); /* RFSEEK */
+        if (f_lseek(&g_rfile_fatfs_pool[(unsigned) index], (FSIZE_t) pos) != FR_OK)
+        {
+            fmsx_runtime_set_load_diag(1003u); /* RFSEEK fail */
+            return -1;
+        }
+        fmsx_runtime_set_load_diag(13u); /* RFSEEK ok */
+    }
     stream->pos = pos;
     return 0;
 }
@@ -281,7 +380,12 @@ int rfgetc(RFILE *stream)
         return -1;
     }
 
-    return (int) stream->data[stream->pos++];
+    unsigned char ch = 0u;
+    if (rfread(&ch, 1u, 1u, stream) != 1u)
+    {
+        return -1;
+    }
+    return (int) ch;
 }
 
 int rfputc(int ch, RFILE *stream)
@@ -301,7 +405,12 @@ char *rfgets(char *s, int n, RFILE *stream)
     int i = 0;
     while ((i + 1) < n && stream->pos < stream->size)
     {
-        const char c = (char) stream->data[stream->pos++];
+        unsigned char ch = 0u;
+        if (rfread(&ch, 1u, 1u, stream) != 1u)
+        {
+            break;
+        }
+        const char c = (char) ch;
         s[i++] = c;
         if (c == '\n')
         {
@@ -322,7 +431,7 @@ void filestream_rewind(RFILE *stream)
 {
     if (stream && stream->in_use)
     {
-        stream->pos = 0;
+        (void) rfseek(stream, 0, SEEK_SET);
     }
 }
 

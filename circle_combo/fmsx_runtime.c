@@ -76,11 +76,14 @@ extern FDIDisk FDD[];
 extern void fmsx_video_set_overscan(boolean enabled);
 
 static TFmsxRuntimeStatus g_fmsx_status = { FALSE, FALSE, 0u, 0, 0 };
+static char g_cartridge_path[2][192] = {{0}};
+static volatile unsigned g_load_diag_stage = 0u;
 static const unsigned kFmsxAudioRate = 48000u;
 static unsigned g_boot_warmup_frames_remaining = 0u;
 static boolean g_boot_forced_turbo = FALSE;
 static unsigned g_refresh_hz = 60u;
 static unsigned g_boot_mode = (COMBO_FMSX_BOOT_PROFILE > 2) ? 0u : (unsigned) COMBO_FMSX_BOOT_PROFILE;
+static unsigned g_active_boot_mode = (COMBO_FMSX_BOOT_PROFILE > 2) ? 0u : (unsigned) COMBO_FMSX_BOOT_PROFILE;
 static unsigned g_model_profile = FMSX_MODEL_PROFILE_MSX1;
 static boolean g_use_embedded_bios = FALSE;
 static unsigned g_z80_turbo_mode = 0u;
@@ -157,6 +160,8 @@ static void fmsx_runtime_apply_audio_channels(void)
 
 static boolean fmsx_runtime_start(boolean boot_basic)
 {
+    fmsx_runtime_set_load_diag(2100u); /* runtime_start begin */
+    g_active_boot_mode = g_boot_mode;
     g_fmsx_status.initialized = TRUE;
     g_fmsx_status.running = FALSE;
     g_fmsx_status.frames = 0u;
@@ -196,7 +201,9 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     }
 
     g_use_embedded_bios = game_mode ? TRUE : FALSE;
+    fmsx_runtime_set_load_diag(2101u); /* before StartMSX */
     boolean started = StartMSX(startup_mode, COMBO_FMSX_RAMMAPPER_PAGES, 2) ? TRUE : FALSE;
+    fmsx_runtime_set_load_diag(started ? 2102u : 9102u); /* after StartMSX */
     g_use_embedded_bios = FALSE;
 
     if (boot_basic)
@@ -273,15 +280,19 @@ boolean fmsx_runtime_hard_reset(void)
     {
         return FALSE;
     }
+    fmsx_runtime_set_load_diag(2201u); /* hard_reset before TrashMSX */
     /*
      * Use a full restart instead of ResetMSX() so boot-mode policy is always reapplied:
      * - NORM/FAST prefer MSX.ROM from initramfs and fallback to embedded C-BIOS only if missing.
      * - GAME mirrors FAST startup but forces embedded C-BIOS for MSX.ROM.
      */
     TrashMSX();
+    fmsx_runtime_set_load_diag(2202u); /* hard_reset after TrashMSX */
     g_fmsx_status.initialized = FALSE;
     g_fmsx_status.running = FALSE;
-    return fmsx_runtime_start(FALSE);
+    const boolean ok = fmsx_runtime_start(FALSE);
+    fmsx_runtime_set_load_diag(ok ? 2203u : 9203u);
+    return ok;
 }
 
 boolean fmsx_runtime_step_frame(void)
@@ -404,6 +415,11 @@ unsigned fmsx_runtime_get_boot_mode(void)
     return g_boot_mode;
 }
 
+unsigned fmsx_runtime_get_active_boot_mode(void)
+{
+    return g_active_boot_mode;
+}
+
 void fmsx_runtime_set_model_profile(unsigned profile)
 {
     if (profile > FMSX_MODEL_PROFILE_MSX2P)
@@ -481,6 +497,71 @@ const char *fmsx_runtime_get_disk_name(unsigned drive_index)
         return 0;
     }
     return DSKName[drive_index];
+}
+
+boolean fmsx_runtime_set_cartridge_path(unsigned slot_index, const char *path)
+{
+    if (slot_index > 1u)
+    {
+        return FALSE;
+    }
+
+    if (path == 0 || path[0] == '\0')
+    {
+        g_cartridge_path[slot_index][0] = '\0';
+        ROMName[slot_index] = 0;
+        return TRUE;
+    }
+
+    unsigned n = 0u;
+    while (path[n] != '\0' && n + 1u < sizeof(g_cartridge_path[slot_index]))
+    {
+        g_cartridge_path[slot_index][n] = path[n];
+        ++n;
+    }
+    g_cartridge_path[slot_index][n] = '\0';
+
+    if (path[n] != '\0')
+    {
+        return FALSE;
+    }
+
+    ROMName[slot_index] = g_cartridge_path[slot_index];
+    return TRUE;
+}
+
+boolean fmsx_runtime_load_cartridge(unsigned slot_index, const char *path)
+{
+    if (slot_index > 1u || path == 0 || path[0] == '\0' || !g_fmsx_status.running)
+    {
+        return FALSE;
+    }
+
+    if (!fmsx_runtime_set_cartridge_path(slot_index, path))
+    {
+        return FALSE;
+    }
+
+    fmsx_runtime_set_load_diag(2301u); /* before LoadCart */
+    const int pages = LoadCart(path, (int) slot_index, ROMGUESS((int) slot_index) | ROMTYPE((int) slot_index));
+    if (pages <= 0)
+    {
+        fmsx_runtime_set_load_diag(9301u); /* LoadCart failed */
+        return FALSE;
+    }
+    fmsx_runtime_set_load_diag(2302u); /* LoadCart ok */
+    g_fmsx_status.last_pc = (int) CPU.PC.W;
+    return TRUE;
+}
+
+void fmsx_runtime_set_load_diag(unsigned stage)
+{
+    g_load_diag_stage = stage;
+}
+
+unsigned fmsx_runtime_get_load_diag(void)
+{
+    return g_load_diag_stage;
 }
 
 TFmsxRuntimeStatus fmsx_runtime_get_status(void)

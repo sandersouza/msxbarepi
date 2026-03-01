@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 28/02/2026 23:59
+Última atualização: 01/03/2026 11:01
 
 ## Objetivo deste arquivo
 
@@ -708,3 +708,63 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-02-28 23:58:48 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
 - 2026-02-28 23:59:36 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
 - 2026-02-28 23:59:36 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 00:08:36 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 00:08:36 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 00:13:30 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 00:13:30 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 00:16:31 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 00:16:31 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 00:19:52 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 00:19:52 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 00:22:20 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 00:22:20 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 00:24:38 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 00:24:38 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 09:52:16 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 09:52:16 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 09:53:52 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 09:53:52 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 09:59:52 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 09:59:52 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 10:02:16 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 10:02:16 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 10:05:31 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 10:05:31 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 10:07:29 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 10:07:29 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 10:11:22 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 10:11:22 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 10:11:22 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue61.img
+- 2026-03-01 10:14:23 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 10:14:23 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 10:14:23 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue61.img
+- 2026-03-01 10:17:55 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 10:17:55 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 10:17:55 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue61.img
+- 2026-03-01 10:26:43 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 10:26:43 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 10:26:43 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue61.img
+- 2026-03-01 10:34:10 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 10:34:10 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 10:34:10 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue61.img
+- 2026-03-01 10:37:44 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 10:37:44 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 10:37:44 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue61.img
+- 2026-03-01 10:42:00 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 10:42:00 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 10:42:00 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue61.img
+- 2026-03-01 10:43:32 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 10:43:32 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 10:43:33 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue61.img
+- 2026-03-01 10:47:54 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 10:47:54 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 10:47:54 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue61.img
+- 2026-03-01 10:53:40 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 10:53:40 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 10:53:40 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue61.img
+- 2026-03-01 10:57:01 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 10:57:01 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 10:57:01 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue61.img
+- 2026-03-01 11:01:10 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-01 11:01:10 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-01 11:01:10 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue61.img
