@@ -175,6 +175,7 @@ private:
     boolean m_StateLoadPending;
     boolean m_MediaCatalogStarted;
     boolean m_MediaCatalogSummaryLogged;
+    volatile unsigned m_PendingMenuAction;
     unsigned m_SettingsSaveStage;
     unsigned m_SettingsSaveCode;
     unsigned m_SettingsSaveAux;

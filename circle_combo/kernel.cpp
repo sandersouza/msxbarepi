@@ -563,6 +563,7 @@ CComboKernel::CComboKernel(void)
 	m_StateLoadPending(FALSE),
 	m_MediaCatalogStarted(FALSE),
 	m_MediaCatalogSummaryLogged(FALSE),
+	m_PendingMenuAction((unsigned) ComboMenuActionNone),
 	m_SettingsSaveStage(0u),
 	m_SettingsSaveCode(0u),
 	m_SettingsSaveAux(0u),
@@ -906,6 +907,12 @@ TComboShutdownMode CComboKernel::Run(void)
 		{
 			m_StateLoadPending = FALSE;
 			LoadEmulatorStateFromStorage();
+		}
+		if (m_PendingMenuAction != (unsigned) ComboMenuActionNone)
+		{
+			const TComboMenuAction deferred_action = (TComboMenuAction) m_PendingMenuAction;
+			m_PendingMenuAction = (unsigned) ComboMenuActionNone;
+			HandleMenuAction(deferred_action);
 		}
 
 		/* Hybrid wait: coarse sleep first, then short busy delay for tighter frame deadline. */
@@ -2762,7 +2769,10 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	{
 		m_PauseNeedsBackgroundRedraw = TRUE;
 	}
-	HandleMenuAction(menu_action);
+	if (menu_action != ComboMenuActionNone)
+	{
+		m_PendingMenuAction = (unsigned) menu_action;
+	}
 
 	m_JoyBridgeBits = key_state.bridge_bits;
 	m_JoyMappedBits = (u8) (~key_state.bridge_bits) & ComboKeyboardJoyMask();
