@@ -163,7 +163,6 @@ private:
     boolean m_SccCartEnabled;
     u64 m_FrameIntervalUs;
     boolean m_FramePacingResetPending;
-    boolean m_AudioMuted;
     boolean m_FmsxFallbackPattern;
     boolean m_TestToneEnabled;
     boolean m_MmuEnabled;

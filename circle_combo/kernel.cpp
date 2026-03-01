@@ -550,7 +550,6 @@ CComboKernel::CComboKernel(void)
 	m_SccCartEnabled(TRUE),
 	m_FrameIntervalUs(FrameIntervalFromRefreshHz(60u)),
 	m_FramePacingResetPending(FALSE),
-	m_AudioMuted(FALSE),
 	m_FmsxFallbackPattern(FALSE),
 	m_TestToneEnabled(COMBO_TEST_TONE_DEFAULT ? TRUE : FALSE),
 	m_MmuEnabled(FALSE),
@@ -748,7 +747,6 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetRenshaMode(m_RenshaMode);
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
 	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, COMBO_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
-	m_PauseMenu.SetAudioMuted(m_AudioMuted);
 	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
 #if COMBO_ENABLE_FMSX
 	ApplyRuntimeSettingsToFmsx();
@@ -1276,7 +1274,7 @@ void CComboKernel::RefillAudioQueue(void)
 				if (sample32 > clip_max) sample32 = clip_max;
 				if (sample32 < -clip_max) sample32 = -clip_max;
 				sample32 = (sample32 * (int) m_AudioOutputGainPct) / 100;
-				if (m_AudioOutputGainPct == 0u || m_AudioMuted)
+				if (m_AudioOutputGainPct == 0u)
 				{
 					sample32 = 0;
 				}
@@ -1956,7 +1954,6 @@ void CComboKernel::LoadSettingsFromStorage(void)
 				{
 					m_AudioOutputGainPct = 0u;
 				}
-				m_AudioMuted = FALSE;
 			}
 			else if (SettingsKeyEquals(line, key_len, "audio_gain"))
 			{
@@ -1978,7 +1975,6 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetRenshaMode(m_RenshaMode);
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
 	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, COMBO_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
-	m_PauseMenu.SetAudioMuted(m_AudioMuted);
 	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
 #if COMBO_ENABLE_FMSX
 	fmsx_runtime_set_overscan(m_OverscanPercent > 0u ? TRUE : FALSE);
@@ -2680,16 +2676,8 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 	#endif
 		break;
 
-	case ComboMenuActionToggleAudioMute:
-		m_AudioMuted = m_AudioMuted ? FALSE : TRUE;
-		m_PauseMenu.SetAudioMuted(m_AudioMuted);
-		RefreshSettingsUiAfterAction();
-		m_Logger.Write(FromKernel, LogNotice, m_AudioMuted ? "Settings: Audio mute ON" : "Settings: Audio mute OFF");
-		break;
-
 	case ComboMenuActionAudioGainChanged:
 		m_AudioOutputGainPct = m_PauseMenu.GetAudioGainPercent();
-		m_AudioMuted = FALSE;
 		RefreshSettingsUiAfterAction();
 		{
 			CString line;

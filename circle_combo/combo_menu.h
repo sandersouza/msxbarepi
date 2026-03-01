@@ -27,7 +27,6 @@ public:
     void SetRenshaMode(unsigned mode);
     void SetSccCartEnabled(boolean enabled);
     void SetOverlayEnabled(boolean enabled, boolean available);
-    void SetAudioMuted(boolean enabled);
     void SetAudioGainPercent(unsigned percent);
     void SetLoadRomSlotNames(const char *slot1_name, const char *slot2_name);
     void SetLoadDiskDriveNames(const char *drive1_name, const char *drive2_name);
@@ -91,7 +90,6 @@ private:
     boolean m_SccCartEnabled;
     boolean m_OverlayEnabled;
     boolean m_OverlayAvailable;
-    boolean m_AudioMuted;
     unsigned m_AudioGainPercent;
     char m_LoadRomSlot1Name[16];
     char m_LoadRomSlot2Name[16];
@@ -130,7 +128,6 @@ private:
     boolean m_LastDrawnSccCart;
     boolean m_LastDrawnOverlay;
     boolean m_LastDrawnOverlayAvailable;
-    boolean m_LastDrawnAudioMuted;
     unsigned m_LastDrawnAudioGainPercent;
     char m_LastDrawnLoadRomSlot1Name[16];
     char m_LastDrawnLoadRomSlot2Name[16];

@@ -410,7 +410,6 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_SccCartEnabled(TRUE),
     m_OverlayEnabled(FALSE),
     m_OverlayAvailable(FALSE),
-    m_AudioMuted(FALSE),
     m_AudioGainPercent(50u),
     m_LoadRomSlot1Name{0},
     m_LoadRomSlot2Name{0},
@@ -449,7 +448,6 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnSccCart(TRUE),
     m_LastDrawnOverlay(FALSE),
     m_LastDrawnOverlayAvailable(FALSE),
-    m_LastDrawnAudioMuted(FALSE),
     m_LastDrawnAudioGainPercent(50u),
     m_LastDrawnLoadRomSlot1Name{0},
     m_LastDrawnLoadRomSlot2Name{0},
@@ -509,7 +507,6 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnSccCart = m_SccCartEnabled;
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
-    m_LastDrawnAudioMuted = m_AudioMuted;
     m_LastDrawnAudioGainPercent = m_AudioGainPercent;
     m_RomBrowserSlot = 0u;
     m_BrowserMode = BrowserModeRom;
@@ -705,15 +702,6 @@ void CComboPauseMenu::SetOverlayEnabled(boolean enabled, boolean available)
     }
 }
 
-void CComboPauseMenu::SetAudioMuted(boolean enabled)
-{
-    if (m_AudioMuted != enabled)
-    {
-        m_AudioMuted = enabled;
-        m_ForceRedraw = TRUE;
-    }
-}
-
 void CComboPauseMenu::SetAudioGainPercent(unsigned percent)
 {
     if (percent > 100u)
@@ -844,7 +832,6 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_SccCartEnabled,
             m_OverlayEnabled,
             m_OverlayAvailable,
-            m_AudioMuted,
             m_AudioGainPercent,
             count);
     }
@@ -1519,7 +1506,6 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnSccCart == m_SccCartEnabled
      && m_LastDrawnOverlay == m_OverlayEnabled
      && m_LastDrawnOverlayAvailable == m_OverlayAvailable
-     && m_LastDrawnAudioMuted == m_AudioMuted
      && m_LastDrawnAudioGainPercent == m_AudioGainPercent
      && ComboTextEquals(m_LastDrawnLoadRomSlot1Name, m_LoadRomSlot1Name)
      && ComboTextEquals(m_LastDrawnLoadRomSlot2Name, m_LoadRomSlot2Name)
@@ -1659,7 +1645,6 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnSccCart = m_SccCartEnabled;
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
-    m_LastDrawnAudioMuted = m_AudioMuted;
     m_LastDrawnAudioGainPercent = m_AudioGainPercent;
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), m_LoadRomSlot1Name);
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), m_LoadRomSlot2Name);

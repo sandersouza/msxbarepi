@@ -3,7 +3,7 @@
 extern const TComboLocaleStrings g_ComboLocaleEN = {
     "PAUSE MENU",
     "SETTINGS",
-    "LOAD ROM",
+    "LOAD ROMS",
     "LOAD DISK",
     "Load ROM",
     "Load Disk",
@@ -31,7 +31,6 @@ extern const TComboLocaleStrings g_ComboLocaleEN = {
     "Rensha",
     "SCC Cart",
     "Debugger",
-    "Audio Mute",
     "Audio Gain",
     "Save",
     "OFF",

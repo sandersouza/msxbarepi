@@ -214,7 +214,21 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     int startup_mode = MSX_MSX1 | (fmsx_runtime_effective_refresh_hz() == 50u ? MSX_PAL : MSX_NTSC) | MSX_JOY1;
     if (g_disk_rom_enabled)
     {
-        startup_mode |= MSX_PATCHBDOS;
+        /*
+         * Keep DISK.ROM loaded but without BDOS patch hooks.
+         * We still force a PATCHBDOS transition so ResetMSX() reloads DISK.ROM
+         * deterministically, then leaves hooks disabled (WD1793 path).
+         */
+        startup_mode &= ~MSX_PATCHBDOS;
+        Mode |= MSX_PATCHBDOS;
+    }
+    else
+    {
+        /*
+         * Force opposite transition when Disk ROM is OFF as well, so the
+         * disable path is applied deterministically.
+         */
+        Mode |= MSX_PATCHBDOS;
     }
 #if COMBO_FMSX_MSX1_TEXT80
     startup_mode |= MSX_FIXEDFONT;
@@ -515,7 +529,13 @@ void fmsx_runtime_set_disk_rom_enabled(boolean enabled)
         return;
     }
 
-    const int new_mode = g_disk_rom_enabled ? (Mode | MSX_PATCHBDOS) : (Mode & ~MSX_PATCHBDOS);
+    int new_mode = Mode & ~MSX_PATCHBDOS;
+    if (g_disk_rom_enabled)
+    {
+        /* Force transition so ResetMSX() reloads DISK.ROM with hooks disabled. */
+        Mode |= MSX_PATCHBDOS;
+        new_mode = Mode & ~MSX_PATCHBDOS;
+    }
     (void) ResetMSX(new_mode, RAMPages, VRAMPages);
     if (!g_disk_rom_enabled)
     {
@@ -759,12 +779,6 @@ boolean fmsx_runtime_load_disk(unsigned drive_index, const char *path)
         return FALSE;
     }
 
-    if (FDD[drive_index].Data != 0)
-    {
-        /* Force write-protect OFF for loaded media (FDI header byte 3). */
-        FDD[drive_index].Data[3] = 0u;
-        FDD[drive_index].Header[3] = 0u;
-    }
     fmsx_runtime_set_load_diag(2402u); /* ChangeDisk ok */
     g_fmsx_status.last_pc = (int) CPU.PC.W;
     return TRUE;

@@ -78,6 +78,61 @@ static int local_is_sd_path(const char *path)
          && (path[3] == '/' || path[3] == '\\')) ? 1 : 0;
 }
 
+static int local_mode_has_char(const char *mode, char needle)
+{
+    if (!mode)
+    {
+        return 0;
+    }
+    while (*mode)
+    {
+        if (*mode == needle)
+        {
+            return 1;
+        }
+        ++mode;
+    }
+    return 0;
+}
+
+static int local_mode_wants_write(const char *mode)
+{
+    return local_mode_has_char(mode, 'w')
+        || local_mode_has_char(mode, 'a')
+        || local_mode_has_char(mode, '+');
+}
+
+static BYTE local_mode_to_fatfs_flags(const char *mode, int *out_writable, int *out_append)
+{
+    BYTE flags = FA_READ;
+    const int writable = local_mode_wants_write(mode);
+    const int truncate = local_mode_has_char(mode, 'w');
+    const int append = local_mode_has_char(mode, 'a');
+
+    if (writable)
+    {
+        flags |= FA_WRITE;
+        if (truncate)
+        {
+            flags |= FA_CREATE_ALWAYS;
+        }
+        else if (append)
+        {
+            flags |= FA_OPEN_ALWAYS;
+        }
+    }
+
+    if (out_writable)
+    {
+        *out_writable = writable;
+    }
+    if (out_append)
+    {
+        *out_append = append;
+    }
+    return flags;
+}
+
 static const char *local_basename(const char *path)
 {
     if (!path)
@@ -236,18 +291,33 @@ RFILE *rfopen(const char *path, const char *mode)
         return 0;
     }
 
+    int writable = 0;
+    int append = 0;
+    const BYTE open_flags = local_mode_to_fatfs_flags(mode, &writable, &append);
     fmsx_runtime_set_load_diag(1u); /* RFOPEN */
-    if (f_open(&g_rfile_fatfs_pool[(unsigned) index], path, FA_READ) != FR_OK)
+    if (f_open(&g_rfile_fatfs_pool[(unsigned) index], path, open_flags) != FR_OK)
     {
         fmsx_runtime_set_load_diag(1001u); /* RFOPEN fail */
         stream->in_use = 0;
         return 0;
     }
 
+    if (append)
+    {
+        const FSIZE_t end_pos = f_size(&g_rfile_fatfs_pool[(unsigned) index]);
+        if (f_lseek(&g_rfile_fatfs_pool[(unsigned) index], end_pos) != FR_OK)
+        {
+            (void) f_close(&g_rfile_fatfs_pool[(unsigned) index]);
+            fmsx_runtime_set_load_diag(1003u); /* RFSEEK fail */
+            stream->in_use = 0;
+            return 0;
+        }
+    }
+
     stream->data = 0;
     stream->size = (size_t) f_size(&g_rfile_fatfs_pool[(unsigned) index]);
-    stream->pos = 0;
-    stream->writable = 0;
+    stream->pos = append ? stream->size : 0u;
+    stream->writable = writable;
     g_rfile_from_fatfs[(unsigned) index] = 1u;
     fmsx_runtime_set_load_diag(11u); /* RFOPEN ok */
     return stream;
@@ -311,11 +381,29 @@ size_t rfread(void *ptr, size_t size, size_t nmemb, RFILE *stream)
 
 size_t rfwrite(const void *ptr, size_t size, size_t nmemb, RFILE *stream)
 {
-    (void) ptr;
-    (void) size;
-    (void) nmemb;
-    (void) stream;
-    return 0;
+    if (!ptr || !stream || !stream->in_use || size == 0u || nmemb == 0u || !stream->writable)
+    {
+        return 0u;
+    }
+
+    const int index = local_rfile_index(stream);
+    if (index >= 0 && g_rfile_from_fatfs[(unsigned) index] != 0u)
+    {
+        const size_t total = size * nmemb;
+        UINT bytes_written = 0u;
+        if (f_write(&g_rfile_fatfs_pool[(unsigned) index], ptr, (UINT) total, &bytes_written) != FR_OK)
+        {
+            return 0u;
+        }
+        stream->pos += (size_t) bytes_written;
+        if (stream->pos > stream->size)
+        {
+            stream->size = stream->pos;
+        }
+        return size ? ((size_t) bytes_written / size) : 0u;
+    }
+
+    return 0u;
 }
 
 int rfseek(RFILE *stream, long offset, int origin)
@@ -395,9 +483,8 @@ int rfgetc(RFILE *stream)
 
 int rfputc(int ch, RFILE *stream)
 {
-    (void) ch;
-    (void) stream;
-    return -1;
+    const unsigned char out = (unsigned char) ch;
+    return (rfwrite(&out, 1u, 1u, stream) == 1u) ? (int) out : -1;
 }
 
 char *rfgets(char *s, int n, RFILE *stream)
@@ -442,8 +529,11 @@ void filestream_rewind(RFILE *stream)
 
 int filestream_delete(const char *path)
 {
-    (void) path;
-    return -1;
+    if (!local_is_sd_path(path))
+    {
+        return -1;
+    }
+    return (f_unlink(path) == FR_OK) ? 0 : -1;
 }
 
 RFILE *rfopen_zip(const char *path, const char *mode)

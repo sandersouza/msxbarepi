@@ -204,7 +204,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
                                                      boolean scc_cart_enabled,
                                                      boolean overlay_enabled,
                                                      boolean overlay_available,
-                                                     boolean audio_muted,
                                                      unsigned audio_gain_percent,
                                                      unsigned *count)
 {
@@ -260,7 +259,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     BuildLabelFlag(scc_label, sizeof(scc_label), locale->settings_scc_cart, scc_cart_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(overlay_label, sizeof(overlay_label), locale->settings_debugger,
                    overlay_available ? (overlay_enabled ? locale->flag_on : locale->flag_off) : locale->flag_na);
-    (void) audio_muted;
     if (audio_gain_percent == 0u)
     {
         BuildLabelFlag(audio_gain_label, sizeof(audio_gain_label), locale->settings_audio_gain, "OFF");

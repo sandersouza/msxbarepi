@@ -31,7 +31,6 @@ extern const TComboLocaleStrings g_ComboLocaleES = {
     "Rensha",
     "SCC Cart",
     "Debugger",
-    "Silencio Audio",
     "Ganancia Audio",
     "Guardar",
     "DES",
