@@ -83,6 +83,7 @@ static unsigned g_boot_warmup_frames_remaining = 0u;
 static boolean g_boot_forced_turbo = FALSE;
 static unsigned g_refresh_hz = 60u;
 static unsigned g_boot_mode = (COMBO_FMSX_BOOT_PROFILE > 2) ? 0u : (unsigned) COMBO_FMSX_BOOT_PROFILE;
+static unsigned g_active_boot_mode = (COMBO_FMSX_BOOT_PROFILE > 2) ? 0u : (unsigned) COMBO_FMSX_BOOT_PROFILE;
 static unsigned g_model_profile = FMSX_MODEL_PROFILE_MSX1;
 static boolean g_use_embedded_bios = FALSE;
 static unsigned g_z80_turbo_mode = 0u;
@@ -160,6 +161,7 @@ static void fmsx_runtime_apply_audio_channels(void)
 static boolean fmsx_runtime_start(boolean boot_basic)
 {
     fmsx_runtime_set_load_diag(2100u); /* runtime_start begin */
+    g_active_boot_mode = g_boot_mode;
     g_fmsx_status.initialized = TRUE;
     g_fmsx_status.running = FALSE;
     g_fmsx_status.frames = 0u;
@@ -411,6 +413,11 @@ void fmsx_runtime_set_boot_mode(unsigned mode)
 unsigned fmsx_runtime_get_boot_mode(void)
 {
     return g_boot_mode;
+}
+
+unsigned fmsx_runtime_get_active_boot_mode(void)
+{
+    return g_active_boot_mode;
 }
 
 void fmsx_runtime_set_model_profile(unsigned profile)

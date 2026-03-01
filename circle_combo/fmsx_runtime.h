@@ -48,6 +48,7 @@ void fmsx_runtime_set_overscan(boolean enabled);
 void fmsx_runtime_set_refresh_hz(unsigned hz);
 void fmsx_runtime_set_boot_mode(unsigned mode);
 unsigned fmsx_runtime_get_boot_mode(void);
+unsigned fmsx_runtime_get_active_boot_mode(void);
 void fmsx_runtime_set_model_profile(unsigned profile);
 unsigned fmsx_runtime_get_model_profile(void);
 boolean fmsx_runtime_use_embedded_bios(void);

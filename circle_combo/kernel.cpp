@@ -2328,7 +2328,8 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 				UpdateLoadDiagTelemetry(2002u); /* path set */
 
 				PrimeAudioSilenceBeforeReset();
-				const boolean use_boot_profile_reset = (m_BootMode == kBootModeGame) ? TRUE : FALSE;
+				const unsigned active_boot_mode = fmsx_runtime_get_active_boot_mode();
+				const boolean use_boot_profile_reset = (m_BootMode != active_boot_mode) ? TRUE : FALSE;
 				UpdateLoadDiagTelemetry(use_boot_profile_reset ? 2010u : 2003u);
 				const boolean load_ok = use_boot_profile_reset
 					? fmsx_runtime_hard_reset()
