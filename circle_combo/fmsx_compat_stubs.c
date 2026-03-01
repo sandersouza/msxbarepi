@@ -225,8 +225,16 @@ RFILE *rfopen(const char *path, const char *mode)
         return stream;
     }
 
-    if (!local_is_sd_path(path) || f_open(&g_rfile_fatfs_pool[(unsigned) index], path, FA_READ) != FR_OK)
+    if (!local_is_sd_path(path))
     {
+        stream->in_use = 0;
+        return 0;
+    }
+
+    fmsx_runtime_set_load_diag(1u); /* RFOPEN */
+    if (f_open(&g_rfile_fatfs_pool[(unsigned) index], path, FA_READ) != FR_OK)
+    {
+        fmsx_runtime_set_load_diag(1001u); /* RFOPEN fail */
         stream->in_use = 0;
         return 0;
     }
@@ -236,6 +244,7 @@ RFILE *rfopen(const char *path, const char *mode)
     stream->pos = 0;
     stream->writable = 0;
     g_rfile_from_fatfs[(unsigned) index] = 1u;
+    fmsx_runtime_set_load_diag(11u); /* RFOPEN ok */
     return stream;
 }
 
@@ -251,6 +260,7 @@ int rfclose(RFILE *stream)
     {
         (void) f_close(&g_rfile_fatfs_pool[(unsigned) index]);
         g_rfile_from_fatfs[(unsigned) index] = 0u;
+        fmsx_runtime_set_load_diag(4u); /* RFCLOSE */
     }
     stream->in_use = 0;
     return 0;
@@ -274,11 +284,14 @@ size_t rfread(void *ptr, size_t size, size_t nmemb, RFILE *stream)
         {
             return 0u;
         }
+        fmsx_runtime_set_load_diag(2u); /* RFREAD */
         if (f_read(&g_rfile_fatfs_pool[(unsigned) index], ptr, (UINT) want, &bytes_read) != FR_OK)
         {
+            fmsx_runtime_set_load_diag(1002u); /* RFREAD fail */
             return 0u;
         }
         stream->pos += (size_t) bytes_read;
+        fmsx_runtime_set_load_diag(12u); /* RFREAD ok */
         return size ? ((size_t) bytes_read / size) : 0u;
     }
 
@@ -328,10 +341,13 @@ int rfseek(RFILE *stream, long offset, int origin)
     const int index = local_rfile_index(stream);
     if (index >= 0 && g_rfile_from_fatfs[(unsigned) index] != 0u)
     {
+        fmsx_runtime_set_load_diag(3u); /* RFSEEK */
         if (f_lseek(&g_rfile_fatfs_pool[(unsigned) index], (FSIZE_t) pos) != FR_OK)
         {
+            fmsx_runtime_set_load_diag(1003u); /* RFSEEK fail */
             return -1;
         }
+        fmsx_runtime_set_load_diag(13u); /* RFSEEK ok */
     }
     stream->pos = pos;
     return 0;

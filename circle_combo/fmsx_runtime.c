@@ -77,6 +77,7 @@ extern void fmsx_video_set_overscan(boolean enabled);
 
 static TFmsxRuntimeStatus g_fmsx_status = { FALSE, FALSE, 0u, 0, 0 };
 static char g_cartridge_path[2][192] = {{0}};
+static volatile unsigned g_load_diag_stage = 0u;
 static const unsigned kFmsxAudioRate = 48000u;
 static unsigned g_boot_warmup_frames_remaining = 0u;
 static boolean g_boot_forced_turbo = FALSE;
@@ -513,6 +514,16 @@ boolean fmsx_runtime_set_cartridge_path(unsigned slot_index, const char *path)
 
     ROMName[slot_index] = g_cartridge_path[slot_index];
     return TRUE;
+}
+
+void fmsx_runtime_set_load_diag(unsigned stage)
+{
+    g_load_diag_stage = stage;
+}
+
+unsigned fmsx_runtime_get_load_diag(void)
+{
+    return g_load_diag_stage;
 }
 
 TFmsxRuntimeStatus fmsx_runtime_get_status(void)

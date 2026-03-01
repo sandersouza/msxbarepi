@@ -1379,9 +1379,11 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 	CString line;
 	TFmsxAudioStats audio_stats = { 0, 0, 0, 0, 0 };
 	TFmsxKeyboardDebug kbd_stats = { 0, 0 };
+	unsigned load_diag = 0u;
 #if COMBO_ENABLE_FMSX
 	fmsx_audio_get_stats(&audio_stats);
 	fmsx_keyboard_get_debug(&kbd_stats);
+	load_diag = fmsx_runtime_get_load_diag();
 #endif
 
 	line.Format("\x1b[97m\x1b[49m\x1b[1;1HTXTDBG OS:%02u M:%u C:%u I:%u PAU:%u      ", tick & 0xFFu, m_MmuEnabled ? 1u : 0u, m_DCacheEnabled ? 1u : 0u, m_ICacheEnabled ? 1u : 0u, m_EmulationPaused ? 1u : 0u);
@@ -1432,10 +1434,11 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		m_FramePacingErrMaxUs > 999u ? 999u : m_FramePacingErrMaxUs);
 	WriteScreenText(line);
 
-	line.Format("\x1b[97m\x1b[49m\x1b[7;1HSD SV:%02u C:%03u A:%04u BT:%04u                ",
+	line.Format("\x1b[97m\x1b[49m\x1b[7;1HSD SV:%02u C:%03u A:%04u LD:%04u BT:%04u        ",
 		m_SettingsSaveStage > 99u ? 99u : m_SettingsSaveStage,
 		m_SettingsSaveCode > 999u ? 999u : m_SettingsSaveCode,
 		m_SettingsSaveAux > 9999u ? 9999u : m_SettingsSaveAux,
+		load_diag > 9999u ? 9999u : load_diag,
 		m_BootToFmsxMs > 9999u ? 9999u : m_BootToFmsxMs);
 	WriteScreenText(line);
 
