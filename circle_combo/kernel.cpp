@@ -2332,6 +2332,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 				if (fmsx_runtime_load_cartridge(slot_index, rom_path))
 				{
 					UpdateLoadDiagTelemetry(2004u); /* load cart ok */
+					fmsx_runtime_set_boot_mode(m_BootMode);
 					ResetEmulationRuntimeState();
 					ApplyRuntimeSettingsToFmsx();
 					CString line;
@@ -2773,6 +2774,11 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 		key_state.menu_right_pressed,
 		key_state.menu_enter_pressed,
 		key_state.menu_back_pressed);
+	const boolean defer_heavy_action =
+		(menu_action == ComboMenuActionCartridgeA)
+		|| (menu_action == ComboMenuActionCartridgeB)
+		|| (menu_action == ComboMenuActionReset)
+		|| (menu_action == ComboMenuActionMsxBasic);
 	if (menu_action == ComboMenuActionCartridgeA || menu_action == ComboMenuActionCartridgeB)
 	{
 		UpdateLoadDiagTelemetry(1991u); /* menu action propagated to kernel */
@@ -2781,7 +2787,7 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	{
 		m_PauseNeedsBackgroundRedraw = TRUE;
 	}
-	if (menu_action == ComboMenuActionCartridgeA || menu_action == ComboMenuActionCartridgeB)
+	if (defer_heavy_action)
 	{
 		/* Heavy media load path runs in main loop to avoid USB callback hard-locks. */
 		if (m_PendingMenuAction == (unsigned) ComboMenuActionNone)

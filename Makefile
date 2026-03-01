@@ -176,6 +176,14 @@ default: circle-configure
 	bash $(CONTEXT_UPDATER) default build-ok $(FMSX_BOOTSTRAP_ARTIFACT)
 	cp $(FMSX_BOOTSTRAP_ARTIFACT) $(DEFAULT_ARTIFACT)
 	bash $(CONTEXT_UPDATER) default default-ok $(DEFAULT_ARTIFACT)
+	@issue_branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true); \
+	issue_id=$$(printf "%s" "$$issue_branch" | sed -n 's/^\([0-9][0-9]*\)-.*/\1/p'); \
+	if [ -n "$$issue_id" ]; then \
+		issue_artifact="artifacts/kernel8-issue$${issue_id}.img"; \
+		cp $(FMSX_BOOTSTRAP_ARTIFACT) "$$issue_artifact"; \
+		bash $(CONTEXT_UPDATER) default issue-ok "$$issue_artifact"; \
+		echo "Artefato issue estavel: $$issue_artifact"; \
+	fi
 	@echo "Artefato default estavel: $(DEFAULT_ARTIFACT)"
 
 guard-third-party:
@@ -217,7 +225,7 @@ package: default initramfs
 
 help:
 	@echo "Targets: all (default), clean, sdcard, initramfs, package, help"
-	@echo "Default (make): perfil estavel -> artifacts/kernel8-default.img"
+	@echo "Default (make): perfil estavel -> artifacts/kernel8-default.img + artifacts/kernel8-issue<id>.img (quando em branch de issue)"
 	@echo "SD card prep: make sdcard"
 	@echo "Initramfs: make initramfs INITRAMFS_IN=roms/msx1 INITRAMFS_OUT=sdcard/msx.cpio"
 	@echo "SD package zip: make package -> artifacts/sdcard-package-YYYYMMDDHHMM.zip"
