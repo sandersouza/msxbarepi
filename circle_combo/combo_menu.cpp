@@ -1091,6 +1091,10 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                     m_PendingRomSlot = m_RomBrowserSlot;
                     CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), m_RomBrowserPaths[abs]);
                     action = (m_RomBrowserSlot == 0u) ? ComboMenuActionCartridgeA : ComboMenuActionCartridgeB;
+                    m_View = MenuViewLoadRom;
+                    m_Selected = (m_RomBrowserSlot == 0u) ? 0u : 1u;
+                    m_ForceRedraw = TRUE;
+                    m_RequestBackgroundRestore = TRUE;
                 }
                 else if (abs < m_RomBrowserCount
                       && !m_RomBrowserIsDir[abs]
@@ -1100,6 +1104,10 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                     m_PendingDiskDrive = m_RomBrowserSlot;
                     CopySmallText(m_PendingDiskPath, sizeof(m_PendingDiskPath), m_RomBrowserPaths[abs]);
                     action = (m_RomBrowserSlot == 0u) ? ComboMenuActionDiskDriveA : ComboMenuActionDiskDriveB;
+                    m_View = MenuViewLoadDisk;
+                    m_Selected = (m_RomBrowserSlot == 0u) ? 0u : 1u;
+                    m_ForceRedraw = TRUE;
+                    m_RequestBackgroundRestore = TRUE;
                 }
             }
         }
