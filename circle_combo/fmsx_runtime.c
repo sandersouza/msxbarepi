@@ -397,13 +397,6 @@ void fmsx_runtime_set_overscan(boolean enabled)
 void fmsx_runtime_set_refresh_hz(unsigned hz)
 {
     g_refresh_hz = (hz == 50u) ? 50u : 60u;
-    if (g_fmsx_status.running)
-    {
-        const int new_mode = (Mode & ~MSX_VIDEO) | (g_refresh_hz == 50u ? MSX_PAL : MSX_NTSC);
-        ResetMSX(new_mode, RAMPages, VRAMPages);
-        fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
-        fmsx_runtime_apply_audio_channels();
-    }
 }
 
 void fmsx_runtime_set_boot_mode(unsigned mode)

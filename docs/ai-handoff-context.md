@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 01/03/2026 10:42
+Última atualização: 01/03/2026 10:37
 
 ## Objetivo deste arquivo
 
@@ -750,6 +750,3 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-03-01 10:37:44 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
 - 2026-03-01 10:37:44 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
 - 2026-03-01 10:37:44 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue61.img
-- 2026-03-01 10:42:00 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
-- 2026-03-01 10:42:00 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
-- 2026-03-01 10:42:00 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue61.img
