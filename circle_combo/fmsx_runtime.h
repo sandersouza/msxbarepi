@@ -46,6 +46,8 @@ void fmsx_runtime_set_joystick_bits(u8 bridge_bits);
 void fmsx_runtime_set_keyboard_raw(u8 modifiers, const unsigned char raw_keys[6]);
 void fmsx_runtime_set_overscan(boolean enabled);
 void fmsx_runtime_set_refresh_hz(unsigned hz);
+void fmsx_runtime_set_disk_rom_enabled(boolean enabled);
+boolean fmsx_runtime_get_disk_rom_enabled(void);
 void fmsx_runtime_set_boot_mode(unsigned mode);
 unsigned fmsx_runtime_get_boot_mode(void);
 unsigned fmsx_runtime_get_active_boot_mode(void);

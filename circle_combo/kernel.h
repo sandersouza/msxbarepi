@@ -153,6 +153,7 @@ private:
     boolean m_WidescreenEnabled;
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;
+    boolean m_DiskRomEnabled;
     unsigned m_BootMode;
     unsigned m_Z80TurboMode;
     unsigned m_RenshaMode;

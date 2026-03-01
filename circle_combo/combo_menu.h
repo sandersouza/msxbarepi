@@ -18,6 +18,8 @@ public:
     void SetScanlineMode(unsigned mode);
     void SetRefreshRateHz(unsigned hz);
     unsigned GetRefreshRateHz(void) const;
+    void SetDiskRomEnabled(boolean enabled);
+    boolean IsDiskRomEnabled(void) const;
     void SetBootMode(unsigned mode);
     unsigned GetBootMode(void) const;
     void SetZ80TurboMode(unsigned mode);
@@ -82,6 +84,7 @@ private:
     boolean m_WidescreenEnabled;
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;
+    boolean m_DiskRomEnabled;
     unsigned m_BootMode;
     unsigned m_Z80TurboMode;
     unsigned m_RenshaMode;
@@ -120,6 +123,7 @@ private:
     boolean m_LastDrawnWidescreen;
     unsigned m_LastDrawnScanlineMode;
     unsigned m_LastDrawnRefreshRateHz;
+    boolean m_LastDrawnDiskRomEnabled;
     unsigned m_LastDrawnBootMode;
     unsigned m_LastDrawnZ80TurboMode;
     unsigned m_LastDrawnRenshaMode;

@@ -403,6 +403,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_WidescreenEnabled(FALSE),
     m_ScanlineMode(0u),
     m_RefreshRateHz(60u),
+    m_DiskRomEnabled(TRUE),
     m_BootMode(0u),
     m_Z80TurboMode(0u),
     m_RenshaMode(0u),
@@ -441,6 +442,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnWidescreen(FALSE),
     m_LastDrawnScanlineMode(0u),
     m_LastDrawnRefreshRateHz(60u),
+    m_LastDrawnDiskRomEnabled(TRUE),
     m_LastDrawnBootMode(0u),
     m_LastDrawnZ80TurboMode(0u),
     m_LastDrawnRenshaMode(0u),
@@ -500,6 +502,7 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnWidescreen = m_WidescreenEnabled;
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
+    m_LastDrawnDiskRomEnabled = m_DiskRomEnabled;
     m_LastDrawnBootMode = m_BootMode;
     m_LastDrawnZ80TurboMode = m_Z80TurboMode;
     m_LastDrawnRenshaMode = m_RenshaMode;
@@ -614,6 +617,21 @@ void CComboPauseMenu::SetRefreshRateHz(unsigned hz)
 unsigned CComboPauseMenu::GetRefreshRateHz(void) const
 {
     return m_RefreshRateHz;
+}
+
+void CComboPauseMenu::SetDiskRomEnabled(boolean enabled)
+{
+    enabled = enabled ? TRUE : FALSE;
+    if (m_DiskRomEnabled != enabled)
+    {
+        m_DiskRomEnabled = enabled;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+boolean CComboPauseMenu::IsDiskRomEnabled(void) const
+{
+    return m_DiskRomEnabled ? TRUE : FALSE;
 }
 
 void CComboPauseMenu::SetBootMode(unsigned mode)
@@ -819,6 +837,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_WidescreenEnabled,
             m_ScanlineMode,
             m_RefreshRateHz,
+            m_DiskRomEnabled,
             m_BootMode,
             m_Z80TurboMode,
             m_RenshaMode,
@@ -1268,6 +1287,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
         else if ((items[m_Selected].action == ComboMenuActionToggleWidescreen)
+              || (items[m_Selected].action == ComboMenuActionToggleDiskRom)
               || (items[m_Selected].action == ComboMenuActionToggleOverlay)
               || (items[m_Selected].action == ComboMenuActionToggleAudioMute))
         {
@@ -1485,6 +1505,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnWidescreen == m_WidescreenEnabled
      && m_LastDrawnScanlineMode == m_ScanlineMode
      && m_LastDrawnRefreshRateHz == m_RefreshRateHz
+     && m_LastDrawnDiskRomEnabled == m_DiskRomEnabled
      && m_LastDrawnBootMode == m_BootMode
      && m_LastDrawnZ80TurboMode == m_Z80TurboMode
      && m_LastDrawnRenshaMode == m_RenshaMode
@@ -1624,6 +1645,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnWidescreen = m_WidescreenEnabled;
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
+    m_LastDrawnDiskRomEnabled = m_DiskRomEnabled;
     m_LastDrawnBootMode = m_BootMode;
     m_LastDrawnZ80TurboMode = m_Z80TurboMode;
     m_LastDrawnRenshaMode = m_RenshaMode;

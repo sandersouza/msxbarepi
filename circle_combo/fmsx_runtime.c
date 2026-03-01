@@ -86,6 +86,7 @@ static const unsigned kFmsxAudioRate = 48000u;
 static unsigned g_boot_warmup_frames_remaining = 0u;
 static boolean g_boot_forced_turbo = FALSE;
 static unsigned g_refresh_hz = 60u;
+static boolean g_disk_rom_enabled = TRUE;
 static unsigned g_boot_mode = (COMBO_FMSX_BOOT_PROFILE > 2) ? 0u : (unsigned) COMBO_FMSX_BOOT_PROFILE;
 static unsigned g_active_boot_mode = (COMBO_FMSX_BOOT_PROFILE > 2) ? 0u : (unsigned) COMBO_FMSX_BOOT_PROFILE;
 static unsigned g_model_profile = FMSX_MODEL_PROFILE_MSX1;
@@ -198,6 +199,10 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     g_fmsx_status.last_error = 0;
 
     int startup_mode = MSX_MSX1 | (fmsx_runtime_effective_refresh_hz() == 50u ? MSX_PAL : MSX_NTSC) | MSX_JOY1;
+    if (g_disk_rom_enabled)
+    {
+        startup_mode |= MSX_PATCHBDOS;
+    }
 #if COMBO_FMSX_MSX1_TEXT80
     startup_mode |= MSX_FIXEDFONT;
 #endif
@@ -309,6 +314,17 @@ boolean fmsx_runtime_hard_reset(void)
     {
         return FALSE;
     }
+    char saved_disk_path[2][192];
+    for (unsigned i = 0u; i < 2u; ++i)
+    {
+        unsigned n = 0u;
+        while (n + 1u < sizeof(saved_disk_path[i]) && g_disk_path[i][n] != '\0')
+        {
+            saved_disk_path[i][n] = g_disk_path[i][n];
+            ++n;
+        }
+        saved_disk_path[i][n] = '\0';
+    }
     fmsx_runtime_set_load_diag(2201u); /* hard_reset before TrashMSX */
     /*
      * Use a full restart instead of ResetMSX() so boot-mode policy is always reapplied:
@@ -319,7 +335,21 @@ boolean fmsx_runtime_hard_reset(void)
     fmsx_runtime_set_load_diag(2202u); /* hard_reset after TrashMSX */
     g_fmsx_status.initialized = FALSE;
     g_fmsx_status.running = FALSE;
-    const boolean ok = fmsx_runtime_start(FALSE);
+    boolean ok = fmsx_runtime_start(FALSE);
+    if (ok)
+    {
+        for (unsigned i = 0u; i < 2u; ++i)
+        {
+            if (saved_disk_path[i][0] != '\0')
+            {
+                if (!fmsx_runtime_load_disk(i, saved_disk_path[i]))
+                {
+                    ok = FALSE;
+                    break;
+                }
+            }
+        }
+    }
     fmsx_runtime_set_load_diag(ok ? 2203u : 9203u);
     return ok;
 }
@@ -428,6 +458,16 @@ void fmsx_runtime_set_overscan(boolean enabled)
 void fmsx_runtime_set_refresh_hz(unsigned hz)
 {
     g_refresh_hz = (hz == 50u) ? 50u : 60u;
+}
+
+void fmsx_runtime_set_disk_rom_enabled(boolean enabled)
+{
+    g_disk_rom_enabled = enabled ? TRUE : FALSE;
+}
+
+boolean fmsx_runtime_get_disk_rom_enabled(void)
+{
+    return g_disk_rom_enabled ? TRUE : FALSE;
 }
 
 void fmsx_runtime_set_boot_mode(unsigned mode)

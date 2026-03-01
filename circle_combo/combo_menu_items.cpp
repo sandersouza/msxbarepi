@@ -197,6 +197,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
                                                      boolean widescreen_enabled,
                                                      unsigned scanline_mode,
                                                      unsigned refresh_rate_hz,
+                                                     boolean disk_rom_enabled,
                                                      unsigned boot_mode,
                                                      unsigned z80_turbo_mode,
                                                      unsigned rensha_mode,
@@ -207,12 +208,13 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
                                                      unsigned audio_gain_percent,
                                                      unsigned *count)
 {
-    static TComboMenuItem settings_items[17];
+    static TComboMenuItem settings_items[18];
     static char language_label[32];
     static char overscan_label[32];
     static char widescreen_label[32];
     static char scanline_label[32];
     static char refresh_label[32];
+    static char disk_rom_label[32];
     static char boot_label[32];
     static char turbo_label[32];
     static char rensha_label[32];
@@ -249,6 +251,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     BuildLabelFlag(scanline_label, sizeof(scanline_label), locale->settings_scanlines,
                    scanline_mode == 0u ? locale->scan_des : (scanline_mode == 1u ? locale->scan_lcd : locale->scan_crt));
     BuildLabelFlag(refresh_label, sizeof(refresh_label), locale->settings_refresh, refresh_rate_hz == 50u ? locale->refresh_pal : locale->refresh_ntsc);
+    BuildLabelFlag(disk_rom_label, sizeof(disk_rom_label), locale->settings_disk_rom, disk_rom_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(boot_label, sizeof(boot_label), locale->settings_boot_mode,
                    boot_mode == 0u ? "NORM" : (boot_mode == 1u ? "FAST" : "GAME"));
     BuildLabelFlag(turbo_label, sizeof(turbo_label), locale->settings_z80_turbo,
@@ -300,6 +303,9 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     settings_items[item_count].label = "";
     settings_items[item_count].action = ComboMenuActionSeparator;
     settings_items[item_count++].selectable = FALSE;
+    settings_items[item_count].label = disk_rom_label;
+    settings_items[item_count].action = ComboMenuActionToggleDiskRom;
+    settings_items[item_count++].selectable = TRUE;
     settings_items[item_count].label = boot_label;
     settings_items[item_count].action = ComboMenuActionCycleBootMode;
     settings_items[item_count++].selectable = TRUE;

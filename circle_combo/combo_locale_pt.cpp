@@ -25,6 +25,7 @@ extern const TComboLocaleStrings g_ComboLocalePT = {
     "Widescreen",
     "Scanlines",
     "Padrão",
+    "Disk ROM",
     "Modo de Boot",
     "Z80 Turbo",
     "Rensha",
