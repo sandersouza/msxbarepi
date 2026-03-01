@@ -63,6 +63,8 @@ boolean fmsx_runtime_set_cartridge_path(unsigned slot_index, const char *path);
 boolean fmsx_runtime_set_disk_path(unsigned drive_index, const char *path);
 boolean fmsx_runtime_load_cartridge(unsigned slot_index, const char *path);
 boolean fmsx_runtime_load_disk(unsigned drive_index, const char *path);
+boolean fmsx_runtime_unload_cartridge(unsigned slot_index);
+boolean fmsx_runtime_unload_disk(unsigned drive_index);
 void fmsx_runtime_set_load_diag(unsigned stage);
 unsigned fmsx_runtime_get_load_diag(void);
 TFmsxRuntimeStatus fmsx_runtime_get_status(void);

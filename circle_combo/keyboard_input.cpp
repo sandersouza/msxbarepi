@@ -9,6 +9,7 @@ static const u8 kHidKeyDown = 0x51;
 static const u8 kHidKeyUp = 0x52;
 static const u8 kHidKeyEnter = 0x28;
 static const u8 kHidKeyEsc = 0x29;
+static const u8 kHidKeyDel = 0x4C;
 static const u8 kHidKeyF11 = 0x44;
 static const u8 kHidKeyF12 = 0x45;
 
@@ -45,6 +46,7 @@ void ComboDecodeKeyboardRaw(unsigned char modifiers,
 	out_state->menu_right_pressed = FALSE;
 	out_state->menu_enter_pressed = FALSE;
 	out_state->menu_back_pressed = FALSE;
+	out_state->menu_delete_pressed = FALSE;
 
 	if (raw_keys == 0)
 	{
@@ -85,6 +87,10 @@ void ComboDecodeKeyboardRaw(unsigned char modifiers,
 		if (key == kHidKeyEsc)
 		{
 			out_state->menu_back_pressed = TRUE;
+		}
+		if (key == kHidKeyDel)
+		{
+			out_state->menu_delete_pressed = TRUE;
 		}
 
 		switch (key)

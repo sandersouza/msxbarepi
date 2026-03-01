@@ -2326,6 +2326,22 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 					break;
 				}
 				UpdateLoadDiagTelemetry(2002u); /* path set */
+				if (rom_path[0] == '\0')
+				{
+					if (fmsx_runtime_unload_cartridge(slot_index))
+					{
+						UpdateLoadDiagTelemetry(2005u); /* unload cart ok */
+						CString line;
+						line.Format("Unload ROM: SLOT%u", slot_index + 1u);
+						m_Logger.Write(FromKernel, LogNotice, line);
+					}
+					else
+					{
+						UpdateLoadDiagTelemetry(9007u); /* unload cart fail */
+						m_Logger.Write(FromKernel, LogWarning, "Unload ROM falhou");
+					}
+					break;
+				}
 
 				PrimeAudioSilenceBeforeReset();
 				const unsigned active_boot_mode = fmsx_runtime_get_active_boot_mode();
@@ -2376,6 +2392,22 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 					break;
 				}
 				UpdateLoadDiagTelemetry(3002u); /* disk path set */
+				if (disk_path[0] == '\0')
+				{
+					if (fmsx_runtime_unload_disk(drive_index))
+					{
+						UpdateLoadDiagTelemetry(3005u); /* unload disk ok */
+						CString line;
+						line.Format("Unload DSK: DRIVE%u", drive_index + 1u);
+						m_Logger.Write(FromKernel, LogNotice, line);
+					}
+					else
+					{
+						UpdateLoadDiagTelemetry(9008u); /* unload disk fail */
+						m_Logger.Write(FromKernel, LogWarning, "Unload DSK falhou");
+					}
+					break;
+				}
 				const boolean load_ok = fmsx_runtime_load_disk(drive_index, disk_path);
 				if (load_ok)
 				{
@@ -2818,7 +2850,8 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 		key_state.menu_left_pressed,
 		key_state.menu_right_pressed,
 		key_state.menu_enter_pressed,
-		key_state.menu_back_pressed);
+		key_state.menu_back_pressed,
+		key_state.menu_delete_pressed);
 	const boolean defer_heavy_action =
 		(menu_action == ComboMenuActionCartridgeA)
 		|| (menu_action == ComboMenuActionCartridgeB)

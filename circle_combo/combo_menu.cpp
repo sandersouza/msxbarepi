@@ -464,7 +464,8 @@ CComboPauseMenu::CComboPauseMenu(void)
   m_LastDownPressed(FALSE),
   m_LastLeftPressed(FALSE),
   m_LastRightPressed(FALSE),
-  m_LastEnterPressed(FALSE)
+  m_LastEnterPressed(FALSE),
+  m_LastDeletePressed(FALSE)
 {
     CopySmallText(m_LoadRomSlot1Name, sizeof(m_LoadRomSlot1Name), "");
     CopySmallText(m_LoadRomSlot2Name, sizeof(m_LoadRomSlot2Name), "");
@@ -536,6 +537,7 @@ void CComboPauseMenu::Reset(void)
     m_LastLeftPressed = FALSE;
     m_LastRightPressed = FALSE;
     m_LastEnterPressed = FALSE;
+    m_LastDeletePressed = FALSE;
 }
 
 void CComboPauseMenu::SetOverscanPercent(unsigned percent)
@@ -945,7 +947,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                                                boolean left_pressed,
                                                boolean right_pressed,
                                                boolean enter_pressed,
-                                               boolean back_pressed)
+                                               boolean back_pressed,
+                                               boolean delete_pressed)
 {
     if (!paused)
     {
@@ -955,6 +958,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_LastLeftPressed = left_pressed;
         m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
+        m_LastDeletePressed = delete_pressed;
         return ComboMenuActionNone;
     }
 
@@ -968,6 +972,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_LastLeftPressed = left_pressed;
         m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
+        m_LastDeletePressed = delete_pressed;
         return ComboMenuActionNone;
     }
 
@@ -994,6 +999,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_LastLeftPressed = left_pressed;
         m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
+        m_LastDeletePressed = delete_pressed;
         return ComboMenuActionNone;
     }
 
@@ -1085,6 +1091,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_LastLeftPressed = left_pressed;
         m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
+        m_LastDeletePressed = delete_pressed;
         return action;
     }
 
@@ -1330,12 +1337,33 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         }
     }
 
+    if (delete_pressed && !m_LastDeletePressed && items[m_Selected].selectable)
+    {
+        if (m_View == MenuViewLoadRom
+              && (items[m_Selected].action == ComboMenuActionCartridgeA || items[m_Selected].action == ComboMenuActionCartridgeB))
+        {
+            m_HasPendingRomSelection = TRUE;
+            m_PendingRomSlot = (items[m_Selected].action == ComboMenuActionCartridgeA) ? 0u : 1u;
+            CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), "");
+            action = items[m_Selected].action;
+        }
+        else if (m_View == MenuViewLoadDisk
+              && (items[m_Selected].action == ComboMenuActionDiskDriveA || items[m_Selected].action == ComboMenuActionDiskDriveB))
+        {
+            m_HasPendingDiskSelection = TRUE;
+            m_PendingDiskDrive = (items[m_Selected].action == ComboMenuActionDiskDriveA) ? 0u : 1u;
+            CopySmallText(m_PendingDiskPath, sizeof(m_PendingDiskPath), "");
+            action = items[m_Selected].action;
+        }
+    }
+
     m_LastBackPressed = back_pressed;
     m_LastUpPressed = up_pressed;
     m_LastDownPressed = down_pressed;
     m_LastLeftPressed = left_pressed;
     m_LastRightPressed = right_pressed;
     m_LastEnterPressed = enter_pressed;
+    m_LastDeletePressed = delete_pressed;
 
     return action;
 }
@@ -1427,7 +1455,8 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     }
 
     const unsigned box_cols = content_cols;
-    const unsigned box_rows = item_count + 3u;
+    const boolean has_unload_hint = (m_View == MenuViewLoadRom || m_View == MenuViewLoadDisk) ? TRUE : FALSE;
+    const unsigned box_rows = item_count + 3u + (has_unload_hint ? 2u : 0u);
     const unsigned box_w_px = box_cols * cell_w;
     const unsigned box_h_px = box_rows * cell_h;
 
@@ -1570,6 +1599,20 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
             const TGfxTextStyle style = (items[i].selectable && i == m_Selected) ? selected_style : normal_style;
             renderer->DrawText(x, y, items[i].label, style, scale_x, scale_y);
         }
+    }
+
+    if (has_unload_hint)
+    {
+        const char *hint = (m_View == MenuViewLoadDisk) ? locale->load_disk_unload_hint : locale->load_rom_unload_hint;
+        if (hint == 0 || hint[0] == '\0')
+        {
+            hint = (m_View == MenuViewLoadDisk) ? "[DEL] Eject Disk" : "[DEL] Unload ROM";
+        }
+        const unsigned hint_len = ComboStrLen(hint);
+        const unsigned hint_row = item_count + 3u; /* one blank line above */
+        const unsigned hint_y = box_y + (hint_row * cell_h);
+        const unsigned hint_x = box_x + ((box_cols - hint_len) / 2u) * cell_w;
+        renderer->DrawText(hint_x, hint_y, hint, normal_style, scale_x, scale_y);
     }
 
     m_Row = box_y;

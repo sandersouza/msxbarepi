@@ -14,6 +14,7 @@ struct TComboKeyboardInputState
 	boolean menu_right_pressed;
 	boolean menu_enter_pressed;
 	boolean menu_back_pressed;
+	boolean menu_delete_pressed;
 };
 
 u8 ComboKeyboardJoyMask(void);

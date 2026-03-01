@@ -24,9 +24,11 @@ typedef struct {
     const char *load_rom_slot1;
     const char *load_rom_slot2;
     const char *load_rom_empty;
+    const char *load_rom_unload_hint;
     const char *load_disk_drive1;
     const char *load_disk_drive2;
     const char *load_disk_empty;
+    const char *load_disk_unload_hint;
     const char *settings_language;
     const char *settings_overscan;
     const char *settings_widescreen;

@@ -71,6 +71,9 @@ extern void fmsx_cpu_set_turbo_percent(unsigned percent);
 extern unsigned fmsx_video_get_latest(const u16 **pixels, unsigned *width, unsigned *height);
 extern const char *ROMName[];
 extern uint8_t *ROMData[];
+extern uint8_t ROMMask[];
+extern uint8_t *MemMap[4][4][8];
+extern uint8_t *EmptyRAM;
 extern const char *DSKName[];
 extern FDIDisk FDD[];
 extern void fmsx_video_set_overscan(boolean enabled);
@@ -89,6 +92,31 @@ static unsigned g_model_profile = FMSX_MODEL_PROFILE_MSX1;
 static boolean g_use_embedded_bios = FALSE;
 static unsigned g_z80_turbo_mode = 0u;
 static boolean g_scc_cart_enabled = TRUE;
+
+static boolean fmsx_runtime_find_slot_map(unsigned slot, unsigned *out_ps, unsigned *out_ss)
+{
+    /* Must match fMSX CartMap in MSX.c */
+    static const uint8_t kCartMap[4][4] = {
+        { 255u, 3u, 4u, 5u },
+        { 0u,   0u, 0u, 0u },
+        { 1u,   1u, 1u, 1u },
+        { 2u, 255u, 255u, 255u }
+    };
+
+    for (unsigned ps = 0u; ps < 4u; ++ps)
+    {
+        for (unsigned ss = 0u; ss < 4u; ++ss)
+        {
+            if (kCartMap[ps][ss] == slot)
+            {
+                if (out_ps != 0) *out_ps = ps;
+                if (out_ss != 0) *out_ss = ss;
+                return TRUE;
+            }
+        }
+    }
+    return FALSE;
+}
 
 static unsigned fmsx_runtime_fast_cutoff_frames(void)
 {
@@ -605,6 +633,49 @@ boolean fmsx_runtime_load_disk(unsigned drive_index, const char *path)
         return FALSE;
     }
     fmsx_runtime_set_load_diag(2402u); /* ChangeDisk ok */
+    g_fmsx_status.last_pc = (int) CPU.PC.W;
+    return TRUE;
+}
+
+boolean fmsx_runtime_unload_cartridge(unsigned slot_index)
+{
+    if (slot_index > 1u || !g_fmsx_status.running)
+    {
+        return FALSE;
+    }
+    unsigned ps = 0u;
+    unsigned ss = 0u;
+    if (!fmsx_runtime_find_slot_map(slot_index, &ps, &ss))
+    {
+        return FALSE;
+    }
+
+    ROMMask[slot_index] = 0;
+    ROMName[slot_index] = 0;
+    g_cartridge_path[slot_index][0] = '\0';
+    for (unsigned page = 0u; page < 8u; ++page)
+    {
+        MemMap[ps][ss][page] = EmptyRAM;
+    }
+
+    g_fmsx_status.last_pc = (int) CPU.PC.W;
+    return TRUE;
+}
+
+boolean fmsx_runtime_unload_disk(unsigned drive_index)
+{
+    if (drive_index > 1u || !g_fmsx_status.running)
+    {
+        return FALSE;
+    }
+
+    if (!ChangeDisk((uint8_t) drive_index, 0))
+    {
+        return FALSE;
+    }
+
+    DSKName[drive_index] = 0;
+    g_disk_path[drive_index][0] = '\0';
     g_fmsx_status.last_pc = (int) CPU.PC.W;
     return TRUE;
 }

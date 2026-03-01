@@ -41,7 +41,8 @@ public:
                                  boolean left_pressed,
                                  boolean right_pressed,
                                  boolean enter_pressed,
-                                 boolean back_pressed);
+                                 boolean back_pressed,
+                                 boolean delete_pressed);
     void Render(boolean visible, CGfxTextBoxRenderer *renderer, unsigned screen_width, unsigned screen_height,
                 unsigned anchor_x, unsigned anchor_y, unsigned anchor_w, unsigned anchor_h);
 
@@ -143,6 +144,7 @@ private:
     boolean m_LastLeftPressed;
     boolean m_LastRightPressed;
     boolean m_LastEnterPressed;
+    boolean m_LastDeletePressed;
 };
 
 #endif
