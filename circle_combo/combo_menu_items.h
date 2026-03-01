@@ -43,6 +43,14 @@ typedef struct {
 } TComboMenuItem;
 
 const TComboMenuItem *combo_menu_root_items_get(unsigned language, unsigned *count);
+const TComboMenuItem *combo_menu_load_rom_items_get(unsigned language,
+                                                     const char *slot1_name,
+                                                     const char *slot2_name,
+                                                     unsigned *count);
+const TComboMenuItem *combo_menu_load_disk_items_get(unsigned language,
+                                                      const char *drive1_name,
+                                                      const char *drive2_name,
+                                                      unsigned *count);
 const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
                                                      unsigned language,
                                                      boolean widescreen_enabled,

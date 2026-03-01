@@ -27,6 +27,8 @@ public:
     void SetOverlayEnabled(boolean enabled, boolean available);
     void SetAudioMuted(boolean enabled);
     void SetAudioGainPercent(unsigned percent);
+    void SetLoadRomSlotNames(const char *slot1_name, const char *slot2_name);
+    void SetLoadDiskDriveNames(const char *drive1_name, const char *drive2_name);
     unsigned GetAudioGainPercent(void) const;
     boolean IsInSettings(void) const;
     void RequestRedraw(void);
@@ -42,6 +44,24 @@ public:
                 unsigned anchor_x, unsigned anchor_y, unsigned anchor_w, unsigned anchor_h);
 
 private:
+    enum TMenuView {
+        MenuViewRoot = 0,
+        MenuViewSettings = 1,
+        MenuViewLoadRom = 2,
+        MenuViewLoadRomBrowser = 3,
+        MenuViewLoadDisk = 4,
+        MenuViewLoadDiskBrowser = 5
+    };
+    enum TBrowserMode {
+        BrowserModeRom = 0,
+        BrowserModeDisk = 1
+    };
+    static const unsigned kRomBrowserMaxEntries = 256u;
+    static const unsigned kRomBrowserVisibleRows = 10u;
+    static void CopySmallText(char *dst, unsigned dst_size, const char *src);
+    static void FormatName83NoExt(const char *path, char out_name[17]);
+    static boolean IsPathInsideRoot(const char *path, const char *root);
+    void RebuildBrowserCatalog(unsigned mode);
     const TComboMenuItem *GetItems(unsigned *count) const;
     unsigned FindFirstSelectable(void) const;
     unsigned FindPrevSelectable(unsigned from) const;
@@ -53,7 +73,7 @@ private:
     unsigned m_Selected;
     unsigned m_LastDrawnSelected;
     boolean m_Visible;
-    boolean m_InSettings;
+    unsigned m_View;
     unsigned m_OverscanPercent;
     unsigned m_Language;
     boolean m_WidescreenEnabled;
@@ -67,8 +87,25 @@ private:
     boolean m_OverlayAvailable;
     boolean m_AudioMuted;
     unsigned m_AudioGainPercent;
+    char m_LoadRomSlot1Name[16];
+    char m_LoadRomSlot2Name[16];
+    char m_LoadDiskDrive1Name[16];
+    char m_LoadDiskDrive2Name[16];
+    unsigned m_BrowserMode;
+    unsigned m_RomBrowserSlot;
+    unsigned m_RomBrowserCount;
+    unsigned m_RomBrowserSelectedAbs;
+    unsigned m_RomBrowserTop;
+    char m_RomBrowserNames[kRomBrowserMaxEntries][17];
+    char m_RomBrowserPaths[kRomBrowserMaxEntries][192];
+    boolean m_RomBrowserIsDir[kRomBrowserMaxEntries];
+    boolean m_RomBrowserIsParent[kRomBrowserMaxEntries];
+    char m_RomBrowserCurrentDir[192];
+    mutable TComboMenuItem m_RomBrowserItems[kRomBrowserVisibleRows];
+    mutable char m_RomBrowserItemLabels[kRomBrowserVisibleRows][28];
+    mutable char m_RomBrowserEmptyLabel[20];
     boolean m_LastBackPressed;
-    boolean m_LastDrawnInSettings;
+    unsigned m_LastDrawnView;
     unsigned m_LastDrawnOverscanPercent;
     unsigned m_LastDrawnLanguage;
     boolean m_LastDrawnWidescreen;
@@ -82,6 +119,10 @@ private:
     boolean m_LastDrawnOverlayAvailable;
     boolean m_LastDrawnAudioMuted;
     unsigned m_LastDrawnAudioGainPercent;
+    char m_LastDrawnLoadRomSlot1Name[16];
+    char m_LastDrawnLoadRomSlot2Name[16];
+    char m_LastDrawnLoadDiskDrive1Name[16];
+    char m_LastDrawnLoadDiskDrive2Name[16];
     boolean m_ForceRedraw;
     boolean m_RequestBackgroundRestore;
     unsigned m_LastBoxX;

@@ -82,7 +82,7 @@ static char local_tolower(char ch)
 
 static int local_starts_with_dot(const char *name)
 {
-	return name != 0 && (name[0] == '.') && (name[1] == '\0' || (name[1] == '.' && name[2] == '\0'));
+	return name != 0 && name[0] == '.';
 }
 
 static int local_ext_match(const char *name, const char *ext)
@@ -108,6 +108,10 @@ static int local_ext_match(const char *name, const char *ext)
 static int local_is_supported_file(const char *name, unsigned char type)
 {
 	if (name == 0 || name[0] == '\0')
+	{
+		return 0;
+	}
+	if (name[0] == '.')
 	{
 		return 0;
 	}
@@ -233,6 +237,42 @@ static void local_open_next_root(void)
 	s_Scanning = FALSE;
 }
 
+static void local_ensure_root_dir(const char *path)
+{
+	if (path == 0 || path[0] == '\0')
+	{
+		return;
+	}
+
+	FILINFO info;
+	local_memset(&info, 0, sizeof(info));
+	FRESULT fr = f_stat(path, &info);
+	if (fr == FR_OK)
+	{
+		if ((info.fattrib & AM_DIR) != 0u)
+		{
+			return;
+		}
+		++s_ErrorCount;
+		return;
+	}
+
+	if (fr != FR_NO_FILE && fr != FR_NO_PATH)
+	{
+		++s_ErrorCount;
+		return;
+	}
+
+	fr = f_mkdir(path);
+	if (fr == FR_OK || fr == FR_EXIST)
+	{
+		return;
+	}
+
+	/* If another path component is missing or media is unavailable, just account the error. */
+	++s_ErrorCount;
+}
+
 void combo_media_catalog_reset(void)
 {
 	s_EntryCount = 0u;
@@ -252,6 +292,10 @@ void combo_media_catalog_reset(void)
 void combo_media_catalog_begin_scan(void)
 {
 	combo_media_catalog_reset();
+	for (unsigned i = 0u; i < (sizeof(kCatalogRoots) / sizeof(kCatalogRoots[0])); ++i)
+	{
+		local_ensure_root_dir(kCatalogRoots[i].path);
+	}
 	s_Scanning = TRUE;
 	local_open_next_root();
 }
@@ -318,6 +362,7 @@ void combo_media_catalog_scan_step(unsigned budget_entries)
 			const FRESULT child_fr = f_opendir(&child->dir, child->path);
 			if (child_fr == FR_OK)
 			{
+				local_record_entry(child->path, 0u, (unsigned char) ComboMediaTypeDir);
 				++s_StackDepth;
 			}
 			else if (child_fr != FR_NO_PATH && child_fr != FR_NO_FILE)

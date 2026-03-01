@@ -71,6 +71,8 @@ extern void fmsx_cpu_set_turbo_percent(unsigned percent);
 extern unsigned fmsx_video_get_latest(const u16 **pixels, unsigned *width, unsigned *height);
 extern const char *ROMName[];
 extern uint8_t *ROMData[];
+extern const char *DSKName[];
+extern FDIDisk FDD[];
 extern void fmsx_video_set_overscan(boolean enabled);
 
 static TFmsxRuntimeStatus g_fmsx_status = { FALSE, FALSE, 0u, 0, 0 };
@@ -453,6 +455,32 @@ void fmsx_runtime_set_scc_cart_enabled(boolean enabled)
 boolean fmsx_runtime_get_scc_cart_enabled(void)
 {
     return g_scc_cart_enabled;
+}
+
+const char *fmsx_runtime_get_cartridge_name(unsigned slot_index)
+{
+    if (slot_index > 1u)
+    {
+        return 0;
+    }
+    if (ROMData[slot_index] == 0)
+    {
+        return 0;
+    }
+    return ROMName[slot_index];
+}
+
+const char *fmsx_runtime_get_disk_name(unsigned drive_index)
+{
+    if (drive_index > 1u)
+    {
+        return 0;
+    }
+    if (FDD[drive_index].Data == 0)
+    {
+        return 0;
+    }
+    return DSKName[drive_index];
 }
 
 TFmsxRuntimeStatus fmsx_runtime_get_status(void)

@@ -2,6 +2,104 @@
 
 #include <circle/types.h>
 
+static const unsigned char kFolderGlyphLeftChar = 0x1Eu;
+static const unsigned char kFolderGlyphRightChar = 0x1Fu;
+
+static unsigned DecodeUtf8Latin1(const char *text, unsigned *consumed)
+{
+    if (consumed == 0 || text == 0 || text[0] == '\0')
+    {
+        if (consumed != 0) *consumed = 0u;
+        return 0u;
+    }
+
+    const unsigned b0 = (unsigned) (unsigned char) text[0];
+    if (b0 < 0x80u)
+    {
+        *consumed = 1u;
+        return b0;
+    }
+
+    const unsigned b1 = (unsigned) (unsigned char) text[1];
+    if ((b0 == 0xC2u || b0 == 0xC3u) && (b1 >= 0x80u && b1 <= 0xBFu))
+    {
+        *consumed = 2u;
+        return ((b0 & 0x1Fu) << 6) | (b1 & 0x3Fu);
+    }
+
+    *consumed = 1u;
+    return '?';
+}
+
+static void DrawCustomFolderGlyphHalf(CGfxTextBoxRenderer *renderer,
+                                      unsigned x,
+                                      unsigned y,
+                                      const TGfxTextStyle &style,
+                                      unsigned scale_x,
+                                      unsigned scale_y,
+                                      unsigned char_w,
+                                      unsigned char_h,
+                                      boolean right_half)
+{
+    if (renderer == 0 || char_w == 0u || char_h == 0u)
+    {
+        return;
+    }
+
+    if (style.opaque_bg)
+    {
+        renderer->FillRect(x, y, char_w * scale_x, char_h * scale_y, style.bg);
+    }
+
+    const unsigned full_w = char_w * 2u;
+    const unsigned half_offset = right_half ? char_w : 0u;
+    const unsigned body_bottom = (char_h > 5u) ? (char_h - 5u) : (char_h - 1u);
+
+    auto put_scaled = [&](unsigned px, unsigned py) {
+        renderer->FillRect(x + (px * scale_x), y + (py * scale_y), scale_x, scale_y, style.fg);
+    };
+
+    for (unsigned lx = 0u; lx < char_w; ++lx)
+    {
+        const unsigned gx = half_offset + lx; /* 0..(2*char_w-1) */
+        if (gx >= full_w)
+        {
+            continue;
+        }
+
+        /* Folder silhouette close to the reference:
+         * - tab on top-left
+         * - slight step from tab to main top edge
+         * - filled body */
+        unsigned top = char_h; /* default: no pixel */
+        if (gx >= 1u && gx <= 5u)
+        {
+            top = 2u; /* tab top */
+        }
+        else if (gx == 6u || gx == 7u)
+        {
+            top = 3u; /* transition */
+        }
+        else if (gx >= 8u && gx + 1u < full_w)
+        {
+            top = 4u; /* main top */
+        }
+
+        if (top >= char_h)
+        {
+            continue;
+        }
+
+        if (body_bottom >= top)
+        {
+            for (unsigned py = top; py <= body_bottom; ++py)
+            {
+                put_scaled(lx, py);
+            }
+        }
+    }
+}
+
 CGfxTextBoxRenderer::CGfxTextBoxRenderer(CScreenDevice *screen)
 : m_Screen(0)
 , m_FrameBuffer(0)
@@ -108,9 +206,20 @@ void CGfxTextBoxRenderer::DrawChar(unsigned x, unsigned y, char ch, const TGfxTe
 	}
 	if (scale_x == 0u) scale_x = 1u;
 	if (scale_y == 0u) scale_y = 1u;
+    const unsigned char_w = m_Font.GetCharWidth();
+    const unsigned char_h = m_Font.GetCharHeight();
 
-	const unsigned char_w = m_Font.GetCharWidth();
-	const unsigned char_h = m_Font.GetCharHeight();
+    const unsigned char glyph = (unsigned char) ch;
+    if (glyph == kFolderGlyphLeftChar)
+    {
+        DrawCustomFolderGlyphHalf(this, x, y, style, scale_x, scale_y, char_w, char_h, FALSE);
+        return;
+    }
+    if (glyph == kFolderGlyphRightChar)
+    {
+        DrawCustomFolderGlyphHalf(this, x, y, style, scale_x, scale_y, char_w, char_h, TRUE);
+        return;
+    }
 
 	for (unsigned row = 0; row < char_h; ++row)
 	{
@@ -152,16 +261,24 @@ void CGfxTextBoxRenderer::DrawText(unsigned x, unsigned y, const char *text, con
 	unsigned cx = x;
 	unsigned cy = y;
 
-	for (const char *p = text; *p != '\0'; ++p)
+	for (const char *p = text; *p != '\0';)
 	{
 		if (*p == '\n')
 		{
 			cx = x;
 			cy += step_y;
+            ++p;
 			continue;
 		}
-		DrawChar(cx, cy, *p, style, scale_x, scale_y);
+        unsigned consumed = 0u;
+        const unsigned cp = DecodeUtf8Latin1(p, &consumed);
+        if (consumed == 0u)
+        {
+            break;
+        }
+		DrawChar(cx, cy, (char) (unsigned char) cp, style, scale_x, scale_y);
 		cx += step_x;
+        p += consumed;
 	}
 }
 
