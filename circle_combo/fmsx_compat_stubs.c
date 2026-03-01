@@ -66,6 +66,18 @@ static int local_str_ieq(const char *a, const char *b)
     return *a == '\0' && *b == '\0';
 }
 
+static int local_is_sd_path(const char *path)
+{
+    if (!path)
+    {
+        return 0;
+    }
+    return ((path[0] == 'S' || path[0] == 's')
+         && (path[1] == 'D' || path[1] == 'd')
+         && path[2] == ':'
+         && (path[3] == '/' || path[3] == '\\')) ? 1 : 0;
+}
+
 static const char *local_basename(const char *path)
 {
     if (!path)
@@ -213,7 +225,7 @@ RFILE *rfopen(const char *path, const char *mode)
         return stream;
     }
 
-    if (f_open(&g_rfile_fatfs_pool[(unsigned) index], path, FA_READ) != FR_OK)
+    if (!local_is_sd_path(path) || f_open(&g_rfile_fatfs_pool[(unsigned) index], path, FA_READ) != FR_OK)
     {
         stream->in_use = 0;
         return 0;
