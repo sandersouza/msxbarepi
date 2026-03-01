@@ -2268,6 +2268,43 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 {
 	switch (action)
 	{
+	case ComboMenuActionCartridgeA:
+	case ComboMenuActionCartridgeB:
+	#if COMBO_ENABLE_FMSX
+		if (m_FmsxReady)
+		{
+			unsigned slot_index = 0u;
+			char rom_path[192];
+			rom_path[0] = '\0';
+			if (m_PauseMenu.ConsumePendingRomSelection(&slot_index, rom_path, sizeof(rom_path)))
+			{
+				if (slot_index > 1u)
+				{
+					slot_index = (action == ComboMenuActionCartridgeB) ? 1u : 0u;
+				}
+				if (!fmsx_runtime_set_cartridge_path(slot_index, rom_path))
+				{
+					m_Logger.Write(FromKernel, LogWarning, "Load ROM falhou: caminho invalido");
+					break;
+				}
+
+				PrimeAudioSilenceBeforeReset();
+				if (fmsx_runtime_hard_reset())
+				{
+					ResetEmulationRuntimeState();
+					CString line;
+					line.Format("Load ROM: SLOT%u <= %s", slot_index + 1u, rom_path);
+					m_Logger.Write(FromKernel, LogNotice, line);
+				}
+				else
+				{
+					m_Logger.Write(FromKernel, LogWarning, "Load ROM falhou: hard reset");
+				}
+			}
+		}
+	#endif
+		break;
+
 	case ComboMenuActionMsxBasic:
 	#if COMBO_ENABLE_FMSX
 		if (m_FmsxReady)

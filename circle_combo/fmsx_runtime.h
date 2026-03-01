@@ -58,6 +58,7 @@ void fmsx_runtime_set_scc_cart_enabled(boolean enabled);
 boolean fmsx_runtime_get_scc_cart_enabled(void);
 const char *fmsx_runtime_get_cartridge_name(unsigned slot_index);
 const char *fmsx_runtime_get_disk_name(unsigned drive_index);
+boolean fmsx_runtime_set_cartridge_path(unsigned slot_index, const char *path);
 TFmsxRuntimeStatus fmsx_runtime_get_status(void);
 unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsigned *height);
 unsigned fmsx_audio_pull_samples(int16_t *dst, unsigned max_samples);

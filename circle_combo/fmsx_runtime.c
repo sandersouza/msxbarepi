@@ -76,6 +76,7 @@ extern FDIDisk FDD[];
 extern void fmsx_video_set_overscan(boolean enabled);
 
 static TFmsxRuntimeStatus g_fmsx_status = { FALSE, FALSE, 0u, 0, 0 };
+static char g_cartridge_path[2][192] = {{0}};
 static const unsigned kFmsxAudioRate = 48000u;
 static unsigned g_boot_warmup_frames_remaining = 0u;
 static boolean g_boot_forced_turbo = FALSE;
@@ -481,6 +482,37 @@ const char *fmsx_runtime_get_disk_name(unsigned drive_index)
         return 0;
     }
     return DSKName[drive_index];
+}
+
+boolean fmsx_runtime_set_cartridge_path(unsigned slot_index, const char *path)
+{
+    if (slot_index > 1u)
+    {
+        return FALSE;
+    }
+
+    if (path == 0 || path[0] == '\0')
+    {
+        g_cartridge_path[slot_index][0] = '\0';
+        ROMName[slot_index] = 0;
+        return TRUE;
+    }
+
+    unsigned n = 0u;
+    while (path[n] != '\0' && n + 1u < sizeof(g_cartridge_path[slot_index]))
+    {
+        g_cartridge_path[slot_index][n] = path[n];
+        ++n;
+    }
+    g_cartridge_path[slot_index][n] = '\0';
+
+    if (path[n] != '\0')
+    {
+        return FALSE;
+    }
+
+    ROMName[slot_index] = g_cartridge_path[slot_index];
+    return TRUE;
 }
 
 TFmsxRuntimeStatus fmsx_runtime_get_status(void)
