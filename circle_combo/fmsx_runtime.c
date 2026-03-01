@@ -630,7 +630,7 @@ const char *fmsx_runtime_get_cartridge_name(unsigned slot_index)
     {
         return 0;
     }
-    return ROMName[slot_index];
+    return g_cartridge_path[slot_index][0] != '\0' ? g_cartridge_path[slot_index] : ROMName[slot_index];
 }
 
 const char *fmsx_runtime_get_disk_name(unsigned drive_index)
@@ -643,7 +643,7 @@ const char *fmsx_runtime_get_disk_name(unsigned drive_index)
     {
         return 0;
     }
-    return DSKName[drive_index];
+    return g_disk_path[drive_index][0] != '\0' ? g_disk_path[drive_index] : DSKName[drive_index];
 }
 
 boolean fmsx_runtime_set_cartridge_path(unsigned slot_index, const char *path)

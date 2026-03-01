@@ -2,6 +2,12 @@
 #include "combo_locale.h"
 #include "media_catalog.h"
 
+#if DEPTH == 32
+static const TScreenColor kPauseMenuBgColor = COLOR32(0, 0, 0x9B, 0xFF);
+#else
+static const TScreenColor kPauseMenuBgColor = COLOR16(0, 0, 0x9B >> 3);
+#endif
+
 
 static unsigned ComboStrLen(const char *text)
 {
@@ -1068,7 +1074,6 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                     }
                     RebuildBrowserCatalog(m_BrowserMode);
                     m_ForceRedraw = TRUE;
-                    m_RequestBackgroundRestore = TRUE;
                 }
                 else if (abs < m_RomBrowserCount
                       && !m_RomBrowserIsDir[abs]
@@ -1146,7 +1151,6 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 m_OverscanPercent = next_value;
                 m_ForceRedraw = TRUE;
-                m_RequestBackgroundRestore = TRUE;
                 action = ComboMenuActionOverscanChanged;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
@@ -1157,13 +1161,11 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 action = ComboMenuActionCycleScanlinesPrev;
                 m_ForceRedraw = TRUE;
-                m_RequestBackgroundRestore = TRUE;
             }
             else if (right_edge || enter_edge)
             {
                 action = ComboMenuActionCycleScanlines;
                 m_ForceRedraw = TRUE;
-                m_RequestBackgroundRestore = TRUE;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
@@ -1173,13 +1175,11 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 action = ComboMenuActionCycleRefreshRatePrev;
                 m_ForceRedraw = TRUE;
-                m_RequestBackgroundRestore = TRUE;
             }
             else if (right_edge || enter_edge)
             {
                 action = ComboMenuActionCycleRefreshRate;
                 m_ForceRedraw = TRUE;
-                m_RequestBackgroundRestore = TRUE;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
@@ -1189,13 +1189,11 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 action = ComboMenuActionCycleBootModePrev;
                 m_ForceRedraw = TRUE;
-                m_RequestBackgroundRestore = TRUE;
             }
             else if (right_edge || enter_edge)
             {
                 action = ComboMenuActionCycleBootMode;
                 m_ForceRedraw = TRUE;
-                m_RequestBackgroundRestore = TRUE;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
@@ -1205,13 +1203,11 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 action = ComboMenuActionCycleZ80TurboPrev;
                 m_ForceRedraw = TRUE;
-                m_RequestBackgroundRestore = TRUE;
             }
             else if (right_edge || enter_edge)
             {
                 action = ComboMenuActionCycleZ80Turbo;
                 m_ForceRedraw = TRUE;
-                m_RequestBackgroundRestore = TRUE;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
@@ -1221,13 +1217,11 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 action = ComboMenuActionCycleLanguagePrev;
                 m_ForceRedraw = TRUE;
-                m_RequestBackgroundRestore = TRUE;
             }
             else if (right_edge || enter_edge)
             {
                 action = ComboMenuActionCycleLanguage;
                 m_ForceRedraw = TRUE;
-                m_RequestBackgroundRestore = TRUE;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
@@ -1237,7 +1231,6 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 action = items[m_Selected].action;
                 m_ForceRedraw = TRUE;
-                m_RequestBackgroundRestore = TRUE;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
@@ -1260,7 +1253,6 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 m_AudioGainPercent = next_value;
                 m_ForceRedraw = TRUE;
-                m_RequestBackgroundRestore = TRUE;
                 action = ComboMenuActionAudioGainChanged;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
@@ -1271,13 +1263,11 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 action = ComboMenuActionCycleRenshaPrev;
                 m_ForceRedraw = TRUE;
-                m_RequestBackgroundRestore = TRUE;
             }
             else if (right_edge || enter_edge)
             {
                 action = ComboMenuActionCycleRensha;
                 m_ForceRedraw = TRUE;
-                m_RequestBackgroundRestore = TRUE;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
@@ -1289,7 +1279,6 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 action = items[m_Selected].action;
                 m_ForceRedraw = TRUE;
-                m_RequestBackgroundRestore = TRUE;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
@@ -1385,8 +1374,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
 void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, unsigned screen_width, unsigned screen_height,
                              unsigned anchor_x, unsigned anchor_y, unsigned anchor_w, unsigned anchor_h)
 {
-    const TGfxTextStyle title_style = { BRIGHT_WHITE_COLOR, BLACK_COLOR, TRUE };
-    const TGfxTextStyle normal_style = { BRIGHT_WHITE_COLOR, BLACK_COLOR, FALSE };
+    const TGfxTextStyle title_style = { BRIGHT_WHITE_COLOR, kPauseMenuBgColor, TRUE };
+    const TGfxTextStyle normal_style = { BRIGHT_WHITE_COLOR, kPauseMenuBgColor, FALSE };
     const TGfxTextStyle selected_style = { BLACK_COLOR, BRIGHT_WHITE_COLOR, FALSE };
     const unsigned scale_x = 2u;
     const unsigned scale_y = 2u;
@@ -1515,7 +1504,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         return;
     }
 
-    renderer->FillRect(box_x, box_y, box_w_px, box_h_px, BLACK_COLOR);
+    renderer->FillRect(box_x, box_y, box_w_px, box_h_px, kPauseMenuBgColor);
     renderer->DrawRectBorder(box_x, box_y, box_w_px, box_h_px, BRIGHT_WHITE_COLOR, 2u);
 
     const unsigned title_x = box_x + ((box_cols - title_len) / 2u) * cell_w;
@@ -1564,6 +1553,12 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
                 : 0u;
             const TGfxTextStyle left_style = (settings_row && selected_row) ? selected_style : normal_style;
             TGfxTextStyle flag_style = left_style;
+
+            if (load_media_row && box_cols > 4u)
+            {
+                /* Keep media value area visually stable (16 cols) by clearing row span first. */
+                renderer->FillRect(box_x + (2u * cell_w), y, (box_cols - 4u) * cell_w, cell_h, kPauseMenuBgColor);
+            }
 
             if (load_media_row && selected_row)
             {

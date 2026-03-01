@@ -92,6 +92,7 @@ static const TComboMenuItem *BuildDualMediaItems(const char *left_tag,
     static TComboMenuItem items[2];
     static char left_label[32];
     static char right_label[32];
+    static const unsigned kMediaValueWidth = 16u;
 
     if (left_tag == 0 || left_tag[0] == '\0') left_tag = "A";
     if (right_tag == 0 || right_tag[0] == '\0') right_tag = "B";
@@ -116,9 +117,15 @@ static const TComboMenuItem *BuildDualMediaItems(const char *left_tag,
         left_label[c++] = ':';
     }
     left_label[c++] = '\t';
-    for (unsigned i = 0u; left_name[i] != '\0' && c + 1u < sizeof(left_label); ++i)
+    unsigned n = 0u;
+    for (; left_name[n] != '\0' && n < kMediaValueWidth && c + 1u < sizeof(left_label); ++n)
     {
-        left_label[c++] = left_name[i];
+        left_label[c++] = left_name[n];
+    }
+    while (n < kMediaValueWidth && c + 1u < sizeof(left_label))
+    {
+        left_label[c++] = ' ';
+        ++n;
     }
     left_label[c] = '\0';
 
@@ -132,9 +139,15 @@ static const TComboMenuItem *BuildDualMediaItems(const char *left_tag,
         right_label[c++] = ':';
     }
     right_label[c++] = '\t';
-    for (unsigned i = 0u; right_name[i] != '\0' && c + 1u < sizeof(right_label); ++i)
+    n = 0u;
+    for (; right_name[n] != '\0' && n < kMediaValueWidth && c + 1u < sizeof(right_label); ++n)
     {
-        right_label[c++] = right_name[i];
+        right_label[c++] = right_name[n];
+    }
+    while (n < kMediaValueWidth && c + 1u < sizeof(right_label))
+    {
+        right_label[c++] = ' ';
+        ++n;
     }
     right_label[c] = '\0';
 
@@ -255,13 +268,13 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     BuildLabelFlag(turbo_label, sizeof(turbo_label), locale->settings_z80_turbo,
                    z80_turbo_mode == 0u ? locale->flag_off : (z80_turbo_mode == 1u ? "PAN" : "MAX"));
     BuildLabelFlag(rensha_label, sizeof(rensha_label), locale->settings_rensha,
-                   rensha_mode == 0u ? "0" : (rensha_mode == 1u ? "1" : (rensha_mode == 2u ? "2" : "3")));
+                   rensha_mode == 0u ? locale->flag_off : (rensha_mode == 1u ? "1" : (rensha_mode == 2u ? "2" : "3")));
     BuildLabelFlag(scc_label, sizeof(scc_label), locale->settings_scc_cart, scc_cart_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(overlay_label, sizeof(overlay_label), locale->settings_debugger,
                    overlay_available ? (overlay_enabled ? locale->flag_on : locale->flag_off) : locale->flag_na);
     if (audio_gain_percent == 0u)
     {
-        BuildLabelFlag(audio_gain_label, sizeof(audio_gain_label), locale->settings_audio_gain, "OFF");
+        BuildLabelFlag(audio_gain_label, sizeof(audio_gain_label), locale->settings_audio_gain, locale->flag_off);
     }
     else
     {
