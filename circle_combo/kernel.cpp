@@ -2328,8 +2328,12 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 				UpdateLoadDiagTelemetry(2002u); /* path set */
 
 				PrimeAudioSilenceBeforeReset();
-				UpdateLoadDiagTelemetry(2003u); /* before runtime LoadCart */
-				if (fmsx_runtime_load_cartridge(slot_index, rom_path))
+				const boolean use_boot_profile_reset = (m_BootMode == kBootModeGame) ? TRUE : FALSE;
+				UpdateLoadDiagTelemetry(use_boot_profile_reset ? 2010u : 2003u);
+				const boolean load_ok = use_boot_profile_reset
+					? fmsx_runtime_hard_reset()
+					: fmsx_runtime_load_cartridge(slot_index, rom_path);
+				if (load_ok)
 				{
 					UpdateLoadDiagTelemetry(2004u); /* load cart ok */
 					fmsx_runtime_set_boot_mode(m_BootMode);
@@ -2342,7 +2346,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 				else
 				{
 					UpdateLoadDiagTelemetry(9004u); /* load cart fail */
-					m_Logger.Write(FromKernel, LogWarning, "Load ROM falhou: LoadCart");
+					m_Logger.Write(FromKernel, LogWarning, use_boot_profile_reset ? "Load ROM falhou: hard reset" : "Load ROM falhou: LoadCart");
 				}
 			}
 		}
