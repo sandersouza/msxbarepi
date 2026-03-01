@@ -67,6 +67,7 @@ extern uint8_t UPeriod;
 extern int Mode;
 extern int RAMPages;
 extern int VRAMPages;
+extern uint8_t DiskROMLoaded;
 extern void fmsx_cpu_set_turbo_percent(unsigned percent);
 extern unsigned fmsx_video_get_latest(const u16 **pixels, unsigned *width, unsigned *height);
 extern const char *ROMName[];
@@ -117,6 +118,18 @@ static boolean fmsx_runtime_find_slot_map(unsigned slot, unsigned *out_ps, unsig
         }
     }
     return FALSE;
+}
+
+static void fmsx_runtime_force_disk_rom_off_mapping(void)
+{
+    /*
+     * fMSX may keep DiskROM mapped even when MSX_PATCHBDOS is toggled off.
+     * Enforce OFF policy by unmapping slot 3:1 pages 2-3 explicitly.
+     */
+    MemMap[3][1][2] = EmptyRAM;
+    MemMap[3][1][3] = EmptyRAM;
+    DiskROMLoaded = 0u;
+    Mode &= ~MSX_PATCHBDOS;
 }
 
 static unsigned fmsx_runtime_fast_cutoff_frames(void)
@@ -250,6 +263,11 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     {
         g_fmsx_status.last_error = 1;
         return FALSE;
+    }
+
+    if (!g_disk_rom_enabled)
+    {
+        fmsx_runtime_force_disk_rom_off_mapping();
     }
 
     UPeriod = 100;
@@ -463,6 +481,17 @@ void fmsx_runtime_set_refresh_hz(unsigned hz)
 void fmsx_runtime_set_disk_rom_enabled(boolean enabled)
 {
     g_disk_rom_enabled = enabled ? TRUE : FALSE;
+    if (!g_fmsx_status.running)
+    {
+        return;
+    }
+
+    const int new_mode = g_disk_rom_enabled ? (Mode | MSX_PATCHBDOS) : (Mode & ~MSX_PATCHBDOS);
+    (void) ResetMSX(new_mode, RAMPages, VRAMPages);
+    if (!g_disk_rom_enabled)
+    {
+        fmsx_runtime_force_disk_rom_off_mapping();
+    }
 }
 
 boolean fmsx_runtime_get_disk_rom_enabled(void)
