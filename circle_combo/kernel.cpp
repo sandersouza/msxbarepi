@@ -2769,9 +2769,18 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	{
 		m_PauseNeedsBackgroundRedraw = TRUE;
 	}
-	if (menu_action != ComboMenuActionNone)
+	if (menu_action == ComboMenuActionCartridgeA || menu_action == ComboMenuActionCartridgeB)
 	{
-		m_PendingMenuAction = (unsigned) menu_action;
+		/* Heavy media load path runs in main loop to avoid USB callback hard-locks. */
+		if (m_PendingMenuAction == (unsigned) ComboMenuActionNone)
+		{
+			m_PendingMenuAction = (unsigned) menu_action;
+		}
+	}
+	else
+	{
+		/* Keep settings toggles/cycles immediate so state never gets stale/overwritten. */
+		HandleMenuAction(menu_action);
 	}
 
 	m_JoyBridgeBits = key_state.bridge_bits;
