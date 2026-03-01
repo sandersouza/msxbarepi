@@ -2376,24 +2376,18 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 					break;
 				}
 				UpdateLoadDiagTelemetry(3002u); /* disk path set */
-
-				PrimeAudioSilenceBeforeReset();
-				UpdateLoadDiagTelemetry(3010u); /* hard reset begin */
-				const boolean reset_ok = fmsx_runtime_hard_reset();
-				if (reset_ok)
+				const boolean load_ok = fmsx_runtime_load_disk(drive_index, disk_path);
+				if (load_ok)
 				{
-					UpdateLoadDiagTelemetry(3004u); /* hard reset ok */
-					fmsx_runtime_set_boot_mode(m_BootMode);
-					ResetEmulationRuntimeState();
-					ApplyRuntimeSettingsToFmsx();
+					UpdateLoadDiagTelemetry(3004u); /* hot swap ok */
 					CString line;
 					line.Format("Load DSK: DRIVE%u <= %s", drive_index + 1u, disk_path);
 					m_Logger.Write(FromKernel, LogNotice, line);
 				}
 				else
 				{
-					UpdateLoadDiagTelemetry(9006u); /* hard reset failed */
-					m_Logger.Write(FromKernel, LogWarning, "Load DSK falhou: hard reset");
+					UpdateLoadDiagTelemetry(9006u); /* hot swap failed */
+					m_Logger.Write(FromKernel, LogWarning, "Load DSK falhou: hot swap");
 				}
 			}
 		}
