@@ -92,9 +92,10 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
                                                      boolean overlay_enabled,
                                                      boolean overlay_available,
                                                      boolean audio_muted,
+                                                     unsigned audio_gain_percent,
                                                      unsigned *count)
 {
-    static TComboMenuItem settings_items[16];
+    static TComboMenuItem settings_items[17];
     static char language_label[32];
     static char overscan_label[32];
     static char widescreen_label[32];
@@ -106,6 +107,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     static char scc_label[32];
     static char overlay_label[32];
     static char audio_mute_label[32];
+    static char audio_gain_label[32];
 
     const TComboLocaleStrings *locale = combo_locale_get(language);
     if (locale == 0)
@@ -120,6 +122,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     if (z80_turbo_mode > 2u) z80_turbo_mode = 0u;
     if (boot_mode > 2u) boot_mode = 0u;
     if (rensha_mode > 3u) rensha_mode = 0u;
+    if (audio_gain_percent > 100u) audio_gain_percent = 100u;
 
     BuildLabelFlag(language_label, sizeof(language_label), locale->settings_language, combo_locale_language_code(language));
 
@@ -144,6 +147,12 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     BuildLabelFlag(overlay_label, sizeof(overlay_label), locale->settings_debugger,
                    overlay_available ? (overlay_enabled ? locale->flag_on : locale->flag_off) : locale->flag_na);
     BuildLabelFlag(audio_mute_label, sizeof(audio_mute_label), locale->settings_audio_mute, audio_muted ? locale->flag_on : locale->flag_off);
+    char audio_gain_flag[4];
+    audio_gain_flag[0] = (char) ('0' + ((audio_gain_percent / 100u) % 10u));
+    audio_gain_flag[1] = (char) ('0' + ((audio_gain_percent / 10u) % 10u));
+    audio_gain_flag[2] = (char) ('0' + (audio_gain_percent % 10u));
+    audio_gain_flag[3] = '\0';
+    BuildLabelFlag(audio_gain_label, sizeof(audio_gain_label), locale->settings_audio_gain, audio_gain_flag);
 
     unsigned item_count = 0u;
     settings_items[item_count].label = language_label;
@@ -172,6 +181,9 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     settings_items[item_count++].selectable = TRUE;
     settings_items[item_count].label = audio_mute_label;
     settings_items[item_count].action = ComboMenuActionToggleAudioMute;
+    settings_items[item_count++].selectable = TRUE;
+    settings_items[item_count].label = audio_gain_label;
+    settings_items[item_count].action = ComboMenuActionAudioGainChanged;
     settings_items[item_count++].selectable = TRUE;
     settings_items[item_count].label = "";
     settings_items[item_count].action = ComboMenuActionSeparator;

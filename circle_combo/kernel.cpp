@@ -425,7 +425,7 @@ CComboKernel::CComboKernel(void)
 	m_LastQueueFree(0),
 	m_AudioTargetPeakRuntime(COMBO_FMSX_AUDIO_TARGET_PEAK),
 	m_AudioClipMaxRuntime(16000),
-	m_AudioOutputGainPct(70),
+	m_AudioOutputGainPct(50),
 	m_BootToneFramesRemaining(0),
 	m_UsbInitRetryTick(0u),
 	m_AudioInitAttempted(FALSE),
@@ -668,6 +668,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
 	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, COMBO_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
 	m_PauseMenu.SetAudioMuted(m_AudioMuted);
+	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
 #if COMBO_ENABLE_FMSX
 	fmsx_runtime_set_overscan(m_OverscanPercent > 0u ? TRUE : FALSE);
 	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
@@ -1783,6 +1784,10 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			{
 				m_AudioMuted = value ? TRUE : FALSE;
 			}
+			else if (SettingsKeyEquals(line, key_len, "audio_gain"))
+			{
+				m_AudioOutputGainPct = (value > 100u) ? 100u : value;
+			}
 		}
 
 		line = line_end;
@@ -1799,6 +1804,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
 	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, COMBO_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
 	m_PauseMenu.SetAudioMuted(m_AudioMuted);
+	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
 #if COMBO_ENABLE_FMSX
 	fmsx_runtime_set_overscan(m_OverscanPercent > 0u ? TRUE : FALSE);
 	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
@@ -1857,6 +1863,7 @@ void CComboKernel::SaveSettingsToStorage(void)
 	APPEND_LINE_FMT("scc_cart=%u\n", m_SccCartEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("debugger=%u\n", m_DebugOverlayEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("audio_mute=%u\n", m_AudioMuted ? 1u : 0u);
+	APPEND_LINE_FMT("audio_gain=%u\n", m_AudioOutputGainPct > 100u ? 100u : m_AudioOutputGainPct);
 	APPEND_LINE_FMT("#END\n", 0u);
 
 #undef APPEND_LINE_FMT
@@ -2375,6 +2382,16 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		m_PauseMenu.SetAudioMuted(m_AudioMuted);
 		RefreshSettingsUiAfterAction();
 		m_Logger.Write(FromKernel, LogNotice, m_AudioMuted ? "Settings: Audio mute ON" : "Settings: Audio mute OFF");
+		break;
+
+	case ComboMenuActionAudioGainChanged:
+		m_AudioOutputGainPct = m_PauseMenu.GetAudioGainPercent();
+		RefreshSettingsUiAfterAction();
+		{
+			CString line;
+			line.Format("Settings: Audio gain %u%%", m_AudioOutputGainPct);
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
 		break;
 
 	case ComboMenuActionToggleSccCart:

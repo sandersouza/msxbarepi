@@ -28,6 +28,7 @@ enum TComboMenuAction {
     ComboMenuActionToggleSccCart,
     ComboMenuActionToggleOverlay,
     ComboMenuActionToggleAudioMute,
+    ComboMenuActionAudioGainChanged,
     ComboMenuActionSaveState,
     ComboMenuActionLoadState,
     ComboMenuActionSaveSettings,
@@ -54,6 +55,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
                                                      boolean overlay_enabled,
                                                      boolean overlay_available,
                                                      boolean audio_muted,
+                                                     unsigned audio_gain_percent,
                                                      unsigned *count);
 
 #endif

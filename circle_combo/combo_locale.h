@@ -30,6 +30,7 @@ typedef struct {
     const char *settings_scc_cart;
     const char *settings_debugger;
     const char *settings_audio_mute;
+    const char *settings_audio_gain;
     const char *settings_save;
     const char *flag_off;
     const char *flag_on;

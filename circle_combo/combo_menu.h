@@ -26,6 +26,8 @@ public:
     void SetSccCartEnabled(boolean enabled);
     void SetOverlayEnabled(boolean enabled, boolean available);
     void SetAudioMuted(boolean enabled);
+    void SetAudioGainPercent(unsigned percent);
+    unsigned GetAudioGainPercent(void) const;
     boolean IsInSettings(void) const;
     void RequestRedraw(void);
     boolean ConsumeBackgroundRestoreRequest(void);
@@ -64,6 +66,7 @@ private:
     boolean m_OverlayEnabled;
     boolean m_OverlayAvailable;
     boolean m_AudioMuted;
+    unsigned m_AudioGainPercent;
     boolean m_LastBackPressed;
     boolean m_LastDrawnInSettings;
     unsigned m_LastDrawnOverscanPercent;
@@ -78,6 +81,7 @@ private:
     boolean m_LastDrawnOverlay;
     boolean m_LastDrawnOverlayAvailable;
     boolean m_LastDrawnAudioMuted;
+    unsigned m_LastDrawnAudioGainPercent;
     boolean m_ForceRedraw;
     boolean m_RequestBackgroundRestore;
     unsigned m_LastBoxX;

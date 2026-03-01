@@ -77,6 +77,7 @@ rensha=0
 scc_cart=1
 debugger=1
 audio_mute=0
+audio_gain=50
 #END
 EOF
 }

@@ -21,6 +21,7 @@ extern const TComboLocaleStrings g_ComboLocaleES = {
     "SCC Cart",
     "Debugger",
     "Silencio Audio",
+    "Ganancia Audio",
     "Guardar",
     "DES",
     "ACT",

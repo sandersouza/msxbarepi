@@ -83,6 +83,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_OverlayEnabled(FALSE),
     m_OverlayAvailable(FALSE),
     m_AudioMuted(FALSE),
+    m_AudioGainPercent(50u),
     m_LastBackPressed(FALSE),
     m_LastDrawnInSettings(FALSE),
     m_LastDrawnOverscanPercent(0u),
@@ -97,6 +98,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnOverlay(FALSE),
     m_LastDrawnOverlayAvailable(FALSE),
     m_LastDrawnAudioMuted(FALSE),
+    m_LastDrawnAudioGainPercent(50u),
     m_ForceRedraw(TRUE),
     m_RequestBackgroundRestore(FALSE),
     m_LastBoxX(0),
@@ -134,6 +136,7 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
     m_LastDrawnAudioMuted = m_AudioMuted;
+    m_LastDrawnAudioGainPercent = m_AudioGainPercent;
     m_ForceRedraw = TRUE;
     m_RequestBackgroundRestore = FALSE;
     m_LastBoxValid = FALSE;
@@ -300,6 +303,24 @@ void CComboPauseMenu::SetAudioMuted(boolean enabled)
     }
 }
 
+void CComboPauseMenu::SetAudioGainPercent(unsigned percent)
+{
+    if (percent > 100u)
+    {
+        percent = 100u;
+    }
+    if (m_AudioGainPercent != percent)
+    {
+        m_AudioGainPercent = percent;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+unsigned CComboPauseMenu::GetAudioGainPercent(void) const
+{
+    return m_AudioGainPercent;
+}
+
 boolean CComboPauseMenu::IsInSettings(void) const
 {
     return m_InSettings;
@@ -334,6 +355,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_OverlayEnabled,
             m_OverlayAvailable,
             m_AudioMuted,
+            m_AudioGainPercent,
             count);
     }
 
@@ -583,6 +605,30 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
+        else if (items[m_Selected].action == ComboMenuActionAudioGainChanged)
+        {
+            unsigned next_value = m_AudioGainPercent;
+            if (left_edge)
+            {
+                next_value = (next_value == 0u) ? 100u : (next_value - 10u);
+            }
+            if (right_edge || enter_edge)
+            {
+                next_value = (next_value >= 100u) ? 0u : (next_value + 10u);
+                if (next_value > 100u)
+                {
+                    next_value = 100u;
+                }
+            }
+            if (next_value != m_AudioGainPercent)
+            {
+                m_AudioGainPercent = next_value;
+                m_ForceRedraw = TRUE;
+                m_RequestBackgroundRestore = TRUE;
+                action = ComboMenuActionAudioGainChanged;
+            }
+            handled_settings_input = enter_edge || left_edge || right_edge;
+        }
         else if (items[m_Selected].action == ComboMenuActionCycleRensha)
         {
             if (left_edge)
@@ -739,7 +785,8 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnSccCart == m_SccCartEnabled
      && m_LastDrawnOverlay == m_OverlayEnabled
      && m_LastDrawnOverlayAvailable == m_OverlayAvailable
-     && m_LastDrawnAudioMuted == m_AudioMuted)
+     && m_LastDrawnAudioMuted == m_AudioMuted
+     && m_LastDrawnAudioGainPercent == m_AudioGainPercent)
     {
         return;
     }
@@ -828,6 +875,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
     m_LastDrawnAudioMuted = m_AudioMuted;
+    m_LastDrawnAudioGainPercent = m_AudioGainPercent;
     m_LastBoxX = box_x;
     m_LastBoxY = box_y;
     m_LastBoxW = box_w_px;
