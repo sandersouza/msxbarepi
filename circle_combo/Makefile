@@ -93,7 +93,7 @@ CXXFLAGS += -Os -ffunction-sections -fdata-sections
 LDFLAGS += --gc-sections
 endif
 
-OBJS = main.o kernel.o keyboard_input.o gfx_textbox.o combo_menu.o combo_menu_items.o
+OBJS = main.o kernel.o keyboard_input.o gfx_textbox.o combo_menu.o combo_menu_items.o media_catalog.o
 OBJS += combo_locale.o combo_locale_pt.o combo_locale_en.o combo_locale_es.o
 
 ifeq ($(COMBO_ENABLE_FMSX),1)
