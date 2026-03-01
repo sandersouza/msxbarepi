@@ -5,7 +5,7 @@ extern const TComboLocaleStrings g_ComboLocaleEN = {
     "SETTINGS",
     "LOAD ROMS",
     "LOAD DISK",
-    "Load ROM",
+    "Load ROMS",
     "Load Disk",
     "Save State",
     "Load State",

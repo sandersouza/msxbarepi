@@ -5,7 +5,7 @@ extern const TComboLocaleStrings g_ComboLocaleES = {
     "CONFIGURACIONES",
     "CARGAR ROM",
     "CARGAR DISCO",
-    "Cargar ROM",
+    "Cargar ROMS",
     "Cargar Disco",
     "Guardar Estado",
     "Cargar Estado",
