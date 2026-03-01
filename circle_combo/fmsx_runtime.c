@@ -353,21 +353,19 @@ boolean fmsx_runtime_hard_reset(void)
     fmsx_runtime_set_load_diag(2202u); /* hard_reset after TrashMSX */
     g_fmsx_status.initialized = FALSE;
     g_fmsx_status.running = FALSE;
-    boolean ok = fmsx_runtime_start(FALSE);
-    if (ok)
+    /* Restore drive paths before StartMSX so disk boot can happen during BIOS startup. */
+    for (unsigned i = 0u; i < 2u; ++i)
     {
-        for (unsigned i = 0u; i < 2u; ++i)
+        if (saved_disk_path[i][0] != '\0')
         {
-            if (saved_disk_path[i][0] != '\0')
-            {
-                if (!fmsx_runtime_load_disk(i, saved_disk_path[i]))
-                {
-                    ok = FALSE;
-                    break;
-                }
-            }
+            (void) fmsx_runtime_set_disk_path(i, saved_disk_path[i]);
+        }
+        else
+        {
+            (void) fmsx_runtime_set_disk_path(i, 0);
         }
     }
+    const boolean ok = fmsx_runtime_start(FALSE);
     fmsx_runtime_set_load_diag(ok ? 2203u : 9203u);
     return ok;
 }
@@ -700,6 +698,11 @@ boolean fmsx_runtime_load_disk(unsigned drive_index, const char *path)
     {
         fmsx_runtime_set_load_diag(9401u); /* ChangeDisk failed */
         return FALSE;
+    }
+    if (FDD[drive_index].Data != 0)
+    {
+        /* Force write-protect OFF for loaded media (FDI header byte 3). */
+        FDD[drive_index].Data[3] = 0u;
     }
     fmsx_runtime_set_load_diag(2402u); /* ChangeDisk ok */
     g_fmsx_status.last_pc = (int) CPU.PC.W;
