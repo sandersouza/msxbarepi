@@ -77,6 +77,7 @@ extern void fmsx_video_set_overscan(boolean enabled);
 
 static TFmsxRuntimeStatus g_fmsx_status = { FALSE, FALSE, 0u, 0, 0 };
 static char g_cartridge_path[2][192] = {{0}};
+static char g_disk_path[2][192] = {{0}};
 static volatile unsigned g_load_diag_stage = 0u;
 static const unsigned kFmsxAudioRate = 48000u;
 static unsigned g_boot_warmup_frames_remaining = 0u;
@@ -530,6 +531,37 @@ boolean fmsx_runtime_set_cartridge_path(unsigned slot_index, const char *path)
     return TRUE;
 }
 
+boolean fmsx_runtime_set_disk_path(unsigned drive_index, const char *path)
+{
+    if (drive_index > 1u)
+    {
+        return FALSE;
+    }
+
+    if (path == 0 || path[0] == '\0')
+    {
+        g_disk_path[drive_index][0] = '\0';
+        DSKName[drive_index] = 0;
+        return TRUE;
+    }
+
+    unsigned n = 0u;
+    while (path[n] != '\0' && n + 1u < sizeof(g_disk_path[drive_index]))
+    {
+        g_disk_path[drive_index][n] = path[n];
+        ++n;
+    }
+    g_disk_path[drive_index][n] = '\0';
+
+    if (path[n] != '\0')
+    {
+        return FALSE;
+    }
+
+    DSKName[drive_index] = g_disk_path[drive_index];
+    return TRUE;
+}
+
 boolean fmsx_runtime_load_cartridge(unsigned slot_index, const char *path)
 {
     if (slot_index > 1u || path == 0 || path[0] == '\0' || !g_fmsx_status.running)
@@ -550,6 +582,29 @@ boolean fmsx_runtime_load_cartridge(unsigned slot_index, const char *path)
         return FALSE;
     }
     fmsx_runtime_set_load_diag(2302u); /* LoadCart ok */
+    g_fmsx_status.last_pc = (int) CPU.PC.W;
+    return TRUE;
+}
+
+boolean fmsx_runtime_load_disk(unsigned drive_index, const char *path)
+{
+    if (drive_index > 1u || path == 0 || path[0] == '\0' || !g_fmsx_status.running)
+    {
+        return FALSE;
+    }
+
+    if (!fmsx_runtime_set_disk_path(drive_index, path))
+    {
+        return FALSE;
+    }
+
+    fmsx_runtime_set_load_diag(2401u); /* before ChangeDisk */
+    if (!ChangeDisk((uint8_t) drive_index, DSKName[drive_index]))
+    {
+        fmsx_runtime_set_load_diag(9401u); /* ChangeDisk failed */
+        return FALSE;
+    }
+    fmsx_runtime_set_load_diag(2402u); /* ChangeDisk ok */
     g_fmsx_status.last_pc = (int) CPU.PC.W;
     return TRUE;
 }

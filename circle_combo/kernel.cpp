@@ -2354,6 +2354,52 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 	#endif
 		break;
 
+	case ComboMenuActionDiskDriveA:
+	case ComboMenuActionDiskDriveB:
+	#if COMBO_ENABLE_FMSX
+		if (m_FmsxReady)
+		{
+			unsigned drive_index = 0u;
+			char disk_path[192];
+			disk_path[0] = '\0';
+			if (m_PauseMenu.ConsumePendingDiskSelection(&drive_index, disk_path, sizeof(disk_path)))
+			{
+				UpdateLoadDiagTelemetry(3001u); /* menu consumed disk selection */
+				if (drive_index > 1u)
+				{
+					drive_index = (action == ComboMenuActionDiskDriveB) ? 1u : 0u;
+				}
+				if (!fmsx_runtime_set_disk_path(drive_index, disk_path))
+				{
+					UpdateLoadDiagTelemetry(9005u); /* set_disk_path failed */
+					m_Logger.Write(FromKernel, LogWarning, "Load DSK falhou: caminho invalido");
+					break;
+				}
+				UpdateLoadDiagTelemetry(3002u); /* disk path set */
+
+				PrimeAudioSilenceBeforeReset();
+				UpdateLoadDiagTelemetry(3010u); /* hard reset begin */
+				const boolean reset_ok = fmsx_runtime_hard_reset();
+				if (reset_ok)
+				{
+					UpdateLoadDiagTelemetry(3004u); /* hard reset ok */
+					fmsx_runtime_set_boot_mode(m_BootMode);
+					ResetEmulationRuntimeState();
+					ApplyRuntimeSettingsToFmsx();
+					CString line;
+					line.Format("Load DSK: DRIVE%u <= %s", drive_index + 1u, disk_path);
+					m_Logger.Write(FromKernel, LogNotice, line);
+				}
+				else
+				{
+					UpdateLoadDiagTelemetry(9006u); /* hard reset failed */
+					m_Logger.Write(FromKernel, LogWarning, "Load DSK falhou: hard reset");
+				}
+			}
+		}
+	#endif
+		break;
+
 	case ComboMenuActionMsxBasic:
 	#if COMBO_ENABLE_FMSX
 		if (m_FmsxReady)
@@ -2782,11 +2828,17 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	const boolean defer_heavy_action =
 		(menu_action == ComboMenuActionCartridgeA)
 		|| (menu_action == ComboMenuActionCartridgeB)
+		|| (menu_action == ComboMenuActionDiskDriveA)
+		|| (menu_action == ComboMenuActionDiskDriveB)
 		|| (menu_action == ComboMenuActionReset)
 		|| (menu_action == ComboMenuActionMsxBasic);
 	if (menu_action == ComboMenuActionCartridgeA || menu_action == ComboMenuActionCartridgeB)
 	{
 		UpdateLoadDiagTelemetry(1991u); /* menu action propagated to kernel */
+	}
+	else if (menu_action == ComboMenuActionDiskDriveA || menu_action == ComboMenuActionDiskDriveB)
+	{
+		UpdateLoadDiagTelemetry(2991u); /* disk menu action propagated to kernel */
 	}
 	if (m_PauseMenu.ConsumeBackgroundRestoreRequest())
 	{

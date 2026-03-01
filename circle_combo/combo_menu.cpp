@@ -431,6 +431,9 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_HasPendingRomSelection(FALSE),
     m_PendingRomSlot(0u),
     m_PendingRomPath{0},
+    m_HasPendingDiskSelection(FALSE),
+    m_PendingDiskDrive(0u),
+    m_PendingDiskPath{0},
     m_LastBackPressed(FALSE),
     m_LastDrawnView(MenuViewRoot),
     m_LastDrawnOverscanPercent(0u),
@@ -472,6 +475,9 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_HasPendingRomSelection = FALSE;
     m_PendingRomSlot = 0u;
     CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), "");
+    m_HasPendingDiskSelection = FALSE;
+    m_PendingDiskDrive = 0u;
+    CopySmallText(m_PendingDiskPath, sizeof(m_PendingDiskPath), "");
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), "");
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), "");
     CopySmallText(m_LastDrawnLoadDiskDrive1Name, sizeof(m_LastDrawnLoadDiskDrive1Name), "");
@@ -515,6 +521,9 @@ void CComboPauseMenu::Reset(void)
     m_HasPendingRomSelection = FALSE;
     m_PendingRomSlot = 0u;
     CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), "");
+    m_HasPendingDiskSelection = FALSE;
+    m_PendingDiskDrive = 0u;
+    CopySmallText(m_PendingDiskPath, sizeof(m_PendingDiskPath), "");
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), m_LoadRomSlot1Name);
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), m_LoadRomSlot2Name);
     CopySmallText(m_LastDrawnLoadDiskDrive1Name, sizeof(m_LastDrawnLoadDiskDrive1Name), m_LoadDiskDrive1Name);
@@ -758,6 +767,26 @@ boolean CComboPauseMenu::ConsumePendingRomSelection(unsigned *slot_index, char *
     m_HasPendingRomSelection = FALSE;
     m_PendingRomSlot = 0u;
     CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), "");
+    return TRUE;
+}
+
+boolean CComboPauseMenu::ConsumePendingDiskSelection(unsigned *drive_index, char *path, unsigned path_size)
+{
+    if (!m_HasPendingDiskSelection)
+    {
+        return FALSE;
+    }
+    if (drive_index != 0)
+    {
+        *drive_index = m_PendingDiskDrive;
+    }
+    if (path != 0 && path_size > 0u)
+    {
+        CopySmallText(path, path_size, m_PendingDiskPath);
+    }
+    m_HasPendingDiskSelection = FALSE;
+    m_PendingDiskDrive = 0u;
+    CopySmallText(m_PendingDiskPath, sizeof(m_PendingDiskPath), "");
     return TRUE;
 }
 
@@ -1037,6 +1066,15 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                     m_PendingRomSlot = m_RomBrowserSlot;
                     CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), m_RomBrowserPaths[abs]);
                     action = (m_RomBrowserSlot == 0u) ? ComboMenuActionCartridgeA : ComboMenuActionCartridgeB;
+                }
+                else if (abs < m_RomBrowserCount
+                      && !m_RomBrowserIsDir[abs]
+                      && m_BrowserMode == BrowserModeDisk)
+                {
+                    m_HasPendingDiskSelection = TRUE;
+                    m_PendingDiskDrive = m_RomBrowserSlot;
+                    CopySmallText(m_PendingDiskPath, sizeof(m_PendingDiskPath), m_RomBrowserPaths[abs]);
+                    action = (m_RomBrowserSlot == 0u) ? ComboMenuActionDiskDriveA : ComboMenuActionDiskDriveB;
                 }
             }
         }
