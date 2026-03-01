@@ -220,7 +220,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     static char rensha_label[32];
     static char scc_label[32];
     static char overlay_label[32];
-    static char audio_mute_label[32];
     static char audio_gain_label[32];
 
     const TComboLocaleStrings *locale = combo_locale_get(language);
@@ -261,13 +260,20 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     BuildLabelFlag(scc_label, sizeof(scc_label), locale->settings_scc_cart, scc_cart_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(overlay_label, sizeof(overlay_label), locale->settings_debugger,
                    overlay_available ? (overlay_enabled ? locale->flag_on : locale->flag_off) : locale->flag_na);
-    BuildLabelFlag(audio_mute_label, sizeof(audio_mute_label), locale->settings_audio_mute, audio_muted ? locale->flag_on : locale->flag_off);
-    char audio_gain_flag[4];
-    audio_gain_flag[0] = (char) ('0' + ((audio_gain_percent / 100u) % 10u));
-    audio_gain_flag[1] = (char) ('0' + ((audio_gain_percent / 10u) % 10u));
-    audio_gain_flag[2] = (char) ('0' + (audio_gain_percent % 10u));
-    audio_gain_flag[3] = '\0';
-    BuildLabelFlag(audio_gain_label, sizeof(audio_gain_label), locale->settings_audio_gain, audio_gain_flag);
+    (void) audio_muted;
+    if (audio_gain_percent == 0u)
+    {
+        BuildLabelFlag(audio_gain_label, sizeof(audio_gain_label), locale->settings_audio_gain, "OFF");
+    }
+    else
+    {
+        char audio_gain_flag[4];
+        audio_gain_flag[0] = (char) ('0' + ((audio_gain_percent / 100u) % 10u));
+        audio_gain_flag[1] = (char) ('0' + ((audio_gain_percent / 10u) % 10u));
+        audio_gain_flag[2] = (char) ('0' + (audio_gain_percent % 10u));
+        audio_gain_flag[3] = '\0';
+        BuildLabelFlag(audio_gain_label, sizeof(audio_gain_label), locale->settings_audio_gain, audio_gain_flag);
+    }
 
     unsigned item_count = 0u;
     settings_items[item_count].label = language_label;
@@ -293,9 +299,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     settings_items[item_count++].selectable = FALSE;
     settings_items[item_count].label = scc_label;
     settings_items[item_count].action = ComboMenuActionToggleSccCart;
-    settings_items[item_count++].selectable = TRUE;
-    settings_items[item_count].label = audio_mute_label;
-    settings_items[item_count].action = ComboMenuActionToggleAudioMute;
     settings_items[item_count++].selectable = TRUE;
     settings_items[item_count].label = audio_gain_label;
     settings_items[item_count].action = ComboMenuActionAudioGainChanged;

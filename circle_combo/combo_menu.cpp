@@ -1288,8 +1288,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         }
         else if ((items[m_Selected].action == ComboMenuActionToggleWidescreen)
               || (items[m_Selected].action == ComboMenuActionToggleDiskRom)
-              || (items[m_Selected].action == ComboMenuActionToggleOverlay)
-              || (items[m_Selected].action == ComboMenuActionToggleAudioMute))
+              || (items[m_Selected].action == ComboMenuActionToggleOverlay))
         {
             if (enter_edge || left_edge || right_edge)
             {

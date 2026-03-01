@@ -1276,7 +1276,7 @@ void CComboKernel::RefillAudioQueue(void)
 				if (sample32 > clip_max) sample32 = clip_max;
 				if (sample32 < -clip_max) sample32 = -clip_max;
 				sample32 = (sample32 * (int) m_AudioOutputGainPct) / 100;
-				if (m_AudioMuted)
+				if (m_AudioOutputGainPct == 0u || m_AudioMuted)
 				{
 					sample32 = 0;
 				}
@@ -1951,7 +1951,12 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			}
 			else if (SettingsKeyEquals(line, key_len, "audio_mute"))
 			{
-				m_AudioMuted = value ? TRUE : FALSE;
+				/* Backward compatibility: old audio_mute maps to gain=0. */
+				if (value != 0u)
+				{
+					m_AudioOutputGainPct = 0u;
+				}
+				m_AudioMuted = FALSE;
 			}
 			else if (SettingsKeyEquals(line, key_len, "audio_gain"))
 			{
@@ -2034,7 +2039,6 @@ void CComboKernel::SaveSettingsToStorage(void)
 	APPEND_LINE_FMT("rensha=%u\n", m_RenshaMode);
 	APPEND_LINE_FMT("scc_cart=%u\n", m_SccCartEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("debugger=%u\n", m_DebugOverlayEnabled ? 1u : 0u);
-	APPEND_LINE_FMT("audio_mute=%u\n", m_AudioMuted ? 1u : 0u);
 	APPEND_LINE_FMT("audio_gain=%u\n", m_AudioOutputGainPct > 100u ? 100u : m_AudioOutputGainPct);
 	APPEND_LINE_FMT("#END\n", 0u);
 
@@ -2690,10 +2694,18 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 
 	case ComboMenuActionAudioGainChanged:
 		m_AudioOutputGainPct = m_PauseMenu.GetAudioGainPercent();
+		m_AudioMuted = FALSE;
 		RefreshSettingsUiAfterAction();
 		{
 			CString line;
-			line.Format("Settings: Audio gain %u%%", m_AudioOutputGainPct);
+			if (m_AudioOutputGainPct == 0u)
+			{
+				line.Format("Settings: Audio gain OFF");
+			}
+			else
+			{
+				line.Format("Settings: Audio gain %u%%", m_AudioOutputGainPct);
+			}
 			m_Logger.Write(FromKernel, LogNotice, line);
 		}
 		break;
