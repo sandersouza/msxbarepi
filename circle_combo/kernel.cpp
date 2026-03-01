@@ -749,11 +749,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetAudioMuted(m_AudioMuted);
 	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
 #if COMBO_ENABLE_FMSX
-	fmsx_runtime_set_overscan(m_OverscanPercent > 0u ? TRUE : FALSE);
-	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
-	fmsx_runtime_set_boot_mode(m_BootMode);
-	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
-	fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
+	ApplyRuntimeSettingsToFmsx();
 #endif
 
 	u64 next_frame_us = CTimer::GetClockTicks64();
@@ -1787,6 +1783,21 @@ void CComboKernel::RefreshSettingsUiAfterAction(void)
 	}
 }
 
+void CComboKernel::ApplyRuntimeSettingsToFmsx(void)
+{
+#if COMBO_ENABLE_FMSX
+	if (!m_FmsxReady)
+	{
+		return;
+	}
+	fmsx_runtime_set_overscan(m_OverscanPercent > 0u ? TRUE : FALSE);
+	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
+	fmsx_runtime_set_boot_mode(m_BootMode);
+	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
+	fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
+#endif
+}
+
 void CComboKernel::UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux)
 {
 	m_SettingsSaveStage = stage;
@@ -2322,6 +2333,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 				{
 					UpdateLoadDiagTelemetry(2004u); /* load cart ok */
 					ResetEmulationRuntimeState();
+					ApplyRuntimeSettingsToFmsx();
 					CString line;
 					line.Format("Load ROM: SLOT%u <= %s", slot_index + 1u, rom_path);
 					m_Logger.Write(FromKernel, LogNotice, line);

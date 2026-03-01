@@ -50,6 +50,7 @@ private:
     void WriteScreenText(const char *text);
     void BlitFmsxFrame(boolean force_redraw);
     void HandleMenuAction(TComboMenuAction action);
+    void ApplyRuntimeSettingsToFmsx(void);
     void RefreshSettingsUiAfterAction(void);
     void ResetEmulationRuntimeState(void);
     void UpdateJoystickFromRaw(unsigned char modifiers, const unsigned char raw_keys[6]);
