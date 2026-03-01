@@ -523,6 +523,30 @@ boolean fmsx_runtime_set_cartridge_path(unsigned slot_index, const char *path)
     return TRUE;
 }
 
+boolean fmsx_runtime_load_cartridge(unsigned slot_index, const char *path)
+{
+    if (slot_index > 1u || path == 0 || path[0] == '\0' || !g_fmsx_status.running)
+    {
+        return FALSE;
+    }
+
+    if (!fmsx_runtime_set_cartridge_path(slot_index, path))
+    {
+        return FALSE;
+    }
+
+    fmsx_runtime_set_load_diag(2301u); /* before LoadCart */
+    const int pages = LoadCart(path, (int) slot_index, ROMGUESS((int) slot_index) | ROMTYPE((int) slot_index));
+    if (pages <= 0)
+    {
+        fmsx_runtime_set_load_diag(9301u); /* LoadCart failed */
+        return FALSE;
+    }
+    fmsx_runtime_set_load_diag(2302u); /* LoadCart ok */
+    g_fmsx_status.last_pc = (int) CPU.PC.W;
+    return TRUE;
+}
+
 void fmsx_runtime_set_load_diag(unsigned stage)
 {
     g_load_diag_stage = stage;

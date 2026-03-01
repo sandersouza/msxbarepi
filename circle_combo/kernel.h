@@ -56,6 +56,7 @@ private:
     void PushKeyboardStateToRuntime(boolean rensha_fire_on);
     void SetDebugOverlayEnabled(boolean enabled);
     void UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux);
+    void UpdateLoadDiagTelemetry(unsigned stage);
     void LoadSettingsFromStorage(void);
     void SaveSettingsToStorage(void);
     boolean EnsureStateIoBuffer(unsigned min_capacity);
