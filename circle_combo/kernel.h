@@ -64,8 +64,6 @@ private:
     boolean EnsureStateStorageDirectory(void);
     void SaveEmulatorStateToStorage(void);
     void LoadEmulatorStateFromStorage(void);
-    boolean EnqueueMenuAction(TComboMenuAction action);
-    boolean DequeueMenuAction(TComboMenuAction *action);
 
     static void KeyPressedHandler(const char *text);
     static void KeyStatusRawHandler(unsigned char modifiers, const unsigned char raw_keys[6], void *context);
@@ -178,10 +176,7 @@ private:
     boolean m_StateLoadPending;
     boolean m_MediaCatalogStarted;
     boolean m_MediaCatalogSummaryLogged;
-    static const unsigned kMenuActionQueueSize = 16u;
-    volatile unsigned m_MenuActionQueue[kMenuActionQueueSize];
-    volatile unsigned m_MenuActionHead;
-    volatile unsigned m_MenuActionTail;
+    volatile unsigned m_PendingMenuAction;
     unsigned m_SettingsSaveStage;
     unsigned m_SettingsSaveCode;
     unsigned m_SettingsSaveAux;

@@ -563,9 +563,7 @@ CComboKernel::CComboKernel(void)
 	m_StateLoadPending(FALSE),
 	m_MediaCatalogStarted(FALSE),
 	m_MediaCatalogSummaryLogged(FALSE),
-	m_MenuActionQueue{0u},
-	m_MenuActionHead(0u),
-	m_MenuActionTail(0u),
+	m_PendingMenuAction((unsigned) ComboMenuActionNone),
 	m_SettingsSaveStage(0u),
 	m_SettingsSaveCode(0u),
 	m_SettingsSaveAux(0u),
@@ -906,10 +904,11 @@ TComboShutdownMode CComboKernel::Run(void)
 			m_StateLoadPending = FALSE;
 			LoadEmulatorStateFromStorage();
 		}
-		TComboMenuAction queued_action = ComboMenuActionNone;
-		if (DequeueMenuAction(&queued_action))
+		if (m_PendingMenuAction != (unsigned) ComboMenuActionNone)
 		{
-			HandleMenuAction(queued_action);
+			const TComboMenuAction deferred_action = (TComboMenuAction) m_PendingMenuAction;
+			m_PendingMenuAction = (unsigned) ComboMenuActionNone;
+			HandleMenuAction(deferred_action);
 		}
 
 		/* Hybrid wait: coarse sleep first, then short busy delay for tighter frame deadline. */
@@ -1810,39 +1809,6 @@ void CComboKernel::UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, un
 		DrawDebugOverlay((unsigned) (m_FmsxFrames & 0xFFFFFFFFu));
 	}
 #endif
-}
-
-boolean CComboKernel::EnqueueMenuAction(TComboMenuAction action)
-{
-	if (action == ComboMenuActionNone)
-	{
-		return TRUE;
-	}
-	const unsigned tail = m_MenuActionTail;
-	const unsigned next_tail = (tail + 1u) % kMenuActionQueueSize;
-	if (next_tail == m_MenuActionHead)
-	{
-		return FALSE;
-	}
-	m_MenuActionQueue[tail] = (unsigned) action;
-	m_MenuActionTail = next_tail;
-	return TRUE;
-}
-
-boolean CComboKernel::DequeueMenuAction(TComboMenuAction *action)
-{
-	if (action == 0)
-	{
-		return FALSE;
-	}
-	const unsigned head = m_MenuActionHead;
-	if (head == m_MenuActionTail)
-	{
-		return FALSE;
-	}
-	*action = (TComboMenuAction) m_MenuActionQueue[head];
-	m_MenuActionHead = (head + 1u) % kMenuActionQueueSize;
-	return TRUE;
 }
 
 void CComboKernel::UpdateLoadDiagTelemetry(unsigned stage)
@@ -2815,9 +2781,18 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	{
 		m_PauseNeedsBackgroundRedraw = TRUE;
 	}
-	if (!EnqueueMenuAction(menu_action))
+	if (menu_action == ComboMenuActionCartridgeA || menu_action == ComboMenuActionCartridgeB)
 	{
-		UpdateLoadDiagTelemetry(9990u); /* menu action queue overflow */
+		/* Heavy media load path runs in main loop to avoid USB callback hard-locks. */
+		if (m_PendingMenuAction == (unsigned) ComboMenuActionNone)
+		{
+			m_PendingMenuAction = (unsigned) menu_action;
+		}
+	}
+	else
+	{
+		/* Keep settings toggles/cycles immediate so state never gets stale/overwritten. */
+		HandleMenuAction(menu_action);
 	}
 
 	m_JoyBridgeBits = key_state.bridge_bits;
