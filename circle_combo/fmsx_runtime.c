@@ -478,7 +478,16 @@ void fmsx_runtime_set_refresh_hz(unsigned hz)
 
 void fmsx_runtime_set_disk_rom_enabled(boolean enabled)
 {
-    g_disk_rom_enabled = enabled ? TRUE : FALSE;
+    const boolean desired = enabled ? TRUE : FALSE;
+    if (g_disk_rom_enabled == desired)
+    {
+        if (!desired && g_fmsx_status.running)
+        {
+            fmsx_runtime_force_disk_rom_off_mapping();
+        }
+        return;
+    }
+    g_disk_rom_enabled = desired;
     if (!g_fmsx_status.running)
     {
         return;
@@ -688,6 +697,15 @@ boolean fmsx_runtime_load_disk(unsigned drive_index, const char *path)
         return FALSE;
     }
 
+    char old_path[192];
+    unsigned old_n = 0u;
+    while (old_n + 1u < sizeof(old_path) && g_disk_path[drive_index][old_n] != '\0')
+    {
+        old_path[old_n] = g_disk_path[drive_index][old_n];
+        ++old_n;
+    }
+    old_path[old_n] = '\0';
+
     if (!fmsx_runtime_set_disk_path(drive_index, path))
     {
         return FALSE;
@@ -697,12 +715,33 @@ boolean fmsx_runtime_load_disk(unsigned drive_index, const char *path)
     if (!ChangeDisk((uint8_t) drive_index, DSKName[drive_index]))
     {
         fmsx_runtime_set_load_diag(9401u); /* ChangeDisk failed */
+        (void) fmsx_runtime_set_disk_path(drive_index, old_path[0] != '\0' ? old_path : 0);
+        if (old_path[0] != '\0')
+        {
+            (void) ChangeDisk((uint8_t) drive_index, DSKName[drive_index]);
+        }
         return FALSE;
     }
+    if (FDD[drive_index].Data == 0
+     || FDD[drive_index].Tracks <= 0
+     || FDD[drive_index].Sectors <= 0
+     || FDD[drive_index].SecSize <= 0)
+    {
+        fmsx_runtime_set_load_diag(9402u); /* geometry invalid */
+        (void) ChangeDisk((uint8_t) drive_index, 0);
+        (void) fmsx_runtime_set_disk_path(drive_index, old_path[0] != '\0' ? old_path : 0);
+        if (old_path[0] != '\0')
+        {
+            (void) ChangeDisk((uint8_t) drive_index, DSKName[drive_index]);
+        }
+        return FALSE;
+    }
+
     if (FDD[drive_index].Data != 0)
     {
         /* Force write-protect OFF for loaded media (FDI header byte 3). */
         FDD[drive_index].Data[3] = 0u;
+        FDD[drive_index].Header[3] = 0u;
     }
     fmsx_runtime_set_load_diag(2402u); /* ChangeDisk ok */
     g_fmsx_status.last_pc = (int) CPU.PC.W;

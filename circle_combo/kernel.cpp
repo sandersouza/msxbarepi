@@ -2399,15 +2399,9 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 				{
 					drive_index = (action == ComboMenuActionDiskDriveB) ? 1u : 0u;
 				}
-				if (!fmsx_runtime_set_disk_path(drive_index, disk_path))
-				{
-					UpdateLoadDiagTelemetry(9005u); /* set_disk_path failed */
-					m_Logger.Write(FromKernel, LogWarning, "Load DSK falhou: caminho invalido");
-					break;
-				}
-				UpdateLoadDiagTelemetry(3002u); /* disk path set */
 				if (disk_path[0] == '\0')
 				{
+					UpdateLoadDiagTelemetry(3002u); /* unload requested */
 					if (fmsx_runtime_unload_disk(drive_index))
 					{
 						UpdateLoadDiagTelemetry(3005u); /* unload disk ok */
@@ -2422,6 +2416,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 					}
 					break;
 				}
+				UpdateLoadDiagTelemetry(3002u); /* load requested */
 				const boolean load_ok = fmsx_runtime_load_disk(drive_index, disk_path);
 				if (load_ok)
 				{
