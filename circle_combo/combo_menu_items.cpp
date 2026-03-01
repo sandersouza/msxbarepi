@@ -1,30 +1,87 @@
 #include "combo_menu_items.h"
+#include "combo_locale.h"
 
-static const TComboMenuItem kRootItems[] =
+static void BuildLabelFlag(char *dst, unsigned dst_size, const char *label, const char *flag)
 {
-    { "Carregar Cartuchos", ComboMenuActionCartridgeA, TRUE },
-    { "Carregar Disquetes", ComboMenuActionDiskDriveA, TRUE },
-    { "", ComboMenuActionSeparator, FALSE },
-    { "Gravar Estado", ComboMenuActionSaveState, TRUE },
-    { "Carregar Estado", ComboMenuActionLoadState, TRUE },
-    { "", ComboMenuActionSeparator, FALSE },
-    { "Ajustes", ComboMenuActionSettings, TRUE },
-    { "", ComboMenuActionSeparator, FALSE },
-    { "MSX Basic", ComboMenuActionMsxBasic, TRUE },
-    { "Reset", ComboMenuActionReset, TRUE }
-};
-
-const TComboMenuItem *combo_menu_root_items_get(unsigned *count)
-{
-    if (count != 0)
+    if (dst == 0 || dst_size == 0u)
     {
-        *count = (unsigned) (sizeof(kRootItems) / sizeof(kRootItems[0]));
+        return;
+    }
+    if (label == 0)
+    {
+        label = "";
+    }
+    if (flag == 0)
+    {
+        flag = "";
     }
 
-    return kRootItems;
+    unsigned i = 0u;
+    while (label[i] != '\0' && i + 1u < dst_size)
+    {
+        dst[i] = label[i];
+        ++i;
+    }
+    if (i + 1u < dst_size) dst[i++] = ' ';
+    if (i + 1u < dst_size) dst[i++] = '[';
+    for (unsigned j = 0u; flag[j] != '\0' && i + 1u < dst_size; ++j)
+    {
+        dst[i++] = flag[j];
+    }
+    if (i + 1u < dst_size) dst[i++] = ']';
+    dst[i] = '\0';
+}
+
+const TComboMenuItem *combo_menu_root_items_get(unsigned language, unsigned *count)
+{
+    static TComboMenuItem root_items[10];
+    const TComboLocaleStrings *locale = combo_locale_get(language);
+    if (locale == 0)
+    {
+        locale = combo_locale_get(ComboLanguageEN);
+    }
+
+    unsigned item_count = 0u;
+    root_items[item_count].label = locale->root_load_cart;
+    root_items[item_count].action = ComboMenuActionCartridgeA;
+    root_items[item_count++].selectable = TRUE;
+    root_items[item_count].label = locale->root_load_disk;
+    root_items[item_count].action = ComboMenuActionDiskDriveA;
+    root_items[item_count++].selectable = TRUE;
+    root_items[item_count].label = "";
+    root_items[item_count].action = ComboMenuActionSeparator;
+    root_items[item_count++].selectable = FALSE;
+    root_items[item_count].label = locale->root_save_state;
+    root_items[item_count].action = ComboMenuActionSaveState;
+    root_items[item_count++].selectable = TRUE;
+    root_items[item_count].label = locale->root_load_state;
+    root_items[item_count].action = ComboMenuActionLoadState;
+    root_items[item_count++].selectable = TRUE;
+    root_items[item_count].label = "";
+    root_items[item_count].action = ComboMenuActionSeparator;
+    root_items[item_count++].selectable = FALSE;
+    root_items[item_count].label = locale->root_settings;
+    root_items[item_count].action = ComboMenuActionSettings;
+    root_items[item_count++].selectable = TRUE;
+    root_items[item_count].label = "";
+    root_items[item_count].action = ComboMenuActionSeparator;
+    root_items[item_count++].selectable = FALSE;
+    root_items[item_count].label = locale->root_msx_basic;
+    root_items[item_count].action = ComboMenuActionMsxBasic;
+    root_items[item_count++].selectable = TRUE;
+    root_items[item_count].label = locale->root_reset;
+    root_items[item_count].action = ComboMenuActionReset;
+    root_items[item_count++].selectable = TRUE;
+
+    if (count != 0)
+    {
+        *count = item_count;
+    }
+    return root_items;
 }
 
 const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
+                                                     unsigned language,
                                                      boolean widescreen_enabled,
                                                      unsigned scanline_mode,
                                                      unsigned refresh_rate_hz,
@@ -35,187 +92,127 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
                                                      boolean overlay_enabled,
                                                      boolean overlay_available,
                                                      boolean audio_muted,
+                                                     unsigned audio_gain_percent,
                                                      unsigned *count)
 {
-    static TComboMenuItem settings_items[14];
-    static char overscan_label[] = "Overscan [000]";
-    static const char *kWidescreenOff = "Widescreen [DES]";
-    static const char *kWidescreenOn = "Widescreen [LIG]";
-    static const char *kScanlineDes = "Scanlines [DES]";
-    static const char *kScanlineLcd = "Scanlines [LCD]";
-    static const char *kScanlineCrt = "Scanlines [CRT]";
-    static const char *kRefresh50 = "Padrao [PAL]";
-    static const char *kRefresh60 = "Padrao [NTSC]";
-    static const char *kBootNorm = "Boot Mode [NORM]";
-    static const char *kBootFast = "Boot Mode [FAST]";
-    static const char *kBootGame = "Boot Mode [GAME]";
-    static const char *kTurboDes = "Z80 Turbo [DES]";
-    static const char *kTurboPan = "Z80 Turbo [PAN]";
-    static const char *kTurboMax = "Z80 Turbo [MAX]";
-    static const char *kRensha0 = "Rensha [0]";
-    static const char *kRensha1 = "Rensha [1]";
-    static const char *kRensha2 = "Rensha [2]";
-    static const char *kRensha3 = "Rensha [3]";
-    static const char *kSccOff = "SCC Cart [DES]";
-    static const char *kSccOn = "SCC Cart [LIG]";
-    static const char *kOverlayOff = "Debugger [DES]";
-    static const char *kOverlayOn = "Debugger [LIG]";
-    static const char *kOverlayNA = "Debugger [N/A]";
-    static const char *kAudioMuteOff = "Audio Mute [DES]";
-    static const char *kAudioMuteOn = "Audio Mute [LIG]";
-    static const char *kSeparator = "";
-    static const char *kBlankLine = "";
-    static const char *kSave = "Gravar";
+    static TComboMenuItem settings_items[17];
+    static char language_label[32];
+    static char overscan_label[32];
+    static char widescreen_label[32];
+    static char scanline_label[32];
+    static char refresh_label[32];
+    static char boot_label[32];
+    static char turbo_label[32];
+    static char rensha_label[32];
+    static char scc_label[32];
+    static char overlay_label[32];
+    static char audio_mute_label[32];
+    static char audio_gain_label[32];
 
-    if (overscan_percent > 100u)
+    const TComboLocaleStrings *locale = combo_locale_get(language);
+    if (locale == 0)
     {
-        overscan_percent = 100u;
-    }
-    if (scanline_mode > 2u)
-    {
-        scanline_mode = 2u;
-    }
-    if (refresh_rate_hz != 50u)
-    {
-        refresh_rate_hz = 60u;
-    }
-    if (z80_turbo_mode > 2u)
-    {
-        z80_turbo_mode = 0u;
-    }
-    if (boot_mode > 2u)
-    {
-        boot_mode = 0u;
-    }
-    if (rensha_mode > 3u)
-    {
-        rensha_mode = 0u;
+        locale = combo_locale_get(ComboLanguageEN);
     }
 
-    overscan_label[10] = (char) ('0' + ((overscan_percent / 100u) % 10u));
-    overscan_label[11] = (char) ('0' + ((overscan_percent / 10u) % 10u));
-    overscan_label[12] = (char) ('0' + (overscan_percent % 10u));
+    language = combo_locale_clamp_language(language);
+    if (overscan_percent > 100u) overscan_percent = 100u;
+    if (scanline_mode > 2u) scanline_mode = 2u;
+    if (refresh_rate_hz != 50u) refresh_rate_hz = 60u;
+    if (z80_turbo_mode > 2u) z80_turbo_mode = 0u;
+    if (boot_mode > 2u) boot_mode = 0u;
+    if (rensha_mode > 3u) rensha_mode = 0u;
+    if (audio_gain_percent > 100u) audio_gain_percent = 100u;
+
+    BuildLabelFlag(language_label, sizeof(language_label), locale->settings_language, combo_locale_language_code(language));
+
+    char overscan_flag[4];
+    overscan_flag[0] = (char) ('0' + ((overscan_percent / 100u) % 10u));
+    overscan_flag[1] = (char) ('0' + ((overscan_percent / 10u) % 10u));
+    overscan_flag[2] = (char) ('0' + (overscan_percent % 10u));
+    overscan_flag[3] = '\0';
+    BuildLabelFlag(overscan_label, sizeof(overscan_label), locale->settings_overscan, overscan_flag);
+
+    BuildLabelFlag(widescreen_label, sizeof(widescreen_label), locale->settings_widescreen, widescreen_enabled ? locale->flag_on : locale->flag_off);
+    BuildLabelFlag(scanline_label, sizeof(scanline_label), locale->settings_scanlines,
+                   scanline_mode == 0u ? locale->scan_des : (scanline_mode == 1u ? locale->scan_lcd : locale->scan_crt));
+    BuildLabelFlag(refresh_label, sizeof(refresh_label), locale->settings_refresh, refresh_rate_hz == 50u ? locale->refresh_pal : locale->refresh_ntsc);
+    BuildLabelFlag(boot_label, sizeof(boot_label), locale->settings_boot_mode,
+                   boot_mode == 0u ? "NORM" : (boot_mode == 1u ? "FAST" : "GAME"));
+    BuildLabelFlag(turbo_label, sizeof(turbo_label), locale->settings_z80_turbo,
+                   z80_turbo_mode == 0u ? locale->flag_off : (z80_turbo_mode == 1u ? "PAN" : "MAX"));
+    BuildLabelFlag(rensha_label, sizeof(rensha_label), locale->settings_rensha,
+                   rensha_mode == 0u ? "0" : (rensha_mode == 1u ? "1" : (rensha_mode == 2u ? "2" : "3")));
+    BuildLabelFlag(scc_label, sizeof(scc_label), locale->settings_scc_cart, scc_cart_enabled ? locale->flag_on : locale->flag_off);
+    BuildLabelFlag(overlay_label, sizeof(overlay_label), locale->settings_debugger,
+                   overlay_available ? (overlay_enabled ? locale->flag_on : locale->flag_off) : locale->flag_na);
+    BuildLabelFlag(audio_mute_label, sizeof(audio_mute_label), locale->settings_audio_mute, audio_muted ? locale->flag_on : locale->flag_off);
+    char audio_gain_flag[4];
+    audio_gain_flag[0] = (char) ('0' + ((audio_gain_percent / 100u) % 10u));
+    audio_gain_flag[1] = (char) ('0' + ((audio_gain_percent / 10u) % 10u));
+    audio_gain_flag[2] = (char) ('0' + (audio_gain_percent % 10u));
+    audio_gain_flag[3] = '\0';
+    BuildLabelFlag(audio_gain_label, sizeof(audio_gain_label), locale->settings_audio_gain, audio_gain_flag);
 
     unsigned item_count = 0u;
-
+    settings_items[item_count].label = language_label;
+    settings_items[item_count].action = ComboMenuActionCycleLanguage;
+    settings_items[item_count++].selectable = TRUE;
+    settings_items[item_count].label = "";
+    settings_items[item_count].action = ComboMenuActionSeparator;
+    settings_items[item_count++].selectable = FALSE;
     settings_items[item_count].label = overscan_label;
     settings_items[item_count].action = ComboMenuActionOverscanChanged;
-    settings_items[item_count].selectable = TRUE;
-    item_count++;
-
-    const char *scanline_label = kScanlineDes;
-    if (scanline_mode == 1u)
-    {
-        scanline_label = kScanlineLcd;
-    }
-    else if (scanline_mode == 2u)
-    {
-        scanline_label = kScanlineCrt;
-    }
-
-    settings_items[item_count].label = widescreen_enabled ? kWidescreenOn : kWidescreenOff;
+    settings_items[item_count++].selectable = TRUE;
+    settings_items[item_count].label = widescreen_label;
     settings_items[item_count].action = ComboMenuActionToggleWidescreen;
-    settings_items[item_count].selectable = TRUE;
-    item_count++;
-
+    settings_items[item_count++].selectable = TRUE;
     settings_items[item_count].label = scanline_label;
     settings_items[item_count].action = ComboMenuActionCycleScanlines;
-    settings_items[item_count].selectable = TRUE;
-    item_count++;
-
-    settings_items[item_count].label = (refresh_rate_hz == 50u) ? kRefresh50 : kRefresh60;
+    settings_items[item_count++].selectable = TRUE;
+    settings_items[item_count].label = refresh_label;
     settings_items[item_count].action = ComboMenuActionCycleRefreshRate;
-    settings_items[item_count].selectable = TRUE;
-    item_count++;
-
-    const char *turbo_label = kTurboDes;
-    if (z80_turbo_mode == 1u)
-    {
-        turbo_label = kTurboPan;
-    }
-    else if (z80_turbo_mode == 2u)
-    {
-        turbo_label = kTurboMax;
-    }
-    settings_items[item_count].label = kSeparator;
+    settings_items[item_count++].selectable = TRUE;
+    settings_items[item_count].label = "";
     settings_items[item_count].action = ComboMenuActionSeparator;
-    settings_items[item_count].selectable = FALSE;
-    item_count++;
-
-    settings_items[item_count].label = scc_cart_enabled ? kSccOn : kSccOff;
+    settings_items[item_count++].selectable = FALSE;
+    settings_items[item_count].label = scc_label;
     settings_items[item_count].action = ComboMenuActionToggleSccCart;
-    settings_items[item_count].selectable = TRUE;
-    item_count++;
-
-    settings_items[item_count].label = audio_muted ? kAudioMuteOn : kAudioMuteOff;
+    settings_items[item_count++].selectable = TRUE;
+    settings_items[item_count].label = audio_mute_label;
     settings_items[item_count].action = ComboMenuActionToggleAudioMute;
-    settings_items[item_count].selectable = TRUE;
-    item_count++;
-
-    settings_items[item_count].label = kSeparator;
+    settings_items[item_count++].selectable = TRUE;
+    settings_items[item_count].label = audio_gain_label;
+    settings_items[item_count].action = ComboMenuActionAudioGainChanged;
+    settings_items[item_count++].selectable = TRUE;
+    settings_items[item_count].label = "";
     settings_items[item_count].action = ComboMenuActionSeparator;
-    settings_items[item_count].selectable = FALSE;
-    item_count++;
-
-    const char *boot_label = kBootNorm;
-    if (boot_mode == 1u)
-    {
-        boot_label = kBootFast;
-    }
-    else if (boot_mode == 2u)
-    {
-        boot_label = kBootGame;
-    }
+    settings_items[item_count++].selectable = FALSE;
     settings_items[item_count].label = boot_label;
     settings_items[item_count].action = ComboMenuActionCycleBootMode;
-    settings_items[item_count].selectable = TRUE;
-    item_count++;
-
+    settings_items[item_count++].selectable = TRUE;
     settings_items[item_count].label = turbo_label;
     settings_items[item_count].action = ComboMenuActionCycleZ80Turbo;
-    settings_items[item_count].selectable = TRUE;
-    item_count++;
-
-    const char *rensha_label = kRensha0;
-    if (rensha_mode == 1u)
-    {
-        rensha_label = kRensha1;
-    }
-    else if (rensha_mode == 2u)
-    {
-        rensha_label = kRensha2;
-    }
-    else if (rensha_mode == 3u)
-    {
-        rensha_label = kRensha3;
-    }
+    settings_items[item_count++].selectable = TRUE;
     settings_items[item_count].label = rensha_label;
     settings_items[item_count].action = ComboMenuActionCycleRensha;
-    settings_items[item_count].selectable = TRUE;
-    item_count++;
-
+    settings_items[item_count++].selectable = TRUE;
     if (overlay_available)
     {
-        settings_items[item_count].label = overlay_enabled ? kOverlayOn : kOverlayOff;
+        settings_items[item_count].label = overlay_label;
         settings_items[item_count].action = ComboMenuActionToggleOverlay;
-        settings_items[item_count].selectable = TRUE;
-        item_count++;
+        settings_items[item_count++].selectable = TRUE;
     }
-
-    settings_items[item_count].label = kBlankLine;
+    settings_items[item_count].label = "";
     settings_items[item_count].action = ComboMenuActionNone;
-    settings_items[item_count].selectable = FALSE;
-    item_count++;
-
-    settings_items[item_count].label = kSave;
+    settings_items[item_count++].selectable = FALSE;
+    settings_items[item_count].label = locale->settings_save;
     settings_items[item_count].action = ComboMenuActionSaveSettings;
-    settings_items[item_count].selectable = TRUE;
-    item_count++;
+    settings_items[item_count++].selectable = TRUE;
 
     if (count != 0)
     {
         *count = item_count;
     }
-
     return settings_items;
 }

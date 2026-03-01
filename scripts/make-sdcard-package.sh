@@ -25,6 +25,7 @@ ensure_settings_cfg() {
   mkdir -p "$(dirname "$PACKAGE_SETTINGS_CFG")"
   cat > "$PACKAGE_SETTINGS_CFG" <<'EOF'
 overscan=0
+language=0
 widescreen=0
 scanline=0
 refresh=60
@@ -34,6 +35,7 @@ rensha=0
 scc_cart=1
 debugger=1
 audio_mute=0
+audio_gain=50
 #END
 EOF
 }

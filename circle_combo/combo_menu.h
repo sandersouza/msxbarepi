@@ -11,6 +11,8 @@ public:
 
     void Reset(void);
     void SetOverscanPercent(unsigned percent);
+    void SetLanguage(unsigned language);
+    unsigned GetLanguage(void) const;
     unsigned GetOverscanPercent(void) const;
     void SetWidescreenEnabled(boolean enabled);
     void SetScanlineMode(unsigned mode);
@@ -24,6 +26,8 @@ public:
     void SetSccCartEnabled(boolean enabled);
     void SetOverlayEnabled(boolean enabled, boolean available);
     void SetAudioMuted(boolean enabled);
+    void SetAudioGainPercent(unsigned percent);
+    unsigned GetAudioGainPercent(void) const;
     boolean IsInSettings(void) const;
     void RequestRedraw(void);
     boolean ConsumeBackgroundRestoreRequest(void);
@@ -51,6 +55,7 @@ private:
     boolean m_Visible;
     boolean m_InSettings;
     unsigned m_OverscanPercent;
+    unsigned m_Language;
     boolean m_WidescreenEnabled;
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;
@@ -61,9 +66,11 @@ private:
     boolean m_OverlayEnabled;
     boolean m_OverlayAvailable;
     boolean m_AudioMuted;
+    unsigned m_AudioGainPercent;
     boolean m_LastBackPressed;
     boolean m_LastDrawnInSettings;
     unsigned m_LastDrawnOverscanPercent;
+    unsigned m_LastDrawnLanguage;
     boolean m_LastDrawnWidescreen;
     unsigned m_LastDrawnScanlineMode;
     unsigned m_LastDrawnRefreshRateHz;
@@ -74,6 +81,7 @@ private:
     boolean m_LastDrawnOverlay;
     boolean m_LastDrawnOverlayAvailable;
     boolean m_LastDrawnAudioMuted;
+    unsigned m_LastDrawnAudioGainPercent;
     boolean m_ForceRedraw;
     boolean m_RequestBackgroundRestore;
     unsigned m_LastBoxX;

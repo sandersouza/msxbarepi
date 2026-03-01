@@ -94,6 +94,7 @@ LDFLAGS += --gc-sections
 endif
 
 OBJS = main.o kernel.o keyboard_input.o gfx_textbox.o combo_menu.o combo_menu_items.o
+OBJS += combo_locale.o combo_locale_pt.o combo_locale_en.o combo_locale_es.o
 
 ifeq ($(COMBO_ENABLE_FMSX),1)
 OBJS += fmsx_runtime.o fmsx_host_stubs.o fmsx_compat_stubs.o fmsx_libc_shim.o

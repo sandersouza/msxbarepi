@@ -146,6 +146,7 @@ private:
     u16 m_BlitYMap[kBlitMapMaxAxis];
     CComboPauseMenu m_PauseMenu;
     unsigned m_OverscanPercent;
+    unsigned m_Language;
     boolean m_WidescreenEnabled;
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;

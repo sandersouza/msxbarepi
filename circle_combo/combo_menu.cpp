@@ -1,4 +1,5 @@
 #include "combo_menu.h"
+#include "combo_locale.h"
 
 
 static unsigned ComboStrLen(const char *text)
@@ -71,6 +72,7 @@ CComboPauseMenu::CComboPauseMenu(void)
   m_Visible(FALSE),
     m_InSettings(FALSE),
     m_OverscanPercent(0u),
+    m_Language(ComboLanguageEN),
     m_WidescreenEnabled(FALSE),
     m_ScanlineMode(0u),
     m_RefreshRateHz(60u),
@@ -81,9 +83,11 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_OverlayEnabled(FALSE),
     m_OverlayAvailable(FALSE),
     m_AudioMuted(FALSE),
+    m_AudioGainPercent(50u),
     m_LastBackPressed(FALSE),
     m_LastDrawnInSettings(FALSE),
     m_LastDrawnOverscanPercent(0u),
+    m_LastDrawnLanguage(ComboLanguageEN),
     m_LastDrawnWidescreen(FALSE),
     m_LastDrawnScanlineMode(0u),
     m_LastDrawnRefreshRateHz(60u),
@@ -94,6 +98,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnOverlay(FALSE),
     m_LastDrawnOverlayAvailable(FALSE),
     m_LastDrawnAudioMuted(FALSE),
+    m_LastDrawnAudioGainPercent(50u),
     m_ForceRedraw(TRUE),
     m_RequestBackgroundRestore(FALSE),
     m_LastBoxX(0),
@@ -120,6 +125,7 @@ void CComboPauseMenu::Reset(void)
     m_LastBackPressed = FALSE;
     m_LastDrawnInSettings = FALSE;
     m_LastDrawnOverscanPercent = m_OverscanPercent;
+    m_LastDrawnLanguage = m_Language;
     m_LastDrawnWidescreen = m_WidescreenEnabled;
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
@@ -130,6 +136,7 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
     m_LastDrawnAudioMuted = m_AudioMuted;
+    m_LastDrawnAudioGainPercent = m_AudioGainPercent;
     m_ForceRedraw = TRUE;
     m_RequestBackgroundRestore = FALSE;
     m_LastBoxValid = FALSE;
@@ -152,6 +159,21 @@ void CComboPauseMenu::SetOverscanPercent(unsigned percent)
         m_OverscanPercent = percent;
         m_ForceRedraw = TRUE;
     }
+}
+
+void CComboPauseMenu::SetLanguage(unsigned language)
+{
+    language = combo_locale_clamp_language(language);
+    if (m_Language != language)
+    {
+        m_Language = language;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+unsigned CComboPauseMenu::GetLanguage(void) const
+{
+    return m_Language;
 }
 
 unsigned CComboPauseMenu::GetOverscanPercent(void) const
@@ -281,6 +303,24 @@ void CComboPauseMenu::SetAudioMuted(boolean enabled)
     }
 }
 
+void CComboPauseMenu::SetAudioGainPercent(unsigned percent)
+{
+    if (percent > 100u)
+    {
+        percent = 100u;
+    }
+    if (m_AudioGainPercent != percent)
+    {
+        m_AudioGainPercent = percent;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+unsigned CComboPauseMenu::GetAudioGainPercent(void) const
+{
+    return m_AudioGainPercent;
+}
+
 boolean CComboPauseMenu::IsInSettings(void) const
 {
     return m_InSettings;
@@ -304,6 +344,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
     {
         return combo_menu_settings_items_get(
             m_OverscanPercent,
+            m_Language,
             m_WidescreenEnabled,
             m_ScanlineMode,
             m_RefreshRateHz,
@@ -314,10 +355,11 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_OverlayEnabled,
             m_OverlayAvailable,
             m_AudioMuted,
+            m_AudioGainPercent,
             count);
     }
 
-    return combo_menu_root_items_get(count);
+    return combo_menu_root_items_get(m_Language, count);
 }
 
 unsigned CComboPauseMenu::FindFirstSelectable(void) const
@@ -537,6 +579,22 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
+        else if (items[m_Selected].action == ComboMenuActionCycleLanguage)
+        {
+            if (left_edge)
+            {
+                action = ComboMenuActionCycleLanguagePrev;
+                m_ForceRedraw = TRUE;
+                m_RequestBackgroundRestore = TRUE;
+            }
+            else if (right_edge || enter_edge)
+            {
+                action = ComboMenuActionCycleLanguage;
+                m_ForceRedraw = TRUE;
+                m_RequestBackgroundRestore = TRUE;
+            }
+            handled_settings_input = enter_edge || left_edge || right_edge;
+        }
         else if (items[m_Selected].action == ComboMenuActionToggleSccCart)
         {
             if (enter_edge || left_edge || right_edge)
@@ -544,6 +602,30 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                 action = items[m_Selected].action;
                 m_ForceRedraw = TRUE;
                 m_RequestBackgroundRestore = TRUE;
+            }
+            handled_settings_input = enter_edge || left_edge || right_edge;
+        }
+        else if (items[m_Selected].action == ComboMenuActionAudioGainChanged)
+        {
+            unsigned next_value = m_AudioGainPercent;
+            if (left_edge)
+            {
+                next_value = (next_value == 0u) ? 100u : (next_value - 10u);
+            }
+            if (right_edge || enter_edge)
+            {
+                next_value = (next_value >= 100u) ? 0u : (next_value + 10u);
+                if (next_value > 100u)
+                {
+                    next_value = 100u;
+                }
+            }
+            if (next_value != m_AudioGainPercent)
+            {
+                m_AudioGainPercent = next_value;
+                m_ForceRedraw = TRUE;
+                m_RequestBackgroundRestore = TRUE;
+                action = ComboMenuActionAudioGainChanged;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
@@ -610,8 +692,6 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
 void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, unsigned screen_width, unsigned screen_height,
                              unsigned anchor_x, unsigned anchor_y, unsigned anchor_w, unsigned anchor_h)
 {
-    static const char kRootTitle[] = "PAUSE MENU";
-    static const char kSettingsTitle[] = "SETTINGS";
     const TGfxTextStyle title_style = { BRIGHT_WHITE_COLOR, BLACK_COLOR, TRUE };
     const TGfxTextStyle normal_style = { BRIGHT_WHITE_COLOR, BLACK_COLOR, FALSE };
     const TGfxTextStyle selected_style = { BLACK_COLOR, BRIGHT_WHITE_COLOR, FALSE };
@@ -637,7 +717,12 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         return;
     }
 
-    const char *title = m_InSettings ? kSettingsTitle : kRootTitle;
+    const TComboLocaleStrings *locale = combo_locale_get(m_Language);
+    if (locale == 0)
+    {
+        locale = combo_locale_get(ComboLanguageEN);
+    }
+    const char *title = m_InSettings ? locale->title_settings : locale->title_pause;
 
     unsigned char_w = renderer->GetCharWidth();
     unsigned char_h = renderer->GetCharHeight();
@@ -690,6 +775,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnSelected == m_Selected
      && m_LastDrawnInSettings == m_InSettings
      && m_LastDrawnOverscanPercent == m_OverscanPercent
+     && m_LastDrawnLanguage == m_Language
      && m_LastDrawnWidescreen == m_WidescreenEnabled
      && m_LastDrawnScanlineMode == m_ScanlineMode
      && m_LastDrawnRefreshRateHz == m_RefreshRateHz
@@ -699,7 +785,8 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnSccCart == m_SccCartEnabled
      && m_LastDrawnOverlay == m_OverlayEnabled
      && m_LastDrawnOverlayAvailable == m_OverlayAvailable
-     && m_LastDrawnAudioMuted == m_AudioMuted)
+     && m_LastDrawnAudioMuted == m_AudioMuted
+     && m_LastDrawnAudioGainPercent == m_AudioGainPercent)
     {
         return;
     }
@@ -777,6 +864,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnSelected = m_Selected;
     m_LastDrawnInSettings = m_InSettings;
     m_LastDrawnOverscanPercent = m_OverscanPercent;
+    m_LastDrawnLanguage = m_Language;
     m_LastDrawnWidescreen = m_WidescreenEnabled;
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
@@ -787,6 +875,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
     m_LastDrawnAudioMuted = m_AudioMuted;
+    m_LastDrawnAudioGainPercent = m_AudioGainPercent;
     m_LastBoxX = box_x;
     m_LastBoxY = box_y;
     m_LastBoxW = box_w_px;

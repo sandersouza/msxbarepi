@@ -1,5 +1,6 @@
 #include "kernel.h"
 #include "keyboard_input.h"
+#include "combo_locale.h"
 #if COMBO_ENABLE_FMSX
 #include "fmsx_runtime.h"
 #include "fmsx_initramfs.h"
@@ -424,7 +425,7 @@ CComboKernel::CComboKernel(void)
 	m_LastQueueFree(0),
 	m_AudioTargetPeakRuntime(COMBO_FMSX_AUDIO_TARGET_PEAK),
 	m_AudioClipMaxRuntime(16000),
-	m_AudioOutputGainPct(70),
+	m_AudioOutputGainPct(50),
 	m_BootToneFramesRemaining(0),
 	m_UsbInitRetryTick(0u),
 	m_AudioInitAttempted(FALSE),
@@ -463,6 +464,7 @@ CComboKernel::CComboKernel(void)
 	m_BlitMapDstH(0),
 	m_BlitMapValid(FALSE),
 	m_OverscanPercent(0u),
+	m_Language(ComboLanguagePT),
 	m_WidescreenEnabled(FALSE),
 	m_ScanlineMode(kScanlineModeOff),
 	m_RefreshRateHz(60u),
@@ -656,6 +658,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	}
 	m_Logger.Write(FromKernel, LogNotice, "Overlay toggle: F11 | Pause: F12");
 	m_PauseMenu.SetOverscanPercent(m_OverscanPercent);
+	m_PauseMenu.SetLanguage(m_Language);
 	m_PauseMenu.SetWidescreenEnabled(m_WidescreenEnabled);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
@@ -665,6 +668,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
 	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, COMBO_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
 	m_PauseMenu.SetAudioMuted(m_AudioMuted);
+	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
 #if COMBO_ENABLE_FMSX
 	fmsx_runtime_set_overscan(m_OverscanPercent > 0u ? TRUE : FALSE);
 	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
@@ -1743,6 +1747,10 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			{
 				m_WidescreenEnabled = value ? TRUE : FALSE;
 			}
+			else if (SettingsKeyEquals(line, key_len, "language"))
+			{
+				m_Language = combo_locale_clamp_language(value);
+			}
 			else if (SettingsKeyEquals(line, key_len, "scanline"))
 			{
 				m_ScanlineMode = value > 2u ? 2u : value;
@@ -1776,12 +1784,17 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			{
 				m_AudioMuted = value ? TRUE : FALSE;
 			}
+			else if (SettingsKeyEquals(line, key_len, "audio_gain"))
+			{
+				m_AudioOutputGainPct = (value > 100u) ? 100u : value;
+			}
 		}
 
 		line = line_end;
 	}
 
 	m_PauseMenu.SetOverscanPercent(m_OverscanPercent);
+	m_PauseMenu.SetLanguage(m_Language);
 	m_PauseMenu.SetWidescreenEnabled(m_WidescreenEnabled);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
@@ -1791,6 +1804,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
 	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, COMBO_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
 	m_PauseMenu.SetAudioMuted(m_AudioMuted);
+	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
 #if COMBO_ENABLE_FMSX
 	fmsx_runtime_set_overscan(m_OverscanPercent > 0u ? TRUE : FALSE);
 	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
@@ -1839,6 +1853,7 @@ void CComboKernel::SaveSettingsToStorage(void)
 	} while (0)
 
 	APPEND_LINE_FMT("overscan=%u\n", m_OverscanPercent);
+	APPEND_LINE_FMT("language=%u\n", m_Language);
 	APPEND_LINE_FMT("widescreen=%u\n", m_WidescreenEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
 	APPEND_LINE_FMT("refresh=%u\n", m_RefreshRateHz);
@@ -1848,6 +1863,7 @@ void CComboKernel::SaveSettingsToStorage(void)
 	APPEND_LINE_FMT("scc_cart=%u\n", m_SccCartEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("debugger=%u\n", m_DebugOverlayEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("audio_mute=%u\n", m_AudioMuted ? 1u : 0u);
+	APPEND_LINE_FMT("audio_gain=%u\n", m_AudioOutputGainPct > 100u ? 100u : m_AudioOutputGainPct);
 	APPEND_LINE_FMT("#END\n", 0u);
 
 #undef APPEND_LINE_FMT
@@ -1924,7 +1940,7 @@ boolean CComboKernel::EnsureStateIoBuffer(unsigned min_capacity)
 	}
 	m_StateIoBuffer = new_buffer;
 	m_StateIoBufferCapacity = min_capacity;
-	return (m_StateIoBuffer != 0) ? TRUE : FALSE;
+	return TRUE;
 }
 
 boolean CComboKernel::EnsureStateStorageDirectory(void)
@@ -1951,7 +1967,7 @@ boolean CComboKernel::EnsureStateStorageDirectory(void)
 
 void CComboKernel::SaveEmulatorStateToStorage(void)
 {
-	UpdateSettingsSaveTelemetry(32u, 0u, 0u); /* save-state begin */
+	UpdateSettingsSaveTelemetry(32u, 0u, 0u);
 #if !COMBO_ENABLE_FMSX
 	UpdateSettingsSaveTelemetry(93u, 1u, 0u);
 	m_Logger.Write(FromKernel, LogWarning, "Save State indisponivel neste build");
@@ -1970,21 +1986,16 @@ void CComboKernel::SaveEmulatorStateToStorage(void)
 		return;
 	}
 	unsigned state_bytes = 0u;
-	static const unsigned kSaveTryCapacities[] = {
-		512u * 1024u,
-		1024u * 1024u,
-		1536u * 1024u,
-		2u * 1024u * 1024u
-	};
+	static const unsigned kTryCaps[] = { 512u * 1024u, 1024u * 1024u, 1536u * 1024u, 2u * 1024u * 1024u };
 	boolean serialized = FALSE;
-	for (unsigned i = 0u; i < (unsigned) (sizeof(kSaveTryCapacities) / sizeof(kSaveTryCapacities[0])); ++i)
+	for (unsigned i = 0u; i < (unsigned) (sizeof(kTryCaps) / sizeof(kTryCaps[0])); ++i)
 	{
-		const unsigned try_capacity = kSaveTryCapacities[i];
-		if (!EnsureStateIoBuffer(try_capacity))
+		const unsigned cap = kTryCaps[i];
+		if (!EnsureStateIoBuffer(cap))
 		{
 			continue;
 		}
-		if (fmsx_runtime_save_state(m_StateIoBuffer, try_capacity, &state_bytes) && state_bytes > 0u)
+		if (fmsx_runtime_save_state(m_StateIoBuffer, cap, &state_bytes) && state_bytes > 0u)
 		{
 			serialized = TRUE;
 			break;
@@ -2027,7 +2038,7 @@ void CComboKernel::SaveEmulatorStateToStorage(void)
 
 void CComboKernel::LoadEmulatorStateFromStorage(void)
 {
-	UpdateSettingsSaveTelemetry(42u, 0u, 0u); /* load-state begin */
+	UpdateSettingsSaveTelemetry(42u, 0u, 0u);
 #if !COMBO_ENABLE_FMSX
 	UpdateSettingsSaveTelemetry(94u, 1u, 0u);
 	m_Logger.Write(FromKernel, LogWarning, "Load State indisponivel neste build");
@@ -2045,6 +2056,7 @@ void CComboKernel::LoadEmulatorStateFromStorage(void)
 		m_Logger.Write(FromKernel, LogWarning, "Load State falhou: armazenamento SD indisponivel");
 		return;
 	}
+
 	FILINFO file_info;
 	const FRESULT stat_result = f_stat(kStatePath, &file_info);
 	if (stat_result == FR_NO_FILE)
@@ -2103,7 +2115,6 @@ void CComboKernel::LoadEmulatorStateFromStorage(void)
 		return;
 	}
 
-	/* Render one restored frame immediately so pause menu returns over the new state viewport. */
 	PushKeyboardStateToRuntime(TRUE);
 	fmsx_runtime_set_joystick_bits(m_JoyBridgeBits);
 	if (fmsx_runtime_step_frame())
@@ -2175,6 +2186,28 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		{
 			CString line;
 			line.Format("Settings: Overscan %u", m_OverscanPercent);
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
+		break;
+
+	case ComboMenuActionCycleLanguage:
+		m_Language = (m_Language >= ComboLanguageES) ? ComboLanguagePT : (m_Language + 1u);
+		m_PauseMenu.SetLanguage(m_Language);
+		RefreshSettingsUiAfterAction();
+		{
+			CString line;
+			line.Format("Settings: Language %s", combo_locale_language_code(m_Language));
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
+		break;
+
+	case ComboMenuActionCycleLanguagePrev:
+		m_Language = (m_Language == ComboLanguagePT) ? ComboLanguageES : (m_Language - 1u);
+		m_PauseMenu.SetLanguage(m_Language);
+		RefreshSettingsUiAfterAction();
+		{
+			CString line;
+			line.Format("Settings: Language %s", combo_locale_language_code(m_Language));
 			m_Logger.Write(FromKernel, LogNotice, line);
 		}
 		break;
@@ -2351,6 +2384,16 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		m_Logger.Write(FromKernel, LogNotice, m_AudioMuted ? "Settings: Audio mute ON" : "Settings: Audio mute OFF");
 		break;
 
+	case ComboMenuActionAudioGainChanged:
+		m_AudioOutputGainPct = m_PauseMenu.GetAudioGainPercent();
+		RefreshSettingsUiAfterAction();
+		{
+			CString line;
+			line.Format("Settings: Audio gain %u%%", m_AudioOutputGainPct);
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
+		break;
+
 	case ComboMenuActionToggleSccCart:
 		m_SccCartEnabled = m_SccCartEnabled ? FALSE : TRUE;
 		m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
@@ -2364,14 +2407,14 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 	case ComboMenuActionSaveState:
 		RefreshSettingsUiAfterAction();
 		m_StateSavePending = TRUE;
-		UpdateSettingsSaveTelemetry(31u, 0u, 0u); /* save-state queued */
+		UpdateSettingsSaveTelemetry(31u, 0u, 0u);
 		m_Logger.Write(FromKernel, LogNotice, "Save State queued");
 		break;
 
 	case ComboMenuActionLoadState:
 		RefreshSettingsUiAfterAction();
 		m_StateLoadPending = TRUE;
-		UpdateSettingsSaveTelemetry(41u, 0u, 0u); /* load-state queued */
+		UpdateSettingsSaveTelemetry(41u, 0u, 0u);
 		m_Logger.Write(FromKernel, LogNotice, "Load State queued");
 		break;
 

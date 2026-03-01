@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 28/02/2026 15:10
+Última atualização: 28/02/2026 20:32
 
 ## Objetivo deste arquivo
 
@@ -636,12 +636,13 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-02-28 14:51:16 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
 - 2026-02-28 14:51:16 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
 - 2026-02-28 14:56:24 | stage=default | status=issue-created | artifact=Issue #99 criada (Save/Load State) na milestone Load de ROMs e Discos; espelho local em docs/milestones/m8/99-save-state-load-state-settings-persistencia-sd.md
-- 2026-02-28 15:06:47 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
-- 2026-02-28 15:06:47 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
-- 2026-02-28 15:07:08 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
-- 2026-02-28 15:07:08 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
-- 2026-02-28 15:07:21 | stage=default | status=issue-99-progress | artifact=Issue #99: Save/Load State implementado no menu Settings e backend FAT32 em SD:/states/slot-last.sav; build local OK
-- 2026-02-28 15:07:56 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
-- 2026-02-28 15:07:56 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
-- 2026-02-28 15:10:58 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
-- 2026-02-28 15:10:58 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 20:20:51 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 20:20:51 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 20:21:08 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 20:21:08 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 20:22:52 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 20:22:52 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 20:28:21 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 20:28:21 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-02-28 20:32:54 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-02-28 20:32:54 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img

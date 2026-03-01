@@ -1,0 +1,49 @@
+#ifndef MSXBARE_CIRCLE_COMBO_LOCALE_H
+#define MSXBARE_CIRCLE_COMBO_LOCALE_H
+
+#include <circle/types.h>
+
+enum TComboLanguage {
+    ComboLanguagePT = 0,
+    ComboLanguageEN = 1,
+    ComboLanguageES = 2
+};
+
+typedef struct {
+    const char *title_pause;
+    const char *title_settings;
+    const char *root_load_cart;
+    const char *root_load_disk;
+    const char *root_save_state;
+    const char *root_load_state;
+    const char *root_settings;
+    const char *root_msx_basic;
+    const char *root_reset;
+    const char *settings_language;
+    const char *settings_overscan;
+    const char *settings_widescreen;
+    const char *settings_scanlines;
+    const char *settings_refresh;
+    const char *settings_boot_mode;
+    const char *settings_z80_turbo;
+    const char *settings_rensha;
+    const char *settings_scc_cart;
+    const char *settings_debugger;
+    const char *settings_audio_mute;
+    const char *settings_audio_gain;
+    const char *settings_save;
+    const char *flag_off;
+    const char *flag_on;
+    const char *flag_na;
+    const char *scan_des;
+    const char *scan_lcd;
+    const char *scan_crt;
+    const char *refresh_ntsc;
+    const char *refresh_pal;
+} TComboLocaleStrings;
+
+unsigned combo_locale_clamp_language(unsigned language);
+const char *combo_locale_language_code(unsigned language);
+const TComboLocaleStrings *combo_locale_get(unsigned language);
+
+#endif
