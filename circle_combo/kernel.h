@@ -3,6 +3,7 @@
 
 #include "gfx_textbox.h"
 #include "combo_menu.h"
+#include "media_catalog.h"
 
 #include <circle/actled.h>
 #include <circle/devicenameservice.h>
@@ -171,6 +172,8 @@ private:
     boolean m_SettingsSavePending;
     boolean m_StateSavePending;
     boolean m_StateLoadPending;
+    boolean m_MediaCatalogStarted;
+    boolean m_MediaCatalogSummaryLogged;
     unsigned m_SettingsSaveStage;
     unsigned m_SettingsSaveCode;
     unsigned m_SettingsSaveAux;

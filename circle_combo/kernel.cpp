@@ -489,6 +489,8 @@ CComboKernel::CComboKernel(void)
 	m_SettingsSavePending(FALSE),
 	m_StateSavePending(FALSE),
 	m_StateLoadPending(FALSE),
+	m_MediaCatalogStarted(FALSE),
+	m_MediaCatalogSummaryLogged(FALSE),
 	m_SettingsSaveStage(0u),
 	m_SettingsSaveCode(0u),
 	m_SettingsSaveAux(0u),
@@ -587,6 +589,10 @@ TComboShutdownMode CComboKernel::Run(void)
 		if (f_mount(&m_SettingsFileSystem, kSettingsDrive, 1) == FR_OK)
 		{
 			LoadSettingsFromStorage();
+			combo_media_catalog_begin_scan();
+			m_MediaCatalogStarted = TRUE;
+			m_MediaCatalogSummaryLogged = FALSE;
+			m_Logger.Write(FromKernel, LogNotice, "media scan started: SD:/roms + SD:/disks");
 		}
 		else
 		{
@@ -710,6 +716,13 @@ TComboShutdownMode CComboKernel::Run(void)
 				if (f_mount(&m_SettingsFileSystem, kSettingsDrive, 1) == FR_OK)
 				{
 					LoadSettingsFromStorage();
+					if (!m_MediaCatalogStarted)
+					{
+						combo_media_catalog_begin_scan();
+						m_MediaCatalogStarted = TRUE;
+						m_MediaCatalogSummaryLogged = FALSE;
+						m_Logger.Write(FromKernel, LogNotice, "media scan started: SD:/roms + SD:/disks");
+					}
 				}
 				else
 				{
@@ -738,6 +751,24 @@ TComboShutdownMode CComboKernel::Run(void)
 				initramfs_line.Format("initramfs deferred files: +%u", later_files);
 				m_Logger.Write(FromKernel, LogNotice, initramfs_line);
 			}
+		}
+		if (m_MediaCatalogStarted && combo_media_catalog_is_scanning())
+		{
+			combo_media_catalog_scan_step(32u);
+		}
+		else if (m_MediaCatalogStarted && !m_MediaCatalogSummaryLogged)
+		{
+			m_MediaCatalogSummaryLogged = TRUE;
+			CString media_line;
+			media_line.Format("media scan done: total=%u rom=%u dsk=%u dir=%u file=%u err=%u drop=%u",
+							 combo_media_catalog_entry_count(),
+							 combo_media_catalog_rom_count(),
+							 combo_media_catalog_disk_count(),
+							 combo_media_catalog_dir_count(),
+							 combo_media_catalog_file_count(),
+							 combo_media_catalog_error_count(),
+							 combo_media_catalog_dropped_count());
+			m_Logger.Write(FromKernel, LogNotice, media_line);
 		}
 		if (!m_UsbReady)
 		{
