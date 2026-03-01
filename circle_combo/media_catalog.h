@@ -7,7 +7,8 @@ enum TComboMediaType
 {
 	ComboMediaTypeUnknown = 0,
 	ComboMediaTypeRom = 1,
-	ComboMediaTypeDisk = 2
+	ComboMediaTypeDisk = 2,
+	ComboMediaTypeDir = 3
 };
 
 struct TComboMediaEntry

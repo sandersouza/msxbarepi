@@ -12,6 +12,8 @@ enum TComboLanguage {
 typedef struct {
     const char *title_pause;
     const char *title_settings;
+    const char *title_load_rom;
+    const char *title_load_disk;
     const char *root_load_cart;
     const char *root_load_disk;
     const char *root_save_state;
@@ -19,6 +21,12 @@ typedef struct {
     const char *root_settings;
     const char *root_msx_basic;
     const char *root_reset;
+    const char *load_rom_slot1;
+    const char *load_rom_slot2;
+    const char *load_rom_empty;
+    const char *load_disk_drive1;
+    const char *load_disk_drive2;
+    const char *load_disk_empty;
     const char *settings_language;
     const char *settings_overscan;
     const char *settings_widescreen;

@@ -80,6 +80,118 @@ const TComboMenuItem *combo_menu_root_items_get(unsigned language, unsigned *cou
     return root_items;
 }
 
+static const TComboMenuItem *BuildDualMediaItems(const char *left_tag,
+                                                 const char *right_tag,
+                                                 const char *left_name,
+                                                 const char *right_name,
+                                                 const char *empty_tag,
+                                                 TComboMenuAction left_action,
+                                                 TComboMenuAction right_action,
+                                                 unsigned *count)
+{
+    static TComboMenuItem items[2];
+    static char left_label[32];
+    static char right_label[32];
+
+    if (left_tag == 0 || left_tag[0] == '\0') left_tag = "A";
+    if (right_tag == 0 || right_tag[0] == '\0') right_tag = "B";
+    if (empty_tag == 0 || empty_tag[0] == '\0') empty_tag = "EMPTY";
+
+    if (left_name == 0 || left_name[0] == '\0')
+    {
+        left_name = empty_tag;
+    }
+    if (right_name == 0 || right_name[0] == '\0')
+    {
+        right_name = empty_tag;
+    }
+
+    unsigned c = 0u;
+    for (unsigned i = 0u; left_tag[i] != '\0' && c + 1u < sizeof(left_label); ++i)
+    {
+        left_label[c++] = left_tag[i];
+    }
+    if (c + 1u < sizeof(left_label))
+    {
+        left_label[c++] = ':';
+    }
+    left_label[c++] = '\t';
+    for (unsigned i = 0u; left_name[i] != '\0' && c + 1u < sizeof(left_label); ++i)
+    {
+        left_label[c++] = left_name[i];
+    }
+    left_label[c] = '\0';
+
+    c = 0u;
+    for (unsigned i = 0u; right_tag[i] != '\0' && c + 1u < sizeof(right_label); ++i)
+    {
+        right_label[c++] = right_tag[i];
+    }
+    if (c + 1u < sizeof(right_label))
+    {
+        right_label[c++] = ':';
+    }
+    right_label[c++] = '\t';
+    for (unsigned i = 0u; right_name[i] != '\0' && c + 1u < sizeof(right_label); ++i)
+    {
+        right_label[c++] = right_name[i];
+    }
+    right_label[c] = '\0';
+
+    items[0].label = left_label;
+    items[0].action = left_action;
+    items[0].selectable = TRUE;
+    items[1].label = right_label;
+    items[1].action = right_action;
+    items[1].selectable = TRUE;
+
+    if (count != 0)
+    {
+        *count = 2u;
+    }
+    return items;
+}
+
+const TComboMenuItem *combo_menu_load_rom_items_get(unsigned language,
+                                                     const char *slot1_name,
+                                                     const char *slot2_name,
+                                                     unsigned *count)
+{
+    const TComboLocaleStrings *locale = combo_locale_get(language);
+    if (locale == 0)
+    {
+        locale = combo_locale_get(ComboLanguageEN);
+    }
+    return BuildDualMediaItems(locale->load_rom_slot1,
+                               locale->load_rom_slot2,
+                               slot1_name,
+                               slot2_name,
+                               locale->load_rom_empty,
+                               ComboMenuActionCartridgeA,
+                               ComboMenuActionCartridgeB,
+                               count);
+}
+
+const TComboMenuItem *combo_menu_load_disk_items_get(unsigned language,
+                                                      const char *drive1_name,
+                                                      const char *drive2_name,
+                                                      unsigned *count)
+{
+    const TComboLocaleStrings *locale = combo_locale_get(language);
+    if (locale == 0)
+    {
+        locale = combo_locale_get(ComboLanguageEN);
+    }
+    return BuildDualMediaItems(locale->load_disk_drive1,
+                               locale->load_disk_drive2,
+                               drive1_name,
+                               drive2_name,
+                               locale->load_disk_empty,
+                               ComboMenuActionDiskDriveA,
+                               ComboMenuActionDiskDriveB,
+                               count);
+}
+
 const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
                                                      unsigned language,
                                                      boolean widescreen_enabled,

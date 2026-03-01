@@ -87,6 +87,78 @@ static const char *BootModeLabelFromMode(unsigned mode)
 	}
 }
 
+static char ToUpperAscii(char ch)
+{
+	if (ch >= 'a' && ch <= 'z')
+	{
+		return (char) (ch - 'a' + 'A');
+	}
+	return ch;
+}
+
+static int IsFileChar83(char ch)
+{
+	if ((ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9'))
+	{
+		return 1;
+	}
+	return (ch == '_' || ch == '$' || ch == '~' || ch == '!' || ch == '#' || ch == '%' || ch == '-');
+}
+
+static const char *BaseNameFromPath(const char *path)
+{
+	if (path == 0)
+	{
+		return 0;
+	}
+
+	const char *base = path;
+	for (const char *p = path; *p != '\0'; ++p)
+	{
+		if (*p == '/' || *p == '\\' || *p == ':')
+		{
+			base = p + 1;
+		}
+	}
+	return base;
+}
+
+static void FormatRomName83(const char *path, char out[17])
+{
+	if (out == 0)
+	{
+		return;
+	}
+
+	if (path == 0 || path[0] == '\0')
+	{
+		out[0] = '\0';
+		return;
+	}
+
+	const char *base = BaseNameFromPath(path);
+	if (base == 0 || base[0] == '\0')
+	{
+		out[0] = '\0';
+		return;
+	}
+
+	unsigned n = 0u;
+	for (const char *p = base; *p != '\0' && *p != '.' && n < 16u; ++p)
+	{
+		char ch = ToUpperAscii(*p);
+		if (IsFileChar83(ch))
+		{
+			out[n++] = ch;
+		}
+	}
+	if (n == 0u)
+	{
+		out[n++] = '_';
+	}
+	out[n] = '\0';
+}
+
 static unsigned ParseUintValue(const char *text)
 {
 	if (text == 0)
@@ -999,6 +1071,29 @@ TComboShutdownMode CComboKernel::Run(void)
 				DrawDebugOverlay(tick);
 				m_LastOverlayUs = now_us;
 			}
+		}
+		{
+			char slot1_name[17];
+			char slot2_name[17];
+			char drive1_name[17];
+			char drive2_name[17];
+		#if COMBO_ENABLE_FMSX
+			const char *slot1_src = m_FmsxReady ? fmsx_runtime_get_cartridge_name(0u) : 0;
+			const char *slot2_src = m_FmsxReady ? fmsx_runtime_get_cartridge_name(1u) : 0;
+			const char *drive1_src = m_FmsxReady ? fmsx_runtime_get_disk_name(0u) : 0;
+			const char *drive2_src = m_FmsxReady ? fmsx_runtime_get_disk_name(1u) : 0;
+			FormatRomName83(slot1_src, slot1_name);
+			FormatRomName83(slot2_src, slot2_name);
+			FormatRomName83(drive1_src, drive1_name);
+			FormatRomName83(drive2_src, drive2_name);
+		#else
+			FormatRomName83(0, slot1_name);
+			FormatRomName83(0, slot2_name);
+			FormatRomName83(0, drive1_name);
+			FormatRomName83(0, drive2_name);
+		#endif
+			m_PauseMenu.SetLoadRomSlotNames(slot1_name, slot2_name);
+			m_PauseMenu.SetLoadDiskDriveNames(drive1_name, drive2_name);
 		}
 		m_PauseMenu.Render(m_EmulationPaused, &m_GfxText,
 			m_Screen.GetWidth(), m_Screen.GetHeight(),
