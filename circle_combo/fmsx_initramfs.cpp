@@ -300,6 +300,8 @@ static int fmsx_initramfs_is_boot_minimal_name(const char *name)
     static const char *kBootNames[] =
     {
         "MSX.ROM",
+        "DISK.ROM",
+        "CBIOS_DISK.ROM",
         "MSX2.ROM",
         "MSX2EXT.ROM",
         "MSX2P.ROM",
