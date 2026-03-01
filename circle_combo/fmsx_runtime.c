@@ -365,7 +365,29 @@ boolean fmsx_runtime_hard_reset(void)
             (void) fmsx_runtime_set_disk_path(i, 0);
         }
     }
-    const boolean ok = fmsx_runtime_start(FALSE);
+    boolean ok = fmsx_runtime_start(FALSE);
+    if (ok)
+    {
+        /*
+         * Defensive restore: if any drive did not come back mounted after StartMSX,
+         * reload it now to guarantee persistence across menu hard-reset.
+         */
+        for (unsigned i = 0u; i < 2u; ++i)
+        {
+            if (saved_disk_path[i][0] == '\0')
+            {
+                continue;
+            }
+            if (FDD[i].Data == 0 || DSKName[i] == 0)
+            {
+                if (!fmsx_runtime_load_disk(i, saved_disk_path[i]))
+                {
+                    ok = FALSE;
+                    break;
+                }
+            }
+        }
+    }
     fmsx_runtime_set_load_diag(ok ? 2203u : 9203u);
     return ok;
 }
