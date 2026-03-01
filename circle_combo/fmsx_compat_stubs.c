@@ -352,7 +352,12 @@ int rfgetc(RFILE *stream)
         return -1;
     }
 
-    return (int) stream->data[stream->pos++];
+    unsigned char ch = 0u;
+    if (rfread(&ch, 1u, 1u, stream) != 1u)
+    {
+        return -1;
+    }
+    return (int) ch;
 }
 
 int rfputc(int ch, RFILE *stream)
@@ -372,7 +377,12 @@ char *rfgets(char *s, int n, RFILE *stream)
     int i = 0;
     while ((i + 1) < n && stream->pos < stream->size)
     {
-        const char c = (char) stream->data[stream->pos++];
+        unsigned char ch = 0u;
+        if (rfread(&ch, 1u, 1u, stream) != 1u)
+        {
+            break;
+        }
+        const char c = (char) ch;
         s[i++] = c;
         if (c == '\n')
         {
@@ -393,7 +403,7 @@ void filestream_rewind(RFILE *stream)
 {
     if (stream && stream->in_use)
     {
-        stream->pos = 0;
+        (void) rfseek(stream, 0, SEEK_SET);
     }
 }
 
