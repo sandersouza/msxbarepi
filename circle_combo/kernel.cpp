@@ -2281,19 +2281,24 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 			rom_path[0] = '\0';
 			if (m_PauseMenu.ConsumePendingRomSelection(&slot_index, rom_path, sizeof(rom_path)))
 			{
+				fmsx_runtime_set_load_diag(2001u); /* menu consumed selection */
 				if (slot_index > 1u)
 				{
 					slot_index = (action == ComboMenuActionCartridgeB) ? 1u : 0u;
 				}
 				if (!fmsx_runtime_set_cartridge_path(slot_index, rom_path))
 				{
+					fmsx_runtime_set_load_diag(9001u); /* set_cartridge_path failed */
 					m_Logger.Write(FromKernel, LogWarning, "Load ROM falhou: caminho invalido");
 					break;
 				}
+				fmsx_runtime_set_load_diag(2002u); /* path set */
 
 				PrimeAudioSilenceBeforeReset();
+				fmsx_runtime_set_load_diag(2003u); /* before hard_reset */
 				if (fmsx_runtime_hard_reset())
 				{
+					fmsx_runtime_set_load_diag(2004u); /* hard_reset ok */
 					ResetEmulationRuntimeState();
 					CString line;
 					line.Format("Load ROM: SLOT%u <= %s", slot_index + 1u, rom_path);
@@ -2301,6 +2306,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 				}
 				else
 				{
+					fmsx_runtime_set_load_diag(9004u); /* hard_reset fail */
 					m_Logger.Write(FromKernel, LogWarning, "Load ROM falhou: hard reset");
 				}
 			}

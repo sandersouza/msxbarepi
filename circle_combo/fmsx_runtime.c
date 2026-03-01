@@ -159,6 +159,7 @@ static void fmsx_runtime_apply_audio_channels(void)
 
 static boolean fmsx_runtime_start(boolean boot_basic)
 {
+    fmsx_runtime_set_load_diag(2100u); /* runtime_start begin */
     g_fmsx_status.initialized = TRUE;
     g_fmsx_status.running = FALSE;
     g_fmsx_status.frames = 0u;
@@ -198,7 +199,9 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     }
 
     g_use_embedded_bios = game_mode ? TRUE : FALSE;
+    fmsx_runtime_set_load_diag(2101u); /* before StartMSX */
     boolean started = StartMSX(startup_mode, COMBO_FMSX_RAMMAPPER_PAGES, 2) ? TRUE : FALSE;
+    fmsx_runtime_set_load_diag(started ? 2102u : 9102u); /* after StartMSX */
     g_use_embedded_bios = FALSE;
 
     if (boot_basic)
@@ -275,15 +278,19 @@ boolean fmsx_runtime_hard_reset(void)
     {
         return FALSE;
     }
+    fmsx_runtime_set_load_diag(2201u); /* hard_reset before TrashMSX */
     /*
      * Use a full restart instead of ResetMSX() so boot-mode policy is always reapplied:
      * - NORM/FAST prefer MSX.ROM from initramfs and fallback to embedded C-BIOS only if missing.
      * - GAME mirrors FAST startup but forces embedded C-BIOS for MSX.ROM.
      */
     TrashMSX();
+    fmsx_runtime_set_load_diag(2202u); /* hard_reset after TrashMSX */
     g_fmsx_status.initialized = FALSE;
     g_fmsx_status.running = FALSE;
-    return fmsx_runtime_start(FALSE);
+    const boolean ok = fmsx_runtime_start(FALSE);
+    fmsx_runtime_set_load_diag(ok ? 2203u : 9203u);
+    return ok;
 }
 
 boolean fmsx_runtime_step_frame(void)
