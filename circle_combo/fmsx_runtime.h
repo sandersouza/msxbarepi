@@ -61,6 +61,8 @@ void fmsx_runtime_set_scc_cart_enabled(boolean enabled);
 boolean fmsx_runtime_get_scc_cart_enabled(void);
 const char *fmsx_runtime_get_cartridge_name(unsigned slot_index);
 const char *fmsx_runtime_get_disk_name(unsigned drive_index);
+const char *fmsx_runtime_get_cartridge_path(unsigned slot_index);
+const char *fmsx_runtime_get_disk_path(unsigned drive_index);
 boolean fmsx_runtime_set_cartridge_path(unsigned slot_index, const char *path);
 boolean fmsx_runtime_set_disk_path(unsigned drive_index, const char *path);
 boolean fmsx_runtime_load_cartridge(unsigned slot_index, const char *path);

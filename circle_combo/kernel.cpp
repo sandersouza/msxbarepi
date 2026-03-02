@@ -181,6 +181,27 @@ static unsigned ParseUintValue(const char *text)
 	return value;
 }
 
+static void ParseTextValueLine(const char *value_start, const char *value_end, char *dst, unsigned dst_size)
+{
+	if (dst == 0 || dst_size == 0u)
+	{
+		return;
+	}
+	dst[0] = '\0';
+	if (value_start == 0 || value_end == 0 || value_end < value_start)
+	{
+		return;
+	}
+
+	unsigned n = 0u;
+	const char *p = value_start;
+	while (p < value_end && n + 1u < dst_size)
+	{
+		dst[n++] = *p++;
+	}
+	dst[n] = '\0';
+}
+
 static int SettingsKeyEquals(const char *key, unsigned key_len, const char *literal)
 {
 	if (key == 0 || literal == 0)
@@ -721,6 +742,30 @@ TComboShutdownMode CComboKernel::Run(void)
 				BootTrace("R4O");
 			}
 			m_Logger.Write(FromKernel, LogNotice, "fMSX bootstrap OK (frame-step)");
+
+			/* Defensive restore: if a persisted DSK path exists but drive is still empty
+			 * after StartMSX(), force hot-load now to keep boot persistence deterministic. */
+			for (unsigned drive = 0u; drive < 2u; ++drive)
+			{
+				const char *persisted_path = fmsx_runtime_get_disk_path(drive);
+				const char *mounted_name = fmsx_runtime_get_disk_name(drive);
+				if (persisted_path != 0 && persisted_path[0] != '\0'
+				 && (mounted_name == 0 || mounted_name[0] == '\0'))
+				{
+					if (fmsx_runtime_load_disk(drive, persisted_path))
+					{
+						CString line;
+						line.Format("Boot media restore: DSK DRIVE%u <= %s", drive + 1u, persisted_path);
+						m_Logger.Write(FromKernel, LogNotice, line);
+					}
+					else
+					{
+						CString line;
+						line.Format("Boot media restore failed: DSK DRIVE%u <= %s", drive + 1u, persisted_path);
+						m_Logger.Write(FromKernel, LogWarning, line);
+					}
+				}
+			}
 		}
 	}
 #endif
@@ -1855,7 +1900,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 		return;
 	}
 
-	char buffer[512];
+	char buffer[1024];
 	UINT bytes_read = 0;
 	const FRESULT read_result = f_read(&file, buffer, sizeof(buffer) - 1u, &bytes_read);
 	(void) f_close(&file);
@@ -1872,6 +1917,19 @@ void CComboKernel::LoadSettingsFromStorage(void)
 		m_Logger.Write(FromKernel, LogWarning, "Settings file invalid/corrupt; using defaults");
 		return;
 	}
+
+	boolean has_cfg_carta = FALSE;
+	boolean has_cfg_cartb = FALSE;
+	boolean has_cfg_diska = FALSE;
+	boolean has_cfg_diskb = FALSE;
+	char cfg_carta_path[192];
+	char cfg_cartb_path[192];
+	char cfg_diska_path[192];
+	char cfg_diskb_path[192];
+	cfg_carta_path[0] = '\0';
+	cfg_cartb_path[0] = '\0';
+	cfg_diska_path[0] = '\0';
+	cfg_diskb_path[0] = '\0';
 
 	char *line = buffer;
 	while (*line != '\0')
@@ -1959,6 +2017,26 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			{
 				m_AudioOutputGainPct = (value > 100u) ? 100u : value;
 			}
+			else if (SettingsKeyEquals(line, key_len, "cart_a_path"))
+			{
+				ParseTextValueLine(eq + 1, line_end, cfg_carta_path, sizeof(cfg_carta_path));
+				has_cfg_carta = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "cart_b_path"))
+			{
+				ParseTextValueLine(eq + 1, line_end, cfg_cartb_path, sizeof(cfg_cartb_path));
+				has_cfg_cartb = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "disk_a_path"))
+			{
+				ParseTextValueLine(eq + 1, line_end, cfg_diska_path, sizeof(cfg_diska_path));
+				has_cfg_diska = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "disk_b_path"))
+			{
+				ParseTextValueLine(eq + 1, line_end, cfg_diskb_path, sizeof(cfg_diskb_path));
+				has_cfg_diskb = TRUE;
+			}
 		}
 
 		line = line_end;
@@ -1983,6 +2061,10 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	fmsx_runtime_set_boot_mode(m_BootMode);
 	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
 	fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
+	if (has_cfg_carta) (void) fmsx_runtime_set_cartridge_path(0u, cfg_carta_path[0] ? cfg_carta_path : 0);
+	if (has_cfg_cartb) (void) fmsx_runtime_set_cartridge_path(1u, cfg_cartb_path[0] ? cfg_cartb_path : 0);
+	if (has_cfg_diska) (void) fmsx_runtime_set_disk_path(0u, cfg_diska_path[0] ? cfg_diska_path : 0);
+	if (has_cfg_diskb) (void) fmsx_runtime_set_disk_path(1u, cfg_diskb_path[0] ? cfg_diskb_path : 0);
 #endif
 
 	CString line_log;
@@ -2005,7 +2087,7 @@ void CComboKernel::SaveSettingsToStorage(void)
 		return;
 	}
 
-	char buffer[512];
+	char buffer[1024];
 	unsigned offset = 0u;
 
 #define APPEND_LINE_FMT(fmt, value) \
@@ -2024,6 +2106,22 @@ void CComboKernel::SaveSettingsToStorage(void)
 		} \
 	} while (0)
 
+#define APPEND_LINE_TEXT(key, text_value) \
+	do { \
+		const char *v = (text_value) != 0 ? (text_value) : ""; \
+		const unsigned key_len = (unsigned) strlen(key); \
+		const unsigned value_len = (unsigned) strlen(v); \
+		if (offset + key_len + value_len + 2u < sizeof(buffer)) \
+		{ \
+			memcpy(buffer + offset, key, key_len); \
+			offset += key_len; \
+			buffer[offset++] = '='; \
+			memcpy(buffer + offset, v, value_len); \
+			offset += value_len; \
+			buffer[offset++] = '\n'; \
+		} \
+	} while (0)
+
 	APPEND_LINE_FMT("overscan=%u\n", m_OverscanPercent);
 	APPEND_LINE_FMT("language=%u\n", m_Language);
 	APPEND_LINE_FMT("widescreen=%u\n", m_WidescreenEnabled ? 1u : 0u);
@@ -2036,12 +2134,19 @@ void CComboKernel::SaveSettingsToStorage(void)
 	APPEND_LINE_FMT("scc_cart=%u\n", m_SccCartEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("debugger=%u\n", m_DebugOverlayEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("audio_gain=%u\n", m_AudioOutputGainPct > 100u ? 100u : m_AudioOutputGainPct);
+#if COMBO_ENABLE_FMSX
+	APPEND_LINE_TEXT("cart_a_path", fmsx_runtime_get_cartridge_path(0u));
+	APPEND_LINE_TEXT("cart_b_path", fmsx_runtime_get_cartridge_path(1u));
+	APPEND_LINE_TEXT("disk_a_path", fmsx_runtime_get_disk_path(0u));
+	APPEND_LINE_TEXT("disk_b_path", fmsx_runtime_get_disk_path(1u));
+#endif
 	APPEND_LINE_FMT("#END\n", 0u);
 
 #undef APPEND_LINE_FMT
+#undef APPEND_LINE_TEXT
 
 	/* Persist fixed-size block to keep parser/overwrite deterministic. */
-	const unsigned fixed_write_bytes = 512u;
+	const unsigned fixed_write_bytes = 1024u;
 	if (offset > fixed_write_bytes)
 	{
 		offset = fixed_write_bytes;
