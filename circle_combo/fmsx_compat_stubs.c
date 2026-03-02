@@ -13,6 +13,12 @@ static RFILE g_rfile_pool[8];
 static FIL g_rfile_fatfs_pool[8];
 static unsigned char g_rfile_from_fatfs[8] = { 0 };
 
+static unsigned local_diag_fatfs(unsigned base, FRESULT fr)
+{
+    const unsigned code = (unsigned) fr;
+    return base + (code > 99u ? 99u : code);
+}
+
 static size_t local_strlen(const char *s)
 {
     size_t n = 0u;
@@ -294,10 +300,11 @@ RFILE *rfopen(const char *path, const char *mode)
     int writable = 0;
     int append = 0;
     const BYTE open_flags = local_mode_to_fatfs_flags(mode, &writable, &append);
-    fmsx_runtime_set_load_diag(1u); /* RFOPEN */
-    if (f_open(&g_rfile_fatfs_pool[(unsigned) index], path, open_flags) != FR_OK)
+    fmsx_runtime_set_load_diag(1101u); /* RFOPEN begin */
+    const FRESULT open_result = f_open(&g_rfile_fatfs_pool[(unsigned) index], path, open_flags);
+    if (open_result != FR_OK)
     {
-        fmsx_runtime_set_load_diag(1001u); /* RFOPEN fail */
+        fmsx_runtime_set_load_diag(local_diag_fatfs(9100u, open_result)); /* RFOPEN fail + FR */
         stream->in_use = 0;
         return 0;
     }
@@ -305,10 +312,11 @@ RFILE *rfopen(const char *path, const char *mode)
     if (append)
     {
         const FSIZE_t end_pos = f_size(&g_rfile_fatfs_pool[(unsigned) index]);
-        if (f_lseek(&g_rfile_fatfs_pool[(unsigned) index], end_pos) != FR_OK)
+        const FRESULT seek_result = f_lseek(&g_rfile_fatfs_pool[(unsigned) index], end_pos);
+        if (seek_result != FR_OK)
         {
             (void) f_close(&g_rfile_fatfs_pool[(unsigned) index]);
-            fmsx_runtime_set_load_diag(1003u); /* RFSEEK fail */
+            fmsx_runtime_set_load_diag(local_diag_fatfs(9300u, seek_result)); /* RFSEEK fail + FR */
             stream->in_use = 0;
             return 0;
         }
@@ -319,7 +327,7 @@ RFILE *rfopen(const char *path, const char *mode)
     stream->pos = append ? stream->size : 0u;
     stream->writable = writable;
     g_rfile_from_fatfs[(unsigned) index] = 1u;
-    fmsx_runtime_set_load_diag(11u); /* RFOPEN ok */
+    fmsx_runtime_set_load_diag(1111u); /* RFOPEN ok */
     return stream;
 }
 
@@ -335,7 +343,7 @@ int rfclose(RFILE *stream)
     {
         (void) f_close(&g_rfile_fatfs_pool[(unsigned) index]);
         g_rfile_from_fatfs[(unsigned) index] = 0u;
-        fmsx_runtime_set_load_diag(4u); /* RFCLOSE */
+        fmsx_runtime_set_load_diag(1401u); /* RFCLOSE */
     }
     stream->in_use = 0;
     return 0;
@@ -359,14 +367,15 @@ size_t rfread(void *ptr, size_t size, size_t nmemb, RFILE *stream)
         {
             return 0u;
         }
-        fmsx_runtime_set_load_diag(2u); /* RFREAD */
-        if (f_read(&g_rfile_fatfs_pool[(unsigned) index], ptr, (UINT) want, &bytes_read) != FR_OK)
+        fmsx_runtime_set_load_diag(1201u); /* RFREAD begin */
+        const FRESULT read_result = f_read(&g_rfile_fatfs_pool[(unsigned) index], ptr, (UINT) want, &bytes_read);
+        if (read_result != FR_OK)
         {
-            fmsx_runtime_set_load_diag(1002u); /* RFREAD fail */
+            fmsx_runtime_set_load_diag(local_diag_fatfs(9200u, read_result)); /* RFREAD fail + FR */
             return 0u;
         }
         stream->pos += (size_t) bytes_read;
-        fmsx_runtime_set_load_diag(12u); /* RFREAD ok */
+        fmsx_runtime_set_load_diag(1211u); /* RFREAD ok */
         return size ? ((size_t) bytes_read / size) : 0u;
     }
 
@@ -391,10 +400,13 @@ size_t rfwrite(const void *ptr, size_t size, size_t nmemb, RFILE *stream)
     {
         const size_t total = size * nmemb;
         UINT bytes_written = 0u;
-        if (f_write(&g_rfile_fatfs_pool[(unsigned) index], ptr, (UINT) total, &bytes_written) != FR_OK)
+        const FRESULT write_result = f_write(&g_rfile_fatfs_pool[(unsigned) index], ptr, (UINT) total, &bytes_written);
+        if (write_result != FR_OK)
         {
+            fmsx_runtime_set_load_diag(local_diag_fatfs(9400u, write_result)); /* RFWRITE fail + FR */
             return 0u;
         }
+        fmsx_runtime_set_load_diag(1411u); /* RFWRITE ok */
         stream->pos += (size_t) bytes_written;
         if (stream->pos > stream->size)
         {
@@ -434,13 +446,14 @@ int rfseek(RFILE *stream, long offset, int origin)
     const int index = local_rfile_index(stream);
     if (index >= 0 && g_rfile_from_fatfs[(unsigned) index] != 0u)
     {
-        fmsx_runtime_set_load_diag(3u); /* RFSEEK */
-        if (f_lseek(&g_rfile_fatfs_pool[(unsigned) index], (FSIZE_t) pos) != FR_OK)
+        fmsx_runtime_set_load_diag(1301u); /* RFSEEK begin */
+        const FRESULT seek_result = f_lseek(&g_rfile_fatfs_pool[(unsigned) index], (FSIZE_t) pos);
+        if (seek_result != FR_OK)
         {
-            fmsx_runtime_set_load_diag(1003u); /* RFSEEK fail */
+            fmsx_runtime_set_load_diag(local_diag_fatfs(9300u, seek_result)); /* RFSEEK fail + FR */
             return -1;
         }
-        fmsx_runtime_set_load_diag(13u); /* RFSEEK ok */
+        fmsx_runtime_set_load_diag(1311u); /* RFSEEK ok */
     }
     stream->pos = pos;
     return 0;
