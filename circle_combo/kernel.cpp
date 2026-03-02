@@ -548,6 +548,7 @@ CComboKernel::CComboKernel(void)
 	m_EmulationPaused(FALSE),
 	m_LastF12Pressed(FALSE),
 	m_LastPausePressed(FALSE),
+	m_LastMenuBackPressed(FALSE),
 	m_PauseNeedsBackgroundRedraw(FALSE),
 	m_FmsxEnabled(COMBO_ENABLE_FMSX ? TRUE : FALSE),
 	m_FmsxReady(FALSE),
@@ -955,6 +956,8 @@ TComboShutdownMode CComboKernel::Run(void)
 		if (m_Keyboard != 0)
 		{
 			m_Keyboard->UpdateLEDs();
+			/* Keep menu navigation responsive while a key is held (auto-repeat driven by frame loop). */
+			UpdateJoystickFromRaw(m_LastKeyboardModifiers, m_LastKeyboardRawKeys);
 		}
 
 		if (m_SettingsSavePending)
@@ -1441,6 +1444,13 @@ void CComboKernel::KeyboardRemovedHandler(CDevice *device, void *context)
 	{
 		self->m_Keyboard = 0;
 		self->m_KeyboardRemovedHandle = 0;
+		self->m_LastKeyboardModifiers = 0u;
+		for (unsigned i = 0u; i < 6u; ++i)
+		{
+			self->m_LastKeyboardRawKeys[i] = 0u;
+		}
+		self->m_LastPausePressed = FALSE;
+		self->m_LastMenuBackPressed = FALSE;
 		self->m_Logger.Write(FromKernel, LogNotice, "USB keyboard removed");
 	}
 }
@@ -3009,7 +3019,10 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	}
 	if (same_report)
 	{
-		return;
+		if (!m_EmulationPaused)
+		{
+			return;
+		}
 	}
 
 	TComboKeyboardInputState key_state;
@@ -3024,9 +3037,10 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	}
 	m_LastF12Pressed = key_state.f1_pressed;
 
-	const boolean esc_resume_pressed =
-		(key_state.menu_back_pressed && m_EmulationPaused && !m_PauseMenu.IsInSettings()) ? TRUE : FALSE;
-	if (key_state.pause_pressed || esc_resume_pressed)
+	const boolean pause_edge = (key_state.pause_pressed && !m_LastPausePressed) ? TRUE : FALSE;
+	const boolean esc_resume_edge =
+		(key_state.menu_back_pressed && !m_LastMenuBackPressed && m_EmulationPaused && !m_PauseMenu.IsInSettings()) ? TRUE : FALSE;
+	if (pause_edge || esc_resume_edge)
 	{
 		const u64 now_us = CTimer::GetClockTicks64();
 		if (m_LastPauseToggleUs == 0u || (now_us - m_LastPauseToggleUs) >= 200000ull)
@@ -3046,6 +3060,7 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 		}
 	}
 	m_LastPausePressed = key_state.pause_pressed;
+	m_LastMenuBackPressed = key_state.menu_back_pressed;
 
 	const TComboMenuAction menu_action = m_PauseMenu.ProcessInput(
 		m_EmulationPaused,

@@ -146,6 +146,8 @@ private:
     boolean m_LastRightPressed;
     boolean m_LastEnterPressed;
     boolean m_LastDeletePressed;
+    unsigned m_UpHoldFrames;
+    unsigned m_DownHoldFrames;
 };
 
 #endif

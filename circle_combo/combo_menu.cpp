@@ -8,6 +8,9 @@ static const TScreenColor kPauseMenuBgColor = COLOR32(0, 0, 0x9B, 0xFF);
 static const TScreenColor kPauseMenuBgColor = COLOR16(0, 0, 0x9B >> 3);
 #endif
 
+static const unsigned kBrowserRepeatDelayFrames = 12u;
+static const unsigned kBrowserRepeatPeriodFrames = 2u;
+
 
 static unsigned ComboStrLen(const char *text)
 {
@@ -471,7 +474,9 @@ CComboPauseMenu::CComboPauseMenu(void)
   m_LastLeftPressed(FALSE),
   m_LastRightPressed(FALSE),
   m_LastEnterPressed(FALSE),
-  m_LastDeletePressed(FALSE)
+  m_LastDeletePressed(FALSE),
+  m_UpHoldFrames(0u),
+  m_DownHoldFrames(0u)
 {
     CopySmallText(m_LoadRomSlot1Name, sizeof(m_LoadRomSlot1Name), "");
     CopySmallText(m_LoadRomSlot2Name, sizeof(m_LoadRomSlot2Name), "");
@@ -544,6 +549,8 @@ void CComboPauseMenu::Reset(void)
     m_LastRightPressed = FALSE;
     m_LastEnterPressed = FALSE;
     m_LastDeletePressed = FALSE;
+    m_UpHoldFrames = 0u;
+    m_DownHoldFrames = 0u;
 }
 
 void CComboPauseMenu::SetOverscanPercent(unsigned percent)
@@ -962,6 +969,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                                                boolean back_pressed,
                                                boolean delete_pressed)
 {
+    const unsigned old_view = m_View;
+
     if (!paused)
     {
         m_LastBackPressed = back_pressed;
@@ -971,6 +980,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
         m_LastDeletePressed = delete_pressed;
+        m_UpHoldFrames = 0u;
+        m_DownHoldFrames = 0u;
         return ComboMenuActionNone;
     }
 
@@ -985,6 +996,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
         m_LastDeletePressed = delete_pressed;
+        m_UpHoldFrames = 0u;
+        m_DownHoldFrames = 0u;
         return ComboMenuActionNone;
     }
 
@@ -1026,7 +1039,60 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
     {
         if (m_RomBrowserCount > 0u)
         {
-            if (up_pressed && !m_LastUpPressed)
+            boolean up_step = FALSE;
+            boolean down_step = FALSE;
+
+            if (up_pressed)
+            {
+                if (!m_LastUpPressed)
+                {
+                    up_step = TRUE;
+                    m_UpHoldFrames = 0u;
+                }
+                else
+                {
+                    ++m_UpHoldFrames;
+                    if (m_UpHoldFrames >= kBrowserRepeatDelayFrames)
+                    {
+                        const unsigned repeat_tick = m_UpHoldFrames - kBrowserRepeatDelayFrames;
+                        if ((repeat_tick % kBrowserRepeatPeriodFrames) == 0u)
+                        {
+                            up_step = TRUE;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                m_UpHoldFrames = 0u;
+            }
+
+            if (down_pressed)
+            {
+                if (!m_LastDownPressed)
+                {
+                    down_step = TRUE;
+                    m_DownHoldFrames = 0u;
+                }
+                else
+                {
+                    ++m_DownHoldFrames;
+                    if (m_DownHoldFrames >= kBrowserRepeatDelayFrames)
+                    {
+                        const unsigned repeat_tick = m_DownHoldFrames - kBrowserRepeatDelayFrames;
+                        if ((repeat_tick % kBrowserRepeatPeriodFrames) == 0u)
+                        {
+                            down_step = TRUE;
+                        }
+                    }
+                }
+            }
+            else
+            {
+                m_DownHoldFrames = 0u;
+            }
+
+            if (up_step)
             {
                 m_RomBrowserSelectedAbs = (m_RomBrowserSelectedAbs == 0u) ? (m_RomBrowserCount - 1u) : (m_RomBrowserSelectedAbs - 1u);
                 if (m_RomBrowserSelectedAbs < m_RomBrowserTop)
@@ -1035,7 +1101,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                 }
                 m_ForceRedraw = TRUE;
             }
-            if (down_pressed && !m_LastDownPressed)
+            if (down_step)
             {
                 m_RomBrowserSelectedAbs = (m_RomBrowserSelectedAbs + 1u) % m_RomBrowserCount;
                 if (m_RomBrowserSelectedAbs >= m_RomBrowserTop + kRomBrowserVisibleRows)
@@ -1111,6 +1177,14 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
         m_LastDeletePressed = delete_pressed;
+
+        const boolean old_browser = (old_view == MenuViewLoadRomBrowser || old_view == MenuViewLoadDiskBrowser) ? TRUE : FALSE;
+        const boolean new_browser = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser) ? TRUE : FALSE;
+        if (old_browser != new_browser)
+        {
+            m_RequestBackgroundRestore = TRUE;
+            m_ForceRedraw = TRUE;
+        }
         return action;
     }
 
@@ -1368,6 +1442,14 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
     m_LastEnterPressed = enter_pressed;
     m_LastDeletePressed = delete_pressed;
 
+    const boolean old_browser = (old_view == MenuViewLoadRomBrowser || old_view == MenuViewLoadDiskBrowser) ? TRUE : FALSE;
+    const boolean new_browser = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser) ? TRUE : FALSE;
+    if (old_browser != new_browser)
+    {
+        m_RequestBackgroundRestore = TRUE;
+        m_ForceRedraw = TRUE;
+    }
+
     return action;
 }
 
@@ -1607,6 +1689,43 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
             const unsigned x = box_x + ((box_cols - text_len) / 2u) * cell_w;
             const TGfxTextStyle style = (items[i].selectable && i == m_Selected) ? selected_style : normal_style;
             renderer->DrawText(x, y, items[i].label, style, scale_x, scale_y);
+        }
+    }
+
+    if ((m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser)
+     && item_count > 0u
+     && m_RomBrowserCount > item_count
+     && box_cols > 6u)
+    {
+        const unsigned bar_col = box_cols - 3u;
+        const unsigned bar_x = box_x + (bar_col * cell_w);
+        const unsigned top_row = 2u;
+        const unsigned bottom_row = 2u + item_count - 1u;
+        const unsigned top_y = box_y + (top_row * cell_h);
+        const unsigned bottom_y = box_y + (bottom_row * cell_h);
+        renderer->DrawText(bar_x, top_y, "^", normal_style, scale_x, scale_y);
+        renderer->DrawText(bar_x, bottom_y, "v", normal_style, scale_x, scale_y);
+
+        if (bottom_row > top_row + 1u)
+        {
+            const unsigned track_start_row = top_row + 1u;
+            const unsigned track_end_row = bottom_row - 1u;
+            const unsigned track_len = track_end_row - track_start_row + 1u;
+            for (unsigned r = track_start_row; r <= track_end_row; ++r)
+            {
+                const unsigned y = box_y + (r * cell_h);
+                renderer->DrawText(bar_x, y, "|", normal_style, scale_x, scale_y);
+            }
+
+            const unsigned max_top = m_RomBrowserCount - item_count;
+            unsigned thumb_row = track_start_row;
+            if (max_top > 0u)
+            {
+                const unsigned rel = ((track_len - 1u) * m_RomBrowserTop) / max_top;
+                thumb_row = track_start_row + rel;
+            }
+            const unsigned thumb_y = box_y + (thumb_row * cell_h);
+            renderer->DrawText(bar_x, thumb_y, "#", selected_style, scale_x, scale_y);
         }
     }
 

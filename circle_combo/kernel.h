@@ -118,6 +118,7 @@ private:
     boolean m_EmulationPaused;
     boolean m_LastF12Pressed;
     boolean m_LastPausePressed;
+    boolean m_LastMenuBackPressed;
     boolean m_PauseNeedsBackgroundRedraw;
     boolean m_FmsxEnabled;
     boolean m_FmsxReady;
