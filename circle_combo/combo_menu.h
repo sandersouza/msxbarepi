@@ -116,6 +116,10 @@ private:
     char m_LastDrawnLoadRomSlot2Name[17];
     char m_LastDrawnLoadDiskDrive1Name[17];
     char m_LastDrawnLoadDiskDrive2Name[17];
+    unsigned m_LastDrawnBrowserTop;
+    unsigned m_LastDrawnBrowserCount;
+    unsigned m_LastDrawnBrowserMode;
+    unsigned m_LastDrawnBrowserSlot;
     boolean m_ForceRedraw;
     boolean m_RequestBackgroundRestore;
     unsigned m_LastBoxX;

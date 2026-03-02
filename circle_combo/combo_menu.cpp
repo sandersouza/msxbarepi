@@ -174,6 +174,10 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnLoadRomSlot2Name{0},
     m_LastDrawnLoadDiskDrive1Name{0},
     m_LastDrawnLoadDiskDrive2Name{0},
+    m_LastDrawnBrowserTop(0xFFFFFFFFu),
+    m_LastDrawnBrowserCount(0xFFFFFFFFu),
+    m_LastDrawnBrowserMode(0xFFFFFFFFu),
+    m_LastDrawnBrowserSlot(0xFFFFFFFFu),
     m_ForceRedraw(TRUE),
     m_RequestBackgroundRestore(FALSE),
     m_LastBoxX(0),
@@ -228,6 +232,10 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
     m_LastDrawnAudioGainPercent = m_AudioGainPercent;
+    m_LastDrawnBrowserTop = 0xFFFFFFFFu;
+    m_LastDrawnBrowserCount = 0xFFFFFFFFu;
+    m_LastDrawnBrowserMode = 0xFFFFFFFFu;
+    m_LastDrawnBrowserSlot = 0xFFFFFFFFu;
     m_FileBrowser.Reset();
     m_HasPendingRomSelection = FALSE;
     m_PendingRomSlot = 0u;
@@ -1180,7 +1188,13 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && ComboTextEquals(m_LastDrawnLoadRomSlot1Name, m_LoadRomSlot1Name)
      && ComboTextEquals(m_LastDrawnLoadRomSlot2Name, m_LoadRomSlot2Name)
      && ComboTextEquals(m_LastDrawnLoadDiskDrive1Name, m_LoadDiskDrive1Name)
-     && ComboTextEquals(m_LastDrawnLoadDiskDrive2Name, m_LoadDiskDrive2Name))
+     && ComboTextEquals(m_LastDrawnLoadDiskDrive2Name, m_LoadDiskDrive2Name)
+     && (m_View != MenuViewLoadRomBrowser && m_View != MenuViewLoadDiskBrowser
+         ? TRUE
+         : (m_LastDrawnBrowserTop == m_FileBrowser.GetTop()
+            && m_LastDrawnBrowserCount == m_FileBrowser.GetCount()
+            && m_LastDrawnBrowserMode == m_FileBrowser.GetMode()
+            && m_LastDrawnBrowserSlot == m_FileBrowser.GetSlotIndex())))
     {
         return;
     }
@@ -1362,6 +1376,10 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), m_LoadRomSlot2Name);
     CopySmallText(m_LastDrawnLoadDiskDrive1Name, sizeof(m_LastDrawnLoadDiskDrive1Name), m_LoadDiskDrive1Name);
     CopySmallText(m_LastDrawnLoadDiskDrive2Name, sizeof(m_LastDrawnLoadDiskDrive2Name), m_LoadDiskDrive2Name);
+    m_LastDrawnBrowserTop = m_FileBrowser.GetTop();
+    m_LastDrawnBrowserCount = m_FileBrowser.GetCount();
+    m_LastDrawnBrowserMode = m_FileBrowser.GetMode();
+    m_LastDrawnBrowserSlot = m_FileBrowser.GetSlotIndex();
     m_LastBoxX = box_x;
     m_LastBoxY = box_y;
     m_LastBoxW = box_w_px;

@@ -32,6 +32,26 @@ INITRAMFS_IMG="${INITRAMFS_IMG:-${PROJECT_ROOT}/sdcard/msx.cpio}"
 INITRAMFS_SRC_DIR="${INITRAMFS_SRC_DIR:-${PROJECT_ROOT}/roms/msx1}"
 FIRMWARE_DIR="${FIRMWARE_DIR:-${PROJECT_ROOT}/rpi-firmware/}"
 SETTINGS_CFG="${SETTINGS_CFG:-${PROJECT_ROOT}/sdcard/MSXBARE.CFG}"
+IGNORED_SD_PAYLOAD_DIRS=("${PROJECT_ROOT}/sdcard/roms" "${PROJECT_ROOT}/sdcard/disks")
+
+is_path_under_dir() {
+  local path="$1"
+  local dir="$2"
+  case "$path" in
+    "$dir"/*|"$dir") return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+is_ignored_sd_payload_path() {
+  local path="$1"
+  for ignored in "${IGNORED_SD_PAYLOAD_DIRS[@]}"; do
+    if is_path_under_dir "$path" "$ignored"; then
+      return 0
+    fi
+  done
+  return 1
+}
 
 plist_get() {
   local key="$1"
@@ -265,7 +285,9 @@ if [ "$DRY_RUN" != "1" ] && [ ! -d "$TARGET_VOLUME" ]; then
 fi
 
 if [ -n "$INITRAMFS_IMG" ] && [ -d "$INITRAMFS_SRC_DIR" ]; then
-  if [ -x "${PROJECT_ROOT}/scripts/make-initramfs.sh" ]; then
+  if is_ignored_sd_payload_path "$INITRAMFS_SRC_DIR"; then
+    echo "[INFO] Ignorando INITRAMFS_SRC_DIR em payload bloqueado: ${INITRAMFS_SRC_DIR}"
+  elif [ -x "${PROJECT_ROOT}/scripts/make-initramfs.sh" ]; then
     echo "[INFO] Gerando initramfs (msx.cpio) a partir de ${INITRAMFS_SRC_DIR}..."
     if [ "$DRY_RUN" = "1" ]; then
       echo "[DRY-RUN] ${PROJECT_ROOT}/scripts/make-initramfs.sh ${INITRAMFS_SRC_DIR} ${INITRAMFS_IMG}"
@@ -278,6 +300,12 @@ if [ -n "$INITRAMFS_IMG" ] && [ -d "$INITRAMFS_SRC_DIR" ]; then
 elif [ -n "$INITRAMFS_IMG" ]; then
   echo "[INFO] Diretório de ROMs para initramfs nao encontrado: ${INITRAMFS_SRC_DIR} (pulando geracao automatica)"
 fi
+
+for blocked in "${IGNORED_SD_PAYLOAD_DIRS[@]}"; do
+  if [ -d "$blocked" ]; then
+    echo "[INFO] Conteudo local ignorado por politica: ${blocked}"
+  fi
+done
 
 ensure_settings_cfg
 
