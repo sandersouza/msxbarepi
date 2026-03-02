@@ -2,6 +2,7 @@
 #define MSXBARE_CIRCLE_COMBO_MENU_H
 
 #include "gfx_textbox.h"
+#include "combo_file_browser.h"
 #include "combo_menu_items.h"
 
 class CComboPauseMenu
@@ -56,16 +57,7 @@ private:
         MenuViewLoadDisk = 4,
         MenuViewLoadDiskBrowser = 5
     };
-    enum TBrowserMode {
-        BrowserModeRom = 0,
-        BrowserModeDisk = 1
-    };
-    static const unsigned kRomBrowserMaxEntries = 256u;
-    static const unsigned kRomBrowserVisibleRows = 10u;
     static void CopySmallText(char *dst, unsigned dst_size, const char *src);
-    static void FormatName83NoExt(const char *path, char out_name[17]);
-    static boolean IsPathInsideRoot(const char *path, const char *root);
-    void RebuildBrowserCatalog(unsigned mode);
     const TComboMenuItem *GetItems(unsigned *count) const;
     unsigned FindFirstSelectable(void) const;
     unsigned FindPrevSelectable(unsigned from) const;
@@ -95,18 +87,9 @@ private:
     char m_LoadRomSlot2Name[17];
     char m_LoadDiskDrive1Name[17];
     char m_LoadDiskDrive2Name[17];
-    unsigned m_BrowserMode;
-    unsigned m_RomBrowserSlot;
-    unsigned m_RomBrowserCount;
-    unsigned m_RomBrowserSelectedAbs;
-    unsigned m_RomBrowserTop;
-    char m_RomBrowserNames[kRomBrowserMaxEntries][17];
-    char m_RomBrowserPaths[kRomBrowserMaxEntries][192];
-    boolean m_RomBrowserIsDir[kRomBrowserMaxEntries];
-    boolean m_RomBrowserIsParent[kRomBrowserMaxEntries];
-    char m_RomBrowserCurrentDir[192];
-    mutable TComboMenuItem m_RomBrowserItems[kRomBrowserVisibleRows];
-    mutable char m_RomBrowserItemLabels[kRomBrowserVisibleRows][28];
+    CComboFileBrowser m_FileBrowser;
+    mutable TComboMenuItem m_RomBrowserItems[CComboFileBrowser::kVisibleRows];
+    mutable char m_RomBrowserItemLabels[CComboFileBrowser::kVisibleRows][28];
     mutable char m_RomBrowserEmptyLabel[20];
     boolean m_HasPendingRomSelection;
     unsigned m_PendingRomSlot;
@@ -146,8 +129,6 @@ private:
     boolean m_LastRightPressed;
     boolean m_LastEnterPressed;
     boolean m_LastDeletePressed;
-    unsigned m_UpHoldFrames;
-    unsigned m_DownHoldFrames;
 };
 
 #endif
