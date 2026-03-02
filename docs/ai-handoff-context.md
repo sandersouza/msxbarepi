@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 02/03/2026 14:12
+Última atualização: 02/03/2026 14:52
 
 ## Objetivo deste arquivo
 
@@ -899,3 +899,6 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
   - Criado template de relatório semanal em `docs/templates/funding-weekly-report-template.md`.
 - Observação:
   - Ciclo documental (sem alteração de runtime/build).
+- 2026-03-02 14:52:04 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-02 14:52:04 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-02 14:52:04 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue66.img
