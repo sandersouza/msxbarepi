@@ -646,6 +646,24 @@ const char *fmsx_runtime_get_disk_name(unsigned drive_index)
     return g_disk_path[drive_index][0] != '\0' ? g_disk_path[drive_index] : DSKName[drive_index];
 }
 
+const char *fmsx_runtime_get_cartridge_path(unsigned slot_index)
+{
+    if (slot_index > 1u)
+    {
+        return 0;
+    }
+    return g_cartridge_path[slot_index][0] != '\0' ? g_cartridge_path[slot_index] : 0;
+}
+
+const char *fmsx_runtime_get_disk_path(unsigned drive_index)
+{
+    if (drive_index > 1u)
+    {
+        return 0;
+    }
+    return g_disk_path[drive_index][0] != '\0' ? g_disk_path[drive_index] : 0;
+}
+
 boolean fmsx_runtime_set_cartridge_path(unsigned slot_index, const char *path)
 {
     if (slot_index > 1u)
