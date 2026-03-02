@@ -31,6 +31,28 @@ typedef struct {
     unsigned last_msx;
 } TFmsxKeyboardDebug;
 
+typedef enum {
+    FMSX_ROM_OK = 0,
+    FMSX_ROM_ERR_INVALID_ARGS = 1,
+    FMSX_ROM_ERR_NOT_RUNNING = 2,
+    FMSX_ROM_ERR_OPEN_FAIL = 3,
+    FMSX_ROM_ERR_INVALID_SIGNATURE = 4,
+    FMSX_ROM_ERR_LOAD_FAIL = 5,
+    FMSX_ROM_ERR_UNSUPPORTED_MAPPER = 6,
+    FMSX_ROM_ERR_RESTORE_PREV_FAIL = 7,
+    FMSX_ROM_ERR_UNKNOWN = 255
+} TFmsxRomLoadError;
+
+typedef struct {
+    boolean success;
+    unsigned slot_index;
+    unsigned attempts;
+    unsigned selected_mapper;
+    unsigned effective_mapper;
+    TFmsxRomLoadError error;
+    int pages_loaded;
+} TFmsxRomLoadReport;
+
 #define FMSX_MODEL_PROFILE_MSX1  0u
 #define FMSX_MODEL_PROFILE_MSX2  1u
 #define FMSX_MODEL_PROFILE_MSX2P 2u
@@ -65,6 +87,9 @@ const char *fmsx_runtime_get_cartridge_path(unsigned slot_index);
 const char *fmsx_runtime_get_disk_path(unsigned drive_index);
 boolean fmsx_runtime_set_cartridge_path(unsigned slot_index, const char *path);
 boolean fmsx_runtime_set_disk_path(unsigned drive_index, const char *path);
+void fmsx_runtime_set_cartridge_mapper_override(unsigned slot_index, unsigned mapper_or_255);
+unsigned fmsx_runtime_get_cartridge_mapper_override(unsigned slot_index);
+boolean fmsx_runtime_load_cartridge_ex(unsigned slot_index, const char *path, TFmsxRomLoadReport *report);
 boolean fmsx_runtime_load_cartridge(unsigned slot_index, const char *path);
 boolean fmsx_runtime_load_disk(unsigned drive_index, const char *path);
 boolean fmsx_runtime_unload_cartridge(unsigned slot_index);

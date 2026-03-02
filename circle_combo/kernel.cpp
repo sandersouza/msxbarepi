@@ -42,6 +42,7 @@ static const unsigned kStateBufferMaxBytes = 2u * 1024u * 1024u;
 static const unsigned kZ80TurboModeDes = 0u;
 static const unsigned kZ80TurboModePan = 1u;
 static const unsigned kZ80TurboModeMax = 2u;
+static const unsigned kCartMapperAuto = 255u;
 static const u8 kJoyBridgeFireA = (u8) (1u << 4);
 static const unsigned char kHidKeySpace = 0x2Cu;
 /* Rensha modes are expressed in pulses per 10 frames (0.5, 1.0, 1.5). */
@@ -86,6 +87,30 @@ static const char *BootModeLabelFromMode(unsigned mode)
 	default: return "NORM";
 	}
 }
+
+static unsigned ClampCartMapperSetting(unsigned value)
+{
+	return (value <= 7u || value == kCartMapperAuto) ? value : kCartMapperAuto;
+}
+
+#if COMBO_ENABLE_FMSX
+static const char *RomLoadErrorToString(TFmsxRomLoadError error)
+{
+	switch (error)
+	{
+	case FMSX_ROM_OK: return "ok";
+	case FMSX_ROM_ERR_INVALID_ARGS: return "invalid-args";
+	case FMSX_ROM_ERR_NOT_RUNNING: return "runtime-not-running";
+	case FMSX_ROM_ERR_OPEN_FAIL: return "open-fail";
+	case FMSX_ROM_ERR_INVALID_SIGNATURE: return "invalid-signature";
+	case FMSX_ROM_ERR_LOAD_FAIL: return "load-fail";
+	case FMSX_ROM_ERR_UNSUPPORTED_MAPPER: return "unsupported-mapper";
+	case FMSX_ROM_ERR_RESTORE_PREV_FAIL: return "restore-prev-fail";
+	case FMSX_ROM_ERR_UNKNOWN:
+	default: return "unknown";
+	}
+}
+#endif
 
 static char ToUpperAscii(char ch)
 {
@@ -1922,6 +1947,8 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	boolean has_cfg_cartb = FALSE;
 	boolean has_cfg_diska = FALSE;
 	boolean has_cfg_diskb = FALSE;
+	unsigned cfg_carta_mapper = kCartMapperAuto;
+	unsigned cfg_cartb_mapper = kCartMapperAuto;
 	char cfg_carta_path[192];
 	char cfg_cartb_path[192];
 	char cfg_diska_path[192];
@@ -2037,6 +2064,14 @@ void CComboKernel::LoadSettingsFromStorage(void)
 				ParseTextValueLine(eq + 1, line_end, cfg_diskb_path, sizeof(cfg_diskb_path));
 				has_cfg_diskb = TRUE;
 			}
+			else if (SettingsKeyEquals(line, key_len, "cart_a_mapper"))
+			{
+				cfg_carta_mapper = ClampCartMapperSetting(value);
+			}
+			else if (SettingsKeyEquals(line, key_len, "cart_b_mapper"))
+			{
+				cfg_cartb_mapper = ClampCartMapperSetting(value);
+			}
 		}
 
 		line = line_end;
@@ -2061,6 +2096,8 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	fmsx_runtime_set_boot_mode(m_BootMode);
 	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
 	fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
+	fmsx_runtime_set_cartridge_mapper_override(0u, cfg_carta_mapper);
+	fmsx_runtime_set_cartridge_mapper_override(1u, cfg_cartb_mapper);
 	if (has_cfg_carta) (void) fmsx_runtime_set_cartridge_path(0u, cfg_carta_path[0] ? cfg_carta_path : 0);
 	if (has_cfg_cartb) (void) fmsx_runtime_set_cartridge_path(1u, cfg_cartb_path[0] ? cfg_cartb_path : 0);
 	if (has_cfg_diska) (void) fmsx_runtime_set_disk_path(0u, cfg_diska_path[0] ? cfg_diska_path : 0);
@@ -2135,6 +2172,8 @@ void CComboKernel::SaveSettingsToStorage(void)
 	APPEND_LINE_FMT("debugger=%u\n", m_DebugOverlayEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("audio_gain=%u\n", m_AudioOutputGainPct > 100u ? 100u : m_AudioOutputGainPct);
 #if COMBO_ENABLE_FMSX
+	APPEND_LINE_FMT("cart_a_mapper=%u\n", fmsx_runtime_get_cartridge_mapper_override(0u));
+	APPEND_LINE_FMT("cart_b_mapper=%u\n", fmsx_runtime_get_cartridge_mapper_override(1u));
 	APPEND_LINE_TEXT("cart_a_path", fmsx_runtime_get_cartridge_path(0u));
 	APPEND_LINE_TEXT("cart_b_path", fmsx_runtime_get_cartridge_path(1u));
 	APPEND_LINE_TEXT("disk_a_path", fmsx_runtime_get_disk_path(0u));
@@ -2434,15 +2473,15 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 				{
 					slot_index = (action == ComboMenuActionCartridgeB) ? 1u : 0u;
 				}
-				if (!fmsx_runtime_set_cartridge_path(slot_index, rom_path))
-				{
-					UpdateLoadDiagTelemetry(9001u); /* set_cartridge_path failed */
-					m_Logger.Write(FromKernel, LogWarning, "Load ROM falhou: caminho invalido");
-					break;
-				}
-				UpdateLoadDiagTelemetry(2002u); /* path set */
 				if (rom_path[0] == '\0')
 				{
+					if (!fmsx_runtime_set_cartridge_path(slot_index, rom_path))
+					{
+						UpdateLoadDiagTelemetry(9001u); /* set_cartridge_path failed */
+						m_Logger.Write(FromKernel, LogWarning, "Load ROM falhou: caminho invalido");
+						break;
+					}
+					UpdateLoadDiagTelemetry(2002u); /* path set */
 					if (fmsx_runtime_unload_cartridge(slot_index))
 					{
 						UpdateLoadDiagTelemetry(2005u); /* unload cart ok */
@@ -2462,9 +2501,32 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 				const unsigned active_boot_mode = fmsx_runtime_get_active_boot_mode();
 				const boolean use_boot_profile_reset = (m_BootMode != active_boot_mode) ? TRUE : FALSE;
 				UpdateLoadDiagTelemetry(use_boot_profile_reset ? 2010u : 2003u);
-				const boolean load_ok = use_boot_profile_reset
-					? fmsx_runtime_hard_reset()
-					: fmsx_runtime_load_cartridge(slot_index, rom_path);
+				TFmsxRomLoadReport load_report;
+				load_report.success = FALSE;
+				load_report.error = FMSX_ROM_ERR_UNKNOWN;
+				load_report.attempts = 0u;
+				load_report.selected_mapper = kCartMapperAuto;
+				load_report.effective_mapper = kCartMapperAuto;
+				load_report.pages_loaded = 0;
+				boolean load_ok = FALSE;
+				if (use_boot_profile_reset)
+				{
+					if (!fmsx_runtime_set_cartridge_path(slot_index, rom_path))
+					{
+						UpdateLoadDiagTelemetry(9001u); /* set_cartridge_path failed */
+						load_report.error = FMSX_ROM_ERR_INVALID_ARGS;
+						load_ok = FALSE;
+					}
+					else
+					{
+						UpdateLoadDiagTelemetry(2002u); /* path set */
+						load_ok = fmsx_runtime_hard_reset();
+					}
+				}
+				else
+				{
+					load_ok = fmsx_runtime_load_cartridge_ex(slot_index, rom_path, &load_report);
+				}
 				if (load_ok)
 				{
 					UpdateLoadDiagTelemetry(2004u); /* load cart ok */
@@ -2472,13 +2534,41 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 					ResetEmulationRuntimeState();
 					ApplyRuntimeSettingsToFmsx();
 					CString line;
-					line.Format("Load ROM: SLOT%u <= %s", slot_index + 1u, rom_path);
+					if (use_boot_profile_reset)
+					{
+						line.Format("Load ROM: SLOT%u <= %s (boot reset mode=%s)",
+							slot_index + 1u,
+							rom_path,
+							BootModeLabelFromMode(m_BootMode));
+					}
+					else
+					{
+						line.Format("Load ROM: SLOT%u <= %s (mapper=%u tries=%u)",
+							slot_index + 1u,
+							rom_path,
+							load_report.effective_mapper,
+							load_report.attempts);
+					}
 					m_Logger.Write(FromKernel, LogNotice, line);
 				}
 				else
 				{
 					UpdateLoadDiagTelemetry(9004u); /* load cart fail */
-					m_Logger.Write(FromKernel, LogWarning, use_boot_profile_reset ? "Load ROM falhou: hard reset" : "Load ROM falhou: LoadCart");
+					CString line;
+					if (use_boot_profile_reset)
+					{
+						line.Format("Load ROM falhou: hard reset (slot=%u path=%s)", slot_index + 1u, rom_path);
+					}
+					else
+					{
+						line.Format("Load ROM falhou: %s (slot=%u tries=%u sel=%u eff=%u)",
+							RomLoadErrorToString(load_report.error),
+							slot_index + 1u,
+							load_report.attempts,
+							load_report.selected_mapper,
+							load_report.effective_mapper);
+					}
+					m_Logger.Write(FromKernel, LogWarning, line);
 				}
 			}
 		}

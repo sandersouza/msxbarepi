@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 02/03/2026 10:49
+Última atualização: 02/03/2026 13:37
 
 ## Objetivo deste arquivo
 
@@ -855,3 +855,32 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-03-02 10:49:12 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
 - 2026-03-02 10:49:12 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
 - 2026-03-02 10:49:12 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue63.img
+
+## 2026-03-02 — Sync documentação de milestones/issues
+- Solicitação: corrigir documentação local faltante de milestones/issues e reforçar diretrizes de gestão.
+- Ações:
+  - Criada documentação local da milestone `m14` (remota `#15`) com `README.md` e issues `#100`..`#107`.
+  - Padronizado `docs/milestones/m16/README.md` com mapeamento remoto explícito (`Milestone remota: #16`).
+  - Sincronização incremental: adicionados arquivos locais faltantes de issues em milestones já existentes (histórico fechado também), preservando arquivos legados.
+  - Atualizadas diretrizes em `AGENTS.md` e `docs/github-project-management.md` para tornar obrigatório o espelhamento local no mesmo ciclo de criação/alteração remota.
+  - Atualizado índice em `docs/milestones/README.md` com `m14` e `m16` e regra de mapeamento remoto.
+- Observação:
+  - Não houve alteração de código/runtime; apenas documentação e espelho de gestão.
+- 2026-03-02 13:36:47 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-02 13:36:47 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-02 13:36:47 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue64.img
+
+## 2026-03-02 — Issue #64 (mappers/heurísticas no LOAD ROM)
+- Implementado fallback curto de mapper no runtime para `LOAD ROM` com diagnóstico estruturado (`TFmsxRomLoadReport`).
+- Nova API: `fmsx_runtime_load_cartridge_ex()` + enums de erro explícitos para diferenciar `open-fail`, `invalid-signature`, `unsupported-mapper`, `restore-prev-fail`.
+- Segurança de estado: caminho da ROM só é persistido após sucesso; em falha total, runtime tenta restaurar ROM anterior do slot.
+- Preparação para override futuro por slot sem UI:
+  - APIs `fmsx_runtime_set/get_cartridge_mapper_override()`
+  - CFG: `cart_a_mapper` e `cart_b_mapper` (`0..7|255`, default `255`).
+- Kernel integrado ao fluxo novo em `HandleMenuAction` com logs claros e uso de report em carga normal (sem hard reset por boot mode mismatch).
+- Build validado:
+  - `make DEBUG=1 COMBO_ENABLE_DEBUG_OVERLAY=1`
+  - artefatos: `artifacts/kernel8-issue64.img` e `artifacts/kernel8-default.img`.
+- 2026-03-02 13:37:45 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-02 13:37:45 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-02 13:37:45 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue64.img

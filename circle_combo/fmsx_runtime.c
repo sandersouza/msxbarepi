@@ -4,6 +4,8 @@
 #include "../third_party/fmsx/Z80/Z80.h"
 #include "../third_party/fmsx/EMULib/Sound.h"
 #include "fmsx_virtual_fs.h"
+#include <stdio.h>
+#include <string.h>
 
 #ifndef COMBO_FMSX_AUDIO
 #define COMBO_FMSX_AUDIO 1
@@ -73,6 +75,7 @@ extern unsigned fmsx_video_get_latest(const u16 **pixels, unsigned *width, unsig
 extern const char *ROMName[];
 extern uint8_t *ROMData[];
 extern uint8_t ROMMask[];
+extern uint8_t ROMType[];
 extern uint8_t *MemMap[4][4][8];
 extern uint8_t *EmptyRAM;
 extern const char *DSKName[];
@@ -94,6 +97,89 @@ static unsigned g_model_profile = FMSX_MODEL_PROFILE_MSX1;
 static boolean g_use_embedded_bios = FALSE;
 static unsigned g_z80_turbo_mode = 0u;
 static boolean g_scc_cart_enabled = TRUE;
+static unsigned g_cart_mapper_override[2] = {
+    (unsigned) COMBO_FMSX_CARTA_MAPPER,
+    (unsigned) COMBO_FMSX_CARTB_MAPPER
+};
+
+static unsigned fmsx_runtime_clamp_mapper_override(unsigned mapper_or_255)
+{
+    return (mapper_or_255 <= MAP_GUESS || mapper_or_255 == 255u) ? mapper_or_255 : 255u;
+}
+
+static void fmsx_runtime_reset_rom_load_report(unsigned slot_index, TFmsxRomLoadReport *report)
+{
+    if (report == 0)
+    {
+        return;
+    }
+
+    report->success = FALSE;
+    report->slot_index = slot_index;
+    report->attempts = 0u;
+    report->selected_mapper = 255u;
+    report->effective_mapper = 255u;
+    report->error = FMSX_ROM_ERR_UNKNOWN;
+    report->pages_loaded = 0;
+}
+
+static void fmsx_runtime_set_rom_load_error(TFmsxRomLoadReport *report, TFmsxRomLoadError error)
+{
+    if (report != 0)
+    {
+        report->success = FALSE;
+        report->error = error;
+    }
+}
+
+typedef enum {
+    FMSX_ROM_PROBE_OK = 0,
+    FMSX_ROM_PROBE_OPEN_FAIL = 1,
+    FMSX_ROM_PROBE_INVALID_SIGNATURE = 2
+} TFmsxRomProbeResult;
+
+static TFmsxRomProbeResult fmsx_runtime_probe_rom_file(const char *path)
+{
+    RFILE *f = rfopen(path, "rb");
+    if (!f)
+    {
+        return FMSX_ROM_PROBE_OPEN_FAIL;
+    }
+
+    int64_t len_bytes = 0;
+    int c2 = 0;
+    if (!rfseek(f, 0, SEEK_END))
+    {
+        len_bytes = rftell(f);
+    }
+    else
+    {
+        /* Same fallback strategy used in LoadCart() for non-seekable streams. */
+        for (len_bytes = 0; (c2 = rfread(EmptyRAM, 1, 0x4000, f)) == 0x4000; len_bytes += c2) { }
+        if (c2 > 0)
+        {
+            len_bytes += c2;
+        }
+        memset(EmptyRAM, NORAM, 0x4000);
+    }
+    filestream_rewind(f);
+
+    int c1 = rfgetc(f);
+    c2 = rfgetc(f);
+    if ((c1 != 'A' || c2 != 'B') && rfseek(f, 0x4000, SEEK_SET) >= 0)
+    {
+        c1 = rfgetc(f);
+        c2 = rfgetc(f);
+    }
+    if ((c1 != 'A' || c2 != 'B') && len_bytes >= 0x4000 && rfseek(f, len_bytes - 0x4000, SEEK_SET) >= 0)
+    {
+        c1 = rfgetc(f);
+        c2 = rfgetc(f);
+    }
+
+    rfclose(f);
+    return (c1 == 'A' && c2 == 'B') ? FMSX_ROM_PROBE_OK : FMSX_ROM_PROBE_INVALID_SIGNATURE;
+}
 
 static boolean fmsx_runtime_find_slot_map(unsigned slot, unsigned *out_ps, unsigned *out_ss)
 {
@@ -201,6 +287,44 @@ static void fmsx_runtime_apply_audio_channels(void)
 #endif
 }
 
+static void fmsx_runtime_apply_startup_mapper_policy(int *startup_mode)
+{
+    if (startup_mode == 0)
+    {
+        return;
+    }
+
+    unsigned map_a = fmsx_runtime_clamp_mapper_override(g_cart_mapper_override[0]);
+    unsigned map_b = fmsx_runtime_clamp_mapper_override(g_cart_mapper_override[1]);
+
+    *startup_mode &= ~MSX_MAPPERA;
+    *startup_mode &= ~MSX_MAPPERB;
+    *startup_mode &= ~MSX_GUESSA;
+    *startup_mode &= ~MSX_GUESSB;
+
+    if (map_a == 255u)
+    {
+#if COMBO_FMSX_CART_GUESS
+        *startup_mode |= MSX_GUESSA;
+#endif
+    }
+    else
+    {
+        *startup_mode |= (int) ((map_a & 0x0Fu) << 8);
+    }
+
+    if (map_b == 255u)
+    {
+#if COMBO_FMSX_CART_GUESS
+        *startup_mode |= MSX_GUESSB;
+#endif
+    }
+    else
+    {
+        *startup_mode |= (int) ((map_b & 0x0Fu) << 12);
+    }
+}
+
 static boolean fmsx_runtime_start(boolean boot_basic)
 {
     fmsx_runtime_set_load_diag(2100u); /* runtime_start begin */
@@ -236,19 +360,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
 #if !COMBO_FMSX_MEGARAM_ENABLED
     startup_mode |= MSX_NO_MEGARAM;
 #endif
-#if COMBO_FMSX_CART_GUESS
-    startup_mode |= MSX_GUESSA | MSX_GUESSB;
-#endif
-#if (COMBO_FMSX_CARTA_MAPPER != 255)
-    startup_mode &= ~MSX_MAPPERA;
-    startup_mode |= (COMBO_FMSX_CARTA_MAPPER & 0x0F) << 8;
-    startup_mode &= ~MSX_GUESSA;
-#endif
-#if (COMBO_FMSX_CARTB_MAPPER != 255)
-    startup_mode &= ~MSX_MAPPERB;
-    startup_mode |= (COMBO_FMSX_CARTB_MAPPER & 0x0F) << 12;
-    startup_mode &= ~MSX_GUESSB;
-#endif
+    fmsx_runtime_apply_startup_mapper_policy(&startup_mode);
 
     const boolean game_mode = (g_boot_mode == 2u) ? TRUE : FALSE;
     const char *saved_carta = 0;
@@ -695,6 +807,24 @@ boolean fmsx_runtime_set_cartridge_path(unsigned slot_index, const char *path)
     return TRUE;
 }
 
+void fmsx_runtime_set_cartridge_mapper_override(unsigned slot_index, unsigned mapper_or_255)
+{
+    if (slot_index > 1u)
+    {
+        return;
+    }
+    g_cart_mapper_override[slot_index] = fmsx_runtime_clamp_mapper_override(mapper_or_255);
+}
+
+unsigned fmsx_runtime_get_cartridge_mapper_override(unsigned slot_index)
+{
+    if (slot_index > 1u)
+    {
+        return 255u;
+    }
+    return fmsx_runtime_clamp_mapper_override(g_cart_mapper_override[slot_index]);
+}
+
 boolean fmsx_runtime_set_disk_path(unsigned drive_index, const char *path)
 {
     if (drive_index > 1u)
@@ -726,28 +856,175 @@ boolean fmsx_runtime_set_disk_path(unsigned drive_index, const char *path)
     return TRUE;
 }
 
+boolean fmsx_runtime_load_cartridge_ex(unsigned slot_index, const char *path, TFmsxRomLoadReport *report)
+{
+    static const unsigned kMapperFallbackChain[] = {
+        MAP_GUESS, MAP_KONAMI5, MAP_KONAMI4, MAP_ASCII8, MAP_ASCII16, MAP_GEN8, MAP_GEN16
+    };
+
+    fmsx_runtime_reset_rom_load_report(slot_index, report);
+
+    if (slot_index > 1u || path == 0 || path[0] == '\0')
+    {
+        fmsx_runtime_set_rom_load_error(report, FMSX_ROM_ERR_INVALID_ARGS);
+        return FALSE;
+    }
+    if (!g_fmsx_status.running)
+    {
+        fmsx_runtime_set_rom_load_error(report, FMSX_ROM_ERR_NOT_RUNNING);
+        return FALSE;
+    }
+
+    unsigned path_len = 0u;
+    while (path[path_len] != '\0' && path_len + 1u < sizeof(g_cartridge_path[slot_index]))
+    {
+        ++path_len;
+    }
+    if (path[path_len] != '\0')
+    {
+        fmsx_runtime_set_rom_load_error(report, FMSX_ROM_ERR_INVALID_ARGS);
+        return FALSE;
+    }
+
+    const TFmsxRomProbeResult probe = fmsx_runtime_probe_rom_file(path);
+    if (probe == FMSX_ROM_PROBE_OPEN_FAIL)
+    {
+        fmsx_runtime_set_load_diag(9301u); /* open fail */
+        fmsx_runtime_set_rom_load_error(report, FMSX_ROM_ERR_OPEN_FAIL);
+        return FALSE;
+    }
+    if (probe == FMSX_ROM_PROBE_INVALID_SIGNATURE)
+    {
+        fmsx_runtime_set_load_diag(9302u); /* invalid signature */
+        fmsx_runtime_set_rom_load_error(report, FMSX_ROM_ERR_INVALID_SIGNATURE);
+        return FALSE;
+    }
+
+    unsigned mapper_candidates[sizeof(kMapperFallbackChain) / sizeof(kMapperFallbackChain[0])];
+    unsigned mapper_count = 0u;
+    const unsigned mapper_override = fmsx_runtime_get_cartridge_mapper_override(slot_index);
+    if (mapper_override == 255u)
+    {
+        for (unsigned i = 0u; i < (sizeof(kMapperFallbackChain) / sizeof(kMapperFallbackChain[0])); ++i)
+        {
+            mapper_candidates[mapper_count++] = kMapperFallbackChain[i];
+        }
+    }
+    else
+    {
+        mapper_candidates[mapper_count++] = mapper_override;
+    }
+
+    char prev_path[sizeof(g_cartridge_path[0])];
+    unsigned prev_len = 0u;
+    while (prev_len + 1u < sizeof(prev_path) && g_cartridge_path[slot_index][prev_len] != '\0')
+    {
+        prev_path[prev_len] = g_cartridge_path[slot_index][prev_len];
+        ++prev_len;
+    }
+    prev_path[prev_len] = '\0';
+    const boolean prev_has_custom_path = (prev_path[0] != '\0') ? TRUE : FALSE;
+    const boolean prev_had_rom = (ROMData[slot_index] != 0) ? TRUE : FALSE;
+    const uint8_t prev_rom_type = ROMType[slot_index];
+    const char *prev_rom_name_ptr = ROMName[slot_index];
+
+    char prev_restore_name[sizeof(g_cartridge_path[0])];
+    prev_restore_name[0] = '\0';
+    if (!prev_has_custom_path && prev_rom_name_ptr != 0)
+    {
+        unsigned n = 0u;
+        while (prev_rom_name_ptr[n] != '\0' && n + 1u < sizeof(prev_restore_name))
+        {
+            prev_restore_name[n] = prev_rom_name_ptr[n];
+            ++n;
+        }
+        prev_restore_name[n] = '\0';
+    }
+
+    fmsx_runtime_set_load_diag(2301u); /* load cart begin */
+    for (unsigned i = 0u; i < mapper_count; ++i)
+    {
+        const unsigned mapper = mapper_candidates[i];
+        if (report != 0)
+        {
+            report->attempts = i + 1u;
+            report->selected_mapper = (mapper == MAP_GUESS) ? 255u : mapper;
+        }
+        fmsx_runtime_set_load_diag(2310u + (i + 1u)); /* load attempt #N */
+        const int pages = LoadCart(path, (int) slot_index, (int) mapper);
+        if (pages > 0)
+        {
+            if (!fmsx_runtime_set_cartridge_path(slot_index, path))
+            {
+                fmsx_runtime_set_load_diag(9305u); /* path apply failed */
+                fmsx_runtime_set_rom_load_error(report, FMSX_ROM_ERR_UNKNOWN);
+                return FALSE;
+            }
+            if (report != 0)
+            {
+                report->success = TRUE;
+                report->effective_mapper = ROMType[slot_index];
+                report->error = FMSX_ROM_OK;
+                report->pages_loaded = pages;
+            }
+            fmsx_runtime_set_load_diag(2302u); /* load cart ok */
+            g_fmsx_status.last_pc = (int) CPU.PC.W;
+            return TRUE;
+        }
+        if (i + 1u < mapper_count)
+        {
+            fmsx_runtime_set_load_diag(2320u + (i + 1u)); /* fallback next mapper */
+        }
+    }
+
+    fmsx_runtime_set_load_diag(9303u); /* all mappers failed */
+    fmsx_runtime_set_rom_load_error(
+        report,
+        (mapper_override == 255u) ? FMSX_ROM_ERR_UNSUPPORTED_MAPPER : FMSX_ROM_ERR_LOAD_FAIL
+    );
+
+    boolean restore_ok = TRUE;
+    if (prev_had_rom)
+    {
+        const char *restore_name = prev_has_custom_path ? prev_path : prev_restore_name;
+        if (restore_name == 0 || restore_name[0] == '\0')
+        {
+            restore_ok = FALSE;
+        }
+        else
+        {
+            int restore_type = (prev_rom_type <= MAP_GUESS) ? (int) prev_rom_type : (int) MAP_GUESS;
+            if (LoadCart(restore_name, (int) slot_index, restore_type) <= 0)
+            {
+                restore_ok = FALSE;
+            }
+        }
+    }
+
+    if (prev_has_custom_path)
+    {
+        if (!fmsx_runtime_set_cartridge_path(slot_index, prev_path))
+        {
+            restore_ok = FALSE;
+        }
+    }
+    else
+    {
+        g_cartridge_path[slot_index][0] = '\0';
+        ROMName[slot_index] = prev_rom_name_ptr;
+    }
+
+    if (!restore_ok)
+    {
+        fmsx_runtime_set_load_diag(9304u); /* restore previous failed */
+        fmsx_runtime_set_rom_load_error(report, FMSX_ROM_ERR_RESTORE_PREV_FAIL);
+    }
+    return FALSE;
+}
+
 boolean fmsx_runtime_load_cartridge(unsigned slot_index, const char *path)
 {
-    if (slot_index > 1u || path == 0 || path[0] == '\0' || !g_fmsx_status.running)
-    {
-        return FALSE;
-    }
-
-    if (!fmsx_runtime_set_cartridge_path(slot_index, path))
-    {
-        return FALSE;
-    }
-
-    fmsx_runtime_set_load_diag(2301u); /* before LoadCart */
-    const int pages = LoadCart(path, (int) slot_index, ROMGUESS((int) slot_index) | ROMTYPE((int) slot_index));
-    if (pages <= 0)
-    {
-        fmsx_runtime_set_load_diag(9301u); /* LoadCart failed */
-        return FALSE;
-    }
-    fmsx_runtime_set_load_diag(2302u); /* LoadCart ok */
-    g_fmsx_status.last_pc = (int) CPU.PC.W;
-    return TRUE;
+    return fmsx_runtime_load_cartridge_ex(slot_index, path, 0);
 }
 
 boolean fmsx_runtime_load_disk(unsigned drive_index, const char *path)
