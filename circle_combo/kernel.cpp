@@ -181,6 +181,25 @@ static unsigned ParseUintValue(const char *text)
 	return value;
 }
 
+static unsigned ClampFatFsCode(FRESULT code)
+{
+	return ((unsigned) code > 999u) ? 999u : (unsigned) code;
+}
+
+static void LogSdOpResult(CLogger &logger, const char *op, FRESULT code, const char *path, boolean warning)
+{
+	CString line;
+	if (path != 0 && path[0] != '\0')
+	{
+		line.Format("SD %s fr=%u path=%s", op != 0 ? op : "OP", ClampFatFsCode(code), path);
+	}
+	else
+	{
+		line.Format("SD %s fr=%u", op != 0 ? op : "OP", ClampFatFsCode(code));
+	}
+	logger.Write(FromKernel, warning ? LogWarning : LogNotice, line);
+}
+
 static void ParseTextValueLine(const char *value_start, const char *value_end, char *dst, unsigned dst_size)
 {
 	if (dst == 0 || dst_size == 0u)
@@ -686,6 +705,7 @@ TComboShutdownMode CComboKernel::Run(void)
 			combo_media_catalog_begin_scan();
 			m_MediaCatalogStarted = TRUE;
 			m_MediaCatalogSummaryLogged = FALSE;
+			UpdateLoadDiagTelemetry(4101u); /* media scan start */
 			m_Logger.Write(FromKernel, LogNotice, "media scan started: SD:/roms + SD:/disks");
 		}
 		else
@@ -835,6 +855,7 @@ TComboShutdownMode CComboKernel::Run(void)
 						combo_media_catalog_begin_scan();
 						m_MediaCatalogStarted = TRUE;
 						m_MediaCatalogSummaryLogged = FALSE;
+						UpdateLoadDiagTelemetry(4101u); /* media scan start */
 						m_Logger.Write(FromKernel, LogNotice, "media scan started: SD:/roms + SD:/disks");
 					}
 				}
@@ -873,6 +894,7 @@ TComboShutdownMode CComboKernel::Run(void)
 		else if (m_MediaCatalogStarted && !m_MediaCatalogSummaryLogged)
 		{
 			m_MediaCatalogSummaryLogged = TRUE;
+			const unsigned err_count = combo_media_catalog_error_count();
 			CString media_line;
 			media_line.Format("media scan done: total=%u rom=%u dsk=%u dir=%u file=%u err=%u drop=%u",
 							 combo_media_catalog_entry_count(),
@@ -880,9 +902,10 @@ TComboShutdownMode CComboKernel::Run(void)
 							 combo_media_catalog_disk_count(),
 							 combo_media_catalog_dir_count(),
 							 combo_media_catalog_file_count(),
-							 combo_media_catalog_error_count(),
+							 err_count,
 							 combo_media_catalog_dropped_count());
-			m_Logger.Write(FromKernel, LogNotice, media_line);
+			UpdateLoadDiagTelemetry(err_count == 0u ? 4102u : (4190u + (err_count > 9u ? 9u : err_count)));
+			m_Logger.Write(FromKernel, err_count == 0u ? LogNotice : LogWarning, media_line);
 		}
 		if (!m_UsbReady)
 		{
@@ -1878,37 +1901,51 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	{
 		return;
 	}
+	UpdateLoadDiagTelemetry(5101u); /* CFG stat */
 
 	FILINFO file_info;
 	const FRESULT stat_result = f_stat(kSettingsPath, &file_info);
 	if (stat_result == FR_NO_FILE)
 	{
+		UpdateLoadDiagTelemetry(5102u); /* CFG not found */
 		m_Logger.Write(FromKernel, LogNotice, "Settings file not found; using defaults");
 		return;
 	}
 	if (stat_result != FR_OK)
 	{
+		UpdateLoadDiagTelemetry(5190u + (ClampFatFsCode(stat_result) % 10u)); /* CFG stat fail */
+		LogSdOpResult(m_Logger, "CFG:STAT", stat_result, kSettingsPath, TRUE);
 		m_Logger.Write(FromKernel, LogWarning, "Settings stat failed; using defaults");
 		return;
 	}
 
 	FIL file;
+	UpdateLoadDiagTelemetry(5201u); /* CFG open */
 	const FRESULT open_result = f_open(&file, kSettingsPath, FA_READ);
 	if (open_result != FR_OK)
 	{
+		UpdateLoadDiagTelemetry(5290u + (ClampFatFsCode(open_result) % 10u)); /* CFG open fail */
+		LogSdOpResult(m_Logger, "CFG:OPEN", open_result, kSettingsPath, TRUE);
 		m_Logger.Write(FromKernel, LogWarning, "Settings open failed; using defaults");
 		return;
 	}
 
 	char buffer[1024];
 	UINT bytes_read = 0;
+	UpdateLoadDiagTelemetry(5301u); /* CFG read */
 	const FRESULT read_result = f_read(&file, buffer, sizeof(buffer) - 1u, &bytes_read);
 	(void) f_close(&file);
 	if (read_result != FR_OK || bytes_read == 0u)
 	{
+		UpdateLoadDiagTelemetry(5390u + (ClampFatFsCode(read_result) % 10u)); /* CFG read fail */
+		if (read_result != FR_OK)
+		{
+			LogSdOpResult(m_Logger, "CFG:READ", read_result, kSettingsPath, TRUE);
+		}
 		m_Logger.Write(FromKernel, LogWarning, "Settings read failed; using defaults");
 		return;
 	}
+	UpdateLoadDiagTelemetry(5302u); /* CFG read ok */
 	buffer[bytes_read] = '\0';
 
 	/* Corruption guard: only parse files written by SaveSettingsToStorage(). */
@@ -2159,6 +2196,8 @@ void CComboKernel::SaveSettingsToStorage(void)
 	if (open_result != FR_OK)
 	{
 		UpdateSettingsSaveTelemetry(91u, open_result, 0u); /* open error */
+		UpdateLoadDiagTelemetry(6190u + (ClampFatFsCode(open_result) % 10u));
+		LogSdOpResult(m_Logger, "CFG:OPENW", open_result, kSettingsPath, TRUE);
 		m_Logger.Write(FromKernel, LogWarning, "Settings save failed (cannot open config file)");
 		return;
 	}
@@ -2167,6 +2206,8 @@ void CComboKernel::SaveSettingsToStorage(void)
 	{
 		(void) f_close(&file);
 		UpdateSettingsSaveTelemetry(97u, seek_result, 0u);
+		UpdateLoadDiagTelemetry(6290u + (ClampFatFsCode(seek_result) % 10u));
+		LogSdOpResult(m_Logger, "CFG:SEEK", seek_result, kSettingsPath, TRUE);
 		m_Logger.Write(FromKernel, LogWarning, "Settings save failed (seek error)");
 		return;
 	}
@@ -2191,6 +2232,16 @@ void CComboKernel::SaveSettingsToStorage(void)
 	else
 	{
 		UpdateSettingsSaveTelemetry(92u, write_result, close_ok); /* write/close error */
+		if (write_result != FR_OK)
+		{
+			UpdateLoadDiagTelemetry(6390u + (ClampFatFsCode(write_result) % 10u));
+			LogSdOpResult(m_Logger, "CFG:WRITE", write_result, kSettingsPath, TRUE);
+		}
+		else if (!close_ok)
+		{
+			UpdateLoadDiagTelemetry(6490u + (ClampFatFsCode(close_result) % 10u));
+			LogSdOpResult(m_Logger, "CFG:CLOSE", close_result, kSettingsPath, TRUE);
+		}
 		m_Logger.Write(FromKernel, LogWarning, "Settings save failed (write error)");
 	}
 }
@@ -2235,10 +2286,17 @@ boolean CComboKernel::EnsureStateStorageDirectory(void)
 	}
 	if (stat_result != FR_NO_FILE)
 	{
+		UpdateLoadDiagTelemetry(7190u + (ClampFatFsCode(stat_result) % 10u));
+		LogSdOpResult(m_Logger, "STATE:STATDIR", stat_result, kStateDirPath, TRUE);
 		return FALSE;
 	}
 
 	const FRESULT mkdir_result = f_mkdir(kStateDirPath);
+	if (!(mkdir_result == FR_OK || mkdir_result == FR_EXIST))
+	{
+		UpdateLoadDiagTelemetry(7290u + (ClampFatFsCode(mkdir_result) % 10u));
+		LogSdOpResult(m_Logger, "STATE:MKDIR", mkdir_result, kStateDirPath, TRUE);
+	}
 	return (mkdir_result == FR_OK || mkdir_result == FR_EXIST) ? TRUE : FALSE;
 }
 
@@ -2291,6 +2349,8 @@ void CComboKernel::SaveEmulatorStateToStorage(void)
 	if (open_result != FR_OK)
 	{
 		UpdateSettingsSaveTelemetry(93u, 6u, open_result);
+		UpdateLoadDiagTelemetry(7390u + (ClampFatFsCode(open_result) % 10u));
+		LogSdOpResult(m_Logger, "STATE:OPENW", open_result, kStatePath, TRUE);
 		m_Logger.Write(FromKernel, LogWarning, "Save State falhou: nao foi possivel criar arquivo");
 		return;
 	}
@@ -2308,6 +2368,16 @@ void CComboKernel::SaveEmulatorStateToStorage(void)
 	else
 	{
 		UpdateSettingsSaveTelemetry(93u, 7u, bytes_written > 999u ? 999u : bytes_written);
+		if (write_result != FR_OK)
+		{
+			UpdateLoadDiagTelemetry(7490u + (ClampFatFsCode(write_result) % 10u));
+			LogSdOpResult(m_Logger, "STATE:WRITE", write_result, kStatePath, TRUE);
+		}
+		else if (close_result != FR_OK)
+		{
+			UpdateLoadDiagTelemetry(7590u + (ClampFatFsCode(close_result) % 10u));
+			LogSdOpResult(m_Logger, "STATE:CLOSE", close_result, kStatePath, TRUE);
+		}
 		m_Logger.Write(FromKernel, LogWarning, "Save State falhou: erro de escrita no SD");
 	}
 #endif
@@ -2345,6 +2415,8 @@ void CComboKernel::LoadEmulatorStateFromStorage(void)
 	if (stat_result != FR_OK)
 	{
 		UpdateSettingsSaveTelemetry(94u, 6u, stat_result);
+		UpdateLoadDiagTelemetry(8190u + (ClampFatFsCode(stat_result) % 10u));
+		LogSdOpResult(m_Logger, "STATE:STAT", stat_result, kStatePath, TRUE);
 		m_Logger.Write(FromKernel, LogWarning, "Load State falhou: erro ao consultar arquivo");
 		return;
 	}
@@ -2354,6 +2426,8 @@ void CComboKernel::LoadEmulatorStateFromStorage(void)
 	if (open_result != FR_OK)
 	{
 		UpdateSettingsSaveTelemetry(94u, 7u, open_result);
+		UpdateLoadDiagTelemetry(8290u + (ClampFatFsCode(open_result) % 10u));
+		LogSdOpResult(m_Logger, "STATE:OPENR", open_result, kStatePath, TRUE);
 		m_Logger.Write(FromKernel, LogWarning, "Load State falhou: nao foi possivel abrir arquivo");
 		return;
 	}
@@ -2381,6 +2455,16 @@ void CComboKernel::LoadEmulatorStateFromStorage(void)
 	if (read_result != FR_OK || close_result != FR_OK || bytes_read != file_size)
 	{
 		UpdateSettingsSaveTelemetry(94u, 9u, bytes_read > 999u ? 999u : bytes_read);
+		if (read_result != FR_OK)
+		{
+			UpdateLoadDiagTelemetry(8390u + (ClampFatFsCode(read_result) % 10u));
+			LogSdOpResult(m_Logger, "STATE:READ", read_result, kStatePath, TRUE);
+		}
+		else if (close_result != FR_OK)
+		{
+			UpdateLoadDiagTelemetry(8490u + (ClampFatFsCode(close_result) % 10u));
+			LogSdOpResult(m_Logger, "STATE:CLOSE", close_result, kStatePath, TRUE);
+		}
 		m_Logger.Write(FromKernel, LogWarning, "Load State falhou: erro de leitura no SD");
 		return;
 	}
