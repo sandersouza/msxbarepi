@@ -650,8 +650,8 @@ void CComboFileBrowser::RebuildCatalog(void)
     m_Count = 0u;
     m_SelectedAbs = 0u;
     m_Top = 0u;
-    const TComboMediaEntry *entries = combo_media_catalog_entries();
-    const unsigned total = combo_media_catalog_entry_count();
+    unsigned total = 0u;
+    const TComboMediaEntry *entries = combo_media_catalog_entries_by_type(file_type, &total);
 
     if (!IsPathInsideRoot(m_CurrentDir, root_path))
     {
@@ -672,7 +672,6 @@ void CComboFileBrowser::RebuildCatalog(void)
         m_IsParent[m_Count] = TRUE;
         ++m_Count;
     }
-
     if (entries == 0 || total == 0u)
     {
         ++m_ContentStamp;

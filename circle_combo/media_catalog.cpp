@@ -151,7 +151,10 @@ static int local_is_supported_file(const char *name, unsigned char type)
 	}
 	if (type == (unsigned char) ComboMediaTypeDisk)
 	{
-		return local_ext_match(name, ".dsk");
+		return local_ext_match(name, ".dsk")
+			|| local_ext_match(name, ".img")
+			|| local_ext_match(name, ".di1")
+			|| local_ext_match(name, ".di2");
 	}
 	return 0;
 }
@@ -305,17 +308,19 @@ static int local_append_entry(TComboMediaEntry *dst, unsigned *count, unsigned m
 
 static void local_record_entry(unsigned root_index, const char *path, unsigned size_bytes, unsigned char type)
 {
-	if (!local_append_entry(s_Entries, &s_EntryCount, kCatalogMaxEntries, path, size_bytes, type))
+	const int appended_global = local_append_entry(s_Entries, &s_EntryCount, kCatalogMaxEntries, path, size_bytes, type);
+	if (!appended_global)
 	{
 		++s_DroppedCount;
 		if (root_index < kRootCount)
 		{
 			++s_RootScanCache[root_index].dropped_count;
 		}
-		return;
 	}
-
-	local_count_media_type(type, &s_RomCount, &s_DiskCount);
+	else
+	{
+		local_count_media_type(type, &s_RomCount, &s_DiskCount);
+	}
 
 	if (root_index < kRootCount)
 	{
@@ -656,4 +661,30 @@ unsigned combo_media_catalog_dropped_count(void)
 const TComboMediaEntry *combo_media_catalog_entries(void)
 {
 	return s_Entries;
+}
+
+const TComboMediaEntry *combo_media_catalog_entries_by_type(unsigned type, unsigned *count)
+{
+	if (count != 0)
+	{
+		*count = 0u;
+	}
+
+	for (unsigned i = 0u; i < kRootCount; ++i)
+	{
+		if (kCatalogRoots[i].type != (unsigned char) type)
+		{
+			continue;
+		}
+		if (!s_RootCache[i].valid)
+		{
+			return 0;
+		}
+		if (count != 0)
+		{
+			*count = s_RootCache[i].entry_count;
+		}
+		return s_RootCache[i].entries;
+	}
+	return 0;
 }

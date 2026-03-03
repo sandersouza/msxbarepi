@@ -108,7 +108,7 @@ static unsigned ComboFindTabSplit(const char *label)
 
 static void ComboDrainMediaCatalogForBrowser(void)
 {
-    /* Browser must not render partial root lists; finish pending scan quickly on open. */
+    /* Keep non-blocking behavior in menu input path (avoid hard-lock perception). */
     unsigned safety_budget = 0u;
     while (combo_media_catalog_is_scanning() && safety_budget < 8192u)
     {
