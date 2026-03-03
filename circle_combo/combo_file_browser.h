@@ -29,20 +29,26 @@ public:
     unsigned GetSlotIndex(void) const;
     unsigned GetCount(void) const;
     unsigned GetTop(void) const;
+    unsigned GetSelectedAbs(void) const;
     unsigned GetSelectedVisibleIndex(void) const;
     unsigned GetVisibleCount(void) const;
+    unsigned GetMaxLabelLen(void) const;
+    unsigned GetContentStamp(void) const;
     const char *GetLabelVisible(unsigned visible_index) const;
     boolean IsDirVisible(unsigned visible_index) const;
     boolean IsParentVisible(unsigned visible_index) const;
     TComboFileBrowserEvent ProcessInput(boolean up_pressed,
                                         boolean down_pressed,
+                                        boolean page_up_pressed,
+                                        boolean page_down_pressed,
                                         boolean enter_edge,
                                         char *out_path,
                                         unsigned out_path_size);
+    boolean JumpToFirstContaining(char letter);
 
 private:
     static void CopySmallText(char *dst, unsigned dst_size, const char *src);
-    static void FormatName16NoExt(const char *path, char out_name[17]);
+    static void FormatName20NoExt(const char *path, char out_name[21]);
     static boolean IsPathInsideRoot(const char *path, const char *root);
     void RebuildCatalog(void);
     const char *RootPath(void) const;
@@ -53,15 +59,18 @@ private:
     unsigned m_Count;
     unsigned m_SelectedAbs;
     unsigned m_Top;
-    char m_Names[kMaxEntries][17];
+    char m_Names[kMaxEntries][21];
     char m_Paths[kMaxEntries][192];
     boolean m_IsDir[kMaxEntries];
     boolean m_IsParent[kMaxEntries];
     char m_CurrentDir[192];
     boolean m_LastUpPressed;
     boolean m_LastDownPressed;
+    boolean m_LastPageUpPressed;
+    boolean m_LastPageDownPressed;
     unsigned m_UpHoldFrames;
     unsigned m_DownHoldFrames;
+    unsigned m_ContentStamp;
 };
 
 #endif

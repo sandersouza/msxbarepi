@@ -4,6 +4,43 @@
 
 static const unsigned char kFolderGlyphLeftChar = 0x1Eu;
 static const unsigned char kFolderGlyphRightChar = 0x1Fu;
+static const unsigned char kArrowUpGlyphChar = 0x1Cu;
+static const unsigned char kArrowDownGlyphChar = 0x1Du;
+static const unsigned char kBlockFullGlyphChar = 0x1Bu;
+
+/* Custom 8x8 matrices (1=foreground pixel, 0=transparent/background). */
+static const unsigned char kArrowUpMatrix8x8[8] = {
+    0x00u, /* 00000000 */
+    0x00u, /* 00000000 */
+    0x00u, /* 00000000 */
+    0x00u, /* 00000000 */
+    0x10u, /* 00010000 */
+    0x38u, /* 00111000 */
+    0x7Cu, /* 01111100 */
+    0x00u  /* 00000000 */
+};
+
+static const unsigned char kArrowDownMatrix8x8[8] = {
+    0x00u, /* 00000000 */
+    0x7Cu, /* 01111100 */
+    0x38u, /* 00111000 */
+    0x10u, /* 00010000 */
+    0x00u, /* 00000000 */
+    0x00u, /* 00000000 */
+    0x00u, /* 00000000 */
+    0x00u  /* 00000000 */
+};
+
+static const unsigned char kBlockMatrix8x8[8] = {
+    0xFEu, /* 11111110 */
+    0xFEu, /* 11111110 */
+    0xFEu, /* 11111110 */
+    0xFEu, /* 11111110 */
+    0xFEu, /* 11111110 */
+    0xFEu, /* 11111110 */
+    0xFEu, /* 11111110 */
+    0xFEu  /* 11111110 */
+};
 
 static unsigned DecodeUtf8Latin1(const char *text, unsigned *consumed)
 {
@@ -100,10 +137,94 @@ static void DrawCustomFolderGlyphHalf(CGfxTextBoxRenderer *renderer,
     }
 }
 
+static void DrawGlyphMatrix8x8(CGfxTextBoxRenderer *renderer,
+                               unsigned x,
+                               unsigned y,
+                               const TGfxTextStyle &style,
+                               unsigned /*scale_x*/,
+                               unsigned /*scale_y*/,
+                               unsigned /*char_w*/,
+                               unsigned /*char_h*/,
+                               const unsigned char rows[8])
+{
+    if (renderer == 0 || rows == 0)
+    {
+        return;
+    }
+
+    const unsigned target_w = 16u;
+    const unsigned target_h = 32u;
+    if (style.opaque_bg)
+    {
+        renderer->FillRect(x, y, target_w, target_h, style.bg);
+    }
+
+    for (unsigned gy = 0u; gy < 8u; ++gy)
+    {
+        const unsigned y0 = gy * 4u;
+        const unsigned h = 4u;
+        const unsigned char row = rows[gy];
+        for (unsigned gx = 0u; gx < 8u; ++gx)
+        {
+            const unsigned mask = (unsigned) (1u << (7u - gx));
+            if ((row & mask) == 0u)
+            {
+                continue;
+            }
+            const unsigned x0 = gx * 2u;
+            const unsigned w = 2u;
+            renderer->FillRect(x + x0, y + y0, w, h, style.fg);
+        }
+    }
+}
+
+static void DrawCustomArrowUpGlyph(CGfxTextBoxRenderer *renderer,
+                                   unsigned x,
+                                   unsigned y,
+                                   const TGfxTextStyle &style,
+                                   unsigned scale_x,
+                                   unsigned scale_y,
+                                   unsigned char_w,
+                                   unsigned char_h)
+{
+    DrawGlyphMatrix8x8(renderer, x, y, style, scale_x, scale_y, char_w, char_h, kArrowUpMatrix8x8);
+}
+
+static void DrawCustomFullBlockGlyph(CGfxTextBoxRenderer *renderer,
+                                     unsigned x,
+                                     unsigned y,
+                                     const TGfxTextStyle &style,
+                                     unsigned scale_x,
+                                     unsigned scale_y,
+                                     unsigned char_w,
+                                     unsigned char_h)
+{
+    DrawGlyphMatrix8x8(renderer, x, y, style, scale_x, scale_y, char_w, char_h, kBlockMatrix8x8);
+}
+
+static void DrawCustomArrowDownGlyph(CGfxTextBoxRenderer *renderer,
+                                     unsigned x,
+                                     unsigned y,
+                                     const TGfxTextStyle &style,
+                                     unsigned scale_x,
+                                     unsigned scale_y,
+                                     unsigned char_w,
+                                     unsigned char_h)
+{
+    DrawGlyphMatrix8x8(renderer, x, y, style, scale_x, scale_y, char_w, char_h, kArrowDownMatrix8x8);
+}
+
 CGfxTextBoxRenderer::CGfxTextBoxRenderer(CScreenDevice *screen)
 : m_Screen(0)
 , m_FrameBuffer(0)
 , m_Font(DEFAULT_FONT, CCharGenerator::FontFlagsNone)
+, m_OffscreenActive(FALSE)
+, m_OffscreenOriginX(0u)
+, m_OffscreenOriginY(0u)
+, m_OffscreenW(0u)
+, m_OffscreenH(0u)
+, m_OffscreenStride(0u)
+, m_OffscreenBuffer(0)
 {
 	Attach(screen);
 }
@@ -116,6 +237,13 @@ void CGfxTextBoxRenderer::Attach(CScreenDevice *screen)
 	{
 		m_FrameBuffer = m_Screen->GetFrameBuffer();
 	}
+	m_OffscreenActive = FALSE;
+	m_OffscreenOriginX = 0u;
+	m_OffscreenOriginY = 0u;
+	m_OffscreenW = 0u;
+	m_OffscreenH = 0u;
+	m_OffscreenStride = 0u;
+	m_OffscreenBuffer = 0;
 }
 
 unsigned CGfxTextBoxRenderer::GetCharWidth(void) const
@@ -135,6 +263,26 @@ void CGfxTextBoxRenderer::PutPixel(unsigned x, unsigned y, TScreenColor color)
 		return;
 	}
 
+	if (m_OffscreenActive)
+	{
+		if (m_OffscreenBuffer == 0 || m_OffscreenW == 0u || m_OffscreenH == 0u || m_OffscreenStride == 0u)
+		{
+			return;
+		}
+		if (x < m_OffscreenOriginX || y < m_OffscreenOriginY)
+		{
+			return;
+		}
+		const unsigned local_x = x - m_OffscreenOriginX;
+		const unsigned local_y = y - m_OffscreenOriginY;
+		if (local_x >= m_OffscreenW || local_y >= m_OffscreenH)
+		{
+			return;
+		}
+		m_OffscreenBuffer[(local_y * m_OffscreenStride) + local_x] = color;
+		return;
+	}
+
 	const unsigned screen_w = m_Screen->GetWidth();
 	const unsigned screen_h = m_Screen->GetHeight();
 	if (x >= screen_w || y >= screen_h)
@@ -151,6 +299,186 @@ void CGfxTextBoxRenderer::PutPixel(unsigned x, unsigned y, TScreenColor color)
 	}
 
 	m_Screen->SetPixel(x, y, color);
+}
+
+void CGfxTextBoxRenderer::BeginOffscreen(unsigned origin_x, unsigned origin_y, unsigned w, unsigned h,
+					 TScreenColor *buffer, unsigned buffer_stride_pixels)
+{
+	if (buffer == 0 || w == 0u || h == 0u || buffer_stride_pixels < w)
+	{
+		CancelOffscreen();
+		return;
+	}
+	m_OffscreenActive = TRUE;
+	m_OffscreenOriginX = origin_x;
+	m_OffscreenOriginY = origin_y;
+	m_OffscreenW = w;
+	m_OffscreenH = h;
+	m_OffscreenStride = buffer_stride_pixels;
+	m_OffscreenBuffer = buffer;
+}
+
+void CGfxTextBoxRenderer::CopyRectFromScreen(unsigned x, unsigned y, unsigned w, unsigned h,
+					     TScreenColor *buffer, unsigned buffer_stride_pixels)
+{
+	if (m_Screen == 0 || buffer == 0 || w == 0u || h == 0u || buffer_stride_pixels < w)
+	{
+		return;
+	}
+
+	const unsigned screen_w = m_Screen->GetWidth();
+	const unsigned screen_h = m_Screen->GetHeight();
+	if (x >= screen_w || y >= screen_h)
+	{
+		return;
+	}
+	const unsigned max_w = (x + w <= screen_w) ? w : (screen_w - x);
+	const unsigned max_h = (y + h <= screen_h) ? h : (screen_h - y);
+
+	if (m_FrameBuffer != 0 && m_FrameBuffer->GetDepth() == 16)
+	{
+		const u16 *src_base = (const u16 *) (uintptr) m_FrameBuffer->GetBuffer();
+		const unsigned src_pitch = m_FrameBuffer->GetPitch() / sizeof(u16);
+		for (unsigned row = 0u; row < max_h; ++row)
+		{
+			const u16 *src = src_base + ((y + row) * src_pitch) + x;
+			TScreenColor *dst = buffer + (row * buffer_stride_pixels);
+			for (unsigned col = 0u; col < max_w; ++col)
+			{
+				dst[col] = (TScreenColor) src[col];
+			}
+		}
+		return;
+	}
+
+	for (unsigned row = 0u; row < max_h; ++row)
+	{
+		TScreenColor *dst = buffer + (row * buffer_stride_pixels);
+		for (unsigned col = 0u; col < max_w; ++col)
+		{
+			dst[col] = m_Screen->GetPixel(x + col, y + row);
+		}
+	}
+}
+
+void CGfxTextBoxRenderer::CopyRectFromVisibleScreen(unsigned x, unsigned y, unsigned w, unsigned h,
+						    TScreenColor *buffer, unsigned buffer_stride_pixels)
+{
+	if (m_Screen == 0 || buffer == 0 || w == 0u || h == 0u || buffer_stride_pixels < w)
+	{
+		return;
+	}
+
+	const unsigned screen_w = m_Screen->GetWidth();
+	const unsigned screen_h = m_Screen->GetHeight();
+	if (x >= screen_w || y >= screen_h)
+	{
+		return;
+	}
+	const unsigned max_w = (x + w <= screen_w) ? w : (screen_w - x);
+	const unsigned max_h = (y + h <= screen_h) ? h : (screen_h - y);
+
+	for (unsigned row = 0u; row < max_h; ++row)
+	{
+		TScreenColor *dst = buffer + (row * buffer_stride_pixels);
+		for (unsigned col = 0u; col < max_w; ++col)
+		{
+			dst[col] = m_Screen->GetPixel(x + col, y + row);
+		}
+	}
+}
+
+void CGfxTextBoxRenderer::EndOffscreenBlit(void)
+{
+	if (!m_OffscreenActive || m_Screen == 0 || m_OffscreenBuffer == 0)
+	{
+		CancelOffscreen();
+		return;
+	}
+
+	const unsigned origin_x = m_OffscreenOriginX;
+	const unsigned origin_y = m_OffscreenOriginY;
+	const unsigned w = m_OffscreenW;
+	const unsigned h = m_OffscreenH;
+	const unsigned stride = m_OffscreenStride;
+	TScreenColor *src = m_OffscreenBuffer;
+
+	m_OffscreenActive = FALSE;
+
+	if (m_FrameBuffer != 0 && m_FrameBuffer->GetDepth() == 16)
+	{
+		u16 *dst_base = (u16 *) (uintptr) m_FrameBuffer->GetBuffer();
+		const unsigned dst_pitch = m_FrameBuffer->GetPitch() / sizeof(u16);
+		for (unsigned y = 0u; y < h; ++y)
+		{
+			u16 *dst = dst_base + ((origin_y + y) * dst_pitch) + origin_x;
+			const TScreenColor *line = src + (y * stride);
+			for (unsigned x = 0u; x < w; ++x)
+			{
+				dst[x] = (u16) line[x];
+			}
+		}
+	}
+	else
+	{
+		for (unsigned y = 0u; y < h; ++y)
+		{
+			const TScreenColor *line = src + (y * stride);
+			for (unsigned x = 0u; x < w; ++x)
+			{
+				m_Screen->SetPixel(origin_x + x, origin_y + y, line[x]);
+			}
+		}
+	}
+
+	CancelOffscreen();
+}
+
+void CGfxTextBoxRenderer::CancelOffscreen(void)
+{
+	m_OffscreenActive = FALSE;
+	m_OffscreenOriginX = 0u;
+	m_OffscreenOriginY = 0u;
+	m_OffscreenW = 0u;
+	m_OffscreenH = 0u;
+	m_OffscreenStride = 0u;
+	m_OffscreenBuffer = 0;
+}
+
+boolean CGfxTextBoxRenderer::IsOffscreenActive(void) const
+{
+	return m_OffscreenActive;
+}
+
+void CGfxTextBoxRenderer::SaveOffscreenState(TGfxOffscreenState *state) const
+{
+	if (state == 0)
+	{
+		return;
+	}
+	state->active = m_OffscreenActive;
+	state->origin_x = m_OffscreenOriginX;
+	state->origin_y = m_OffscreenOriginY;
+	state->w = m_OffscreenW;
+	state->h = m_OffscreenH;
+	state->stride = m_OffscreenStride;
+	state->buffer = m_OffscreenBuffer;
+}
+
+void CGfxTextBoxRenderer::RestoreOffscreenState(const TGfxOffscreenState *state)
+{
+	if (state == 0 || !state->active)
+	{
+		CancelOffscreen();
+		return;
+	}
+	m_OffscreenActive = TRUE;
+	m_OffscreenOriginX = state->origin_x;
+	m_OffscreenOriginY = state->origin_y;
+	m_OffscreenW = state->w;
+	m_OffscreenH = state->h;
+	m_OffscreenStride = state->stride;
+	m_OffscreenBuffer = state->buffer;
 }
 
 void CGfxTextBoxRenderer::FillRect(unsigned x, unsigned y, unsigned w, unsigned h, TScreenColor color)
@@ -218,6 +546,21 @@ void CGfxTextBoxRenderer::DrawChar(unsigned x, unsigned y, char ch, const TGfxTe
     if (glyph == kFolderGlyphRightChar)
     {
         DrawCustomFolderGlyphHalf(this, x, y, style, scale_x, scale_y, char_w, char_h, TRUE);
+        return;
+    }
+    if (glyph == kArrowUpGlyphChar)
+    {
+        DrawCustomArrowUpGlyph(this, x, y, style, scale_x, scale_y, char_w, char_h);
+        return;
+    }
+    if (glyph == kBlockFullGlyphChar)
+    {
+        DrawCustomFullBlockGlyph(this, x, y, style, scale_x, scale_y, char_w, char_h);
+        return;
+    }
+    if (glyph == kArrowDownGlyphChar)
+    {
+        DrawCustomArrowDownGlyph(this, x, y, style, scale_x, scale_y, char_w, char_h);
         return;
     }
 

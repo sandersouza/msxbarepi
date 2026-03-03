@@ -1,12 +1,12 @@
 arm_64bit=1
-enable_uart=1
+enable_uart=0
 disable_splash=1
 kernel=kernel8.img
 initramfs msx.cpio followkernel
 hdmi_force_hotplug=1
 disable_overscan=1
+dtoverlay=disable-wifi
+dtoverlay=disable-bt
 dtoverlay=pi3-disable-bt
 dtparam=audio=on
 arm_freq=1200
-# force_turbo=1
-# Initramfs via firmware habilitado: o runtime M2 prioriza arquivos vindos de msx.cpio.

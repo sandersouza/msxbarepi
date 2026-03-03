@@ -7,9 +7,13 @@ static const u8 kHidKeyRight = 0x4F;
 static const u8 kHidKeyLeft = 0x50;
 static const u8 kHidKeyDown = 0x51;
 static const u8 kHidKeyUp = 0x52;
+static const u8 kHidKeyPageUp = 0x4B;
+static const u8 kHidKeyPageDown = 0x4E;
 static const u8 kHidKeyEnter = 0x28;
 static const u8 kHidKeyEsc = 0x29;
 static const u8 kHidKeyDel = 0x4C;
+static const u8 kHidKeyF9 = 0x42;
+static const u8 kHidKeyF10 = 0x43;
 static const u8 kHidKeyF11 = 0x44;
 static const u8 kHidKeyF12 = 0x45;
 
@@ -38,15 +42,20 @@ void ComboDecodeKeyboardRaw(unsigned char modifiers,
 	}
 
 	out_state->bridge_bits = 0;
+	out_state->f9_pressed = FALSE;
+	out_state->f10_pressed = FALSE;
 	out_state->f1_pressed = FALSE;
 	out_state->pause_pressed = FALSE;
 	out_state->menu_up_pressed = FALSE;
 	out_state->menu_down_pressed = FALSE;
 	out_state->menu_left_pressed = FALSE;
 	out_state->menu_right_pressed = FALSE;
+	out_state->menu_page_up_pressed = FALSE;
+	out_state->menu_page_down_pressed = FALSE;
 	out_state->menu_enter_pressed = FALSE;
 	out_state->menu_back_pressed = FALSE;
 	out_state->menu_delete_pressed = FALSE;
+	out_state->menu_jump_letter = '\0';
 
 	if (raw_keys == 0)
 	{
@@ -59,6 +68,14 @@ void ComboDecodeKeyboardRaw(unsigned char modifiers,
 		if (key == kHidKeyF11)
 		{
 			out_state->f1_pressed = TRUE;
+		}
+		if (key == kHidKeyF9)
+		{
+			out_state->f9_pressed = TRUE;
+		}
+		if (key == kHidKeyF10)
+		{
+			out_state->f10_pressed = TRUE;
 		}
 		if (key == kHidKeyF12)
 		{
@@ -80,6 +97,14 @@ void ComboDecodeKeyboardRaw(unsigned char modifiers,
 		{
 			out_state->menu_right_pressed = TRUE;
 		}
+		if (key == kHidKeyPageUp)
+		{
+			out_state->menu_page_up_pressed = TRUE;
+		}
+		if (key == kHidKeyPageDown)
+		{
+			out_state->menu_page_down_pressed = TRUE;
+		}
 		if (key == kHidKeyEnter)
 		{
 			out_state->menu_enter_pressed = TRUE;
@@ -91,6 +116,10 @@ void ComboDecodeKeyboardRaw(unsigned char modifiers,
 		if (key == kHidKeyDel)
 		{
 			out_state->menu_delete_pressed = TRUE;
+		}
+		if (key >= 0x04u && key <= 0x1Du)
+		{
+			out_state->menu_jump_letter = (char) ('A' + (key - 0x04u));
 		}
 
 		switch (key)

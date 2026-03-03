@@ -19,6 +19,17 @@ struct TGfxTextMatrix
 	unsigned rows;
 };
 
+struct TGfxOffscreenState
+{
+	boolean active;
+	unsigned origin_x;
+	unsigned origin_y;
+	unsigned w;
+	unsigned h;
+	unsigned stride;
+	TScreenColor *buffer;
+};
+
 class CGfxTextBoxRenderer
 {
 public:
@@ -37,6 +48,17 @@ public:
 		      unsigned scale_x = 1u, unsigned scale_y = 1u);
 	void DrawMatrix(unsigned x, unsigned y, const TGfxTextMatrix &matrix, const TGfxTextStyle &style,
 			unsigned scale_x = 1u, unsigned scale_y = 1u);
+	void CopyRectFromScreen(unsigned x, unsigned y, unsigned w, unsigned h,
+				TScreenColor *buffer, unsigned buffer_stride_pixels);
+	void CopyRectFromVisibleScreen(unsigned x, unsigned y, unsigned w, unsigned h,
+				      TScreenColor *buffer, unsigned buffer_stride_pixels);
+	void BeginOffscreen(unsigned origin_x, unsigned origin_y, unsigned w, unsigned h,
+			    TScreenColor *buffer, unsigned buffer_stride_pixels);
+	void EndOffscreenBlit(void);
+	void CancelOffscreen(void);
+	boolean IsOffscreenActive(void) const;
+	void SaveOffscreenState(TGfxOffscreenState *state) const;
+	void RestoreOffscreenState(const TGfxOffscreenState *state);
 
 private:
 	void PutPixel(unsigned x, unsigned y, TScreenColor color);
@@ -45,6 +67,13 @@ private:
 	CScreenDevice *m_Screen;
 	CBcmFrameBuffer *m_FrameBuffer;
 	CCharGenerator m_Font;
+	boolean m_OffscreenActive;
+	unsigned m_OffscreenOriginX;
+	unsigned m_OffscreenOriginY;
+	unsigned m_OffscreenW;
+	unsigned m_OffscreenH;
+	unsigned m_OffscreenStride;
+	TScreenColor *m_OffscreenBuffer;
 };
 
 #endif

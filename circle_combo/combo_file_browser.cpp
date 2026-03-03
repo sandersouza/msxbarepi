@@ -4,8 +4,19 @@
 
 static const char *kRomsRootPath = "SD:/roms";
 static const char *kDisksRootPath = "SD:/disks";
-static const unsigned kRepeatDelayFrames = 12u;
-static const unsigned kRepeatPeriodFrames = 2u;
+static const unsigned kRepeatDelayFrames = 30u;  /* ~500ms em 60Hz */
+static const unsigned kRepeatPeriodFrames = 6u;  /* ~10 passos/s em 60Hz */
+
+static void ComboDrainMediaCatalogForBrowser(void)
+{
+    /* Avoid partial directory snapshots right after Enter in deep folders. */
+    unsigned safety_budget = 0u;
+    while (combo_media_catalog_is_scanning() && safety_budget < 8192u)
+    {
+        combo_media_catalog_scan_step(128u);
+        safety_budget += 128u;
+    }
+}
 
 static char ComboToUpperAscii(char ch)
 {
@@ -41,6 +52,24 @@ static int ComboPathEqualsIgnoreCase(const char *a, const char *b)
         ++i;
     }
     return (a[i] == '\0' && b[i] == '\0') ? 1 : 0;
+}
+
+static int ComboCompareIgnoreCase(const char *a, const char *b)
+{
+    if (a == 0 && b == 0) return 0;
+    if (a == 0) return -1;
+    if (b == 0) return 1;
+    unsigned i = 0u;
+    while (a[i] != '\0' && b[i] != '\0')
+    {
+        const char ca = ComboToUpperAscii(a[i]);
+        const char cb = ComboToUpperAscii(b[i]);
+        if (ca < cb) return -1;
+        if (ca > cb) return 1;
+        ++i;
+    }
+    if (a[i] == '\0' && b[i] == '\0') return 0;
+    return (a[i] == '\0') ? -1 : 1;
 }
 
 static void ComboCopyParentDir(char *out_dir, unsigned out_size, const char *path)
@@ -119,8 +148,11 @@ CComboFileBrowser::CComboFileBrowser(void)
   m_CurrentDir{0},
   m_LastUpPressed(FALSE),
   m_LastDownPressed(FALSE),
+  m_LastPageUpPressed(FALSE),
+  m_LastPageDownPressed(FALSE),
   m_UpHoldFrames(0u),
-  m_DownHoldFrames(0u)
+  m_DownHoldFrames(0u),
+  m_ContentStamp(1u)
 {
     CopySmallText(m_CurrentDir, sizeof(m_CurrentDir), kRomsRootPath);
 }
@@ -135,8 +167,11 @@ void CComboFileBrowser::Reset(void)
     CopySmallText(m_CurrentDir, sizeof(m_CurrentDir), kRomsRootPath);
     m_LastUpPressed = FALSE;
     m_LastDownPressed = FALSE;
+    m_LastPageUpPressed = FALSE;
+    m_LastPageDownPressed = FALSE;
     m_UpHoldFrames = 0u;
     m_DownHoldFrames = 0u;
+    ++m_ContentStamp;
     for (unsigned i = 0u; i < kMaxEntries; ++i)
     {
         m_IsDir[i] = FALSE;
@@ -153,6 +188,8 @@ void CComboFileBrowser::Open(unsigned mode, unsigned slot_index)
     CopySmallText(m_CurrentDir, sizeof(m_CurrentDir), RootPath());
     m_LastUpPressed = FALSE;
     m_LastDownPressed = FALSE;
+    m_LastPageUpPressed = FALSE;
+    m_LastPageDownPressed = FALSE;
     m_UpHoldFrames = 0u;
     m_DownHoldFrames = 0u;
     RebuildCatalog();
@@ -176,6 +213,11 @@ unsigned CComboFileBrowser::GetCount(void) const
 unsigned CComboFileBrowser::GetTop(void) const
 {
     return m_Top;
+}
+
+unsigned CComboFileBrowser::GetSelectedAbs(void) const
+{
+    return m_SelectedAbs;
 }
 
 unsigned CComboFileBrowser::GetSelectedVisibleIndex(void) const
@@ -211,6 +253,29 @@ unsigned CComboFileBrowser::GetVisibleCount(void) const
     return remaining < kVisibleRows ? remaining : kVisibleRows;
 }
 
+unsigned CComboFileBrowser::GetMaxLabelLen(void) const
+{
+    unsigned max_len = 0u;
+    for (unsigned i = 0u; i < m_Count; ++i)
+    {
+        unsigned len = 0u;
+        while (m_Names[i][len] != '\0')
+        {
+            ++len;
+        }
+        if (len > max_len)
+        {
+            max_len = len;
+        }
+    }
+    return max_len;
+}
+
+unsigned CComboFileBrowser::GetContentStamp(void) const
+{
+    return m_ContentStamp;
+}
+
 const char *CComboFileBrowser::GetLabelVisible(unsigned visible_index) const
 {
     const unsigned abs = m_Top + visible_index;
@@ -243,6 +308,8 @@ boolean CComboFileBrowser::IsParentVisible(unsigned visible_index) const
 
 TComboFileBrowserEvent CComboFileBrowser::ProcessInput(boolean up_pressed,
                                                        boolean down_pressed,
+                                                       boolean page_up_pressed,
+                                                       boolean page_down_pressed,
                                                        boolean enter_edge,
                                                        char *out_path,
                                                        unsigned out_path_size)
@@ -256,10 +323,14 @@ TComboFileBrowserEvent CComboFileBrowser::ProcessInput(boolean up_pressed,
     {
         m_LastUpPressed = up_pressed;
         m_LastDownPressed = down_pressed;
+        m_LastPageUpPressed = page_up_pressed;
+        m_LastPageDownPressed = page_down_pressed;
         m_UpHoldFrames = 0u;
         m_DownHoldFrames = 0u;
         return ComboFileBrowserEventNone;
     }
+
+    const unsigned visible_window = (m_Count < kVisibleRows) ? m_Count : kVisibleRows;
 
     boolean up_step = FALSE;
     boolean down_step = FALSE;
@@ -316,35 +387,71 @@ TComboFileBrowserEvent CComboFileBrowser::ProcessInput(boolean up_pressed,
     if (up_step)
     {
         m_SelectedAbs = (m_SelectedAbs == 0u) ? (m_Count - 1u) : (m_SelectedAbs - 1u);
-        if (m_SelectedAbs < m_Top)
-        {
-            m_Top = m_SelectedAbs;
-        }
     }
     if (down_step)
     {
         m_SelectedAbs = (m_SelectedAbs + 1u) % m_Count;
-        if (m_SelectedAbs >= m_Top + kVisibleRows)
+    }
+
+    const boolean page_up_edge = (page_up_pressed && !m_LastPageUpPressed) ? TRUE : FALSE;
+    const boolean page_down_edge = (page_down_pressed && !m_LastPageDownPressed) ? TRUE : FALSE;
+    if (page_up_edge)
+    {
+        if (m_SelectedAbs > visible_window)
         {
-            m_Top = m_SelectedAbs + 1u - kVisibleRows;
+            m_SelectedAbs -= visible_window;
+        }
+        else
+        {
+            m_SelectedAbs = 0u;
         }
     }
-    if (m_Top > m_SelectedAbs)
+    if (page_down_edge)
+    {
+        const unsigned max_index = m_Count - 1u;
+        if (m_SelectedAbs + visible_window < m_Count)
+        {
+            m_SelectedAbs += visible_window;
+        }
+        else
+        {
+            m_SelectedAbs = max_index;
+        }
+    }
+
+    /* Keep selection and visible window strictly synchronized (no one-step lag). */
+    unsigned max_top = 0u;
+    if (m_Count > visible_window)
+    {
+        max_top = m_Count - visible_window;
+    }
+    if (m_Top > max_top)
+    {
+        m_Top = max_top;
+    }
+    if (m_SelectedAbs < m_Top)
     {
         m_Top = m_SelectedAbs;
     }
-    if (m_SelectedAbs >= m_Top + kVisibleRows)
+    if (m_SelectedAbs >= m_Top + visible_window)
     {
-        m_Top = m_SelectedAbs + 1u - kVisibleRows;
+        m_Top = m_SelectedAbs + 1u - visible_window;
+    }
+    if (m_Top > max_top)
+    {
+        m_Top = max_top;
     }
 
     m_LastUpPressed = up_pressed;
     m_LastDownPressed = down_pressed;
+    m_LastPageUpPressed = page_up_pressed;
+    m_LastPageDownPressed = page_down_pressed;
 
     if (enter_edge)
     {
         if (m_IsDir[m_SelectedAbs])
         {
+            ComboDrainMediaCatalogForBrowser();
             CopySmallText(m_CurrentDir, sizeof(m_CurrentDir), m_Paths[m_SelectedAbs]);
             if (!IsPathInsideRoot(m_CurrentDir, RootPath()))
             {
@@ -360,7 +467,84 @@ TComboFileBrowserEvent CComboFileBrowser::ProcessInput(boolean up_pressed,
         return ComboFileBrowserEventSelectedFile;
     }
 
-    return (up_step || down_step) ? ComboFileBrowserEventSelectionChanged : ComboFileBrowserEventNone;
+    return (up_step || down_step || page_up_edge || page_down_edge)
+        ? ComboFileBrowserEventSelectionChanged
+        : ComboFileBrowserEventNone;
+}
+
+boolean CComboFileBrowser::JumpToFirstContaining(char letter)
+{
+    if (m_Count == 0u)
+    {
+        return FALSE;
+    }
+
+    char target = ComboToUpperAscii(letter);
+    if (target < 'A' || target > 'Z')
+    {
+        return FALSE;
+    }
+
+    unsigned found = m_Count;
+    unsigned found_contains = m_Count;
+    for (unsigned i = 0u; i < m_Count; ++i)
+    {
+        const char *name = m_Names[i];
+        if (name == 0)
+        {
+            continue;
+        }
+        for (unsigned j = 0u; name[j] != '\0'; ++j)
+        {
+            const char ch = ComboToUpperAscii(name[j]);
+            if (j == 0u && ch == target)
+            {
+                found = i;
+                break;
+            }
+            if (found_contains == m_Count && ch == target)
+            {
+                found_contains = i;
+            }
+        }
+        if (found != m_Count)
+        {
+            break;
+        }
+    }
+
+    if (found == m_Count)
+    {
+        found = found_contains;
+    }
+    if (found == m_Count)
+    {
+        return FALSE;
+    }
+
+    const unsigned visible_window = (m_Count < kVisibleRows) ? m_Count : kVisibleRows;
+    m_SelectedAbs = found;
+    if (m_SelectedAbs < m_Top)
+    {
+        m_Top = m_SelectedAbs;
+    }
+    if (visible_window > 0u && m_SelectedAbs >= m_Top + visible_window)
+    {
+        m_Top = m_SelectedAbs + 1u - visible_window;
+    }
+    if (m_Count > visible_window)
+    {
+        const unsigned max_top = m_Count - visible_window;
+        if (m_Top > max_top)
+        {
+            m_Top = max_top;
+        }
+    }
+    else
+    {
+        m_Top = 0u;
+    }
+    return TRUE;
 }
 
 void CComboFileBrowser::CopySmallText(char *dst, unsigned dst_size, const char *src)
@@ -383,7 +567,7 @@ void CComboFileBrowser::CopySmallText(char *dst, unsigned dst_size, const char *
     dst[i] = '\0';
 }
 
-void CComboFileBrowser::FormatName16NoExt(const char *path, char out_name[17])
+void CComboFileBrowser::FormatName20NoExt(const char *path, char out_name[21])
 {
     if (out_name == 0)
     {
@@ -419,7 +603,7 @@ void CComboFileBrowser::FormatName16NoExt(const char *path, char out_name[17])
     }
 
     unsigned n = 0u;
-    for (const char *p = base; *p != '\0' && p != dot && n < 16u; ++p)
+    for (const char *p = base; *p != '\0' && p != dot && n < 20u; ++p)
     {
         char ch = ComboToUpperAscii(*p);
         if (ComboIsFileChar83(ch))
@@ -466,9 +650,9 @@ void CComboFileBrowser::RebuildCatalog(void)
     m_Count = 0u;
     m_SelectedAbs = 0u;
     m_Top = 0u;
-
     const TComboMediaEntry *entries = combo_media_catalog_entries();
     const unsigned total = combo_media_catalog_entry_count();
+
     if (!IsPathInsideRoot(m_CurrentDir, root_path))
     {
         CopySmallText(m_CurrentDir, sizeof(m_CurrentDir), root_path);
@@ -491,11 +675,13 @@ void CComboFileBrowser::RebuildCatalog(void)
 
     if (entries == 0 || total == 0u)
     {
+        ++m_ContentStamp;
         return;
     }
 
     for (unsigned pass = 0u; pass < 2u && m_Count < kMaxEntries; ++pass)
     {
+        const unsigned pass_start = m_Count;
         for (unsigned i = 0u; i < total && m_Count < kMaxEntries; ++i)
         {
             const boolean is_dir = (entries[i].type == (unsigned char) ComboMediaTypeDir) ? TRUE : FALSE;
@@ -512,20 +698,17 @@ void CComboFileBrowser::RebuildCatalog(void)
             {
                 continue;
             }
-
             char parent_dir[192];
             ComboCopyParentDir(parent_dir, sizeof(parent_dir), entries[i].path);
             if (!ComboPathEqualsIgnoreCase(parent_dir, m_CurrentDir))
             {
                 continue;
             }
-
             const char *base = ComboBaseNameFromPath(entries[i].path);
             if (base == 0 || base[0] == '\0' || base[0] == '.')
             {
                 continue;
             }
-
             boolean duplicate = FALSE;
             for (unsigned k = 0u; k < m_Count; ++k)
             {
@@ -540,13 +723,38 @@ void CComboFileBrowser::RebuildCatalog(void)
                 continue;
             }
 
-            FormatName16NoExt(entries[i].path, m_Names[m_Count]);
-            CopySmallText(m_Paths[m_Count], sizeof(m_Paths[0]), entries[i].path);
-            m_IsDir[m_Count] = is_dir;
-            m_IsParent[m_Count] = FALSE;
+            char new_name[21];
+            FormatName20NoExt(entries[i].path, new_name);
+
+            unsigned insert_at = m_Count;
+            for (unsigned pos = pass_start; pos < m_Count; ++pos)
+            {
+                if (ComboCompareIgnoreCase(new_name, m_Names[pos]) < 0)
+                {
+                    insert_at = pos;
+                    break;
+                }
+            }
+
+            if (insert_at < m_Count)
+            {
+                for (unsigned move = m_Count; move > insert_at; --move)
+                {
+                    CopySmallText(m_Names[move], sizeof(m_Names[0]), m_Names[move - 1u]);
+                    CopySmallText(m_Paths[move], sizeof(m_Paths[0]), m_Paths[move - 1u]);
+                    m_IsDir[move] = m_IsDir[move - 1u];
+                    m_IsParent[move] = m_IsParent[move - 1u];
+                }
+            }
+
+            CopySmallText(m_Names[insert_at], sizeof(m_Names[0]), new_name);
+            CopySmallText(m_Paths[insert_at], sizeof(m_Paths[0]), entries[i].path);
+            m_IsDir[insert_at] = is_dir;
+            m_IsParent[insert_at] = FALSE;
             ++m_Count;
         }
     }
+    ++m_ContentStamp;
 }
 
 const char *CComboFileBrowser::RootPath(void) const

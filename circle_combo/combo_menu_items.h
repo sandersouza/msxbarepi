@@ -22,6 +22,8 @@ enum TComboMenuAction {
     ComboMenuActionToggleDiskRom,
     ComboMenuActionCycleBootMode,
     ComboMenuActionCycleBootModePrev,
+    ComboMenuActionCycleMachine,
+    ComboMenuActionCycleMachinePrev,
     ComboMenuActionCycleZ80Turbo,
     ComboMenuActionCycleZ80TurboPrev,
     ComboMenuActionCycleRensha,
@@ -36,10 +38,16 @@ enum TComboMenuAction {
     ComboMenuActionReset
 };
 
+enum TComboMenuRedrawPolicy {
+    ComboMenuRedrawMenuOnly = 0,
+    ComboMenuRedrawMenuAndViewport = 1
+};
+
 typedef struct {
     const char *label;
     TComboMenuAction action;
     boolean selectable;
+    TComboMenuRedrawPolicy redraw_policy;
 } TComboMenuItem;
 
 const TComboMenuItem *combo_menu_root_items_get(unsigned language, unsigned *count);
@@ -58,6 +66,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
                                                      unsigned refresh_rate_hz,
                                                      boolean disk_rom_enabled,
                                                      unsigned boot_mode,
+                                                     unsigned machine_profile,
                                                      unsigned z80_turbo_mode,
                                                      unsigned rensha_mode,
                                                      boolean scc_cart_enabled,

@@ -36,6 +36,7 @@ typedef struct {
     const char *settings_refresh;
     const char *settings_disk_rom;
     const char *settings_boot_mode;
+    const char *settings_machine;
     const char *settings_z80_turbo;
     const char *settings_rensha;
     const char *settings_scc_cart;

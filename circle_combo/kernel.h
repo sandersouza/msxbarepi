@@ -48,6 +48,9 @@ private:
     void ClearDebugOverlay(void);
     void BootTrace(const char *tag);
     void WriteScreenText(const char *text);
+    void ComputeViewportBox(unsigned src_width, unsigned src_height,
+                            unsigned *out_x, unsigned *out_y,
+                            unsigned *out_w, unsigned *out_h) const;
     void BlitFmsxFrame(boolean force_redraw);
     void HandleMenuAction(TComboMenuAction action);
     void ApplyRuntimeSettingsToFmsx(void);
@@ -64,6 +67,9 @@ private:
     boolean EnsureStateStorageDirectory(void);
     void SaveEmulatorStateToStorage(void);
     void LoadEmulatorStateFromStorage(void);
+    void RenderTelemetryBufferView(void);
+    void ProcessPendingTelemetryToggle(void);
+    void ProcessPendingViewportScreenshot(void);
 
     static void KeyPressedHandler(const char *text);
     static void KeyStatusRawHandler(unsigned char modifiers, const unsigned char raw_keys[6], void *context);
@@ -117,9 +123,14 @@ private:
     boolean m_DebugOverlayEnabled;
     boolean m_EmulationPaused;
     boolean m_LastF12Pressed;
+    boolean m_LastF9Pressed;
+    boolean m_LastF10Pressed;
     boolean m_LastPausePressed;
     boolean m_LastMenuBackPressed;
     boolean m_PauseNeedsBackgroundRedraw;
+    boolean m_PauseNeedsFullViewportClear;
+    boolean m_ForceViewportFullClearNextFrame;
+    boolean m_PauseRenderSuppressed;
     boolean m_FmsxEnabled;
     boolean m_FmsxReady;
     unsigned long m_FmsxFrames;
@@ -130,6 +141,7 @@ private:
     unsigned m_FmsxVideoSeq;
     u64 m_FmsxFpsWindowStartUs;
     u64 m_LastPauseToggleUs;
+    u64 m_LastMenuInputPollUs;
     u64 m_LastOverlayUs;
     unsigned long m_FmsxFpsWindowStartFrames;
     unsigned m_FmsxFpsX10;
@@ -156,6 +168,7 @@ private:
     unsigned m_RefreshRateHz;
     boolean m_DiskRomEnabled;
     unsigned m_BootMode;
+    unsigned m_MachineProfile;
     unsigned m_Z80TurboMode;
     unsigned m_RenshaMode;
     unsigned m_RenshaPhase;
@@ -183,6 +196,10 @@ private:
     unsigned m_SettingsSaveAux;
     u64 m_BootStartUs;
     unsigned m_BootToFmsxMs;
+    unsigned m_TelemetryViewMode;
+    boolean m_TelemetrySavedPausedState;
+    volatile unsigned m_PendingTelemetryToggle;
+    volatile boolean m_PendingViewportScreenshot;
     u8 *m_StateIoBuffer;
     unsigned m_StateIoBufferCapacity;
 
