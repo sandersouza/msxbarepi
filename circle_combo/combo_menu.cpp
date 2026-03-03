@@ -1,6 +1,7 @@
 #include "combo_menu.h"
 #include "combo_locale.h"
 #include "media_catalog.h"
+#include "viewport_screenshot.h"
 
 #if DEPTH == 32
 static const TScreenColor kPauseMenuBgColor = COLOR32(0, 0, 0x9B, 0xFF);
@@ -8,6 +9,9 @@ static const TScreenColor kPauseMenuBgColor = COLOR32(0, 0, 0x9B, 0xFF);
 static const TScreenColor kPauseMenuBgColor = COLOR16(0, 0, 0x9B >> 3);
 #endif
 
+#ifndef COMBO_MENU_DOUBLE_BUFFER
+#define COMBO_MENU_DOUBLE_BUFFER 1
+#endif
 
 static unsigned ComboStrLen(const char *text)
 {
@@ -89,109 +93,6 @@ static int ComboTextEquals(const char *a, const char *b)
     return (a[i] == '\0' && b[i] == '\0') ? 1 : 0;
 }
 
-static char ComboToUpperAscii(char ch)
-{
-    if (ch >= 'a' && ch <= 'z')
-    {
-        return (char) (ch - 'a' + 'A');
-    }
-    return ch;
-}
-
-static int ComboIsFileChar83(char ch)
-{
-    if ((ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9'))
-    {
-        return 1;
-    }
-    return (ch == '_' || ch == '$' || ch == '~' || ch == '!' || ch == '#' || ch == '%' || ch == '-');
-}
-
-static const char *kRomsRootPath = "SD:/roms";
-static const char *kDisksRootPath = "SD:/disks";
-
-static const char *ComboBaseNameFromPath(const char *path)
-{
-    if (path == 0)
-    {
-        return 0;
-    }
-
-    const char *base = path;
-    for (const char *p = path; *p != '\0'; ++p)
-    {
-        if (*p == '/' || *p == '\\')
-        {
-            base = p + 1;
-        }
-    }
-    return base;
-}
-
-static int ComboPathEqualsIgnoreCase(const char *a, const char *b)
-{
-    if (a == 0 || b == 0)
-    {
-        return 0;
-    }
-    unsigned i = 0u;
-    while (a[i] != '\0' && b[i] != '\0')
-    {
-        if (ComboToUpperAscii(a[i]) != ComboToUpperAscii(b[i]))
-        {
-            return 0;
-        }
-        ++i;
-    }
-    return (a[i] == '\0' && b[i] == '\0') ? 1 : 0;
-}
-
-static void ComboCopyParentDir(char *out_dir, unsigned out_size, const char *path)
-{
-    if (out_dir == 0 || out_size == 0u)
-    {
-        return;
-    }
-    out_dir[0] = '\0';
-    if (path == 0 || path[0] == '\0')
-    {
-        return;
-    }
-
-    unsigned len = 0u;
-    while (path[len] != '\0')
-    {
-        ++len;
-    }
-
-    if (len == 0u)
-    {
-        return;
-    }
-
-    unsigned slash = len;
-    while (slash > 0u && path[slash - 1u] != '/' && path[slash - 1u] != '\\')
-    {
-        --slash;
-    }
-
-    if (slash == 0u)
-    {
-        return;
-    }
-
-    unsigned copy_len = slash - 1u;
-    if (copy_len >= out_size)
-    {
-        copy_len = out_size - 1u;
-    }
-    for (unsigned i = 0u; i < copy_len; ++i)
-    {
-        out_dir[i] = path[i];
-    }
-    out_dir[copy_len] = '\0';
-}
-
 static unsigned ComboFindTabSplit(const char *label)
 {
     const unsigned len = ComboStrLen(label);
@@ -203,6 +104,29 @@ static unsigned ComboFindTabSplit(const char *label)
         }
     }
     return len;
+}
+
+static void ComboDrainMediaCatalogForBrowser(void)
+{
+    /* Keep non-blocking behavior in menu input path (avoid hard-lock perception). */
+    unsigned safety_budget = 0u;
+    while (combo_media_catalog_is_scanning() && safety_budget < 8192u)
+    {
+        combo_media_catalog_scan_step(128u);
+        safety_budget += 128u;
+    }
+}
+
+static void ComboClearPixels(TScreenColor *buffer, unsigned count)
+{
+    if (buffer == 0 || count == 0u)
+    {
+        return;
+    }
+    for (unsigned i = 0u; i < count; ++i)
+    {
+        buffer[i] = (TScreenColor) 0u;
+    }
 }
 
 void CComboPauseMenu::CopySmallText(char *dst, unsigned dst_size, const char *src)
@@ -226,177 +150,6 @@ void CComboPauseMenu::CopySmallText(char *dst, unsigned dst_size, const char *sr
     dst[i] = '\0';
 }
 
-boolean CComboPauseMenu::IsPathInsideRoot(const char *path, const char *root)
-{
-    if (path == 0)
-    {
-        return FALSE;
-    }
-    if (root == 0 || root[0] == '\0')
-    {
-        return FALSE;
-    }
-
-    unsigned i = 0u;
-    for (; root[i] != '\0'; ++i)
-    {
-        if (path[i] == '\0')
-        {
-            return FALSE;
-        }
-        if (ComboToUpperAscii(path[i]) != ComboToUpperAscii(root[i]))
-        {
-            return FALSE;
-        }
-    }
-
-    const char tail = path[i];
-    return (tail == '\0' || tail == '/' || tail == '\\') ? TRUE : FALSE;
-}
-
-void CComboPauseMenu::FormatName83NoExt(const char *path, char out_name[17])
-{
-    if (out_name == 0)
-    {
-        return;
-    }
-
-    out_name[0] = '\0';
-    if (path == 0 || path[0] == '\0')
-    {
-        return;
-    }
-
-    const char *base = path;
-    for (const char *p = path; *p != '\0'; ++p)
-    {
-        if (*p == '/' || *p == '\\' || *p == ':')
-        {
-            base = p + 1;
-        }
-    }
-    if (base[0] == '\0')
-    {
-        return;
-    }
-
-    const char *dot = 0;
-    for (const char *p = base; *p != '\0'; ++p)
-    {
-        if (*p == '.')
-        {
-            dot = p;
-        }
-    }
-
-    unsigned n = 0u;
-    for (const char *p = base; *p != '\0' && p != dot && n < 16u; ++p)
-    {
-        char ch = ComboToUpperAscii(*p);
-        if (ComboIsFileChar83(ch))
-        {
-            out_name[n++] = ch;
-        }
-    }
-    if (n == 0u)
-    {
-        out_name[n++] = '_';
-    }
-    out_name[n] = '\0';
-}
-
-void CComboPauseMenu::RebuildBrowserCatalog(unsigned mode)
-{
-    const char *root_path = (mode == BrowserModeDisk) ? kDisksRootPath : kRomsRootPath;
-    const unsigned file_type = (mode == BrowserModeDisk) ? (unsigned) ComboMediaTypeDisk : (unsigned) ComboMediaTypeRom;
-    m_BrowserMode = mode;
-    m_RomBrowserCount = 0u;
-    m_RomBrowserSelectedAbs = 0u;
-    m_RomBrowserTop = 0u;
-    m_Selected = 0u;
-
-    const TComboMediaEntry *entries = combo_media_catalog_entries();
-    const unsigned total = combo_media_catalog_entry_count();
-    if (!IsPathInsideRoot(m_RomBrowserCurrentDir, root_path))
-    {
-        CopySmallText(m_RomBrowserCurrentDir, sizeof(m_RomBrowserCurrentDir), root_path);
-    }
-
-    if (!ComboPathEqualsIgnoreCase(m_RomBrowserCurrentDir, root_path) && m_RomBrowserCount < kRomBrowserMaxEntries)
-    {
-        char parent_dir[192];
-        ComboCopyParentDir(parent_dir, sizeof(parent_dir), m_RomBrowserCurrentDir);
-        if (!IsPathInsideRoot(parent_dir, root_path) || parent_dir[0] == '\0')
-        {
-            CopySmallText(parent_dir, sizeof(parent_dir), root_path);
-        }
-        CopySmallText(m_RomBrowserNames[m_RomBrowserCount], sizeof(m_RomBrowserNames[0]), "..");
-        CopySmallText(m_RomBrowserPaths[m_RomBrowserCount], sizeof(m_RomBrowserPaths[0]), parent_dir);
-        m_RomBrowserIsDir[m_RomBrowserCount] = TRUE;
-        m_RomBrowserIsParent[m_RomBrowserCount] = TRUE;
-        ++m_RomBrowserCount;
-    }
-
-    if (entries == 0 || total == 0u)
-    {
-        return;
-    }
-
-    for (unsigned pass = 0u; pass < 2u && m_RomBrowserCount < kRomBrowserMaxEntries; ++pass)
-    {
-        for (unsigned i = 0u; i < total && m_RomBrowserCount < kRomBrowserMaxEntries; ++i)
-        {
-            const boolean is_dir = (entries[i].type == (unsigned char) ComboMediaTypeDir) ? TRUE : FALSE;
-            const boolean is_file = (entries[i].type == (unsigned char) file_type) ? TRUE : FALSE;
-            if (!is_dir && !is_file)
-            {
-                continue;
-            }
-            if (!IsPathInsideRoot(entries[i].path, root_path))
-            {
-                continue;
-            }
-            if ((pass == 0u && !is_dir) || (pass == 1u && !is_file))
-            {
-                continue;
-            }
-
-            char parent_dir[192];
-            ComboCopyParentDir(parent_dir, sizeof(parent_dir), entries[i].path);
-            if (!ComboPathEqualsIgnoreCase(parent_dir, m_RomBrowserCurrentDir))
-            {
-                continue;
-            }
-
-            const char *base = ComboBaseNameFromPath(entries[i].path);
-            if (base == 0 || base[0] == '\0' || base[0] == '.')
-            {
-                continue;
-            }
-
-            boolean duplicate = FALSE;
-            for (unsigned k = 0u; k < m_RomBrowserCount; ++k)
-            {
-                if (ComboPathEqualsIgnoreCase(m_RomBrowserPaths[k], entries[i].path))
-                {
-                    duplicate = TRUE;
-                    break;
-                }
-            }
-            if (duplicate)
-            {
-                continue;
-            }
-
-            FormatName83NoExt(entries[i].path, m_RomBrowserNames[m_RomBrowserCount]);
-            CopySmallText(m_RomBrowserPaths[m_RomBrowserCount], sizeof(m_RomBrowserPaths[0]), entries[i].path);
-            m_RomBrowserIsDir[m_RomBrowserCount] = is_dir;
-            m_RomBrowserIsParent[m_RomBrowserCount] = FALSE;
-            ++m_RomBrowserCount;
-        }
-    }
-}
-
 CComboPauseMenu::CComboPauseMenu(void)
 : m_Row(1),
   m_Col(1),
@@ -411,6 +164,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_RefreshRateHz(60u),
     m_DiskRomEnabled(TRUE),
     m_BootMode(0u),
+    m_MachineProfile(0u),
     m_Z80TurboMode(0u),
     m_RenshaMode(0u),
     m_SccCartEnabled(TRUE),
@@ -421,16 +175,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LoadRomSlot2Name{0},
     m_LoadDiskDrive1Name{0},
     m_LoadDiskDrive2Name{0},
-    m_BrowserMode(BrowserModeRom),
-    m_RomBrowserSlot(0u),
-    m_RomBrowserCount(0u),
-    m_RomBrowserSelectedAbs(0u),
-    m_RomBrowserTop(0u),
-    m_RomBrowserNames{{0}},
-    m_RomBrowserPaths{{0}},
-    m_RomBrowserIsDir{FALSE},
-    m_RomBrowserIsParent{FALSE},
-    m_RomBrowserCurrentDir{0},
+    m_FileBrowser(),
     m_RomBrowserItems{{0}},
     m_RomBrowserItemLabels{{0}},
     m_RomBrowserEmptyLabel{0},
@@ -449,6 +194,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnRefreshRateHz(60u),
     m_LastDrawnDiskRomEnabled(TRUE),
     m_LastDrawnBootMode(0u),
+    m_LastDrawnMachineProfile(0u),
     m_LastDrawnZ80TurboMode(0u),
     m_LastDrawnRenshaMode(0u),
     m_LastDrawnSccCart(TRUE),
@@ -459,25 +205,42 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnLoadRomSlot2Name{0},
     m_LastDrawnLoadDiskDrive1Name{0},
     m_LastDrawnLoadDiskDrive2Name{0},
+    m_LastDrawnBrowserTop(0xFFFFFFFFu),
+    m_LastDrawnBrowserCount(0xFFFFFFFFu),
+    m_LastDrawnBrowserSelectedAbs(0xFFFFFFFFu),
+    m_LastDrawnBrowserMode(0xFFFFFFFFu),
+    m_LastDrawnBrowserSlot(0xFFFFFFFFu),
+    m_LastDrawnBrowserContentStamp(0xFFFFFFFFu),
+    m_BrowserWarmupRedraws(0u),
     m_ForceRedraw(TRUE),
+    m_ForceHighlightRedraw(FALSE),
+    m_ForceContentRedraw(FALSE),
+    m_SuppressNextRender(FALSE),
     m_RequestBackgroundRestore(FALSE),
     m_LastBoxX(0),
     m_LastBoxY(0),
     m_LastBoxW(0),
     m_LastBoxH(0),
     m_LastBoxValid(FALSE),
-  m_LastUpPressed(FALSE),
-  m_LastDownPressed(FALSE),
-  m_LastLeftPressed(FALSE),
-  m_LastRightPressed(FALSE),
-  m_LastEnterPressed(FALSE),
-  m_LastDeletePressed(FALSE)
+    m_LastUpPressed(FALSE),
+    m_LastDownPressed(FALSE),
+    m_LastPageUpPressed(FALSE),
+    m_LastPageDownPressed(FALSE),
+    m_LastLeftPressed(FALSE),
+    m_LastRightPressed(FALSE),
+    m_LastEnterPressed(FALSE),
+    m_LastDeletePressed(FALSE),
+    m_MenuBackbuffer(0),
+    m_MenuBackbufferCapacityPixels(0u),
+    m_MenuBackbufferW(0u),
+    m_MenuBackbufferH(0u),
+    m_MenuBackbufferX(0u),
+    m_MenuBackbufferY(0u)
 {
     CopySmallText(m_LoadRomSlot1Name, sizeof(m_LoadRomSlot1Name), "");
     CopySmallText(m_LoadRomSlot2Name, sizeof(m_LoadRomSlot2Name), "");
     CopySmallText(m_LoadDiskDrive1Name, sizeof(m_LoadDiskDrive1Name), "");
     CopySmallText(m_LoadDiskDrive2Name, sizeof(m_LoadDiskDrive2Name), "");
-    CopySmallText(m_RomBrowserCurrentDir, sizeof(m_RomBrowserCurrentDir), kRomsRootPath);
     CopySmallText(m_RomBrowserEmptyLabel, sizeof(m_RomBrowserEmptyLabel), "");
     m_HasPendingRomSelection = FALSE;
     m_PendingRomSlot = 0u;
@@ -489,6 +252,20 @@ CComboPauseMenu::CComboPauseMenu(void)
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), "");
     CopySmallText(m_LastDrawnLoadDiskDrive1Name, sizeof(m_LastDrawnLoadDiskDrive1Name), "");
     CopySmallText(m_LastDrawnLoadDiskDrive2Name, sizeof(m_LastDrawnLoadDiskDrive2Name), "");
+}
+
+CComboPauseMenu::~CComboPauseMenu(void)
+{
+    if (m_MenuBackbuffer != 0)
+    {
+        delete[] m_MenuBackbuffer;
+        m_MenuBackbuffer = 0;
+        m_MenuBackbufferCapacityPixels = 0u;
+    }
+    m_MenuBackbufferW = 0u;
+    m_MenuBackbufferH = 0u;
+    m_MenuBackbufferX = 0u;
+    m_MenuBackbufferY = 0u;
 }
 
 void CComboPauseMenu::Reset(void)
@@ -508,23 +285,21 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
     m_LastDrawnDiskRomEnabled = m_DiskRomEnabled;
     m_LastDrawnBootMode = m_BootMode;
+    m_LastDrawnMachineProfile = m_MachineProfile;
     m_LastDrawnZ80TurboMode = m_Z80TurboMode;
     m_LastDrawnRenshaMode = m_RenshaMode;
     m_LastDrawnSccCart = m_SccCartEnabled;
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
     m_LastDrawnAudioGainPercent = m_AudioGainPercent;
-    m_RomBrowserSlot = 0u;
-    m_BrowserMode = BrowserModeRom;
-    m_RomBrowserCount = 0u;
-    m_RomBrowserSelectedAbs = 0u;
-    m_RomBrowserTop = 0u;
-    CopySmallText(m_RomBrowserCurrentDir, sizeof(m_RomBrowserCurrentDir), kRomsRootPath);
-    for (unsigned i = 0u; i < kRomBrowserMaxEntries; ++i)
-    {
-        m_RomBrowserIsDir[i] = FALSE;
-        m_RomBrowserIsParent[i] = FALSE;
-    }
+    m_LastDrawnBrowserTop = 0xFFFFFFFFu;
+    m_LastDrawnBrowserCount = 0xFFFFFFFFu;
+    m_LastDrawnBrowserSelectedAbs = 0xFFFFFFFFu;
+    m_LastDrawnBrowserMode = 0xFFFFFFFFu;
+    m_LastDrawnBrowserSlot = 0xFFFFFFFFu;
+    m_LastDrawnBrowserContentStamp = 0xFFFFFFFFu;
+    m_BrowserWarmupRedraws = 0u;
+    m_FileBrowser.Reset();
     m_HasPendingRomSelection = FALSE;
     m_PendingRomSlot = 0u;
     CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), "");
@@ -536,14 +311,23 @@ void CComboPauseMenu::Reset(void)
     CopySmallText(m_LastDrawnLoadDiskDrive1Name, sizeof(m_LastDrawnLoadDiskDrive1Name), m_LoadDiskDrive1Name);
     CopySmallText(m_LastDrawnLoadDiskDrive2Name, sizeof(m_LastDrawnLoadDiskDrive2Name), m_LoadDiskDrive2Name);
     m_ForceRedraw = TRUE;
+    m_ForceHighlightRedraw = FALSE;
+    m_ForceContentRedraw = FALSE;
+    m_SuppressNextRender = FALSE;
     m_RequestBackgroundRestore = FALSE;
     m_LastBoxValid = FALSE;
     m_LastUpPressed = FALSE;
     m_LastDownPressed = FALSE;
+    m_LastPageUpPressed = FALSE;
+    m_LastPageDownPressed = FALSE;
     m_LastLeftPressed = FALSE;
     m_LastRightPressed = FALSE;
     m_LastEnterPressed = FALSE;
     m_LastDeletePressed = FALSE;
+    m_MenuBackbufferW = 0u;
+    m_MenuBackbufferH = 0u;
+    m_MenuBackbufferX = 0u;
+    m_MenuBackbufferY = 0u;
 }
 
 void CComboPauseMenu::SetOverscanPercent(unsigned percent)
@@ -654,6 +438,25 @@ void CComboPauseMenu::SetBootMode(unsigned mode)
 unsigned CComboPauseMenu::GetBootMode(void) const
 {
     return m_BootMode;
+}
+
+void CComboPauseMenu::SetMachineProfile(unsigned profile)
+{
+    if (profile > 2u)
+    {
+        profile = 0u;
+    }
+
+    if (m_MachineProfile != profile)
+    {
+        m_MachineProfile = profile;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+unsigned CComboPauseMenu::GetMachineProfile(void) const
+{
+    return m_MachineProfile;
 }
 
 void CComboPauseMenu::SetZ80TurboMode(unsigned mode)
@@ -814,6 +617,69 @@ void CComboPauseMenu::RequestRedraw(void)
     m_ForceRedraw = TRUE;
 }
 
+void CComboPauseMenu::InvalidateViewportSnapshot(void)
+{
+    /* Snapshot buffer is global/fixed and intentionally persistent until overwritten. */
+}
+
+void CComboPauseMenu::CaptureViewportSnapshot(CGfxTextBoxRenderer *renderer, unsigned x, unsigned y, unsigned w, unsigned h)
+{
+    combo_viewport_screenshot_capture(renderer, x, y, w, h);
+}
+
+boolean CComboPauseMenu::GetViewportSnapshotView(const TScreenColor **pixels, unsigned *x, unsigned *y, unsigned *w, unsigned *h, unsigned *stride) const
+{
+    TViewportScreenshotView view;
+    if (pixels != 0)
+    {
+        *pixels = 0;
+    }
+    if (x != 0) *x = 0u;
+    if (y != 0) *y = 0u;
+    if (w != 0) *w = 0u;
+    if (h != 0) *h = 0u;
+    if (stride != 0) *stride = 0u;
+
+    if (!combo_viewport_screenshot_get(&view))
+    {
+        return FALSE;
+    }
+
+    if (pixels != 0) *pixels = view.pixels;
+    if (x != 0) *x = view.x;
+    if (y != 0) *y = view.y;
+    if (w != 0) *w = view.w;
+    if (h != 0) *h = view.h;
+    if (stride != 0) *stride = view.stride;
+    return TRUE;
+}
+
+boolean CComboPauseMenu::GetOffscreenView(const TScreenColor **pixels, unsigned *x, unsigned *y, unsigned *w, unsigned *h, unsigned *stride) const
+{
+    if (pixels != 0)
+    {
+        *pixels = 0;
+    }
+    if (x != 0) *x = 0u;
+    if (y != 0) *y = 0u;
+    if (w != 0) *w = 0u;
+    if (h != 0) *h = 0u;
+    if (stride != 0) *stride = 0u;
+
+    if (m_MenuBackbuffer == 0 || m_MenuBackbufferW == 0u || m_MenuBackbufferH == 0u)
+    {
+        return FALSE;
+    }
+
+    if (pixels != 0) *pixels = m_MenuBackbuffer;
+    if (x != 0) *x = m_MenuBackbufferX;
+    if (y != 0) *y = m_MenuBackbufferY;
+    if (w != 0) *w = m_MenuBackbufferW;
+    if (h != 0) *h = m_MenuBackbufferH;
+    if (stride != 0) *stride = m_MenuBackbufferW;
+    return TRUE;
+}
+
 boolean CComboPauseMenu::ConsumeBackgroundRestoreRequest(void)
 {
     const boolean pending = m_RequestBackgroundRestore;
@@ -833,6 +699,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_RefreshRateHz,
             m_DiskRomEnabled,
             m_BootMode,
+            m_MachineProfile,
             m_Z80TurboMode,
             m_RenshaMode,
             m_SccCartEnabled,
@@ -862,12 +729,13 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             empty = "EMPTY";
         }
 
-        if (m_RomBrowserCount == 0u)
+        if (m_FileBrowser.GetCount() == 0u)
         {
             CopySmallText(m_RomBrowserEmptyLabel, sizeof(m_RomBrowserEmptyLabel), empty);
             m_RomBrowserItems[0].label = m_RomBrowserEmptyLabel;
             m_RomBrowserItems[0].action = ComboMenuActionNone;
             m_RomBrowserItems[0].selectable = FALSE;
+            m_RomBrowserItems[0].redraw_policy = ComboMenuRedrawMenuOnly;
             if (count != 0)
             {
                 *count = 1u;
@@ -875,15 +743,14 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             return m_RomBrowserItems;
         }
 
-        const unsigned remaining = m_RomBrowserCount - m_RomBrowserTop;
-        const unsigned visible = remaining < kRomBrowserVisibleRows ? remaining : kRomBrowserVisibleRows;
+        const unsigned visible = m_FileBrowser.GetVisibleCount();
         for (unsigned i = 0u; i < visible; ++i)
         {
-            const unsigned abs = m_RomBrowserTop + i;
-            CopySmallText(m_RomBrowserItemLabels[i], sizeof(m_RomBrowserItemLabels[i]), m_RomBrowserNames[abs]);
+            CopySmallText(m_RomBrowserItemLabels[i], sizeof(m_RomBrowserItemLabels[i]), m_FileBrowser.GetLabelVisible(i));
             m_RomBrowserItems[i].label = m_RomBrowserItemLabels[i];
             m_RomBrowserItems[i].action = ComboMenuActionNone;
             m_RomBrowserItems[i].selectable = TRUE;
+            m_RomBrowserItems[i].redraw_policy = ComboMenuRedrawMenuOnly;
         }
         if (count != 0)
         {
@@ -956,17 +823,25 @@ unsigned CComboPauseMenu::FindNextSelectable(unsigned from) const
 TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                                                boolean up_pressed,
                                                boolean down_pressed,
+                                               boolean page_up_pressed,
+                                               boolean page_down_pressed,
                                                boolean left_pressed,
                                                boolean right_pressed,
                                                boolean enter_pressed,
                                                boolean back_pressed,
-                                               boolean delete_pressed)
+                                               boolean delete_pressed,
+                                               char jump_letter)
 {
+    const unsigned old_view = m_View;
+    const unsigned old_selected = m_Selected;
+
     if (!paused)
     {
         m_LastBackPressed = back_pressed;
         m_LastUpPressed = up_pressed;
         m_LastDownPressed = down_pressed;
+        m_LastPageUpPressed = page_up_pressed;
+        m_LastPageDownPressed = page_down_pressed;
         m_LastLeftPressed = left_pressed;
         m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
@@ -981,6 +856,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_LastBackPressed = back_pressed;
         m_LastUpPressed = up_pressed;
         m_LastDownPressed = down_pressed;
+        m_LastPageUpPressed = page_up_pressed;
+        m_LastPageDownPressed = page_down_pressed;
         m_LastLeftPressed = left_pressed;
         m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
@@ -1003,11 +880,17 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             m_View = MenuViewRoot;
         }
         m_Selected = FindFirstSelectable();
-        m_ForceRedraw = TRUE;
-        m_RequestBackgroundRestore = TRUE;
+        const boolean silent_settings_back = (m_View == MenuViewRoot && old_view == MenuViewSettings) ? TRUE : FALSE;
+        m_ForceRedraw = silent_settings_back ? FALSE : TRUE;
+        m_ForceHighlightRedraw = FALSE;
+        m_ForceContentRedraw = FALSE;
+        m_SuppressNextRender = silent_settings_back;
+        m_RequestBackgroundRestore = silent_settings_back ? FALSE : TRUE;
         m_LastBackPressed = back_pressed;
         m_LastUpPressed = up_pressed;
         m_LastDownPressed = down_pressed;
+        m_LastPageUpPressed = page_up_pressed;
+        m_LastPageDownPressed = page_down_pressed;
         m_LastLeftPressed = left_pressed;
         m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
@@ -1024,93 +907,150 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
 
     if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser)
     {
-        if (m_RomBrowserCount > 0u)
-        {
-            if (up_pressed && !m_LastUpPressed)
-            {
-                m_RomBrowserSelectedAbs = (m_RomBrowserSelectedAbs == 0u) ? (m_RomBrowserCount - 1u) : (m_RomBrowserSelectedAbs - 1u);
-                if (m_RomBrowserSelectedAbs < m_RomBrowserTop)
-                {
-                    m_RomBrowserTop = m_RomBrowserSelectedAbs;
-                }
-                m_ForceRedraw = TRUE;
-            }
-            if (down_pressed && !m_LastDownPressed)
-            {
-                m_RomBrowserSelectedAbs = (m_RomBrowserSelectedAbs + 1u) % m_RomBrowserCount;
-                if (m_RomBrowserSelectedAbs >= m_RomBrowserTop + kRomBrowserVisibleRows)
-                {
-                    m_RomBrowserTop = m_RomBrowserSelectedAbs + 1u - kRomBrowserVisibleRows;
-                }
-                m_ForceRedraw = TRUE;
-            }
-            if (m_RomBrowserTop > m_RomBrowserSelectedAbs)
-            {
-                m_RomBrowserTop = m_RomBrowserSelectedAbs;
-            }
-            if (m_RomBrowserSelectedAbs >= m_RomBrowserTop + kRomBrowserVisibleRows)
-            {
-                m_RomBrowserTop = m_RomBrowserSelectedAbs + 1u - kRomBrowserVisibleRows;
-            }
-            m_Selected = m_RomBrowserSelectedAbs - m_RomBrowserTop;
+        const unsigned old_browser_top = m_FileBrowser.GetTop();
+        const unsigned old_browser_abs = m_FileBrowser.GetSelectedAbs();
+        const unsigned old_browser_count = m_FileBrowser.GetCount();
+        const boolean letter_edge = (jump_letter >= 'A' && jump_letter <= 'Z') ? TRUE : FALSE;
+        const boolean page_nav_edge =
+            ((page_up_pressed && !m_LastPageUpPressed)
+             || (page_down_pressed && !m_LastPageDownPressed)) ? TRUE : FALSE;
+        const boolean nav_edge =
+            ((up_pressed && !m_LastUpPressed)
+             || (down_pressed && !m_LastDownPressed)
+             || (page_up_pressed && !m_LastPageUpPressed)
+             || (page_down_pressed && !m_LastPageDownPressed)
+             || letter_edge) ? TRUE : FALSE;
+        char selected_path[192];
+        selected_path[0] = '\0';
+        const TComboFileBrowserEvent browser_event = m_FileBrowser.ProcessInput(
+            up_pressed,
+            down_pressed,
+            page_up_pressed,
+            page_down_pressed,
+            enter_pressed && !m_LastEnterPressed,
+            selected_path,
+            sizeof(selected_path));
 
-            if (enter_pressed && !m_LastEnterPressed)
+        boolean letter_jump_moved = FALSE;
+        if (letter_edge)
+        {
+            const unsigned before_jump_top = m_FileBrowser.GetTop();
+            const unsigned before_jump_abs = m_FileBrowser.GetSelectedAbs();
+            if (m_FileBrowser.JumpToFirstContaining(jump_letter))
             {
-                const unsigned abs = m_RomBrowserSelectedAbs;
-                if (abs < m_RomBrowserCount && m_RomBrowserIsDir[abs])
+                const unsigned after_jump_top = m_FileBrowser.GetTop();
+                const unsigned after_jump_abs = m_FileBrowser.GetSelectedAbs();
+                letter_jump_moved = (before_jump_top != after_jump_top || before_jump_abs != after_jump_abs) ? TRUE : FALSE;
+                if (letter_jump_moved)
                 {
-                    if (m_RomBrowserIsParent[abs])
-                    {
-                        CopySmallText(m_RomBrowserCurrentDir, sizeof(m_RomBrowserCurrentDir), m_RomBrowserPaths[abs]);
-                    }
-                    else
-                    {
-                        CopySmallText(m_RomBrowserCurrentDir, sizeof(m_RomBrowserCurrentDir), m_RomBrowserPaths[abs]);
-                    }
-                    const char *root_path = (m_BrowserMode == BrowserModeDisk) ? kDisksRootPath : kRomsRootPath;
-                    if (!IsPathInsideRoot(m_RomBrowserCurrentDir, root_path))
-                    {
-                        CopySmallText(m_RomBrowserCurrentDir, sizeof(m_RomBrowserCurrentDir), root_path);
-                    }
-                    RebuildBrowserCatalog(m_BrowserMode);
-                    m_ForceRedraw = TRUE;
+                    /* Same visual policy as cursor navigation, but with one extra settle pass. */
+                    m_LastDrawnBrowserTop = 0xFFFFFFFFu;
+                    m_LastDrawnBrowserSelectedAbs = 0xFFFFFFFFu;
+                    m_LastDrawnBrowserContentStamp = 0xFFFFFFFFu;
+                    m_BrowserWarmupRedraws = 1u;
                 }
-                else if (abs < m_RomBrowserCount
-                      && !m_RomBrowserIsDir[abs]
-                      && m_BrowserMode == BrowserModeRom)
-                {
-                    m_HasPendingRomSelection = TRUE;
-                    m_PendingRomSlot = m_RomBrowserSlot;
-                    CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), m_RomBrowserPaths[abs]);
-                    action = (m_RomBrowserSlot == 0u) ? ComboMenuActionCartridgeA : ComboMenuActionCartridgeB;
-                    m_View = MenuViewLoadRom;
-                    m_Selected = (m_RomBrowserSlot == 0u) ? 0u : 1u;
-                    m_ForceRedraw = TRUE;
-                    m_RequestBackgroundRestore = TRUE;
-                }
-                else if (abs < m_RomBrowserCount
-                      && !m_RomBrowserIsDir[abs]
-                      && m_BrowserMode == BrowserModeDisk)
-                {
-                    m_HasPendingDiskSelection = TRUE;
-                    m_PendingDiskDrive = m_RomBrowserSlot;
-                    CopySmallText(m_PendingDiskPath, sizeof(m_PendingDiskPath), m_RomBrowserPaths[abs]);
-                    action = (m_RomBrowserSlot == 0u) ? ComboMenuActionDiskDriveA : ComboMenuActionDiskDriveB;
-                    m_View = MenuViewLoadDisk;
-                    m_Selected = (m_RomBrowserSlot == 0u) ? 0u : 1u;
-                    m_ForceRedraw = TRUE;
-                    m_RequestBackgroundRestore = TRUE;
-                }
+            }
+        }
+
+        const unsigned new_browser_top = m_FileBrowser.GetTop();
+        const unsigned new_browser_abs = m_FileBrowser.GetSelectedAbs();
+        const unsigned new_browser_count = m_FileBrowser.GetCount();
+        const boolean browser_scrolled_or_moved =
+            (old_browser_top != new_browser_top
+             || old_browser_abs != new_browser_abs
+             || old_browser_count != new_browser_count) ? TRUE : FALSE;
+        if (page_nav_edge && browser_scrolled_or_moved)
+        {
+            /* Same anti-glitch settle pass used for A..Z jump. */
+            m_LastDrawnBrowserTop = 0xFFFFFFFFu;
+            m_LastDrawnBrowserSelectedAbs = 0xFFFFFFFFu;
+            m_LastDrawnBrowserContentStamp = 0xFFFFFFFFu;
+            m_BrowserWarmupRedraws = 1u;
+        }
+
+        if (browser_event == ComboFileBrowserEventEnteredDirectory)
+        {
+            m_ForceRedraw = TRUE;
+            m_ForceHighlightRedraw = FALSE;
+            m_ForceContentRedraw = FALSE;
+            m_LastDrawnSelected = 0xFFFFFFFFu;
+            m_LastDrawnBrowserTop = 0xFFFFFFFFu;
+            m_LastDrawnBrowserCount = 0xFFFFFFFFu;
+            m_LastDrawnBrowserSelectedAbs = 0xFFFFFFFFu;
+            m_LastDrawnBrowserMode = 0xFFFFFFFFu;
+            m_LastDrawnBrowserSlot = 0xFFFFFFFFu;
+            m_LastDrawnBrowserContentStamp = 0xFFFFFFFFu;
+            m_LastBoxValid = FALSE;
+            for (unsigned i = 0u; i < CComboFileBrowser::kVisibleRows; ++i)
+            {
+                m_RomBrowserItemLabels[i][0] = '\0';
+                m_RomBrowserItems[i].label = m_RomBrowserItemLabels[i];
+                m_RomBrowserItems[i].action = ComboMenuActionNone;
+                m_RomBrowserItems[i].selectable = FALSE;
+                m_RomBrowserItems[i].redraw_policy = ComboMenuRedrawMenuOnly;
+            }
+            /* Directory changes can alter box geometry; restore viewport first to avoid stale menu fragments. */
+            m_RequestBackgroundRestore = TRUE;
+            m_BrowserWarmupRedraws = 1u; /* extra pass to settle freshly-entered directory */
+        }
+        else if (browser_scrolled_or_moved
+              || nav_edge
+              || letter_jump_moved
+              || browser_event == ComboFileBrowserEventSelectionChanged)
+        {
+            m_ForceContentRedraw = TRUE;
+        }
+
+        m_Selected = m_FileBrowser.GetSelectedVisibleIndex();
+        if (browser_event == ComboFileBrowserEventSelectedFile && selected_path[0] != '\0')
+        {
+            if (m_FileBrowser.GetMode() == (unsigned) ComboFileBrowserModeRom)
+            {
+                m_HasPendingRomSelection = TRUE;
+                m_PendingRomSlot = m_FileBrowser.GetSlotIndex();
+                CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), selected_path);
+                action = (m_PendingRomSlot == 0u) ? ComboMenuActionCartridgeA : ComboMenuActionCartridgeB;
+                m_View = MenuViewLoadRom;
+                m_Selected = (m_PendingRomSlot == 0u) ? 0u : 1u;
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
+                m_ForceContentRedraw = FALSE;
+                m_RequestBackgroundRestore = TRUE;
+            }
+            else
+            {
+                m_HasPendingDiskSelection = TRUE;
+                m_PendingDiskDrive = m_FileBrowser.GetSlotIndex();
+                CopySmallText(m_PendingDiskPath, sizeof(m_PendingDiskPath), selected_path);
+                action = (m_PendingDiskDrive == 0u) ? ComboMenuActionDiskDriveA : ComboMenuActionDiskDriveB;
+                m_View = MenuViewLoadDisk;
+                m_Selected = (m_PendingDiskDrive == 0u) ? 0u : 1u;
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
+                m_ForceContentRedraw = FALSE;
+                m_RequestBackgroundRestore = TRUE;
             }
         }
 
         m_LastBackPressed = back_pressed;
         m_LastUpPressed = up_pressed;
         m_LastDownPressed = down_pressed;
+        m_LastPageUpPressed = page_up_pressed;
+        m_LastPageDownPressed = page_down_pressed;
         m_LastLeftPressed = left_pressed;
         m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
         m_LastDeletePressed = delete_pressed;
+
+        const boolean old_browser = (old_view == MenuViewLoadRomBrowser || old_view == MenuViewLoadDiskBrowser) ? TRUE : FALSE;
+        const boolean new_browser = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser) ? TRUE : FALSE;
+        if (old_browser != new_browser)
+        {
+            m_RequestBackgroundRestore = TRUE;
+            m_ForceRedraw = TRUE;
+            m_ForceHighlightRedraw = FALSE;
+            m_ForceContentRedraw = FALSE;
+        }
         return action;
     }
 
@@ -1151,6 +1091,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 m_OverscanPercent = next_value;
                 m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
                 action = ComboMenuActionOverscanChanged;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
@@ -1161,11 +1102,13 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 action = ComboMenuActionCycleScanlinesPrev;
                 m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
             }
             else if (right_edge || enter_edge)
             {
                 action = ComboMenuActionCycleScanlines;
                 m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
@@ -1175,11 +1118,13 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 action = ComboMenuActionCycleRefreshRatePrev;
                 m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
             }
             else if (right_edge || enter_edge)
             {
                 action = ComboMenuActionCycleRefreshRate;
                 m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
@@ -1189,11 +1134,29 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 action = ComboMenuActionCycleBootModePrev;
                 m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
             }
             else if (right_edge || enter_edge)
             {
                 action = ComboMenuActionCycleBootMode;
                 m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
+            }
+            handled_settings_input = enter_edge || left_edge || right_edge;
+        }
+        else if (items[m_Selected].action == ComboMenuActionCycleMachine)
+        {
+            if (left_edge)
+            {
+                action = ComboMenuActionCycleMachinePrev;
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
+            }
+            else if (right_edge || enter_edge)
+            {
+                action = ComboMenuActionCycleMachine;
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
@@ -1203,11 +1166,13 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 action = ComboMenuActionCycleZ80TurboPrev;
                 m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
             }
             else if (right_edge || enter_edge)
             {
                 action = ComboMenuActionCycleZ80Turbo;
                 m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
@@ -1217,11 +1182,13 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 action = ComboMenuActionCycleLanguagePrev;
                 m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
             }
             else if (right_edge || enter_edge)
             {
                 action = ComboMenuActionCycleLanguage;
                 m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
@@ -1231,6 +1198,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 action = items[m_Selected].action;
                 m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
@@ -1253,6 +1221,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 m_AudioGainPercent = next_value;
                 m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
                 action = ComboMenuActionAudioGainChanged;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
@@ -1263,11 +1232,13 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 action = ComboMenuActionCycleRenshaPrev;
                 m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
             }
             else if (right_edge || enter_edge)
             {
                 action = ComboMenuActionCycleRensha;
                 m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
@@ -1278,7 +1249,16 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             if (enter_edge || left_edge || right_edge)
             {
                 action = items[m_Selected].action;
-                m_ForceRedraw = TRUE;
+                if (items[m_Selected].action == ComboMenuActionToggleWidescreen)
+                {
+                    m_ForceRedraw = TRUE;
+                    m_ForceHighlightRedraw = FALSE;
+                }
+                else
+                {
+                    m_ForceRedraw = TRUE;
+                    m_ForceHighlightRedraw = FALSE;
+                }
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
@@ -1291,6 +1271,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             m_View = MenuViewSettings;
             m_Selected = FindFirstSelectable();
             m_ForceRedraw = TRUE;
+            m_ForceHighlightRedraw = FALSE;
             m_RequestBackgroundRestore = TRUE;
         }
         else if (m_View == MenuViewRoot && items[m_Selected].action == ComboMenuActionCartridgeA)
@@ -1298,6 +1279,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             m_View = MenuViewLoadRom;
             m_Selected = FindFirstSelectable();
             m_ForceRedraw = TRUE;
+            m_ForceHighlightRedraw = FALSE;
             m_RequestBackgroundRestore = TRUE;
         }
         else if (m_View == MenuViewRoot && items[m_Selected].action == ComboMenuActionDiskDriveA)
@@ -1305,29 +1287,34 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             m_View = MenuViewLoadDisk;
             m_Selected = FindFirstSelectable();
             m_ForceRedraw = TRUE;
+            m_ForceHighlightRedraw = FALSE;
             m_RequestBackgroundRestore = TRUE;
         }
         else if (m_View == MenuViewLoadRom
               && (items[m_Selected].action == ComboMenuActionCartridgeA || items[m_Selected].action == ComboMenuActionCartridgeB))
         {
-            m_RomBrowserSlot = (items[m_Selected].action == ComboMenuActionCartridgeA) ? 0u : 1u;
-            CopySmallText(m_RomBrowserCurrentDir, sizeof(m_RomBrowserCurrentDir), kRomsRootPath);
-            RebuildBrowserCatalog(BrowserModeRom);
+            ComboDrainMediaCatalogForBrowser();
+            const unsigned slot = (items[m_Selected].action == ComboMenuActionCartridgeA) ? 0u : 1u;
+            m_FileBrowser.Open((unsigned) ComboFileBrowserModeRom, slot);
             m_View = MenuViewLoadRomBrowser;
             m_Selected = 0u;
             m_ForceRedraw = TRUE;
+            m_ForceHighlightRedraw = FALSE;
             m_RequestBackgroundRestore = TRUE;
+            m_BrowserWarmupRedraws = 1u;
         }
         else if (m_View == MenuViewLoadDisk
               && (items[m_Selected].action == ComboMenuActionDiskDriveA || items[m_Selected].action == ComboMenuActionDiskDriveB))
         {
-            m_RomBrowserSlot = (items[m_Selected].action == ComboMenuActionDiskDriveA) ? 0u : 1u;
-            CopySmallText(m_RomBrowserCurrentDir, sizeof(m_RomBrowserCurrentDir), kDisksRootPath);
-            RebuildBrowserCatalog(BrowserModeDisk);
+            ComboDrainMediaCatalogForBrowser();
+            const unsigned slot = (items[m_Selected].action == ComboMenuActionDiskDriveA) ? 0u : 1u;
+            m_FileBrowser.Open((unsigned) ComboFileBrowserModeDisk, slot);
             m_View = MenuViewLoadDiskBrowser;
             m_Selected = 0u;
             m_ForceRedraw = TRUE;
+            m_ForceHighlightRedraw = FALSE;
             m_RequestBackgroundRestore = TRUE;
+            m_BrowserWarmupRedraws = 1u;
         }
         else
         {
@@ -1336,6 +1323,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             {
                 /* Force redraw of dynamic labels (e.g. [LIG]/[DES]) immediately on Enter. */
                 m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
             }
         }
     }
@@ -1363,10 +1351,34 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
     m_LastBackPressed = back_pressed;
     m_LastUpPressed = up_pressed;
     m_LastDownPressed = down_pressed;
+    m_LastPageUpPressed = page_up_pressed;
+    m_LastPageDownPressed = page_down_pressed;
     m_LastLeftPressed = left_pressed;
     m_LastRightPressed = right_pressed;
     m_LastEnterPressed = enter_pressed;
     m_LastDeletePressed = delete_pressed;
+
+    const boolean old_browser = (old_view == MenuViewLoadRomBrowser || old_view == MenuViewLoadDiskBrowser) ? TRUE : FALSE;
+    const boolean new_browser = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser) ? TRUE : FALSE;
+    if (old_browser != new_browser)
+    {
+        m_RequestBackgroundRestore = TRUE;
+        m_ForceRedraw = TRUE;
+        m_ForceHighlightRedraw = FALSE;
+    }
+    else if (m_View == MenuViewSettings
+          && action != ComboMenuActionNone
+          && m_Selected < item_count
+          && items[m_Selected].redraw_policy == ComboMenuRedrawMenuAndViewport)
+    {
+        m_RequestBackgroundRestore = TRUE;
+    }
+    else if (!new_browser
+          && !m_ForceRedraw
+          && m_Selected != old_selected)
+    {
+        m_ForceHighlightRedraw = TRUE;
+    }
 
     return action;
 }
@@ -1389,6 +1401,20 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     {
         m_Visible = FALSE;
         m_LastDrawnSelected = 0xFFFFFFFFu;
+        m_ForceHighlightRedraw = FALSE;
+        m_ForceContentRedraw = FALSE;
+        m_MenuBackbufferW = 0u;
+        m_MenuBackbufferH = 0u;
+        m_MenuBackbufferX = 0u;
+        m_MenuBackbufferY = 0u;
+        m_BrowserWarmupRedraws = 0u;
+        ComboClearPixels(m_MenuBackbuffer, m_MenuBackbufferCapacityPixels);
+        return;
+    }
+
+    if (m_SuppressNextRender)
+    {
+        m_SuppressNextRender = FALSE;
         return;
     }
 
@@ -1420,14 +1446,15 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     else if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser)
     {
         const boolean disk_browser = (m_View == MenuViewLoadDiskBrowser) ? TRUE : FALSE;
+        const unsigned browser_slot = m_FileBrowser.GetSlotIndex();
         const char *slot_tag = disk_browser
-            ? ((m_RomBrowserSlot == 0u) ? locale->load_disk_drive1 : locale->load_disk_drive2)
-            : ((m_RomBrowserSlot == 0u) ? locale->load_rom_slot1 : locale->load_rom_slot2);
+            ? ((browser_slot == 0u) ? locale->load_disk_drive1 : locale->load_disk_drive2)
+            : ((browser_slot == 0u) ? locale->load_rom_slot1 : locale->load_rom_slot2);
         if (slot_tag == 0 || slot_tag[0] == '\0')
         {
             slot_tag = disk_browser
-                ? ((m_RomBrowserSlot == 0u) ? "DRIVE1" : "DRIVE2")
-                : ((m_RomBrowserSlot == 0u) ? "SLOT1" : "SLOT2");
+                ? ((browser_slot == 0u) ? "DRIVE1" : "DRIVE2")
+                : ((browser_slot == 0u) ? "SLOT1" : "SLOT2");
         }
         title = slot_tag;
     }
@@ -1456,6 +1483,26 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     {
         content_cols = 18u;
     }
+    if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser)
+    {
+        /*
+         * Browser width rule:
+         * - use the largest entry name from current directory (already capped at 20 chars),
+         * - keep width fixed for this directory while navigating inside it.
+         */
+        unsigned browser_name_cols = m_FileBrowser.GetMaxLabelLen();
+        if (browser_name_cols > 20u)
+        {
+            browser_name_cols = 20u;
+        }
+        if (browser_name_cols < 5u)
+        {
+            browser_name_cols = 5u;
+        }
+        /* +3 for folder icon slot, +4 for inner paddings/borders. */
+        const unsigned browser_content_cols = browser_name_cols + 7u;
+        content_cols = browser_content_cols > title_len ? browser_content_cols : title_len;
+    }
 
     const unsigned box_cols = content_cols;
     const boolean has_unload_hint = (m_View == MenuViewLoadRom || m_View == MenuViewLoadDisk) ? TRUE : FALSE;
@@ -1477,10 +1524,22 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         box_y = screen_height > box_h_px ? (screen_height - box_h_px) : 0u;
     }
 
+    const boolean browser_view = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser) ? TRUE : FALSE;
+    if (m_ForceHighlightRedraw || m_ForceContentRedraw)
+    {
+        m_ForceRedraw = TRUE;
+    }
+    const boolean partial_row_redraw = FALSE;
+
     if (m_Visible
         && !m_ForceRedraw
+     && !m_ForceHighlightRedraw
+     && !m_ForceContentRedraw
      && m_Row == box_y
      && m_Col == box_x
+     && m_LastBoxValid
+     && m_LastBoxW == box_w_px
+     && m_LastBoxH == box_h_px
      && m_LastDrawnSelected == m_Selected
      && m_LastDrawnView == m_View
      && m_LastDrawnOverscanPercent == m_OverscanPercent
@@ -1490,6 +1549,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnRefreshRateHz == m_RefreshRateHz
      && m_LastDrawnDiskRomEnabled == m_DiskRomEnabled
      && m_LastDrawnBootMode == m_BootMode
+     && m_LastDrawnMachineProfile == m_MachineProfile
      && m_LastDrawnZ80TurboMode == m_Z80TurboMode
      && m_LastDrawnRenshaMode == m_RenshaMode
      && m_LastDrawnSccCart == m_SccCartEnabled
@@ -1499,19 +1559,103 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && ComboTextEquals(m_LastDrawnLoadRomSlot1Name, m_LoadRomSlot1Name)
      && ComboTextEquals(m_LastDrawnLoadRomSlot2Name, m_LoadRomSlot2Name)
      && ComboTextEquals(m_LastDrawnLoadDiskDrive1Name, m_LoadDiskDrive1Name)
-     && ComboTextEquals(m_LastDrawnLoadDiskDrive2Name, m_LoadDiskDrive2Name))
+     && ComboTextEquals(m_LastDrawnLoadDiskDrive2Name, m_LoadDiskDrive2Name)
+     && (m_View != MenuViewLoadRomBrowser && m_View != MenuViewLoadDiskBrowser
+         ? TRUE
+         : (m_LastDrawnBrowserTop == m_FileBrowser.GetTop()
+            && m_LastDrawnBrowserCount == m_FileBrowser.GetCount()
+            && m_LastDrawnBrowserSelectedAbs == m_FileBrowser.GetSelectedAbs()
+            && m_LastDrawnBrowserMode == m_FileBrowser.GetMode()
+            && m_LastDrawnBrowserSlot == m_FileBrowser.GetSlotIndex()
+            && m_LastDrawnBrowserContentStamp == m_FileBrowser.GetContentStamp())))
     {
         return;
     }
 
-    renderer->FillRect(box_x, box_y, box_w_px, box_h_px, kPauseMenuBgColor);
-    renderer->DrawRectBorder(box_x, box_y, box_w_px, box_h_px, BRIGHT_WHITE_COLOR, 2u);
-
     const unsigned title_x = box_x + ((box_cols - title_len) / 2u) * cell_w;
     const unsigned title_y = box_y;
+    const boolean allow_backbuffer = COMBO_MENU_DOUBLE_BUFFER ? TRUE : FALSE;
+    boolean use_backbuffer = FALSE;
+    if (allow_backbuffer)
+    {
+        const unsigned backbuffer_w = anchor_w;
+        const unsigned backbuffer_h = anchor_h;
+        const unsigned backbuffer_need_pixels = backbuffer_w * backbuffer_h;
+        if (backbuffer_need_pixels > 0u)
+        {
+            if (m_MenuBackbuffer == 0 || m_MenuBackbufferCapacityPixels < backbuffer_need_pixels)
+            {
+                TScreenColor *new_buffer = new TScreenColor[backbuffer_need_pixels];
+                if (new_buffer != 0)
+                {
+                    if (m_MenuBackbuffer != 0)
+                    {
+                        delete[] m_MenuBackbuffer;
+                    }
+                    m_MenuBackbuffer = new_buffer;
+                    m_MenuBackbufferCapacityPixels = backbuffer_need_pixels;
+                }
+            }
+            use_backbuffer = (m_MenuBackbuffer != 0 && m_MenuBackbufferCapacityPixels >= backbuffer_need_pixels) ? TRUE : FALSE;
+        }
+    }
+    if (use_backbuffer)
+    {
+        /* Full clear off-screen first; on-screen blit remains single-pass (no flick). */
+        ComboClearPixels(m_MenuBackbuffer, anchor_w * anchor_h);
+
+        TViewportScreenshotView snapshot;
+        if (combo_viewport_screenshot_get(&snapshot))
+        {
+            const unsigned anchor_x1 = anchor_x + anchor_w;
+            const unsigned anchor_y1 = anchor_y + anchor_h;
+            const unsigned snap_x1 = snapshot.x + snapshot.w;
+            const unsigned snap_y1 = snapshot.y + snapshot.h;
+            const unsigned ix0 = (anchor_x > snapshot.x) ? anchor_x : snapshot.x;
+            const unsigned iy0 = (anchor_y > snapshot.y) ? anchor_y : snapshot.y;
+            const unsigned ix1 = (anchor_x1 < snap_x1) ? anchor_x1 : snap_x1;
+            const unsigned iy1 = (anchor_y1 < snap_y1) ? anchor_y1 : snap_y1;
+            if (ix1 > ix0 && iy1 > iy0)
+            {
+                const unsigned copy_w = ix1 - ix0;
+                for (unsigned y = iy0; y < iy1; ++y)
+                {
+                    const unsigned src_off = (y - snapshot.y) * snapshot.stride + (ix0 - snapshot.x);
+                    const unsigned dst_off = (y - anchor_y) * anchor_w + (ix0 - anchor_x);
+                    const TScreenColor *src = snapshot.pixels + src_off;
+                    TScreenColor *dst = m_MenuBackbuffer + dst_off;
+                    for (unsigned x = 0u; x < copy_w; ++x)
+                    {
+                        dst[x] = src[x];
+                    }
+                }
+            }
+        }
+        m_MenuBackbufferX = anchor_x;
+        m_MenuBackbufferY = anchor_y;
+        m_MenuBackbufferW = anchor_w;
+        m_MenuBackbufferH = anchor_h;
+        renderer->BeginOffscreen(anchor_x, anchor_y, anchor_w, anchor_h, m_MenuBackbuffer, anchor_w);
+    }
+    else
+    {
+        m_MenuBackbufferX = 0u;
+        m_MenuBackbufferY = 0u;
+        m_MenuBackbufferW = 0u;
+        m_MenuBackbufferH = 0u;
+    }
+    renderer->FillRect(box_x, box_y, box_w_px, box_h_px, kPauseMenuBgColor);
+    renderer->DrawRectBorder(box_x, box_y, box_w_px, box_h_px, BRIGHT_WHITE_COLOR, 2u);
     renderer->DrawText(title_x, title_y, title, title_style, scale_x, scale_y);
 
-    for (unsigned i = 0; i < item_count; ++i)
+    const boolean browser_with_scrollbar =
+        ((m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser)
+         && item_count > 0u
+         && m_FileBrowser.GetCount() > item_count
+         && box_cols > 8u);
+    const unsigned bar_col = browser_with_scrollbar ? (box_cols - 3u) : 0u;
+
+    const auto draw_row = [&](unsigned i)
     {
         const unsigned row = 2u + i;
         const unsigned y = box_y + (row * cell_h);
@@ -1524,7 +1668,16 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
 
         if (selected_row && box_cols > 4u && !load_media_row)
         {
-            renderer->FillRect(box_x + (2u * cell_w), y, (box_cols - 4u) * cell_w, cell_h, BRIGHT_WHITE_COLOR);
+            unsigned highlight_cols = box_cols - 4u;
+            if (browser_row && browser_with_scrollbar && bar_col > 4u)
+            {
+                const unsigned text_end_col = bar_col - 2u; /* keep one spacer col before bar */
+                if (text_end_col > 2u)
+                {
+                    highlight_cols = text_end_col - 2u + 1u;
+                }
+            }
+            renderer->FillRect(box_x + (2u * cell_w), y, highlight_cols * cell_w, cell_h, BRIGHT_WHITE_COLOR);
         }
 
         if (separator_row)
@@ -1536,7 +1689,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
             {
                 renderer->FillRect(line_x, line_y, line_w, 2u, BRIGHT_WHITE_COLOR);
             }
-            continue;
+            return;
         }
 
         if (settings_row || load_media_row)
@@ -1590,16 +1743,29 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         {
             const unsigned x = box_x + (2u * cell_w);
             const TGfxTextStyle style = (items[i].selectable && i == m_Selected) ? selected_style : normal_style;
-            const unsigned abs = m_RomBrowserTop + i;
-            const boolean draw_folder_icon = (abs < m_RomBrowserCount && m_RomBrowserIsDir[abs] && !m_RomBrowserIsParent[abs]) ? TRUE : FALSE;
+            const boolean draw_folder_icon = (m_FileBrowser.IsDirVisible(i) && !m_FileBrowser.IsParentVisible(i)) ? TRUE : FALSE;
+            unsigned max_label_chars = 20u;
+            if (browser_with_scrollbar && bar_col > 4u)
+            {
+                /* Keep one blank column between filename and scrollbar. */
+                const unsigned text_end_col = bar_col - 2u;
+                const unsigned dyn_max = (text_end_col > 2u) ? (text_end_col - 2u + 1u) : 0u;
+                max_label_chars = (dyn_max < max_label_chars) ? dyn_max : max_label_chars;
+            }
+            if (draw_folder_icon && max_label_chars > 3u)
+            {
+                max_label_chars -= 3u;
+            }
+            char clipped_label[40];
+            ComboSliceCopy(clipped_label, sizeof(clipped_label), items[i].label, 0u, max_label_chars);
             if (draw_folder_icon)
             {
                 renderer->DrawText(x, y, "\x1E\x1F", style, scale_x, scale_y);
-                renderer->DrawText(x + (3u * cell_w), y, items[i].label, style, scale_x, scale_y);
+                renderer->DrawText(x + (3u * cell_w), y, clipped_label, style, scale_x, scale_y);
             }
             else
             {
-                renderer->DrawText(x, y, items[i].label, style, scale_x, scale_y);
+                renderer->DrawText(x, y, clipped_label, style, scale_x, scale_y);
             }
         }
         else
@@ -1608,6 +1774,40 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
             const TGfxTextStyle style = (items[i].selectable && i == m_Selected) ? selected_style : normal_style;
             renderer->DrawText(x, y, items[i].label, style, scale_x, scale_y);
         }
+    };
+
+    for (unsigned i = 0; i < item_count; ++i)
+    {
+        draw_row(i);
+    }
+
+    if (browser_with_scrollbar)
+    {
+        const unsigned bar_x = box_x + (bar_col * cell_w);
+        const unsigned top_row = 2u;
+        const unsigned bottom_row = 2u + item_count - 1u;
+        const unsigned arrow_up_row = (top_row > 0u) ? (top_row - 1u) : top_row;
+        const unsigned arrow_down_row = bottom_row + 1u;
+        const unsigned top_y = box_y + (arrow_up_row * cell_h);
+        const unsigned bottom_y = box_y + (arrow_down_row * cell_h);
+
+        if (bottom_row > top_row + 1u)
+        {
+            const unsigned track_start_row = top_row;
+            const unsigned track_end_row = bottom_row;
+            const unsigned track_len = track_end_row - track_start_row + 1u;
+            const unsigned max_top = m_FileBrowser.GetCount() - item_count;
+            unsigned thumb_row = track_start_row;
+            if (max_top > 0u)
+            {
+                const unsigned rel = ((track_len - 1u) * m_FileBrowser.GetTop()) / max_top;
+                thumb_row = track_start_row + rel;
+            }
+            const unsigned thumb_y = box_y + (thumb_row * cell_h);
+            renderer->DrawText(bar_x, thumb_y, "\x1B", normal_style, scale_x, scale_y);
+        }
+        renderer->DrawText(bar_x, top_y, "\x1C", normal_style, scale_x, scale_y);
+        renderer->DrawText(bar_x, bottom_y, "\x1D", normal_style, scale_x, scale_y);
     }
 
     if (has_unload_hint)
@@ -1635,6 +1835,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
     m_LastDrawnDiskRomEnabled = m_DiskRomEnabled;
     m_LastDrawnBootMode = m_BootMode;
+    m_LastDrawnMachineProfile = m_MachineProfile;
     m_LastDrawnZ80TurboMode = m_Z80TurboMode;
     m_LastDrawnRenshaMode = m_RenshaMode;
     m_LastDrawnSccCart = m_SccCartEnabled;
@@ -1645,11 +1846,28 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), m_LoadRomSlot2Name);
     CopySmallText(m_LastDrawnLoadDiskDrive1Name, sizeof(m_LastDrawnLoadDiskDrive1Name), m_LoadDiskDrive1Name);
     CopySmallText(m_LastDrawnLoadDiskDrive2Name, sizeof(m_LastDrawnLoadDiskDrive2Name), m_LoadDiskDrive2Name);
+    m_LastDrawnBrowserTop = m_FileBrowser.GetTop();
+    m_LastDrawnBrowserCount = m_FileBrowser.GetCount();
+    m_LastDrawnBrowserSelectedAbs = m_FileBrowser.GetSelectedAbs();
+    m_LastDrawnBrowserMode = m_FileBrowser.GetMode();
+    m_LastDrawnBrowserSlot = m_FileBrowser.GetSlotIndex();
+    m_LastDrawnBrowserContentStamp = m_FileBrowser.GetContentStamp();
     m_LastBoxX = box_x;
     m_LastBoxY = box_y;
     m_LastBoxW = box_w_px;
     m_LastBoxH = box_h_px;
     m_LastBoxValid = TRUE;
+    if (use_backbuffer)
+    {
+        renderer->EndOffscreenBlit();
+    }
     m_ForceRedraw = FALSE;
+    m_ForceHighlightRedraw = FALSE;
+    m_ForceContentRedraw = FALSE;
+    if ((m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser) && m_BrowserWarmupRedraws > 0u)
+    {
+        --m_BrowserWarmupRedraws;
+        m_ForceRedraw = TRUE;
+    }
     m_Visible = TRUE;
 }

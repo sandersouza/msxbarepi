@@ -29,6 +29,7 @@ COMBO_SIZE_OPT ?= 1
 COMBO_FMSX_BOOT_MINIMAL_STARTUP ?= 1
 COMBO_ENABLE_DEBUG_OVERLAY ?= 1
 COMBO_ENABLE_SETTINGS_SAVE_EXPERIMENTAL ?= 1
+COMBO_MENU_DOUBLE_BUFFER ?= 1
 
 CPPFLAGS += -DCOMBO_DEBUG_OVERLAY_DEFAULT=$(COMBO_DEBUG_OVERLAY_DEFAULT)
 CPPFLAGS += -DCOMBO_ENABLE_FMSX=$(COMBO_ENABLE_FMSX)
@@ -58,6 +59,7 @@ CPPFLAGS += -DCOMBO_SIZE_OPT=$(COMBO_SIZE_OPT)
 CPPFLAGS += -DCOMBO_FMSX_BOOT_MINIMAL_STARTUP=$(COMBO_FMSX_BOOT_MINIMAL_STARTUP)
 CPPFLAGS += -DCOMBO_ENABLE_DEBUG_OVERLAY=$(COMBO_ENABLE_DEBUG_OVERLAY)
 CPPFLAGS += -DCOMBO_ENABLE_SETTINGS_SAVE_EXPERIMENTAL=$(COMBO_ENABLE_SETTINGS_SAVE_EXPERIMENTAL)
+CPPFLAGS += -DCOMBO_MENU_DOUBLE_BUFFER=$(COMBO_MENU_DOUBLE_BUFFER)
 
 ifeq ($(COMBO_SUPPRESS_WARNINGS),1)
 CFLAGS += -w
@@ -93,7 +95,7 @@ CXXFLAGS += -Os -ffunction-sections -fdata-sections
 LDFLAGS += --gc-sections
 endif
 
-OBJS = main.o kernel.o keyboard_input.o gfx_textbox.o combo_menu.o combo_menu_items.o media_catalog.o
+OBJS = main.o kernel.o keyboard_input.o gfx_textbox.o viewport_screenshot.o combo_menu.o combo_menu_items.o media_catalog.o combo_file_browser.o
 OBJS += combo_locale.o combo_locale_pt.o combo_locale_en.o combo_locale_es.o
 
 ifeq ($(COMBO_ENABLE_FMSX),1)

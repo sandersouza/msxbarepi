@@ -91,6 +91,7 @@ static boolean g_disk_rom_enabled = TRUE;
 static unsigned g_boot_mode = (COMBO_FMSX_BOOT_PROFILE > 2) ? 0u : (unsigned) COMBO_FMSX_BOOT_PROFILE;
 static unsigned g_active_boot_mode = (COMBO_FMSX_BOOT_PROFILE > 2) ? 0u : (unsigned) COMBO_FMSX_BOOT_PROFILE;
 static unsigned g_model_profile = FMSX_MODEL_PROFILE_MSX1;
+static unsigned g_active_model_profile = FMSX_MODEL_PROFILE_MSX1;
 static boolean g_use_embedded_bios = FALSE;
 static unsigned g_z80_turbo_mode = 0u;
 static boolean g_scc_cart_enabled = TRUE;
@@ -141,6 +142,22 @@ static unsigned fmsx_runtime_fast_cutoff_frames(void)
     case FMSX_MODEL_PROFILE_MSX1:
     default: return COMBO_FMSX_FAST_CUTOFF_FRAMES_MSX1;
     }
+}
+
+static int fmsx_runtime_machine_mode_bits_for_profile(unsigned profile)
+{
+    switch (profile)
+    {
+    case FMSX_MODEL_PROFILE_MSX2:  return MSX_MSX2;
+    case FMSX_MODEL_PROFILE_MSX2P: return MSX_MSX2P;
+    case FMSX_MODEL_PROFILE_MSX1:
+    default: return MSX_MSX1;
+    }
+}
+
+static int fmsx_runtime_machine_mode_bits(void)
+{
+    return fmsx_runtime_machine_mode_bits_for_profile(g_model_profile);
 }
 
 static boolean fmsx_runtime_is_fast_like_boot(void)
@@ -211,7 +228,8 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     g_fmsx_status.last_pc = 0;
     g_fmsx_status.last_error = 0;
 
-    int startup_mode = MSX_MSX1 | (fmsx_runtime_effective_refresh_hz() == 50u ? MSX_PAL : MSX_NTSC) | MSX_JOY1;
+    const int base_mode = (fmsx_runtime_effective_refresh_hz() == 50u ? MSX_PAL : MSX_NTSC) | MSX_JOY1;
+    int startup_mode = fmsx_runtime_machine_mode_bits() | base_mode;
     if (g_disk_rom_enabled)
     {
         /*
@@ -251,6 +269,8 @@ static boolean fmsx_runtime_start(boolean boot_basic)
 #endif
 
     const boolean game_mode = (g_boot_mode == 2u) ? TRUE : FALSE;
+    const unsigned requested_model_profile = g_model_profile;
+    unsigned started_model_profile = requested_model_profile;
     const char *saved_carta = 0;
     const char *saved_cartb = 0;
     if (boot_basic)
@@ -267,6 +287,22 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     fmsx_runtime_set_load_diag(started ? 2102u : 9102u); /* after StartMSX */
     g_use_embedded_bios = FALSE;
 
+    if (!started && requested_model_profile != FMSX_MODEL_PROFILE_MSX1)
+    {
+        /*
+         * Safety fallback: when MSX2/MSX2+ BIOS set is unavailable/corrupted,
+         * retry as MSX1 instead of leaving the emulator dead at boot/reset.
+         */
+        TrashMSX();
+        started_model_profile = FMSX_MODEL_PROFILE_MSX1;
+        startup_mode = fmsx_runtime_machine_mode_bits_for_profile(FMSX_MODEL_PROFILE_MSX1) | base_mode;
+        g_use_embedded_bios = game_mode ? TRUE : FALSE;
+        fmsx_runtime_set_load_diag(2103u); /* fallback retry as MSX1 */
+        started = StartMSX(startup_mode, COMBO_FMSX_RAMMAPPER_PAGES, 2) ? TRUE : FALSE;
+        fmsx_runtime_set_load_diag(started ? 2104u : 9104u); /* fallback result */
+        g_use_embedded_bios = FALSE;
+    }
+
     if (boot_basic)
     {
         ROMName[0] = saved_carta;
@@ -278,6 +314,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
         g_fmsx_status.last_error = 1;
         return FALSE;
     }
+    g_active_model_profile = started_model_profile;
 
     if (!g_disk_rom_enabled)
     {
@@ -579,6 +616,11 @@ void fmsx_runtime_set_model_profile(unsigned profile)
 unsigned fmsx_runtime_get_model_profile(void)
 {
     return g_model_profile;
+}
+
+unsigned fmsx_runtime_get_active_model_profile(void)
+{
+    return g_active_model_profile;
 }
 
 boolean fmsx_runtime_use_embedded_bios(void)

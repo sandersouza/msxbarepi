@@ -30,5 +30,6 @@ unsigned combo_media_catalog_file_count(void);
 unsigned combo_media_catalog_error_count(void);
 unsigned combo_media_catalog_dropped_count(void);
 const TComboMediaEntry *combo_media_catalog_entries(void);
+const TComboMediaEntry *combo_media_catalog_entries_by_type(unsigned type, unsigned *count);
 
 #endif

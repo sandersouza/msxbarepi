@@ -6,10 +6,14 @@ Padronizar a gestão do projeto no GitHub (Issues, Milestones, Branches e PRs) e
 Data de referência desta versão: 27 de fevereiro de 2026.
 
 ## Regras operacionais
+- Descrições de milestones e issues devem ser claras, objetivas, conter checklist de progresso (sub-tasks).
+- As descrições, comentários e textos em geral, precisam ser em formato markdown compatível com o GitHub, utilizando recursos como links, imagens, tabelas e formatação para melhor clareza.
 - Criar branch de issue somente quando formos atuar nela.
 - Toda branch criada para trabalho deve ser criada/vinculada pela issue de origem via `gh issue develop`.
-- Novas opções/labels de menu devem refletir em todos os idiomas existentes no locale (`PT`, `EN`, `ES`) no mesmo PR/issue.
+- Todo PR deve ser criado somente a partir de uma branch vinculada a uma issue ativa.
+- Todo PR deve ser vinculado a milestone e ao projeto origem da issue, além ter as mesmas labels da issue de origem.
 - Sempre atualizar as tasks concluídas diretamente na issue remota.
+- Ao terminar uma milestone e/ou issue, sincronize-a localmente e feche-a no GitHub, garantindo que todas as issues associadas estejam fechadas ou movidas para outra milestone.
 - Para issues de performance (`type:performance`), anexar evidência da suíte em `docs/performance-regression-suite.md` antes de mover para `In review`.
 - Sempre atualizar o campo `Status` do item no projeto `MSX BarePI` durante o ciclo:
   - ao iniciar uma milestone: mover todas as issues abertas da milestone para `Ready`
@@ -17,13 +21,17 @@ Data de referência desta versão: 27 de fevereiro de 2026.
   - ao estabilizar e entrar em testes: `In review`
   - se testes falharem: voltar para `In progress`
   - ao concluir/fechar issue e seguir para a próxima: `Done`
-- Manter `docs/milestones/` sincronizado com milestones/issues remotas.
 - Ao estabilizar uma issue, abrir PR `issue-branch -> main` e registrar o link para review.
-- Ao concluir/estabilizar uma issue, é obrigatório abrir o PR da branch da issue para `main` e enviar o link de aprovação ao usuário antes de avançar para a próxima issue.
+- Ao concluir/estabilizar uma issue, é obrigatório abrir o PR da branch da issue para `main` e enviar o link de aprovação ao usuário antes de avançar para a próxima issue; faça isso em `Plan Mode` no agente local, aguardando com a pergunta `O PR foi aprovado?`.
+- Ao confirmar a aprovação do PR, avance para a próxima issue, atualizando o status da issue anterior para `Done` e da nova issue para `In progress`.
+- Caso não hajam mais issues abertas na milestone atual, avance para a próxima milestone, garantindo que as issues estejam organizadas e o status atualizado no projeto.
+- Antes de avançar para a próxima issue/milestone, verifique se a anterior foi concluída, o PR aprovado e o status atualizado para `Done` no projeto; entre em `Plan Mode` para confirmar cada etapa e perguntar se deve seguir para a próxima issue/milestone.
 - Ao abrir o PR, aplicar as mesmas labels relevantes da issue no PR (ex.: `priority:*`, `type:*`, `area:*`, `beta:*`).
 - Sincronizar branches locais/remotas com `git fetch --prune`.
-- Se uma branch remota for deletada, a branch local correspondente deve ser removida somente após confirmação explícita do usuário.
+- Se uma branch remota for deletada, a branch local correspondente deve ser removida somente após confirmação explícita do usuário em `Plan Mode`, perguntando `A branch remota <nome-da-branch> foi deletada. Deseja remover a branch local correspondente?`.
 - Nunca alterar/deletar/reescrever a branch `main`.
+- Antes de iniciar uma nova milestone, rodar uma etapa de sanitização do repo atual, limpando arquivos desnecessários, builds, artifacts, branches órfãs, atualizando as documentações e garantindo que a branch `main` esteja atualizada e sem alterações locais.
+- Para releases, garantir que a branch remota siga o padrão `release/<versao>` e ajustar o `target` da release/tag para essa branch, evitando usar branches de release fora do prefixo `release/`.
 
 ## Convenções
 - Repositório: `sandersouza/msxbarepi`
@@ -124,20 +132,6 @@ git fetch --prune
 ```bash
 gh auth refresh -s read:project -s project
 ```
-
-## Snapshot atual (remoto)
-Milestones abertas:
-- `m2` Core (open)
-- `m4` Jogabilidade Básica MSX1 (open, due date definida em 2026-02-23)
-- `m5` Estabilização e Performance (open)
-- `m7` Beta pública v0.1 - Performance e Boot (open)
-
-Issues abertas mapeadas localmente:
-- `m2`: nenhuma (0 abertas)
-- `m4`: #14, #17, #18
-- `m5`: #19, #21, #22
-- `m7`: #34, #35, #36, #37, #38, #39, #40, #41, #42
-
 ## Comandos úteis
 Listar issues com metadados:
 ```bash

@@ -53,6 +53,7 @@ unsigned fmsx_runtime_get_boot_mode(void);
 unsigned fmsx_runtime_get_active_boot_mode(void);
 void fmsx_runtime_set_model_profile(unsigned profile);
 unsigned fmsx_runtime_get_model_profile(void);
+unsigned fmsx_runtime_get_active_model_profile(void);
 boolean fmsx_runtime_use_embedded_bios(void);
 void fmsx_runtime_notify_media_probe(void);
 void fmsx_runtime_set_z80_turbo_mode(unsigned mode);

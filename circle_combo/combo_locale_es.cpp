@@ -27,6 +27,7 @@ extern const TComboLocaleStrings g_ComboLocaleES = {
     "Estandar",
     "Disk ROM",
     "Modo de Arranque",
+    "Máquina",
     "Z80 Turbo",
     "Rensha",
     "SCC Cart",
