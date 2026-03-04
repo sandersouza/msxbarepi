@@ -1,6 +1,18 @@
 # AI Handoff Context
 
-Última atualização: 03/03/2026 11:06
+Última atualização: 04/03/2026 14:58
+
+## Checkpoint #76 (Bootlock x Debug Modular)
+
+- Branch de correção ativa para investigação: `76-2-correcao-do-bootlock`.
+- Resultado do isolamento em hardware:
+  - `DEBUG=1 COMBO_ENABLE_DEBUG_OVERLAY=1` => travamento no splash colorido (early boot).
+  - `DEBUG=0 COMBO_ENABLE_DEBUG_OVERLAY=0` => boot normal restaurado.
+- Artefato de boot funcional usado como referência:
+  - `artifacts/kernel8-issue76-nodebug.img`
+  - `BTID:202603041456-07bf64e-42931515`
+- Inferência técnica:
+  - regressão concentrada no caminho de debug modularizado (overlay/hotkeys/telemetria), sem evidência de regressão no core de áudio PSG/SCC/FM e pipeline base do fMSX.
 
 ## Objetivo deste arquivo
 
@@ -1262,3 +1274,181 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-03-03 11:06:03 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
 - 2026-03-03 11:06:03 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
 - 2026-03-03 11:06:03 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue66.img
+- 2026-03-03 12:45:14 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 12:45:14 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 12:45:14 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 12:53:39 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 12:53:39 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 12:53:39 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 | stage=m10-issue76-msx2-ntsc-bios-validada | status=ok | artifact=sdcard/msx.cpio | note=MSX2 estável com HB-F1XD (MSX2.ROM/MSX2EXT.ROM) + DISK/KANJI do set fMSX; MSX2+ mantido com MSX2P/MSX2PEXT do set fMSX
+- 2026-03-03 13:11:53 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 13:11:53 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 13:11:54 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 13:25:25 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 13:25:25 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 13:25:25 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 20:06:54 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 20:06:54 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 20:06:54 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 20:11:28 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 20:11:28 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 20:11:28 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 20:32:34 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 20:32:34 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 20:32:34 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 20:37:03 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 20:37:03 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 20:37:03 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 20:43:57 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 20:43:57 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 20:43:57 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 20:45:29 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 20:45:29 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 20:45:29 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 20:49:48 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 20:49:48 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 20:49:48 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 20:53:06 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 20:53:06 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 20:53:06 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 21:05:04 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 21:05:04 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 21:05:04 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 21:07:39 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 21:07:39 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 21:07:39 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 21:08:46 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 21:08:46 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 21:08:46 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 21:13:51 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 21:13:51 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 21:13:51 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 21:20:41 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 21:20:41 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 21:20:41 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 21:30:14 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 21:30:14 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 21:30:14 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 21:57:39 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 21:57:39 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 21:57:39 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 22:06:30 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 22:06:30 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 22:06:30 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 22:09:45 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 22:09:45 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 22:09:45 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 22:20:27 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 22:20:27 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 22:20:27 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 22:29:23 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 22:29:23 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 22:29:23 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 22:43:34 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 22:43:35 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 22:43:35 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 22:51:53 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 22:51:53 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 22:51:53 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 22:52:51 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 22:52:51 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 22:52:51 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 22:59:30 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 22:59:30 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 22:59:30 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 23:05:00 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 23:05:00 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 23:05:00 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 23:05:59 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 23:05:59 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 23:05:59 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 23:11:05 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 23:11:05 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 23:11:05 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 23:25:22 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 23:25:22 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 23:25:22 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 23:36:07 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 23:36:07 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 23:36:07 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 23:40:59 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 23:40:59 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 23:41:00 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-03 23:49:42 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-03 23:49:42 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-03 23:49:42 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 00:05:36 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 00:05:36 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 00:05:36 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 00:19:21 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 00:19:21 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 00:19:21 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 00:20:18 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 00:20:18 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 00:20:18 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 00:21:12 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 00:21:12 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 00:21:12 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 12:15:50 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 12:15:50 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 12:15:50 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 12:25:41 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 12:25:41 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 12:25:41 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 12:57:24 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 12:57:24 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 12:57:24 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 13:10:04 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 13:10:04 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 13:10:04 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 13:11:17 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 13:11:17 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 13:11:17 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 13:25:38 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 13:25:38 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 13:25:38 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 13:25:58 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 13:25:58 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 13:25:58 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 13:28:09 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 13:28:09 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 13:28:09 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 13:28:16 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 13:28:16 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 13:28:16 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 13:45:42 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 13:45:42 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 13:45:42 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 13:46:28 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 13:46:28 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 13:46:28 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 13:47:04 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 13:47:04 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 13:47:04 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 13:56:58 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 13:56:58 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 13:56:58 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 14:05:03 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 14:05:03 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 14:05:03 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 14:11:55 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 14:11:56 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 14:11:56 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 14:14:31 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 14:14:31 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 14:14:31 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 14:20:20 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 14:20:21 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 14:20:21 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 14:40:02 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 14:40:02 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 14:40:02 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 14:44:22 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 14:44:22 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 14:44:22 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 14:52:34 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 14:52:35 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 14:52:35 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
+- 2026-03-04 14:55:52 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-04 14:55:52 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-04 14:55:52 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue76.img
