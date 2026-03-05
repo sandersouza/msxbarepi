@@ -13,6 +13,8 @@ Data de referência desta versão: 27 de fevereiro de 2026.
 - Todo PR deve ser criado somente a partir de uma branch vinculada a uma issue ativa.
 - Todo PR deve ser vinculado a milestone e ao projeto origem da issue, além ter as mesmas labels da issue de origem.
 - Sempre atualizar as tasks concluídas diretamente na issue remota.
+- Para cada milestone, manter `docs/milestones/m<numero>/CHALLENGES.md` atualizado com uma entrada por issue contendo: desafio, solução final (ou mitigação), status (`Resolvido`/`Parcial`/`Futuro`) e referência de continuidade quando houver.
+- Em cada build entregue para teste de hardware (incluindo iterações A/B/debug), publicar no comentário/status um identificador curto de rastreio no formato `BTID:<timestamp>-<git>-<sha8>` para permitir referência exata de qual artefato foi testado.
 - Ao terminar uma milestone e/ou issue, sincronize-a localmente e feche-a no GitHub, garantindo que todas as issues associadas estejam fechadas ou movidas para outra milestone.
 - Para issues de performance (`type:performance`), anexar evidência da suíte em `docs/performance-regression-suite.md` antes de mover para `In review`.
 - Sempre atualizar o campo `Status` do item no projeto `MSX BarePI` durante o ciclo:
@@ -117,6 +119,8 @@ git fetch --prune
 ```
 - Sincronização local:
   - Criar/atualizar arquivos em `docs/milestones/m*/` para cada issue remota aberta.
+  - Garantir que cada pasta de milestone tenha `README.md` e `CHALLENGES.md`.
+  - Atualizar o `CHALLENGES.md` ao concluir, estabilizar ou postergar uma issue.
   - Ajustar estado local quando issue fechar/mudar milestone.
 - Sincronização remota:
   - Manter checklist e status técnico na issue (não só local).

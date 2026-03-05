@@ -217,8 +217,10 @@ const TComboMenuItem *combo_menu_load_disk_items_get(unsigned language,
                                count);
 }
 
-const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
+const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
+                                                     unsigned max_scale_percent,
                                                      unsigned language,
+                                                     unsigned resolution_mode,
                                                      boolean widescreen_enabled,
                                                      unsigned scanline_mode,
                                                      unsigned refresh_rate_hz,
@@ -227,15 +229,18 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
                                                      unsigned machine_profile,
                                                      unsigned z80_turbo_mode,
                                                      unsigned rensha_mode,
+                                                     boolean fm_music_enabled,
                                                      boolean scc_cart_enabled,
                                                      boolean overlay_enabled,
                                                      boolean overlay_available,
+                                                     boolean debug_log_enabled,
                                                      unsigned audio_gain_percent,
                                                      unsigned *count)
 {
-    static TComboMenuItem settings_items[19];
+    static TComboMenuItem settings_items[24];
     static char language_label[32];
-    static char overscan_label[32];
+    static char resolution_label[32];
+    static char scale_label[32];
     static char widescreen_label[32];
     static char scanline_label[32];
     static char refresh_label[32];
@@ -244,8 +249,10 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     static char machine_label[32];
     static char turbo_label[32];
     static char rensha_label[32];
+    static char fm_music_label[32];
     static char scc_label[32];
     static char overlay_label[32];
+    static char debug_log_label[32];
     static char audio_gain_label[32];
 
     const TComboLocaleStrings *locale = combo_locale_get(language);
@@ -255,7 +262,11 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     }
 
     language = combo_locale_clamp_language(language);
-    if (overscan_percent > 100u) overscan_percent = 100u;
+    if (scale_percent < 250u) scale_percent = 250u;
+    if (max_scale_percent < 250u) max_scale_percent = 250u;
+    if (max_scale_percent > 450u) max_scale_percent = 450u;
+    if (scale_percent > max_scale_percent) scale_percent = max_scale_percent;
+    if (resolution_mode > 3u) resolution_mode = 0u;
     if (scanline_mode > 2u) scanline_mode = 2u;
     if (refresh_rate_hz != 50u) refresh_rate_hz = 60u;
     if (machine_profile > 2u) machine_profile = 0u;
@@ -265,13 +276,19 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     if (audio_gain_percent > 100u) audio_gain_percent = 100u;
 
     BuildLabelFlag(language_label, sizeof(language_label), locale->settings_language, combo_locale_language_code(language));
+    BuildLabelFlag(resolution_label, sizeof(resolution_label), locale->settings_resolution,
+                   resolution_mode == 0u ? locale->resolution_auto
+                   : (resolution_mode == 1u ? locale->resolution_1080
+                   : (resolution_mode == 2u ? locale->resolution_720 : locale->resolution_768)));
 
-    char overscan_flag[4];
-    overscan_flag[0] = (char) ('0' + ((overscan_percent / 100u) % 10u));
-    overscan_flag[1] = (char) ('0' + ((overscan_percent / 10u) % 10u));
-    overscan_flag[2] = (char) ('0' + (overscan_percent % 10u));
-    overscan_flag[3] = '\0';
-    BuildLabelFlag(overscan_label, sizeof(overscan_label), locale->settings_overscan, overscan_flag);
+    char scale_flag[4];
+    unsigned scale_factor = 1u + ((scale_percent - 250u) / 50u);
+    if (scale_factor < 1u) scale_factor = 1u;
+    if (scale_factor > 5u) scale_factor = 5u;
+    scale_flag[0] = (char) ('0' + (scale_factor % 10u));
+    scale_flag[1] = 'x';
+    scale_flag[2] = '\0';
+    BuildLabelFlag(scale_label, sizeof(scale_label), locale->settings_scale, scale_flag);
 
     BuildLabelFlag(widescreen_label, sizeof(widescreen_label), locale->settings_widescreen, widescreen_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(scanline_label, sizeof(scanline_label), locale->settings_scanlines,
@@ -286,9 +303,12 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
                    z80_turbo_mode == 0u ? locale->flag_off : (z80_turbo_mode == 1u ? "PAN" : "MAX"));
     BuildLabelFlag(rensha_label, sizeof(rensha_label), locale->settings_rensha,
                    rensha_mode == 0u ? locale->flag_off : (rensha_mode == 1u ? "1" : (rensha_mode == 2u ? "2" : "3")));
+    BuildLabelFlag(fm_music_label, sizeof(fm_music_label), locale->settings_fm_music, fm_music_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(scc_label, sizeof(scc_label), locale->settings_scc_cart, scc_cart_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(overlay_label, sizeof(overlay_label), locale->settings_debugger,
                    overlay_available ? (overlay_enabled ? locale->flag_on : locale->flag_off) : locale->flag_na);
+    BuildLabelFlag(debug_log_label, sizeof(debug_log_label), locale->settings_sd_log,
+                   overlay_available ? (debug_log_enabled ? locale->flag_on : locale->flag_off) : locale->flag_na);
     if (audio_gain_percent == 0u)
     {
         BuildLabelFlag(audio_gain_label, sizeof(audio_gain_label), locale->settings_audio_gain, locale->flag_off);
@@ -312,7 +332,11 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     settings_items[item_count].action = ComboMenuActionSeparator;
     settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
     settings_items[item_count++].selectable = FALSE;
-    settings_items[item_count].label = overscan_label;
+    settings_items[item_count].label = resolution_label;
+    settings_items[item_count].action = ComboMenuActionCycleResolution;
+    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
+    settings_items[item_count++].selectable = TRUE;
+    settings_items[item_count].label = scale_label;
     settings_items[item_count].action = ComboMenuActionOverscanChanged;
     settings_items[item_count].redraw_policy = ComboMenuRedrawMenuAndViewport;
     settings_items[item_count++].selectable = TRUE;
@@ -332,6 +356,10 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     settings_items[item_count].action = ComboMenuActionSeparator;
     settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
     settings_items[item_count++].selectable = FALSE;
+    settings_items[item_count].label = fm_music_label;
+    settings_items[item_count].action = ComboMenuActionToggleFmMusic;
+    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
+    settings_items[item_count++].selectable = TRUE;
     settings_items[item_count].label = scc_label;
     settings_items[item_count].action = ComboMenuActionToggleSccCart;
     settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
@@ -348,10 +376,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     settings_items[item_count].action = ComboMenuActionCycleMachine;
     settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
     settings_items[item_count++].selectable = TRUE;
-    settings_items[item_count].label = disk_rom_label;
-    settings_items[item_count].action = ComboMenuActionToggleDiskRom;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    settings_items[item_count++].selectable = TRUE;
     settings_items[item_count].label = boot_label;
     settings_items[item_count].action = ComboMenuActionCycleBootMode;
     settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
@@ -366,8 +390,23 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned overscan_percent,
     settings_items[item_count++].selectable = TRUE;
     if (overlay_available)
     {
+        settings_items[item_count].label = "";
+        settings_items[item_count].action = ComboMenuActionSeparator;
+        settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
+        settings_items[item_count++].selectable = FALSE;
+
         settings_items[item_count].label = overlay_label;
         settings_items[item_count].action = ComboMenuActionToggleOverlay;
+        settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
+        settings_items[item_count++].selectable = TRUE;
+
+        settings_items[item_count].label = debug_log_label;
+        settings_items[item_count].action = ComboMenuActionToggleDebugLog;
+        settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
+        settings_items[item_count++].selectable = TRUE;
+
+        settings_items[item_count].label = disk_rom_label;
+        settings_items[item_count].action = ComboMenuActionToggleDiskRom;
         settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
         settings_items[item_count++].selectable = TRUE;
     }
