@@ -24,18 +24,26 @@ ensure_settings_cfg() {
   echo "[INFO] Arquivo de configuracao nao encontrado; gerando default: ${PACKAGE_SETTINGS_CFG}"
   mkdir -p "$(dirname "$PACKAGE_SETTINGS_CFG")"
   cat > "$PACKAGE_SETTINGS_CFG" <<'EOF'
-overscan=0
+scale=250
+resolution=0
 language=0
 widescreen=0
 scanline=0
 refresh=60
-boot_mode=1
+disk_rom=1
+boot_mode=0
+machine=0
 z80_turbo=0
 rensha=0
-scc_cart=1
-debugger=1
+scc_cart=0
+fm_music=0
+debugger=0
 audio_mute=0
-audio_gain=50
+audio_gain=100
+cart_a_path=EMPTY
+cart_b_path=EMPTY
+disk_a_path=EMPTY
+disk_b_path=EMPTY
 #END
 EOF
 }

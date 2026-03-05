@@ -10,3 +10,7 @@ dtoverlay=disable-bt
 dtoverlay=pi3-disable-bt
 dtparam=audio=on
 arm_freq=1200
+hdmi_group=1
+hdmi_mode=4
+framebuffer_width=1280
+framebuffer_height=720

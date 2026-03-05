@@ -6,8 +6,13 @@
 struct TComboKeyboardInputState
 {
 	u8 bridge_bits;
+	boolean f6_pressed;
+	boolean f7_pressed;
+	boolean f8_pressed;
 	boolean f9_pressed;
 	boolean f10_pressed;
+	boolean debug_fm_gain_up_pressed;
+	boolean debug_fm_gain_down_pressed;
 	boolean f1_pressed;
 	boolean pause_pressed;
 	boolean menu_up_pressed;

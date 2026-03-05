@@ -21,7 +21,8 @@ extern const TComboLocaleStrings g_ComboLocaleEN = {
     "EMPTY",
     "[DEL] Eject Disk",
     "Language",
-    "Overscan",
+    "Resolution",
+    "Scale",
     "Widescreen",
     "Scanlines",
     "Standard",
@@ -30,8 +31,10 @@ extern const TComboLocaleStrings g_ComboLocaleEN = {
     "Machine",
     "Z80 Turbo",
     "Rensha",
-    "SCC Cart",
+    "FM-PAC",
+    "Konami SCC",
     "Debugger",
+    "SD Log",
     "Audio Gain",
     "Save",
     "OFF",
@@ -41,5 +44,9 @@ extern const TComboLocaleStrings g_ComboLocaleEN = {
     "LCD",
     "CRT",
     "NTSC",
-    "PAL"
+    "PAL",
+    "AUTO",
+    "1080",
+    "720",
+    "768"
 };

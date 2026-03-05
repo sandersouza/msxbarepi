@@ -30,7 +30,8 @@ typedef struct {
     const char *load_disk_empty;
     const char *load_disk_unload_hint;
     const char *settings_language;
-    const char *settings_overscan;
+    const char *settings_resolution;
+    const char *settings_scale;
     const char *settings_widescreen;
     const char *settings_scanlines;
     const char *settings_refresh;
@@ -39,8 +40,10 @@ typedef struct {
     const char *settings_machine;
     const char *settings_z80_turbo;
     const char *settings_rensha;
+    const char *settings_fm_music;
     const char *settings_scc_cart;
     const char *settings_debugger;
+    const char *settings_sd_log;
     const char *settings_audio_gain;
     const char *settings_save;
     const char *flag_off;
@@ -51,6 +54,10 @@ typedef struct {
     const char *scan_crt;
     const char *refresh_ntsc;
     const char *refresh_pal;
+    const char *resolution_auto;
+    const char *resolution_1080;
+    const char *resolution_720;
+    const char *resolution_768;
 } TComboLocaleStrings;
 
 unsigned combo_locale_clamp_language(unsigned language);

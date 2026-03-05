@@ -33,9 +33,14 @@ COMBO_DEFER_INITRAMFS_FULL_MOUNT_FRAMES ?= 120
 COMBO_SIZE_OPT ?= 1
 COMBO_FMSX_BOOT_MINIMAL_STARTUP ?= 1
 COMBO_ENABLE_DEBUG_OVERLAY ?= 0
+COMBO_DEBUG_OVERLAY_STAGE ?= 1
 COMBO_TEST_TONE_DEFAULT ?= 0
 COMBO_DEBUG_OVERLAY_DEFAULT ?= 0
 COMBO_DEBUG_OVERLAY_COMPACT ?= 1
+OWNER ?=
+BUILD_BID ?= $(shell date +%Y%m%d%H%M)-$(shell git rev-parse --short HEAD 2>/dev/null || echo nogit)
+CIRCLE_KERNEL_MAX_SIZE ?= 0x400000
+CIRCLE_EXTRAINCLUDE ?= -DKERNEL_MAX_SIZE=$(CIRCLE_KERNEL_MAX_SIZE)
 
 CROSS ?= $(shell \
 	if command -v aarch64-none-elf-gcc >/dev/null 2>&1; then \
@@ -137,8 +142,11 @@ all: default
 default: circle-configure
 	@mkdir -p artifacts
 	@mkdir -p artifacts build/circle_combo
+	$(MAKE) -C third_party/circle/lib clean >/dev/null
+	$(MAKE) -C third_party/circle/lib EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
 	$(MAKE) -C circle_combo clean >/dev/null
 	$(MAKE) -C circle_combo CHECK_DEPS=0 COMBO_ENABLE_FMSX=1 \
+		EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' \
 		COMBO_INITRAMFS_MOUNT=$(COMBO_INITRAMFS_MOUNT) \
 		COMBO_REQUIRE_CPIO_BIOS=$(COMBO_REQUIRE_CPIO_BIOS) \
 		COMBO_EMBED_INITRAMFS=$(COMBO_EMBED_INITRAMFS) \
@@ -162,9 +170,12 @@ default: circle-configure
 		COMBO_SIZE_OPT=$(COMBO_SIZE_OPT) \
 		COMBO_FMSX_BOOT_MINIMAL_STARTUP=$(COMBO_FMSX_BOOT_MINIMAL_STARTUP) \
 		COMBO_ENABLE_DEBUG_OVERLAY=$(COMBO_ENABLE_DEBUG_OVERLAY) \
+		COMBO_DEBUG_OVERLAY_STAGE=$(COMBO_DEBUG_OVERLAY_STAGE) \
 		COMBO_TEST_TONE_DEFAULT=$(COMBO_TEST_TONE_DEFAULT) \
 		COMBO_DEBUG_OVERLAY_DEFAULT=$(COMBO_DEBUG_OVERLAY_DEFAULT) \
-		COMBO_DEBUG_OVERLAY_COMPACT=$(COMBO_DEBUG_OVERLAY_COMPACT)
+		COMBO_DEBUG_OVERLAY_COMPACT=$(COMBO_DEBUG_OVERLAY_COMPACT) \
+		COMBO_BUILD_BID="$(BUILD_BID)" \
+		COMBO_BUILD_OWNER="$(OWNER)"
 	@img=$$(ls circle_combo/kernel8*.img 2>/dev/null | head -n1); \
 	if [ -z "$$img" ]; then \
 		echo "Erro: imagem do bootstrap fMSX nao encontrada"; \

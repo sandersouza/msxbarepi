@@ -7,6 +7,7 @@ Espelho local de milestones/issues do GitHub para planejamento técnico e handof
 - Arquivo de issue: `<numero>-<slug>.md`
 - Cada pasta de milestone deve conter `README.md` com metadados/descrição da milestone remota.
 - O `README.md` da pasta deve conter obrigatoriamente `Milestone remota: #<numero>` para permitir auditoria/sync automática.
+- Cada pasta de milestone deve conter `CHALLENGES.md` com histórico por issue: problema enfrentado, solução adotada, status (`Resolvido`/`Parcial`/`Futuro`) e referência de continuidade quando aplicável.
 
 ## Pastas atuais
 - `m0` (Hello World / baseline)
@@ -25,3 +26,5 @@ Espelho local de milestones/issues do GitHub para planejamento técnico e handof
 - `m13` (Release: Dev Debug Toolkit)
 - `m14` (Framework de Migração de Emuladores Bare Metal)
 - `m16` (Release: ONEROM Static Build)
+- `m17` (FIX: Minor Issues / Other Issues)
+- `m19` (Release: Migração fMSX -> openMSX)
