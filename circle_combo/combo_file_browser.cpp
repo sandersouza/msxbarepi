@@ -1,22 +1,13 @@
 #include "combo_file_browser.h"
 
-#include "media_catalog.h"
+extern "C" {
+#include <fatfs/ff.h>
+}
 
 static const char *kRomsRootPath = "SD:/roms";
 static const char *kDisksRootPath = "SD:/disks";
 static const unsigned kRepeatDelayFrames = 30u;  /* ~500ms em 60Hz */
 static const unsigned kRepeatPeriodFrames = 6u;  /* ~10 passos/s em 60Hz */
-
-static void ComboDrainMediaCatalogForBrowser(void)
-{
-    /* Avoid partial directory snapshots right after Enter in deep folders. */
-    unsigned safety_budget = 0u;
-    while (combo_media_catalog_is_scanning() && safety_budget < 8192u)
-    {
-        combo_media_catalog_scan_step(128u);
-        safety_budget += 128u;
-    }
-}
 
 static char ComboToUpperAscii(char ch)
 {
@@ -70,6 +61,88 @@ static int ComboCompareIgnoreCase(const char *a, const char *b)
     }
     if (a[i] == '\0' && b[i] == '\0') return 0;
     return (a[i] == '\0') ? -1 : 1;
+}
+
+static unsigned ComboStrLen(const char *text)
+{
+    unsigned len = 0u;
+    if (text == 0)
+    {
+        return 0u;
+    }
+    while (text[len] != '\0')
+    {
+        ++len;
+    }
+    return len;
+}
+
+static int ComboEndsWithIgnoreCase(const char *text, const char *suffix)
+{
+    const unsigned text_len = ComboStrLen(text);
+    const unsigned suffix_len = ComboStrLen(suffix);
+    if (suffix_len == 0u || text_len < suffix_len)
+    {
+        return 0;
+    }
+    const unsigned start = text_len - suffix_len;
+    for (unsigned i = 0u; i < suffix_len; ++i)
+    {
+        if (ComboToUpperAscii(text[start + i]) != ComboToUpperAscii(suffix[i]))
+        {
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static int ComboIsSupportedFileForMode(unsigned mode, const char *name)
+{
+    if (name == 0 || name[0] == '\0' || name[0] == '.')
+    {
+        return 0;
+    }
+    if (mode == (unsigned) ComboFileBrowserModeDisk)
+    {
+        return ComboEndsWithIgnoreCase(name, ".dsk")
+            || ComboEndsWithIgnoreCase(name, ".img")
+            || ComboEndsWithIgnoreCase(name, ".di1")
+            || ComboEndsWithIgnoreCase(name, ".di2");
+    }
+    return ComboEndsWithIgnoreCase(name, ".rom")
+        || ComboEndsWithIgnoreCase(name, ".mx1")
+        || ComboEndsWithIgnoreCase(name, ".mx2");
+}
+
+static int ComboJoinPath(char *dst, unsigned dst_size, const char *base, const char *name)
+{
+    if (dst == 0 || dst_size == 0u || base == 0 || name == 0)
+    {
+        return 0;
+    }
+    const unsigned base_len = ComboStrLen(base);
+    const unsigned name_len = ComboStrLen(name);
+    const unsigned needs_sep = (base_len > 0u && base[base_len - 1u] != '/') ? 1u : 0u;
+    const unsigned total = base_len + needs_sep + name_len + 1u;
+    if (total > dst_size)
+    {
+        return 0;
+    }
+    unsigned cursor = 0u;
+    for (unsigned i = 0u; i < base_len; ++i)
+    {
+        dst[cursor++] = base[i];
+    }
+    if (needs_sep)
+    {
+        dst[cursor++] = '/';
+    }
+    for (unsigned i = 0u; i < name_len; ++i)
+    {
+        dst[cursor++] = name[i];
+    }
+    dst[cursor] = '\0';
+    return 1;
 }
 
 static void ComboCopyParentDir(char *out_dir, unsigned out_size, const char *path)
@@ -192,6 +265,21 @@ void CComboFileBrowser::Open(unsigned mode, unsigned slot_index)
     m_LastPageDownPressed = FALSE;
     m_UpHoldFrames = 0u;
     m_DownHoldFrames = 0u;
+    RebuildCatalog();
+}
+
+void CComboFileBrowser::EnterDirectory(const char *dir_path)
+{
+    if (dir_path == 0 || dir_path[0] == '\0')
+    {
+        return;
+    }
+    if (!IsPathInsideRoot(dir_path, RootPath()))
+    {
+        return;
+    }
+
+    CopySmallText(m_CurrentDir, sizeof(m_CurrentDir), dir_path);
     RebuildCatalog();
 }
 
@@ -451,13 +539,10 @@ TComboFileBrowserEvent CComboFileBrowser::ProcessInput(boolean up_pressed,
     {
         if (m_IsDir[m_SelectedAbs])
         {
-            ComboDrainMediaCatalogForBrowser();
-            CopySmallText(m_CurrentDir, sizeof(m_CurrentDir), m_Paths[m_SelectedAbs]);
-            if (!IsPathInsideRoot(m_CurrentDir, RootPath()))
+            if (out_path != 0 && out_path_size > 0u)
             {
-                CopySmallText(m_CurrentDir, sizeof(m_CurrentDir), RootPath());
+                CopySmallText(out_path, out_path_size, m_Paths[m_SelectedAbs]);
             }
-            RebuildCatalog();
             return ComboFileBrowserEventEnteredDirectory;
         }
         if (out_path != 0 && out_path_size > 0u)
@@ -641,17 +726,51 @@ boolean CComboFileBrowser::IsPathInsideRoot(const char *path, const char *root)
     return (tail == '\0' || tail == '/' || tail == '\\') ? TRUE : FALSE;
 }
 
+void CComboFileBrowser::InsertSorted(unsigned section_start,
+                                     const char *name,
+                                     const char *path,
+                                     boolean is_dir,
+                                     boolean is_parent)
+{
+    if (name == 0 || path == 0 || m_Count >= kMaxEntries)
+    {
+        return;
+    }
+
+    unsigned insert_at = m_Count;
+    for (unsigned pos = section_start; pos < m_Count; ++pos)
+    {
+        if (ComboCompareIgnoreCase(name, m_Names[pos]) < 0)
+        {
+            insert_at = pos;
+            break;
+        }
+    }
+
+    if (insert_at < m_Count)
+    {
+        for (unsigned move = m_Count; move > insert_at; --move)
+        {
+            CopySmallText(m_Names[move], sizeof(m_Names[0]), m_Names[move - 1u]);
+            CopySmallText(m_Paths[move], sizeof(m_Paths[0]), m_Paths[move - 1u]);
+            m_IsDir[move] = m_IsDir[move - 1u];
+            m_IsParent[move] = m_IsParent[move - 1u];
+        }
+    }
+
+    CopySmallText(m_Names[insert_at], sizeof(m_Names[0]), name);
+    CopySmallText(m_Paths[insert_at], sizeof(m_Paths[0]), path);
+    m_IsDir[insert_at] = is_dir;
+    m_IsParent[insert_at] = is_parent;
+    ++m_Count;
+}
+
 void CComboFileBrowser::RebuildCatalog(void)
 {
     const char *root_path = RootPath();
-    const unsigned file_type = (m_Mode == (unsigned) ComboFileBrowserModeDisk)
-        ? (unsigned) ComboMediaTypeDisk
-        : (unsigned) ComboMediaTypeRom;
     m_Count = 0u;
     m_SelectedAbs = 0u;
     m_Top = 0u;
-    unsigned total = 0u;
-    const TComboMediaEntry *entries = combo_media_catalog_entries_by_type(file_type, &total);
 
     if (!IsPathInsideRoot(m_CurrentDir, root_path))
     {
@@ -672,86 +791,56 @@ void CComboFileBrowser::RebuildCatalog(void)
         m_IsParent[m_Count] = TRUE;
         ++m_Count;
     }
-    if (entries == 0 || total == 0u)
-    {
-        ++m_ContentStamp;
-        return;
-    }
 
     for (unsigned pass = 0u; pass < 2u && m_Count < kMaxEntries; ++pass)
     {
         const unsigned pass_start = m_Count;
-        for (unsigned i = 0u; i < total && m_Count < kMaxEntries; ++i)
+        DIR dir;
+        FILINFO fno;
+        if (f_opendir(&dir, m_CurrentDir) != FR_OK)
         {
-            const boolean is_dir = (entries[i].type == (unsigned char) ComboMediaTypeDir) ? TRUE : FALSE;
-            const boolean is_file = (entries[i].type == (unsigned char) file_type) ? TRUE : FALSE;
-            if (!is_dir && !is_file)
+            break;
+        }
+
+        for (;;)
+        {
+            if (m_Count >= kMaxEntries)
+            {
+                break;
+            }
+            fno.fname[0] = '\0';
+            const FRESULT fr = f_readdir(&dir, &fno);
+            if (fr != FR_OK || fno.fname[0] == '\0')
+            {
+                break;
+            }
+            if (fno.fname[0] == '.')
             {
                 continue;
             }
-            if (!IsPathInsideRoot(entries[i].path, root_path))
+
+            const boolean is_dir = ((fno.fattrib & AM_DIR) != 0u) ? TRUE : FALSE;
+            if ((pass == 0u && !is_dir) || (pass == 1u && is_dir))
             {
                 continue;
             }
-            if ((pass == 0u && !is_dir) || (pass == 1u && !is_file))
+            if (!is_dir && !ComboIsSupportedFileForMode(m_Mode, fno.fname))
             {
                 continue;
             }
-            char parent_dir[192];
-            ComboCopyParentDir(parent_dir, sizeof(parent_dir), entries[i].path);
-            if (!ComboPathEqualsIgnoreCase(parent_dir, m_CurrentDir))
-            {
-                continue;
-            }
-            const char *base = ComboBaseNameFromPath(entries[i].path);
-            if (base == 0 || base[0] == '\0' || base[0] == '.')
-            {
-                continue;
-            }
-            boolean duplicate = FALSE;
-            for (unsigned k = 0u; k < m_Count; ++k)
-            {
-                if (ComboPathEqualsIgnoreCase(m_Paths[k], entries[i].path))
-                {
-                    duplicate = TRUE;
-                    break;
-                }
-            }
-            if (duplicate)
+
+            char full_path[192];
+            if (!ComboJoinPath(full_path, sizeof(full_path), m_CurrentDir, fno.fname))
             {
                 continue;
             }
 
             char new_name[21];
-            FormatName20NoExt(entries[i].path, new_name);
-
-            unsigned insert_at = m_Count;
-            for (unsigned pos = pass_start; pos < m_Count; ++pos)
-            {
-                if (ComboCompareIgnoreCase(new_name, m_Names[pos]) < 0)
-                {
-                    insert_at = pos;
-                    break;
-                }
-            }
-
-            if (insert_at < m_Count)
-            {
-                for (unsigned move = m_Count; move > insert_at; --move)
-                {
-                    CopySmallText(m_Names[move], sizeof(m_Names[0]), m_Names[move - 1u]);
-                    CopySmallText(m_Paths[move], sizeof(m_Paths[0]), m_Paths[move - 1u]);
-                    m_IsDir[move] = m_IsDir[move - 1u];
-                    m_IsParent[move] = m_IsParent[move - 1u];
-                }
-            }
-
-            CopySmallText(m_Names[insert_at], sizeof(m_Names[0]), new_name);
-            CopySmallText(m_Paths[insert_at], sizeof(m_Paths[0]), entries[i].path);
-            m_IsDir[insert_at] = is_dir;
-            m_IsParent[insert_at] = FALSE;
-            ++m_Count;
+            FormatName20NoExt(full_path, new_name);
+            InsertSorted(pass_start, new_name, full_path, is_dir, FALSE);
         }
+
+        f_closedir(&dir);
     }
     ++m_ContentStamp;
 }

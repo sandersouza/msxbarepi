@@ -34,10 +34,9 @@ make DEBUG=0 COMBO_ENABLE_DEBUG_OVERLAY=0
 - `F10`: liga/desliga suporte `FM-PAC` (feature/cart).
 
 ## Tag de build na tela
-- Quando debug overlay estiver ativo, o canto inferior esquerdo mostra:
-  - linha 1: `BUILD_BID` (BTID compilado no binario),
-  - linha 2: `OWNER` (quando definido, para rastreabilidade de copia beta/tester).
-- Se `OWNER` estiver vazio, apenas o `BUILD_BID` e exibido.
+- Quando debug overlay estiver ativo e `OWNER` estiver definido no build, a linha abaixo do overlay (`linha 11`) exibe:
+  - `@Beta: <OWNER>`
+- Se `OWNER` estiver vazio, a linha 11 permanece limpa.
 
 ## Menu relacionado
 - `Settings -> Debugger`: liga/desliga overlay (quando compilado com debug).

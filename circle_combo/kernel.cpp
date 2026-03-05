@@ -60,6 +60,10 @@ static const u8 kJoyBridgeFireA = (u8) (1u << 4);
 static const unsigned kRenshaRateDen = 20u; /* 1/20 pulse per frame unit */
 static const unsigned kRgb565LutSize = 65536u;
 
+#ifndef COMBO_BUILD_OWNER
+#define COMBO_BUILD_OWNER ""
+#endif
+
 static unsigned UMax(unsigned a, unsigned b)
 {
 	return a > b ? a : b;
@@ -886,11 +890,6 @@ TComboShutdownMode CComboKernel::Run(void)
 		if (f_mount(&m_SettingsFileSystem, kSettingsDrive, 1) == FR_OK)
 		{
 			LoadSettingsFromStorage();
-			combo_media_catalog_begin_scan();
-			m_MediaCatalogStarted = TRUE;
-			m_MediaCatalogSummaryLogged = FALSE;
-			UpdateLoadDiagTelemetry(4101u); /* media scan start */
-			m_Logger.Write(FromKernel, LogNotice, "media scan started: SD:/roms + SD:/disks");
 		}
 		else
 		{
@@ -1088,14 +1087,6 @@ TComboShutdownMode CComboKernel::Run(void)
 				if (f_mount(&m_SettingsFileSystem, kSettingsDrive, 1) == FR_OK)
 				{
 					LoadSettingsFromStorage();
-					if (!m_MediaCatalogStarted)
-					{
-						combo_media_catalog_begin_scan();
-						m_MediaCatalogStarted = TRUE;
-						m_MediaCatalogSummaryLogged = FALSE;
-						UpdateLoadDiagTelemetry(4101u); /* media scan start */
-						m_Logger.Write(FromKernel, LogNotice, "media scan started: SD:/roms + SD:/disks");
-					}
 				}
 				else
 				{
@@ -1124,26 +1115,6 @@ TComboShutdownMode CComboKernel::Run(void)
 				initramfs_line.Format("initramfs deferred files: +%u", later_files);
 				m_Logger.Write(FromKernel, LogNotice, initramfs_line);
 			}
-		}
-		if (m_MediaCatalogStarted && combo_media_catalog_is_scanning())
-		{
-			combo_media_catalog_scan_step(32u);
-		}
-		else if (m_MediaCatalogStarted && !m_MediaCatalogSummaryLogged)
-		{
-			m_MediaCatalogSummaryLogged = TRUE;
-			const unsigned err_count = combo_media_catalog_error_count();
-			CString media_line;
-			media_line.Format("media scan done: total=%u rom=%u dsk=%u dir=%u file=%u err=%u drop=%u",
-							 combo_media_catalog_entry_count(),
-							 combo_media_catalog_rom_count(),
-							 combo_media_catalog_disk_count(),
-							 combo_media_catalog_dir_count(),
-							 combo_media_catalog_file_count(),
-							 err_count,
-							 combo_media_catalog_dropped_count());
-			UpdateLoadDiagTelemetry(err_count == 0u ? 4102u : (4190u + (err_count > 9u ? 9u : err_count)));
-			m_Logger.Write(FromKernel, err_count == 0u ? LogNotice : LogWarning, media_line);
 		}
 		if (!m_UsbReady)
 		{
@@ -1878,6 +1849,16 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		fmsx_runtime_get_audio_layer_muted(2u) ? 0u : 1u,
 		fmsx_runtime_get_audio_layer_muted(3u) ? 1u : 0u,
 		fmsx_runtime_get_audio_layer_muted(3u) ? 0u : 1u);
+	WriteScreenText(line);
+
+	if (COMBO_BUILD_OWNER[0] != '\0')
+	{
+		line.Format("\x1b[97m\x1b[49m\x1b[11;1H@Beta: %s                                                   ", COMBO_BUILD_OWNER);
+	}
+	else
+	{
+		line.Format("\x1b[97m\x1b[49m\x1b[11;1H                                                                                ");
+	}
 	WriteScreenText(line);
 
 	WriteScreenText("\x1b[0m");
@@ -3223,6 +3204,17 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 	case ComboMenuActionCartridgeA:
 	case ComboMenuActionCartridgeB:
 	#if COMBO_ENABLE_FMSX
+		{
+			unsigned browser_slot = 0u;
+			char browser_path[192];
+			browser_path[0] = '\0';
+			if (m_PauseMenu.ConsumePendingRomBrowserOpen(&browser_slot, browser_path, sizeof(browser_path)))
+			{
+				m_PauseMenu.OpenFileBrowser((unsigned) ComboFileBrowserModeRom, browser_slot, browser_path);
+				UpdateLoadDiagTelemetry(2103u); /* ROM browser open deferred to main loop */
+				break;
+			}
+		}
 		if (m_FmsxReady)
 		{
 			unsigned slot_index = 0u;
@@ -3297,6 +3289,17 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 	case ComboMenuActionDiskDriveA:
 	case ComboMenuActionDiskDriveB:
 	#if COMBO_ENABLE_FMSX
+		{
+			unsigned browser_drive = 0u;
+			char browser_path[192];
+			browser_path[0] = '\0';
+			if (m_PauseMenu.ConsumePendingDiskBrowserOpen(&browser_drive, browser_path, sizeof(browser_path)))
+			{
+				m_PauseMenu.OpenFileBrowser((unsigned) ComboFileBrowserModeDisk, browser_drive, browser_path);
+				UpdateLoadDiagTelemetry(3103u); /* DSK browser open deferred to main loop */
+				break;
+			}
+		}
 		if (m_FmsxReady)
 		{
 			unsigned drive_index = 0u;
@@ -3366,14 +3369,22 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 	#if COMBO_ENABLE_FMSX
 		if (m_FmsxReady)
 		{
+			UpdateLoadDiagTelemetry(3501u); /* menu reset requested */
 			PrimeAudioSilenceBeforeReset();
-			if (fmsx_runtime_hard_reset())
+			UpdateLoadDiagTelemetry(3510u); /* menu reset hard path */
+			fmsx_runtime_set_boot_mode(m_BootMode);
+			fmsx_runtime_set_model_profile(m_MachineProfile);
+			const boolean reset_ok = fmsx_runtime_hard_reset();
+			if (reset_ok)
 			{
+				UpdateLoadDiagTelemetry(3502u); /* menu reset ok */
 				ResetEmulationRuntimeState();
+				ApplyRuntimeSettingsToFmsx();
 				m_Logger.Write(FromKernel, LogNotice, "Menu: hard reset emulator");
 			}
 			else
 			{
+				UpdateLoadDiagTelemetry(9502u); /* menu reset failed */
 				m_Logger.Write(FromKernel, LogWarning, "Menu: hard reset failed");
 			}
 		}
@@ -3739,6 +3750,7 @@ void CComboKernel::ClearDebugOverlay(void)
 	WriteScreenText("\x1b[8;1H                                                                                ");
 	WriteScreenText("\x1b[9;1H                                                                                ");
 	WriteScreenText("\x1b[10;1H                                                                                ");
+	WriteScreenText("\x1b[11;1H                                                                                ");
 	WriteScreenText("\x1b[0m");
 }
 
@@ -4168,7 +4180,12 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	if (defer_heavy_action)
 	{
 		/* Heavy media load path runs in main loop to avoid USB callback hard-locks. */
-		if (m_PendingMenuAction == (unsigned) ComboMenuActionNone)
+		if (menu_action == ComboMenuActionReset || menu_action == ComboMenuActionMsxBasic)
+		{
+			/* High-priority actions must not be blocked by stale deferred browser ops. */
+			m_PendingMenuAction = (unsigned) menu_action;
+		}
+		else if (m_PendingMenuAction == (unsigned) ComboMenuActionNone)
 		{
 			m_PendingMenuAction = (unsigned) menu_action;
 		}

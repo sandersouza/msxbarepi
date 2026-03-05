@@ -9,12 +9,17 @@ PACKAGE_CMDLINE_TXT="${PACKAGE_CMDLINE_TXT:-${PROJECT_ROOT}/sdcard/cmdline.txt}"
 PACKAGE_INITRAMFS_IMG="${PACKAGE_INITRAMFS_IMG:-${PROJECT_ROOT}/sdcard/msx.cpio}"
 PACKAGE_SETTINGS_CFG="${PACKAGE_SETTINGS_CFG:-${PROJECT_ROOT}/sdcard/MSXBARE.CFG}"
 PACKAGE_FIRMWARE_DIR="${PACKAGE_FIRMWARE_DIR:-${PROJECT_ROOT}/rpi-firmware/}"
+PACKAGE_COPY_GAMES_TO_ROOT="${PACKAGE_COPY_GAMES_TO_ROOT:-0}"
+PACKAGE_GAMES_SRC_DIR="${PACKAGE_GAMES_SRC_DIR:-${PROJECT_ROOT}/roms/games}"
 
 PACKAGE_STAGE_DIR="${PACKAGE_STAGE_DIR:-${PROJECT_ROOT}/artifacts/.temp-sdcard-package}"
 PACKAGE_TIMESTAMP="${PACKAGE_TIMESTAMP:-$(date +%Y%m%d%H%M)}"
 PACKAGE_ZIP="${PACKAGE_ZIP:-${PROJECT_ROOT}/artifacts/sdcard-package-${PACKAGE_TIMESTAMP}.zip}"
 
 required_fw_files="bootcode.bin start.elf fixup.dat bcm2710-rpi-3-b.dtb"
+
+# Evita gravacao de AppleDouble/extended attributes no stage ZIP.
+export COPYFILE_DISABLE=1
 
 ensure_settings_cfg() {
   if [ -f "$PACKAGE_SETTINGS_CFG" ]; then
@@ -88,6 +93,24 @@ cp "$PACKAGE_SETTINGS_CFG" "${PACKAGE_STAGE_DIR}/MSXBARE.CFG"
 for fw in $required_fw_files; do
   cp "${PACKAGE_FIRMWARE_DIR}/${fw}" "${PACKAGE_STAGE_DIR}/${fw}"
 done
+
+if [ "$PACKAGE_COPY_GAMES_TO_ROOT" = "1" ]; then
+  if [ -d "$PACKAGE_GAMES_SRC_DIR" ]; then
+    if command -v rsync >/dev/null 2>&1; then
+      rsync -a \
+        --exclude '.*' \
+        --exclude '._*' \
+        "${PACKAGE_GAMES_SRC_DIR}/" "${PACKAGE_STAGE_DIR}/"
+    else
+      while IFS= read -r item; do
+        cp -R "$item" "${PACKAGE_STAGE_DIR}/"
+      done < <(find "$PACKAGE_GAMES_SRC_DIR" -mindepth 1 -maxdepth 1 ! -name '.*')
+    fi
+    echo "[OK] Conteudo de games copiado para raiz do pacote."
+  else
+    echo "[WARN] PACKAGE_COPY_GAMES_TO_ROOT=1, mas diretorio nao encontrado: ${PACKAGE_GAMES_SRC_DIR}"
+  fi
+fi
 
 rm -f "$PACKAGE_ZIP"
 (
