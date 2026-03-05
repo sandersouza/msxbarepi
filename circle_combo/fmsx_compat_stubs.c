@@ -157,6 +157,82 @@ static const char *local_basename(const char *path)
     return name;
 }
 
+static int local_lookup_vfs_alias_list(const char * const *aliases,
+                                       unsigned count,
+                                       const unsigned char **data,
+                                       size_t *size)
+{
+    if (!aliases)
+    {
+        return 0;
+    }
+
+    for (unsigned i = 0; i < count; ++i)
+    {
+        const char *candidate = aliases[i];
+        if (!candidate || candidate[0] == '\0')
+        {
+            continue;
+        }
+        if (fmsx_vfs_lookup(candidate, data, size))
+        {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int local_lookup_vfs_aliases_for_request(const char *name,
+                                                const unsigned char **data,
+                                                size_t *size)
+{
+    if (!name)
+    {
+        return 0;
+    }
+
+    if (local_str_ieq(name, "MSX2.ROM"))
+    {
+        static const char *kAliases[] = {
+            "FS-A1F_BASIC-BIOS2.ROM",
+            "FS-A1FM_BASIC-BIOS2.ROM",
+            "BASIC-BIOS2.ROM"
+        };
+        return local_lookup_vfs_alias_list(kAliases, sizeof(kAliases) / sizeof(kAliases[0]), data, size);
+    }
+
+    if (local_str_ieq(name, "MSX2EXT.ROM"))
+    {
+        static const char *kAliases[] = {
+            "MSX2SUB.ROM",
+            "SUBROM.ROM",
+            "FS-A1F_MSX2SUB.ROM"
+        };
+        return local_lookup_vfs_alias_list(kAliases, sizeof(kAliases) / sizeof(kAliases[0]), data, size);
+    }
+
+    if (local_str_ieq(name, "KANJI.ROM"))
+    {
+        static const char *kAliases[] = {
+            "KANJIFONT.ROM",
+            "FS-A1F_KANJIFONT.ROM",
+            "KANJI16.ROM"
+        };
+        return local_lookup_vfs_alias_list(kAliases, sizeof(kAliases) / sizeof(kAliases[0]), data, size);
+    }
+
+    if (local_str_ieq(name, "DISK.ROM"))
+    {
+        static const char *kAliases[] = {
+            "FS-A1F_DISK.ROM"
+        };
+        return local_lookup_vfs_alias_list(kAliases, sizeof(kAliases) / sizeof(kAliases[0]), data, size);
+    }
+
+    return 0;
+}
+
 static int local_lookup_embedded(const char *path, const unsigned char **data, size_t *size)
 {
     const char *name = local_basename(path);
@@ -170,6 +246,10 @@ static int local_lookup_embedded(const char *path, const unsigned char **data, s
     }
 
     if (fmsx_vfs_lookup(path, data, size))
+    {
+        return 1;
+    }
+    if (local_lookup_vfs_aliases_for_request(name, data, size))
     {
         return 1;
     }

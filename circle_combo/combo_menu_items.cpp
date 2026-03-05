@@ -252,7 +252,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     static char fm_music_label[32];
     static char scc_label[32];
     static char overlay_label[32];
-    static char debug_log_label[32];
     static char audio_gain_label[32];
 
     const TComboLocaleStrings *locale = combo_locale_get(language);
@@ -307,8 +306,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     BuildLabelFlag(scc_label, sizeof(scc_label), locale->settings_scc_cart, scc_cart_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(overlay_label, sizeof(overlay_label), locale->settings_debugger,
                    overlay_available ? (overlay_enabled ? locale->flag_on : locale->flag_off) : locale->flag_na);
-    BuildLabelFlag(debug_log_label, sizeof(debug_log_label), locale->settings_sd_log,
-                   overlay_available ? (debug_log_enabled ? locale->flag_on : locale->flag_off) : locale->flag_na);
     if (audio_gain_percent == 0u)
     {
         BuildLabelFlag(audio_gain_label, sizeof(audio_gain_label), locale->settings_audio_gain, locale->flag_off);
@@ -397,11 +394,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
 
         settings_items[item_count].label = overlay_label;
         settings_items[item_count].action = ComboMenuActionToggleOverlay;
-        settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-        settings_items[item_count++].selectable = TRUE;
-
-        settings_items[item_count].label = debug_log_label;
-        settings_items[item_count].action = ComboMenuActionToggleDebugLog;
         settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
         settings_items[item_count++].selectable = TRUE;
 

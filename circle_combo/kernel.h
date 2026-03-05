@@ -123,6 +123,7 @@ private:
     u8 m_JoyBridgeBits;
     u8 m_JoyMappedBits;
     boolean m_DebugOverlayEnabled;
+    boolean m_DebugOverlayUnlocked;
     boolean m_EmulationPaused;
     boolean m_LastF12Pressed;
     boolean m_LastF6Pressed;
@@ -130,6 +131,8 @@ private:
     boolean m_LastF8Pressed;
     boolean m_LastF9Pressed;
     boolean m_LastF10Pressed;
+    boolean m_LastFmGainUpPressed;
+    boolean m_LastFmGainDownPressed;
     boolean m_LastPauseWasInSettings;
     boolean m_LastPausePressed;
     boolean m_LastMenuBackPressed;
@@ -179,9 +182,11 @@ private:
     unsigned m_Z80TurboMode;
     unsigned m_RenshaMode;
     unsigned m_RenshaPhase;
+    boolean m_RenshaFireAHeld;
     unsigned char m_LastKeyboardModifiers;
     unsigned char m_LastKeyboardRawKeys[6];
     boolean m_FmMusicEnabled;
+    unsigned m_FmLayerGainPct;
     boolean m_SccCartEnabled;
     u64 m_FrameIntervalUs;
     boolean m_FramePacingResetPending;

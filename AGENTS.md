@@ -64,7 +64,7 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Antes de deletar qualquer branch local, confirmar explicitamente com o usuário
 - Nunca alterar, deletar ou reescrever a branch `main`
 - Manter um arquivo de CONTEXT persistente para handoff entre IAs em `docs/ai-handoff-context.md`; atualizar esse arquivo ao final de cada ciclo relevante (build, milestone, bug, decisão técnica) com estado atual, artefatos gerados, comandos executados, próximos passos e riscos abertos, para permitir continuidade sem perda de contexto
-- A cada iteracao de build entregue para teste (estavel, A/B, debug), gerar e informar no chat um `Build Tracking ID` curto no formato `BTID:<timestamp>-<git>-<sha8>` (timestamp `YYYYMMDDHHMM`, commit curto e hash SHA1 curto do artefato principal) para facilitar rollback/rastreio entre testes
+- A cada iteracao de build entregue para teste (estavel, A/B, debug), gerar e informar no chat um identificador curto de rastreio no formato `BUILD_HASH:<git>-<sha1>` (ou `BTID:<timestamp>-<git>-<sha8>` como alias legado), usando commit curto atual + SHA1 do artefato principal, para facilitar rollback/rastreio entre testes
 - A documentacao do projeto deve sempre referenciar explicitamente as fontes de consulta/referencias utilizadas (ex.: arquivos/classes de `third_party/fmsx` e `third_party/circle`) quando influenciarem implementacoes ou correcoes
 - Por padrao, seguir iterando de forma autonoma ate entregar build/resultado testavel; so pausar para status intermediario se o usuario pedir explicitamente
 - Commits pequenos e focados

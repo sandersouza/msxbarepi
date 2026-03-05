@@ -26,3 +26,5 @@ Espelho local de milestones/issues do GitHub para planejamento técnico e handof
 - `m13` (Release: Dev Debug Toolkit)
 - `m14` (Framework de Migração de Emuladores Bare Metal)
 - `m16` (Release: ONEROM Static Build)
+- `m17` (FIX: Minor Issues / Other Issues)
+- `m19` (Release: Migração fMSX -> openMSX)

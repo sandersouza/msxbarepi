@@ -24,6 +24,42 @@
 #define COMBO_FMSX_FMPAC_BALANCE_PCT 96
 #endif
 
+static unsigned g_fm_layer_gain_pct = 100u;
+
+static int ComputeFmVolume(uint8_t reg3x)
+{
+  int vol = 255 * ((~reg3x) & 0x0F) / 15;
+  vol = (vol * COMBO_FMSX_FMPAC_ATTENUATION_PCT) / 100;
+  vol = (vol * COMBO_FMSX_FMPAC_BALANCE_PCT) / 100;
+  vol = (vol * (int) g_fm_layer_gain_pct) / 100;
+  if(vol < 0) vol = 0;
+  if(vol > 255) vol = 255;
+  return vol;
+}
+
+void fmsx_local_ym2413_set_layer_gain_pct(unsigned pct)
+{
+  if(pct > 100u) pct = 100u;
+  g_fm_layer_gain_pct = pct;
+}
+
+unsigned fmsx_local_ym2413_get_layer_gain_pct(void)
+{
+  return g_fm_layer_gain_pct;
+}
+
+void fmsx_local_ym2413_refresh(YM2413 *D)
+{
+  int C;
+  if(!D) return;
+  for(C=0;C<YM2413_CHANNELS;C++)
+  {
+    D->Volume[C] = ComputeFmVolume(D->R[0x30 + C]);
+  }
+  D->Changed = (1<<YM2413_CHANNELS)-1;
+  Sync2413(D,YM2413_FLUSH);
+}
+
 /** Reset2413() **********************************************/
 /** Reset the sound chip and use sound channels from the    **/
 /** one given in First.                                     **/
@@ -146,14 +182,7 @@ void Write2413(YM2413 *D,uint8_t R,uint8_t V)
       if((V^D->R[R])&0x0F)
       {
         /* Set channel volume (attenuated for better FM-PAC/PSG balance). */
-        {
-          int vol = 255*(~V&0x0F)/15;
-          vol = (vol * COMBO_FMSX_FMPAC_ATTENUATION_PCT) / 100;
-          vol = (vol * COMBO_FMSX_FMPAC_BALANCE_PCT) / 100;
-          if(vol < 0) vol = 0;
-          if(vol > 255) vol = 255;
-          D->Volume[C] = vol;
-        }
+        D->Volume[C] = ComputeFmVolume(V);
         /* Mark channel as changed */
         D->Changed|=1<<C;
       }

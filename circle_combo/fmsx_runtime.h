@@ -62,6 +62,8 @@ void fmsx_runtime_set_fm_music_enabled(boolean enabled);
 boolean fmsx_runtime_get_fm_music_enabled(void);
 void fmsx_runtime_set_scc_cart_enabled(boolean enabled);
 boolean fmsx_runtime_get_scc_cart_enabled(void);
+void fmsx_runtime_set_fm_layer_gain_pct(unsigned pct);
+unsigned fmsx_runtime_get_fm_layer_gain_pct(void);
 void fmsx_runtime_set_audio_layer_muted(unsigned layer_index, boolean muted);
 boolean fmsx_runtime_get_audio_layer_muted(unsigned layer_index);
 unsigned fmsx_runtime_get_psg_mixer_reg7(void);

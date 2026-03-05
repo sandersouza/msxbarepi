@@ -3,11 +3,12 @@ build/
 artifacts/
 third_party/fmsx
 third_party/circle
+third_party/openMSX
 
 # Ignore ROM files and SD card contents, which are not part of the source code and may contain large binary files.
 roms/*.rom
-roms/machines/
-emulator/
+roms/machines/*
+roms/games/*
 
 # Ignore SD card contents, which may contain large binary files and are not part of the source code.
 sdcard/disks/*

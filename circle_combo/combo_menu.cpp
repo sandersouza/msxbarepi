@@ -1276,8 +1276,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
         else if ((items[m_Selected].action == ComboMenuActionToggleFmMusic)
-              || (items[m_Selected].action == ComboMenuActionToggleSccCart)
-              || (items[m_Selected].action == ComboMenuActionToggleDebugLog))
+              || (items[m_Selected].action == ComboMenuActionToggleSccCart))
         {
             if (enter_edge || left_edge || right_edge)
             {

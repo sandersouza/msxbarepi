@@ -41,7 +41,6 @@ make DEBUG=0 COMBO_ENABLE_DEBUG_OVERLAY=0
 
 ## Menu relacionado
 - `Settings -> Debugger`: liga/desliga overlay (quando compilado com debug).
-- `Settings -> SD Log`: liga/desliga stream continuo para `SD:/debug.log` (quando compilado com debug).
 - Itens de audio em `Settings`:
   - `Konami SCC` (ON/OFF)
   - `FM-PAC` (ON/OFF)
@@ -82,11 +81,6 @@ make DEBUG=0 COMBO_ENABLE_DEBUG_OVERLAY=0
   2. observe `AC1/AC2`;
   3. use `F6/F7/F8/F9/F10` para isolamento por camada/feature.
 - Em investigacoes de SD/boot, priorize `SD1/SD2` e correlacione com logs do kernel.
-- Para trilha longa de diagnostico em hardware:
-  1. ative `Settings -> SD Log`;
-  2. reproduza o problema;
-  3. desative `SD Log` para forcar `flush`/fechamento do arquivo;
-  4. analise `SD:/debug.log` no PC.
 
 ## Referencias
 - Template historico de painel: [debug-overlay-hdmi-template.md](/Users/sandersouza/Developer/msxbarepi-circle/docs/debug-overlay-hdmi-template.md)

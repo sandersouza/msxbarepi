@@ -38,7 +38,6 @@ rensha=0
 scc_cart=0
 fm_music=0
 debugger=0
-debug_log=0
 audio_mute=0
 audio_gain=100
 cart_a_path=EMPTY

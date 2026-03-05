@@ -56,7 +56,6 @@ static const unsigned kTelemetryViewOff = 0u;
 static const unsigned kTelemetryViewSnapshot = 1u;
 static const unsigned kTelemetryRequestNone = 0xFFFFFFFFu;
 static const u8 kJoyBridgeFireA = (u8) (1u << 4);
-static const unsigned char kHidKeySpace = 0x2Cu;
 /* Rensha modes are expressed in pulses per 10 frames (0.5, 1.0, 1.5). */
 static const unsigned kRenshaRateDen = 20u; /* 1/20 pulse per frame unit */
 static const unsigned kRgb565LutSize = 65536u;
@@ -92,6 +91,30 @@ static unsigned ComputeLogicalSourceWidth(unsigned src_w)
 {
 	/* MSX hi-res modes (e.g. 512-wide) use narrow pixels on CRT. Use logical width for viewport sizing. */
 	return (src_w >= 512u) ? (src_w / 2u) : src_w;
+}
+
+static unsigned ComputeScaleMaxPercentForCurrentFrame(unsigned screen_w, unsigned screen_h)
+{
+	const u16 *src_pixels = 0;
+	unsigned src_w = 0u;
+	unsigned src_h = 0u;
+#if COMBO_ENABLE_FMSX
+	(void) fmsx_runtime_get_video_frame(&src_pixels, &src_w, &src_h);
+#endif
+	(void) src_pixels;
+
+	/*
+	 * Boot/game-gate may temporarily hide video frames (width/height = 0).
+	 * In that case, keep persisted Scale valid using a stable MSX baseline.
+	 */
+	if (src_w == 0u || src_h == 0u)
+	{
+		src_w = 256u;
+		src_h = 192u;
+	}
+
+	const unsigned logical_src_w = ComputeLogicalSourceWidth(src_w);
+	return ComputePixelScaleMaxPercent(screen_w, screen_h, logical_src_w, src_h);
 }
 
 static u64 FrameIntervalFromRefreshHz(unsigned hz)
@@ -134,11 +157,21 @@ static const char *MachineLabelFromProfile(unsigned profile)
 	}
 }
 
+static boolean IsMsx2FamilyProfile(unsigned profile)
+{
+	return (profile == kMachineProfileMsx2 || profile == kMachineProfileMsx2p) ? TRUE : FALSE;
+}
+
+static boolean ShouldFrontLoadDeferredBootWork(unsigned boot_mode, unsigned machine_profile)
+{
+	return (boot_mode == kBootModeFast && IsMsx2FamilyProfile(machine_profile)) ? TRUE : FALSE;
+}
+
 static unsigned AudioGainEffectivePct(unsigned ui_pct)
 {
 	if (ui_pct > 100u) ui_pct = 100u;
-	/* UI 0..100 maps to effective 0..30 (legacy calibrated output headroom). */
-	return (ui_pct * 30u) / 100u;
+	/* UI gain is now a direct 0..100% scaler in the final audio stage. */
+	return ui_pct;
 }
 
 static char ToUpperAscii(char ch)
@@ -256,6 +289,54 @@ static void LogSdOpResult(CLogger &logger, const char *op, FRESULT code, const c
 
 static void ParseTextValueLine(const char *value_start, const char *value_end, char *dst, unsigned dst_size)
 {
+	auto text_to_upper = [](char c) -> char {
+		return (c >= 'a' && c <= 'z') ? (char) (c - ('a' - 'A')) : c;
+	};
+	auto text_is_space = [](char c) -> boolean {
+		return (c == ' ' || c == '\t') ? TRUE : FALSE;
+	};
+	auto text_is_empty_marker = [&](const char *text) -> boolean {
+		if (text == 0)
+		{
+			return FALSE;
+		}
+		const char *p = text;
+		while (text_is_space(*p))
+		{
+			++p;
+		}
+		if (*p == '[')
+		{
+			++p;
+			while (text_is_space(*p))
+			{
+				++p;
+			}
+		}
+		static const char kEmptyTag[] = "EMPTY";
+		for (unsigned i = 0u; kEmptyTag[i] != '\0'; ++i)
+		{
+			if (text_to_upper(p[i]) != kEmptyTag[i])
+			{
+				return FALSE;
+			}
+		}
+		p += 5;
+		while (text_is_space(*p))
+		{
+			++p;
+		}
+		if (*p == ']')
+		{
+			++p;
+		}
+		while (text_is_space(*p))
+		{
+			++p;
+		}
+		return (*p == '\0') ? TRUE : FALSE;
+	};
+
 	if (dst == 0 || dst_size == 0u)
 	{
 		return;
@@ -273,6 +354,10 @@ static void ParseTextValueLine(const char *value_start, const char *value_end, c
 		dst[n++] = *p++;
 	}
 	dst[n] = '\0';
+	if (text_is_empty_marker(dst))
+	{
+		dst[0] = '\0';
+	}
 }
 
 static int SettingsKeyEquals(const char *key, unsigned key_len, const char *literal)
@@ -538,11 +623,11 @@ static void FillRectScreen(CScreenDevice *screen,
 #endif
 
 #ifndef COMBO_FMSX_AUDIO_GAIN_MAX
-#define COMBO_FMSX_AUDIO_GAIN_MAX 8
+#define COMBO_FMSX_AUDIO_GAIN_MAX 16
 #endif
 
 #ifndef COMBO_FMSX_AUDIO_TARGET_PEAK
-#define COMBO_FMSX_AUDIO_TARGET_PEAK 6000
+#define COMBO_FMSX_AUDIO_TARGET_PEAK 12000
 #endif
 
 #ifndef COMBO_FMSX_AUDIO_PROBE_TONE
@@ -563,6 +648,10 @@ static void FillRectScreen(CScreenDevice *screen,
 
 #ifndef COMBO_ENABLE_DEBUG_OVERLAY
 #define COMBO_ENABLE_DEBUG_OVERLAY 1
+#endif
+
+#ifndef COMBO_DEBUG_OVERLAY_BOOT_GUARD
+#define COMBO_DEBUG_OVERLAY_BOOT_GUARD 1
 #endif
 
 #ifndef COMBO_ENABLE_SETTINGS_SAVE_EXPERIMENTAL
@@ -607,7 +696,7 @@ CComboKernel::CComboKernel(void)
 	m_LastQueueAvail(0),
 	m_LastQueueFree(0),
 	m_AudioTargetPeakRuntime(COMBO_FMSX_AUDIO_TARGET_PEAK),
-	m_AudioClipMaxRuntime(16000),
+	m_AudioClipMaxRuntime(28000),
 	m_AudioOutputGainPct(50),
 	m_BootToneFramesRemaining(0),
 	m_UsbInitRetryTick(0u),
@@ -616,6 +705,7 @@ CComboKernel::CComboKernel(void)
 	m_JoyBridgeBits(0),
 	m_JoyMappedBits(ComboKeyboardJoyMask()),
 	m_DebugOverlayEnabled((COMBO_ENABLE_DEBUG_OVERLAY && COMBO_DEBUG_OVERLAY_DEFAULT) ? TRUE : FALSE),
+	m_DebugOverlayUnlocked(COMBO_ENABLE_DEBUG_OVERLAY ? FALSE : TRUE),
 	m_EmulationPaused(FALSE),
 	m_LastF12Pressed(FALSE),
 	m_LastF6Pressed(FALSE),
@@ -623,6 +713,8 @@ CComboKernel::CComboKernel(void)
 	m_LastF8Pressed(FALSE),
 	m_LastF9Pressed(FALSE),
 	m_LastF10Pressed(FALSE),
+	m_LastFmGainUpPressed(FALSE),
+	m_LastFmGainDownPressed(FALSE),
 	m_LastPauseWasInSettings(FALSE),
 	m_LastPausePressed(FALSE),
 	m_LastMenuBackPressed(FALSE),
@@ -669,9 +761,11 @@ CComboKernel::CComboKernel(void)
 	m_Z80TurboMode(kZ80TurboModeDes),
 	m_RenshaMode(0u),
 	m_RenshaPhase(0u),
+	m_RenshaFireAHeld(FALSE),
 	m_LastKeyboardModifiers(0u),
 	m_LastKeyboardRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
 	m_FmMusicEnabled(TRUE),
+	m_FmLayerGainPct(100u),
 	m_SccCartEnabled(TRUE),
 	m_FrameIntervalUs(FrameIntervalFromRefreshHz(60u)),
 	m_FramePacingResetPending(FALSE),
@@ -785,7 +879,7 @@ TComboShutdownMode CComboKernel::Run(void)
 		m_Logger.Write(FromKernel, LogNotice, "Audio init deferred until first fMSX frames");
 	}
 
-	m_Logger.Write(FromKernel, LogNotice, "USB init deferred for faster first frame");
+	boolean front_load_deferred_boot_work = FALSE;
 	if (m_SettingsStorageReady)
 	{
 		/* Must be applied before fMSX init so boot/runtime settings take effect on first boot. */
@@ -804,6 +898,15 @@ TComboShutdownMode CComboKernel::Run(void)
 			m_Logger.Write(FromKernel, LogWarning, "Settings mount failed on SD:; persistence disabled");
 		}
 	}
+	front_load_deferred_boot_work = ShouldFrontLoadDeferredBootWork(m_BootMode, m_MachineProfile);
+	if (front_load_deferred_boot_work)
+	{
+		m_Logger.Write(FromKernel, LogNotice, "FAST MSX2/MSX2+: preloading deferred boot work at frame 0");
+	}
+	else
+	{
+		m_Logger.Write(FromKernel, LogNotice, "USB init deferred for faster first frame");
+	}
 #if COMBO_ENABLE_FMSX
 	if (m_FmsxEnabled)
 	{
@@ -812,16 +915,25 @@ TComboShutdownMode CComboKernel::Run(void)
 			BootTrace("R1");
 		}
 		unsigned mounted_files = 0;
-		#if COMBO_INITRAMFS_MOUNT
-		mounted_files = fmsx_initramfs_mount_boot_minimal();
-		m_InitramfsDeferredMountPending = TRUE;
-		#else
-		m_Logger.Write(FromKernel, LogNotice, "initramfs mount: disabled by build flag");
-		#endif
-		if (!COMBO_BOOT_QUIET)
-		{
-			BootTrace("R2");
-		}
+			#if COMBO_INITRAMFS_MOUNT
+			mounted_files = fmsx_initramfs_mount_boot_minimal();
+			m_InitramfsDeferredMountPending = TRUE;
+			if (front_load_deferred_boot_work && m_InitramfsDeferredMountPending)
+			{
+				const unsigned later_files = fmsx_initramfs_mount_remaining();
+				m_InitramfsDeferredMountPending = FALSE;
+				mounted_files += later_files;
+				CString early_mount_line;
+				early_mount_line.Format("initramfs frame0 mount: +%u", later_files);
+				m_Logger.Write(FromKernel, LogNotice, early_mount_line);
+			}
+			#else
+			m_Logger.Write(FromKernel, LogNotice, "initramfs mount: disabled by build flag");
+			#endif
+			if (!COMBO_BOOT_QUIET)
+			{
+				BootTrace("R2");
+			}
 		m_InitramfsFiles = mounted_files;
 		CString initramfs_line;
 		initramfs_line.Format("initramfs files: %u", mounted_files);
@@ -879,7 +991,7 @@ TComboShutdownMode CComboKernel::Run(void)
 		}
 	}
 #endif
-	if (COMBO_ENABLE_DEBUG_OVERLAY && m_DebugOverlayEnabled)
+	if (COMBO_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
 	{
 		if (!COMBO_BOOT_QUIET)
 		{
@@ -891,6 +1003,12 @@ TComboShutdownMode CComboKernel::Run(void)
 		WriteScreenText("\x1b[?25l");
 	}
 	m_Logger.Write(FromKernel, LogNotice, "Overlay: F11 | Pause: F12 | Snapshot: F9 | View: F10");
+#if COMBO_ENABLE_FMSX
+	if (m_FmsxReady)
+	{
+		m_FmLayerGainPct = fmsx_runtime_get_fm_layer_gain_pct();
+	}
+#endif
 	m_PauseMenu.SetScalePercent(m_OverscanPercent);
 	m_PauseMenu.SetLanguage(m_Language);
 	m_PauseMenu.SetResolutionMode(m_ResolutionMode);
@@ -904,26 +1022,38 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetRenshaMode(m_RenshaMode);
 	m_PauseMenu.SetFmMusicEnabled(m_FmMusicEnabled);
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
-	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, COMBO_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
+	m_PauseMenu.SetOverlayEnabled(
+		(COMBO_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked) ? m_DebugOverlayEnabled : FALSE,
+		(COMBO_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked) ? TRUE : FALSE);
 	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
 	{
-		const u16 *src_pixels = 0;
-		unsigned src_w = 0u;
-		unsigned src_h = 0u;
-		(void) fmsx_runtime_get_video_frame(&src_pixels, &src_w, &src_h);
-		const unsigned max_scale = ComputePixelScaleMaxPercent(m_Screen.GetWidth(), m_Screen.GetHeight(), src_w, src_h);
+		const unsigned max_scale = ComputeScaleMaxPercentForCurrentFrame(m_Screen.GetWidth(), m_Screen.GetHeight());
 		m_PauseMenu.SetMaxScalePercent(max_scale);
+		if (m_OverscanPercent < kScalePercentMin) m_OverscanPercent = kScalePercentMin;
 		if (m_OverscanPercent > max_scale) m_OverscanPercent = max_scale;
 		m_PauseMenu.SetScalePercent(m_OverscanPercent);
 	}
-#if COMBO_ENABLE_FMSX
-	ApplyRuntimeSettingsToFmsx();
-	/* Force first visible frame to use current viewport policy (avoid transient wide boot frame). */
-	if (m_FmsxReady)
-	{
-		BlitFmsxFrame(TRUE);
-	}
-#endif
+	#if COMBO_ENABLE_FMSX
+		ApplyRuntimeSettingsToFmsx();
+		if (front_load_deferred_boot_work && !m_UsbReady)
+		{
+			if (m_USBHCI.Initialize())
+			{
+				m_UsbReady = TRUE;
+				m_Logger.Write(FromKernel, LogNotice, "USB host ready (frame0 preload)");
+				m_Logger.Write(FromKernel, LogNotice, "Attach USB keyboard and type");
+			}
+			else
+			{
+				m_Logger.Write(FromKernel, LogWarning, "USB host frame0 preload failed; retry deferred");
+			}
+		}
+		/* Force first visible frame to use current viewport policy (avoid transient wide boot frame). */
+		if (m_FmsxReady)
+		{
+			BlitFmsxFrame(TRUE);
+		}
+	#endif
 
 	u64 next_frame_us = CTimer::GetClockTicks64();
 	for (unsigned tick = 0; ; ++tick)
@@ -1099,6 +1229,18 @@ TComboShutdownMode CComboKernel::Run(void)
 			HandleMenuAction(deferred_action);
 		}
 		ProcessPendingTelemetryToggle();
+		if (COMBO_ENABLE_DEBUG_OVERLAY && !m_DebugOverlayUnlocked && m_FmsxReady)
+		{
+			const unsigned load_diag = fmsx_runtime_get_load_diag();
+			/* Unlock debug only after StartMSX() has completed in runtime init path. */
+			if (load_diag >= 2102u && load_diag < 9000u)
+			{
+				m_DebugOverlayUnlocked = TRUE;
+				m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, TRUE);
+				m_PauseMenu.RequestRedraw();
+				m_Logger.Write(FromKernel, LogNotice, "Debug overlay unlocked (post-StartMSX)");
+			}
+		}
 
 		/* Hybrid wait: coarse sleep first, then short busy delay for tighter frame deadline. */
 		if (m_FmsxReady && !m_EmulationPaused)
@@ -1146,14 +1288,27 @@ TComboShutdownMode CComboKernel::Run(void)
 				boolean rensha_fire_on = TRUE;
 				u8 joy_bits_runtime = m_JoyBridgeBits;
 				const unsigned rate_num = (m_RenshaMode > 3u) ? 0u : m_RenshaMode;
-				if (rate_num > 0u && (joy_bits_runtime & kJoyBridgeFireA))
+				const boolean firea_pressed = (joy_bits_runtime & kJoyBridgeFireA) ? TRUE : FALSE;
+				if (rate_num > 0u && firea_pressed)
 				{
-					m_RenshaPhase += rate_num;
-					if (m_RenshaPhase >= kRenshaRateDen)
+					if (!m_RenshaFireAHeld)
 					{
-						m_RenshaPhase -= kRenshaRateDen;
+						/* First press must fire immediately and start oscillator phase at ON state. */
+						m_RenshaFireAHeld = TRUE;
+						m_RenshaPhase = 0u;
 					}
 					else
+					{
+						m_RenshaPhase += rate_num;
+						while (m_RenshaPhase >= kRenshaRateDen)
+						{
+							m_RenshaPhase -= kRenshaRateDen;
+						}
+					}
+
+					/* Use a wider duty cycle (50%) to avoid missed shots on games that poll at lower cadence. */
+					const boolean fire_on_phase = (m_RenshaPhase < (kRenshaRateDen / 2u)) ? TRUE : FALSE;
+					if (!fire_on_phase)
 					{
 						rensha_fire_on = FALSE;
 						joy_bits_runtime &= (u8) ~kJoyBridgeFireA;
@@ -1161,6 +1316,7 @@ TComboShutdownMode CComboKernel::Run(void)
 				}
 				else
 				{
+					m_RenshaFireAHeld = FALSE;
 					m_RenshaPhase = 0u;
 				}
 				PushKeyboardStateToRuntime(rensha_fire_on);
@@ -1278,7 +1434,7 @@ TComboShutdownMode CComboKernel::Run(void)
 				}
 			}
 		}
-		if (COMBO_ENABLE_DEBUG_OVERLAY && m_DebugOverlayEnabled)
+		if (COMBO_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
 		{
 			now_us = CTimer::GetClockTicks64();
 			if (m_LastOverlayUs == 0u || now_us - m_LastOverlayUs >= kDebugOverlayIntervalUs)
@@ -1452,6 +1608,7 @@ void CComboKernel::RefillAudioQueue(void)
 			unsigned src_peak = 0;
 			unsigned peak = 0;
 			unsigned gain = COMBO_FMSX_AUDIO_GAIN;
+			const unsigned effective_gain_pct = AudioGainEffectivePct(m_AudioOutputGainPct);
 			out_frames = write_frames;
 			for (unsigned i = 0; i < got; ++i)
 			{
@@ -1497,15 +1654,14 @@ void CComboKernel::RefillAudioQueue(void)
 					sample32 += probe;
 				#endif
 				}
-				const int clip_max = (int) m_AudioClipMaxRuntime;
-				if (sample32 > clip_max) sample32 = clip_max;
-				if (sample32 < -clip_max) sample32 = -clip_max;
-				const unsigned effective_gain_pct = AudioGainEffectivePct(m_AudioOutputGainPct);
 				sample32 = (sample32 * (int) effective_gain_pct) / 100;
 				if (effective_gain_pct == 0u)
 				{
 					sample32 = 0;
 				}
+				const int clip_max = (int) m_AudioClipMaxRuntime;
+				if (sample32 > clip_max) sample32 = clip_max;
+				if (sample32 < -clip_max) sample32 = -clip_max;
 				const s16 sample = (s16) sample32;
 				m_LastAudioSample = sample;
 				const unsigned abs_sample = sample >= 0 ? (unsigned) sample : (unsigned) (-sample);
@@ -1613,6 +1769,8 @@ void CComboKernel::KeyboardRemovedHandler(CDevice *device, void *context)
 		self->m_LastF8Pressed = FALSE;
 		self->m_LastF9Pressed = FALSE;
 		self->m_LastF10Pressed = FALSE;
+		self->m_LastFmGainUpPressed = FALSE;
+		self->m_LastFmGainDownPressed = FALSE;
 		self->m_TelemetryViewMode = kTelemetryViewOff;
 		self->m_PendingTelemetryToggle = kTelemetryRequestNone;
 		self->m_PendingViewportScreenshot = FALSE;
@@ -1699,15 +1857,18 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		active_model_profile > 9u ? 9u : active_model_profile);
 	WriteScreenText(line);
 
-	line.Format("\x1b[97m\x1b[49m\x1b[9;1HAC1 FM:%u/%u SCC:%u/%u AG:%03u AE:%03u M:%u P7:%02X",
+	m_FmLayerGainPct = fmsx_runtime_get_fm_layer_gain_pct();
+	line.Format("\x1b[97m\x1b[49m\x1b[9;1HAC1 FM:%u/%u FG:%03u SCC:%u/%u AG:%03u AE:%03u M:%u P7:%02X MS:%05X",
 		m_FmMusicEnabled ? 1u : 0u,
 		fmsx_runtime_get_audio_layer_muted(2u) ? 0u : 1u,
+		m_FmLayerGainPct > 999u ? 999u : m_FmLayerGainPct,
 		m_SccCartEnabled ? 1u : 0u,
 		fmsx_runtime_get_audio_layer_muted(3u) ? 0u : 1u,
 		m_AudioOutputGainPct > 999u ? 999u : m_AudioOutputGainPct,
 		AudioGainEffectivePct(m_AudioOutputGainPct) > 999u ? 999u : AudioGainEffectivePct(m_AudioOutputGainPct),
 		(m_AudioOutputGainPct == 0u) ? 1u : 0u,
-		fmsx_runtime_get_psg_mixer_reg7() & 0xFFu);
+		fmsx_runtime_get_psg_mixer_reg7() & 0xFFu,
+		fmsx_runtime_get_master_switch() & 0xFFFFFu);
 	WriteScreenText(line);
 
 	line.Format("\x1b[97m\x1b[49m\x1b[10;1HAC2 L1:%u PSG:%u L2:%u FM:%u L3:%u SCC:%u",
@@ -2112,6 +2273,7 @@ void CComboKernel::ApplyRuntimeSettingsToFmsx(void)
 	fmsx_runtime_set_model_profile(m_MachineProfile);
 	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
 	fmsx_runtime_set_fm_music_enabled(m_FmMusicEnabled);
+	fmsx_runtime_set_fm_layer_gain_pct(m_FmLayerGainPct);
 	fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
 #endif
 }
@@ -2122,7 +2284,7 @@ void CComboKernel::UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, un
 	m_SettingsSaveCode = code;
 	m_SettingsSaveAux = aux;
 #if COMBO_ENABLE_DEBUG_OVERLAY
-	if (m_DebugOverlayEnabled)
+	if (m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
 	{
 		DrawDebugOverlay((unsigned) (m_FmsxFrames & 0xFFFFFFFFu));
 	}
@@ -2134,7 +2296,7 @@ void CComboKernel::UpdateLoadDiagTelemetry(unsigned stage)
 #if COMBO_ENABLE_FMSX
 	fmsx_runtime_set_load_diag(stage);
 #if COMBO_ENABLE_DEBUG_OVERLAY
-	if (m_DebugOverlayEnabled)
+	if (m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
 	{
 		DrawDebugOverlay((unsigned) (m_FmsxFrames & 0xFFFFFFFFu));
 	}
@@ -2241,15 +2403,19 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			++eq;
 		}
 
-		if (eq < line_end)
-		{
-			const unsigned key_len = (unsigned) (eq - line);
-			const unsigned value = ParseUintValue(eq + 1);
-			if (SettingsKeyEquals(line, key_len, "scale"))
+			if (eq < line_end)
 			{
-				unsigned clamped = value;
-				if (clamped < kScalePercentMin) clamped = kScalePercentMin;
-				if (clamped > kScalePercentHardMax) clamped = kScalePercentHardMax;
+				const unsigned key_len = (unsigned) (eq - line);
+				const unsigned value = ParseUintValue(eq + 1);
+				if (SettingsKeyEquals(line, key_len, "resolution"))
+				{
+					m_ResolutionMode = (value > kResolutionMode768) ? kResolutionModeAuto : value;
+				}
+				else if (SettingsKeyEquals(line, key_len, "scale"))
+				{
+					unsigned clamped = value;
+					if (clamped < kScalePercentMin) clamped = kScalePercentMin;
+					if (clamped > kScalePercentHardMax) clamped = kScalePercentHardMax;
 				m_OverscanPercent = (clamped / kScalePercentStep) * kScalePercentStep;
 			}
 			else if (SettingsKeyEquals(line, key_len, "overscan"))
@@ -2307,7 +2473,12 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			}
 			else if (SettingsKeyEquals(line, key_len, "debugger"))
 			{
+#if COMBO_ENABLE_DEBUG_OVERLAY
 				m_DebugOverlayEnabled = value ? TRUE : FALSE;
+#else
+				(void) value;
+				m_DebugOverlayEnabled = FALSE;
+#endif
 			}
 			else if (SettingsKeyEquals(line, key_len, "audio_mute"))
 			{
@@ -2359,15 +2530,14 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetRenshaMode(m_RenshaMode);
 	m_PauseMenu.SetFmMusicEnabled(m_FmMusicEnabled);
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
-	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, COMBO_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
+	m_PauseMenu.SetOverlayEnabled(
+		(COMBO_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked) ? m_DebugOverlayEnabled : FALSE,
+		(COMBO_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked) ? TRUE : FALSE);
 	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
 	{
-		const u16 *src_pixels = 0;
-		unsigned src_w = 0u;
-		unsigned src_h = 0u;
-		(void) fmsx_runtime_get_video_frame(&src_pixels, &src_w, &src_h);
-		const unsigned max_scale = ComputePixelScaleMaxPercent(m_Screen.GetWidth(), m_Screen.GetHeight(), src_w, src_h);
+		const unsigned max_scale = ComputeScaleMaxPercentForCurrentFrame(m_Screen.GetWidth(), m_Screen.GetHeight());
 		m_PauseMenu.SetMaxScalePercent(max_scale);
+		if (m_OverscanPercent < kScalePercentMin) m_OverscanPercent = kScalePercentMin;
 		if (m_OverscanPercent > max_scale) m_OverscanPercent = max_scale;
 		m_PauseMenu.SetScalePercent(m_OverscanPercent);
 	}
@@ -2379,6 +2549,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	fmsx_runtime_set_model_profile(m_MachineProfile);
 	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
 	fmsx_runtime_set_fm_music_enabled(m_FmMusicEnabled);
+	fmsx_runtime_set_fm_layer_gain_pct(m_FmLayerGainPct);
 	fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
 	if (has_cfg_carta) (void) fmsx_runtime_set_cartridge_path(0u, cfg_carta_path[0] ? cfg_carta_path : 0);
 	if (has_cfg_cartb) (void) fmsx_runtime_set_cartridge_path(1u, cfg_cartb_path[0] ? cfg_cartb_path : 0);
@@ -2441,11 +2612,12 @@ void CComboKernel::SaveSettingsToStorage(void)
 		} \
 	} while (0)
 
-	APPEND_LINE_FMT("scale=%u\n", m_OverscanPercent);
-	APPEND_LINE_FMT("language=%u\n", m_Language);
-	APPEND_LINE_FMT("widescreen=%u\n", m_WidescreenEnabled ? 1u : 0u);
-	APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
-	APPEND_LINE_FMT("refresh=%u\n", m_RefreshRateHz);
+		APPEND_LINE_FMT("scale=%u\n", m_OverscanPercent);
+		APPEND_LINE_FMT("language=%u\n", m_Language);
+		APPEND_LINE_FMT("resolution=%u\n", m_ResolutionMode);
+		APPEND_LINE_FMT("widescreen=%u\n", m_WidescreenEnabled ? 1u : 0u);
+		APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
+		APPEND_LINE_FMT("refresh=%u\n", m_RefreshRateHz);
 	APPEND_LINE_FMT("disk_rom=%u\n", m_DiskRomEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("boot_mode=%u\n", m_BootMode);
 	APPEND_LINE_FMT("machine=%u\n", m_MachineProfile);
@@ -2455,16 +2627,26 @@ void CComboKernel::SaveSettingsToStorage(void)
 	APPEND_LINE_FMT("scc_cart=%u\n", m_SccCartEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("debugger=%u\n", m_DebugOverlayEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("audio_gain=%u\n", m_AudioOutputGainPct > 100u ? 100u : m_AudioOutputGainPct);
-#if COMBO_ENABLE_FMSX
-	APPEND_LINE_TEXT("cart_a_path", fmsx_runtime_get_cartridge_path(0u));
-	APPEND_LINE_TEXT("cart_b_path", fmsx_runtime_get_cartridge_path(1u));
-	APPEND_LINE_TEXT("disk_a_path", fmsx_runtime_get_disk_path(0u));
-	APPEND_LINE_TEXT("disk_b_path", fmsx_runtime_get_disk_path(1u));
-#endif
-	APPEND_LINE_FMT("#END\n", 0u);
+	#if COMBO_ENABLE_FMSX
+		APPEND_LINE_TEXT("cart_a_path", fmsx_runtime_get_cartridge_path(0u));
+		APPEND_LINE_TEXT("cart_b_path", fmsx_runtime_get_cartridge_path(1u));
+		APPEND_LINE_TEXT("disk_a_path", fmsx_runtime_get_disk_path(0u));
+		APPEND_LINE_TEXT("disk_b_path", fmsx_runtime_get_disk_path(1u));
+	#endif
 
-#undef APPEND_LINE_FMT
-#undef APPEND_LINE_TEXT
+	#undef APPEND_LINE_FMT
+	#undef APPEND_LINE_TEXT
+
+	{
+		static const char kEndMarker[] = "#END\n";
+		const unsigned end_len = (unsigned) (sizeof(kEndMarker) - 1u);
+		if (offset + end_len >= sizeof(buffer))
+		{
+			offset = (sizeof(buffer) > (end_len + 1u)) ? (unsigned) (sizeof(buffer) - end_len - 1u) : 0u;
+		}
+		memcpy(buffer + offset, kEndMarker, end_len);
+		offset += end_len;
+	}
 
 	/* Persist fixed-size block to keep parser/overwrite deterministic. */
 	const unsigned fixed_write_bytes = 1024u;
@@ -3426,6 +3608,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 	case ComboMenuActionCycleRensha:
 		m_RenshaMode = (m_RenshaMode >= 3u) ? 0u : (m_RenshaMode + 1u);
 		m_RenshaPhase = 0u;
+		m_RenshaFireAHeld = FALSE;
 		m_PauseMenu.SetRenshaMode(m_RenshaMode);
 		RefreshSettingsUiAfterAction();
 		{
@@ -3438,6 +3621,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 	case ComboMenuActionCycleRenshaPrev:
 		m_RenshaMode = (m_RenshaMode == 0u) ? 3u : (m_RenshaMode - 1u);
 		m_RenshaPhase = 0u;
+		m_RenshaFireAHeld = FALSE;
 		m_PauseMenu.SetRenshaMode(m_RenshaMode);
 		RefreshSettingsUiAfterAction();
 		{
@@ -3449,6 +3633,10 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 
 	case ComboMenuActionToggleOverlay:
 	#if COMBO_ENABLE_DEBUG_OVERLAY
+		if (!m_DebugOverlayUnlocked)
+		{
+			break;
+		}
 		SetDebugOverlayEnabled(m_DebugOverlayEnabled ? FALSE : TRUE);
 		RefreshSettingsUiAfterAction();
 		m_Logger.Write(FromKernel, LogNotice, m_DebugOverlayEnabled ? "Settings: Debugger ON" : "Settings: Debugger OFF");
@@ -3523,6 +3711,10 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 void CComboKernel::SetDebugOverlayEnabled(boolean enabled)
 {
 #if COMBO_ENABLE_DEBUG_OVERLAY
+	if (!m_DebugOverlayUnlocked)
+	{
+		return;
+	}
 	m_DebugOverlayEnabled = enabled ? TRUE : FALSE;
 	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, TRUE);
 	m_PauseMenu.RequestRedraw();
@@ -3544,6 +3736,9 @@ void CComboKernel::ClearDebugOverlay(void)
 	WriteScreenText("\x1b[5;1H                                                                                ");
 	WriteScreenText("\x1b[6;1H                                                                                ");
 	WriteScreenText("\x1b[7;1H                                                                                ");
+	WriteScreenText("\x1b[8;1H                                                                                ");
+	WriteScreenText("\x1b[9;1H                                                                                ");
+	WriteScreenText("\x1b[10;1H                                                                                ");
 	WriteScreenText("\x1b[0m");
 }
 
@@ -3698,6 +3893,7 @@ void CComboKernel::PushKeyboardStateToRuntime(boolean rensha_fire_on)
 {
 #if COMBO_ENABLE_FMSX
 	unsigned char raw_keys[6];
+	u8 modifiers = m_LastKeyboardModifiers;
 	for (unsigned i = 0u; i < 6u; ++i)
 	{
 		raw_keys[i] = m_LastKeyboardRawKeys[i];
@@ -3706,26 +3902,21 @@ void CComboKernel::PushKeyboardStateToRuntime(boolean rensha_fire_on)
 		(fmsx_runtime_get_cartridge_name(0u) != 0) || (fmsx_runtime_get_cartridge_name(1u) != 0);
 	if (has_cart_loaded)
 	{
+		/* In cartridge gameplay route action keys through joystick bridge only.
+		   This avoids keyboard+joystick double-trigger paths that break Rensha gating. */
+		modifiers &= (u8) ~0x22u; /* clear left/right SHIFT modifier */
 		for (unsigned i = 0u; i < 6u; ++i)
 		{
-			if (raw_keys[i] == kHidKeySpace)
+			if (raw_keys[i] == 0x2Cu /* SPACE */
+			 || raw_keys[i] == 0x1Du /* Z */
+			 || raw_keys[i] == 0x1Bu /* X */)
 			{
 				raw_keys[i] = 0u;
 			}
 		}
 	}
-	if (m_RenshaMode > 0u && !rensha_fire_on)
-	{
-		for (unsigned i = 0u; i < 6u; ++i)
-		{
-			if (raw_keys[i] == kHidKeySpace)
-			{
-				raw_keys[i] = 0u;
-			}
-		}
-	}
-
-	fmsx_runtime_set_keyboard_raw(m_LastKeyboardModifiers, raw_keys);
+	(void) rensha_fire_on;
+	fmsx_runtime_set_keyboard_raw(modifiers, raw_keys);
 #else
 	(void) rensha_fire_on;
 #endif
@@ -3776,6 +3967,11 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	if (key_state.f1_pressed && !m_LastF12Pressed)
 	{
 		#if COMBO_ENABLE_DEBUG_OVERLAY
+		if (!m_DebugOverlayUnlocked)
+		{
+			m_LastF12Pressed = key_state.f1_pressed;
+			return;
+		}
 		SetDebugOverlayEnabled(m_DebugOverlayEnabled ? FALSE : TRUE);
 		m_Logger.Write(FromKernel, LogNotice, m_DebugOverlayEnabled ? "Overlay ON" : "Overlay OFF");
 		#endif
@@ -3787,6 +3983,8 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	const boolean f8_edge = (key_state.f8_pressed && !m_LastF8Pressed) ? TRUE : FALSE;
 	const boolean f9_edge = (key_state.f9_pressed && !m_LastF9Pressed) ? TRUE : FALSE;
 	const boolean f10_edge = (key_state.f10_pressed && !m_LastF10Pressed) ? TRUE : FALSE;
+	const boolean fm_gain_up_edge = (key_state.debug_fm_gain_up_pressed && !m_LastFmGainUpPressed) ? TRUE : FALSE;
+	const boolean fm_gain_down_edge = (key_state.debug_fm_gain_down_pressed && !m_LastFmGainDownPressed) ? TRUE : FALSE;
 	if (f6_edge)
 	{
 		const boolean muted = fmsx_runtime_get_audio_layer_muted(1u) ? FALSE : TRUE;
@@ -3812,6 +4010,23 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 		m_FmMusicEnabled = m_FmMusicEnabled ? FALSE : TRUE;
 		fmsx_runtime_set_fm_music_enabled(m_FmMusicEnabled);
 	}
+	if (fm_gain_up_edge)
+	{
+		if (m_FmLayerGainPct < 100u)
+		{
+			m_FmLayerGainPct += 5u;
+			if (m_FmLayerGainPct > 100u) m_FmLayerGainPct = 100u;
+			fmsx_runtime_set_fm_layer_gain_pct(m_FmLayerGainPct);
+		}
+	}
+	if (fm_gain_down_edge)
+	{
+		if (m_FmLayerGainPct > 0u)
+		{
+			m_FmLayerGainPct = (m_FmLayerGainPct >= 5u) ? (m_FmLayerGainPct - 5u) : 0u;
+			fmsx_runtime_set_fm_layer_gain_pct(m_FmLayerGainPct);
+		}
+	}
 
 	if (m_TelemetryViewMode != kTelemetryViewOff)
 	{
@@ -3830,6 +4045,8 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 		m_LastF8Pressed = key_state.f8_pressed;
 		m_LastF9Pressed = key_state.f9_pressed;
 		m_LastF10Pressed = key_state.f10_pressed;
+		m_LastFmGainUpPressed = key_state.debug_fm_gain_up_pressed;
+		m_LastFmGainDownPressed = key_state.debug_fm_gain_down_pressed;
 		return;
 	}
 
@@ -3880,17 +4097,15 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 		m_LastF8Pressed = key_state.f8_pressed;
 		m_LastF9Pressed = key_state.f9_pressed;
 		m_LastF10Pressed = key_state.f10_pressed;
+		m_LastFmGainUpPressed = key_state.debug_fm_gain_up_pressed;
+		m_LastFmGainDownPressed = key_state.debug_fm_gain_down_pressed;
 		return;
 	}
 
 #if COMBO_ENABLE_FMSX
 	if (m_EmulationPaused && m_FmsxReady)
 	{
-		const u16 *src_pixels = 0;
-		unsigned src_w = 0u;
-		unsigned src_h = 0u;
-		(void) fmsx_runtime_get_video_frame(&src_pixels, &src_w, &src_h);
-		const unsigned max_scale = ComputePixelScaleMaxPercent(m_Screen.GetWidth(), m_Screen.GetHeight(), src_w, src_h);
+		const unsigned max_scale = ComputeScaleMaxPercentForCurrentFrame(m_Screen.GetWidth(), m_Screen.GetHeight());
 		m_PauseMenu.SetMaxScalePercent(max_scale);
 		if (m_OverscanPercent > max_scale)
 		{
@@ -4007,6 +4222,8 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	m_LastF8Pressed = key_state.f8_pressed;
 	m_LastF9Pressed = key_state.f9_pressed;
 	m_LastF10Pressed = key_state.f10_pressed;
+	m_LastFmGainUpPressed = key_state.debug_fm_gain_up_pressed;
+	m_LastFmGainDownPressed = key_state.debug_fm_gain_down_pressed;
 }
 
 void CComboKernel::KeyStatusRawHandler(unsigned char modifiers, const unsigned char raw_keys[6], void *context)

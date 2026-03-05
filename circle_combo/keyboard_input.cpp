@@ -19,6 +19,10 @@ static const u8 kHidKeyF9 = 0x42;
 static const u8 kHidKeyF10 = 0x43;
 static const u8 kHidKeyF11 = 0x44;
 static const u8 kHidKeyF12 = 0x45;
+static const u8 kHidKeyMinus = 0x2D;
+static const u8 kHidKeyEqual = 0x2E;
+static const u8 kHidKeyKeypadMinus = 0x56;
+static const u8 kHidKeyKeypadPlus = 0x57;
 
 static const u8 kJoyRight = (1u << 0);
 static const u8 kJoyLeft = (1u << 1);
@@ -37,8 +41,6 @@ void ComboDecodeKeyboardRaw(unsigned char modifiers,
 				      const unsigned char raw_keys[6],
 				      TComboKeyboardInputState *out_state)
 {
-	(void) modifiers;
-
 	if (out_state == 0)
 	{
 		return;
@@ -50,6 +52,8 @@ void ComboDecodeKeyboardRaw(unsigned char modifiers,
 	out_state->f8_pressed = FALSE;
 	out_state->f9_pressed = FALSE;
 	out_state->f10_pressed = FALSE;
+	out_state->debug_fm_gain_up_pressed = FALSE;
+	out_state->debug_fm_gain_down_pressed = FALSE;
 	out_state->f1_pressed = FALSE;
 	out_state->pause_pressed = FALSE;
 	out_state->menu_up_pressed = FALSE;
@@ -66,6 +70,12 @@ void ComboDecodeKeyboardRaw(unsigned char modifiers,
 	if (raw_keys == 0)
 	{
 		return;
+	}
+
+	/* Map physical Shift to FIREA in joystick bridge. */
+	if (modifiers & 0x22u)
+	{
+		out_state->bridge_bits |= kJoyButton1;
 	}
 
 	for (unsigned i = 0; i < 6; ++i)
@@ -94,6 +104,14 @@ void ComboDecodeKeyboardRaw(unsigned char modifiers,
 		if (key == kHidKeyF10)
 		{
 			out_state->f10_pressed = TRUE;
+		}
+		if (key == kHidKeyEqual || key == kHidKeyKeypadPlus)
+		{
+			out_state->debug_fm_gain_up_pressed = TRUE;
+		}
+		if (key == kHidKeyMinus || key == kHidKeyKeypadMinus)
+		{
+			out_state->debug_fm_gain_down_pressed = TRUE;
 		}
 		if (key == kHidKeyF12)
 		{
@@ -155,10 +173,9 @@ void ComboDecodeKeyboardRaw(unsigned char modifiers,
 			out_state->bridge_bits |= kJoyUp;
 			break;
 		case kHidKeySpace:
-		case kHidKeyZ:
 			out_state->bridge_bits |= kJoyButton1;
 			break;
-		case kHidKeyX:
+		case kHidKeyZ:
 			out_state->bridge_bits |= kJoyButton2;
 			break;
 		default:
