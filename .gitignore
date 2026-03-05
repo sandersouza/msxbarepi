@@ -6,8 +6,6 @@ third_party/circle
 
 # Ignore ROM files and SD card contents, which are not part of the source code and may contain large binary files.
 roms/*.rom
-roms/msx1/*.rom
-roms/msx2/*.rom
 roms/machines/
 emulator/
 
