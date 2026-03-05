@@ -37,6 +37,7 @@ typedef struct {
 
 boolean fmsx_runtime_init(void);
 boolean fmsx_runtime_reboot_basic(void);
+boolean fmsx_runtime_menu_reset(void);
 boolean fmsx_runtime_hard_reset(void);
 boolean fmsx_runtime_step_frame(void);
 void fmsx_runtime_shutdown(void);

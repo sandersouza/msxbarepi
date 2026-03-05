@@ -18,13 +18,14 @@ enum TComboFileBrowserEvent {
 class CComboFileBrowser
 {
 public:
-    static const unsigned kMaxEntries = 256u;
+    static const unsigned kMaxEntries = 1024u;
     static const unsigned kVisibleRows = 10u;
 
     CComboFileBrowser(void);
 
     void Reset(void);
     void Open(unsigned mode, unsigned slot_index);
+    void EnterDirectory(const char *dir_path);
     unsigned GetMode(void) const;
     unsigned GetSlotIndex(void) const;
     unsigned GetCount(void) const;
@@ -50,6 +51,11 @@ private:
     static void CopySmallText(char *dst, unsigned dst_size, const char *src);
     static void FormatName20NoExt(const char *path, char out_name[21]);
     static boolean IsPathInsideRoot(const char *path, const char *root);
+    void InsertSorted(unsigned section_start,
+                      const char *name,
+                      const char *path,
+                      boolean is_dir,
+                      boolean is_parent);
     void RebuildCatalog(void);
     const char *RootPath(void) const;
 

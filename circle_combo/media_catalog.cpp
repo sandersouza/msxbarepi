@@ -493,18 +493,11 @@ void combo_media_catalog_begin_scan(void)
 
 	for (unsigned i = 0u; i < kRootCount; ++i)
 	{
+		/* Always rescan roots to avoid stale FAT timestamp cache behavior on removable media. */
 		const TRootFingerprint fp = local_capture_root_fingerprint(kCatalogRoots[i].path);
 		s_RootScanCache[i].fp = fp;
-		if (s_RootCache[i].valid && local_fingerprint_equals(&s_RootCache[i].fp, &fp))
-		{
-			s_RootNeedsScan[i] = FALSE;
-			local_replay_cached_root(i);
-		}
-		else
-		{
-			s_RootNeedsScan[i] = TRUE;
-			s_RootScanCache[i].valid = FALSE;
-		}
+		s_RootNeedsScan[i] = TRUE;
+		s_RootScanCache[i].valid = FALSE;
 	}
 
 	boolean has_scan_work = FALSE;

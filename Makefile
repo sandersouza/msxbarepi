@@ -41,6 +41,10 @@ OWNER ?=
 BUILD_BID ?= $(shell date +%Y%m%d%H%M)-$(shell git rev-parse --short HEAD 2>/dev/null || echo nogit)
 CIRCLE_KERNEL_MAX_SIZE ?= 0x400000
 CIRCLE_EXTRAINCLUDE ?= -DKERNEL_MAX_SIZE=$(CIRCLE_KERNEL_MAX_SIZE)
+PACKAGE_DEBUG_BUILD ?= 1
+PACKAGE_COPY_GAMES_TO_ROOT ?= 1
+PACKAGE_FIRMWARE_DIR ?= ./rpi-firmware
+PACKAGE_OFFLINE_DRY_PACKAGE ?= 1
 
 CROSS ?= $(shell \
 	if command -v aarch64-none-elf-gcc >/dev/null 2>&1; then \
@@ -130,12 +134,12 @@ TARGET_ELF := $(BUILD_DIR)/kernel8.elf
 TARGET_IMG := $(BUILD_DIR)/kernel8.img
 FMSX_BOOTSTRAP_ARTIFACT := artifacts/kernel8-fmsx-bootstrap.img
 DEFAULT_ARTIFACT := artifacts/kernel8-default.img
-INITRAMFS_IN ?= roms/msx1
+INITRAMFS_IN ?= roms/initramfs
 INITRAMFS_OUT ?= sdcard/msx.cpio
 CONTEXT_UPDATER := ./scripts/update-ai-context.sh
 THIRD_PARTY_GUARD := ./scripts/check-third-party-pristine.sh
 
-.PHONY: all default clean help guard-third-party circle-configure sdcard initramfs package
+.PHONY: all default clean help guard-third-party circle-configure sdcard sdcard-update initramfs package
 
 all: default
 
@@ -228,18 +232,36 @@ clean:
 sdcard:
 	./scripts/prepare-sd.sh
 
+sdcard-update:
+	./scripts/update-sd-incremental.sh
+
 initramfs:
 	./scripts/make-initramfs.sh $(INITRAMFS_IN) $(INITRAMFS_OUT)
 
 package: default initramfs
-	./scripts/make-sdcard-package.sh
+	@issue_branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true); \
+	issue_id=$$(printf "%s" "$$issue_branch" | sed -n 's/^\([0-9][0-9]*\)-.*/\1/p'); \
+	if [ -n "$$issue_id" ] && [ -f "artifacts/kernel8-issue$${issue_id}.img" ]; then \
+		kernel_img="artifacts/kernel8-issue$${issue_id}.img"; \
+	else \
+		kernel_img="$(DEFAULT_ARTIFACT)"; \
+	fi; \
+	echo "Pacote (DRY_RUN) usando kernel: $$kernel_img"; \
+	DRY_RUN=1 NON_INTERACTIVE=1 AUTO_CONFIRM=1 \
+	COPY_GAMES_TO_ROOT=$(PACKAGE_COPY_GAMES_TO_ROOT) \
+	DEBUG_BUILD=$(PACKAGE_DEBUG_BUILD) \
+	OFFLINE_DRY_PACKAGE=$(PACKAGE_OFFLINE_DRY_PACKAGE) \
+	KERNEL_IMG="$$kernel_img" \
+	FIRMWARE_DIR="$(PACKAGE_FIRMWARE_DIR)" \
+	./scripts/prepare-sd.sh
 
 help:
-	@echo "Targets: all (default), clean, sdcard, initramfs, package, help"
+	@echo "Targets: all (default), clean, sdcard, sdcard-update, initramfs, package, help"
 	@echo "Default (make): perfil estavel -> artifacts/kernel8-default.img + artifacts/kernel8-issue<id>.img (quando em branch de issue)"
 	@echo "SD card prep: make sdcard"
-	@echo "Initramfs: make initramfs INITRAMFS_IN=roms/msx1 INITRAMFS_OUT=sdcard/msx.cpio"
-	@echo "SD package zip: make package -> artifacts/sdcard-package-YYYYMMDDHHMM.zip"
+	@echo "SD incremental update (sem formatar): make sdcard-update"
+	@echo "Initramfs: make initramfs INITRAMFS_IN=roms/initramfs INITRAMFS_OUT=sdcard/msx.cpio"
+	@echo "SD package zip (via prepare-sd dry-run offline): make package -> artifacts/sdcard-package-YYYYMMDDHHMM.zip"
 	@echo "Cross prefix auto: aarch64-none-elf- | aarch64-elf-"
 	@echo "Override: make CROSS=aarch64-elf-"
 	@echo "Use flags COMBO_*/DEBUG/FB_* conforme necessario"

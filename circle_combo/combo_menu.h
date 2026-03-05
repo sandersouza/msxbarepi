@@ -41,6 +41,9 @@ public:
     void SetLoadDiskDriveNames(const char *drive1_name, const char *drive2_name);
     boolean ConsumePendingRomSelection(unsigned *slot_index, char *path, unsigned path_size);
     boolean ConsumePendingDiskSelection(unsigned *drive_index, char *path, unsigned path_size);
+    boolean ConsumePendingRomBrowserOpen(unsigned *slot_index, char *path, unsigned path_size);
+    boolean ConsumePendingDiskBrowserOpen(unsigned *drive_index, char *path, unsigned path_size);
+    void OpenFileBrowser(unsigned mode, unsigned slot_index, const char *path);
     unsigned GetAudioGainPercent(void) const;
     boolean IsInSettings(void) const;
     void RequestRedraw(void);
@@ -114,9 +117,15 @@ private:
     boolean m_HasPendingRomSelection;
     unsigned m_PendingRomSlot;
     char m_PendingRomPath[192];
+    boolean m_HasPendingRomBrowserOpen;
+    unsigned m_PendingRomBrowserSlot;
+    char m_PendingRomBrowserPath[192];
     boolean m_HasPendingDiskSelection;
     unsigned m_PendingDiskDrive;
     char m_PendingDiskPath[192];
+    boolean m_HasPendingDiskBrowserOpen;
+    unsigned m_PendingDiskBrowserDrive;
+    char m_PendingDiskBrowserPath[192];
     boolean m_LastBackPressed;
     unsigned m_LastDrawnView;
     unsigned m_LastDrawnScalePercent;

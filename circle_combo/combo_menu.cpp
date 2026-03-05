@@ -1,6 +1,5 @@
 #include "combo_menu.h"
 #include "combo_locale.h"
-#include "media_catalog.h"
 #include "viewport_screenshot.h"
 
 #if DEPTH == 32
@@ -106,17 +105,6 @@ static unsigned ComboFindTabSplit(const char *label)
     return len;
 }
 
-static void ComboDrainMediaCatalogForBrowser(void)
-{
-    /* Keep non-blocking behavior in menu input path (avoid hard-lock perception). */
-    unsigned safety_budget = 0u;
-    while (combo_media_catalog_is_scanning() && safety_budget < 8192u)
-    {
-        combo_media_catalog_scan_step(128u);
-        safety_budget += 128u;
-    }
-}
-
 static void ComboClearPixels(TScreenColor *buffer, unsigned count)
 {
     if (buffer == 0 || count == 0u)
@@ -186,9 +174,15 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_HasPendingRomSelection(FALSE),
     m_PendingRomSlot(0u),
     m_PendingRomPath{0},
+    m_HasPendingRomBrowserOpen(FALSE),
+    m_PendingRomBrowserSlot(0u),
+    m_PendingRomBrowserPath{0},
     m_HasPendingDiskSelection(FALSE),
     m_PendingDiskDrive(0u),
     m_PendingDiskPath{0},
+    m_HasPendingDiskBrowserOpen(FALSE),
+    m_PendingDiskBrowserDrive(0u),
+    m_PendingDiskBrowserPath{0},
     m_LastBackPressed(FALSE),
     m_LastDrawnView(MenuViewRoot),
     m_LastDrawnScalePercent(0u),
@@ -253,9 +247,15 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_HasPendingRomSelection = FALSE;
     m_PendingRomSlot = 0u;
     CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), "");
+    m_HasPendingRomBrowserOpen = FALSE;
+    m_PendingRomBrowserSlot = 0u;
+    CopySmallText(m_PendingRomBrowserPath, sizeof(m_PendingRomBrowserPath), "");
     m_HasPendingDiskSelection = FALSE;
     m_PendingDiskDrive = 0u;
     CopySmallText(m_PendingDiskPath, sizeof(m_PendingDiskPath), "");
+    m_HasPendingDiskBrowserOpen = FALSE;
+    m_PendingDiskBrowserDrive = 0u;
+    CopySmallText(m_PendingDiskBrowserPath, sizeof(m_PendingDiskBrowserPath), "");
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), "");
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), "");
     CopySmallText(m_LastDrawnLoadDiskDrive1Name, sizeof(m_LastDrawnLoadDiskDrive1Name), "");
@@ -315,9 +315,15 @@ void CComboPauseMenu::Reset(void)
     m_HasPendingRomSelection = FALSE;
     m_PendingRomSlot = 0u;
     CopySmallText(m_PendingRomPath, sizeof(m_PendingRomPath), "");
+    m_HasPendingRomBrowserOpen = FALSE;
+    m_PendingRomBrowserSlot = 0u;
+    CopySmallText(m_PendingRomBrowserPath, sizeof(m_PendingRomBrowserPath), "");
     m_HasPendingDiskSelection = FALSE;
     m_PendingDiskDrive = 0u;
     CopySmallText(m_PendingDiskPath, sizeof(m_PendingDiskPath), "");
+    m_HasPendingDiskBrowserOpen = FALSE;
+    m_PendingDiskBrowserDrive = 0u;
+    CopySmallText(m_PendingDiskBrowserPath, sizeof(m_PendingDiskBrowserPath), "");
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), m_LoadRomSlot1Name);
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), m_LoadRomSlot2Name);
     CopySmallText(m_LastDrawnLoadDiskDrive1Name, sizeof(m_LastDrawnLoadDiskDrive1Name), m_LoadDiskDrive1Name);
@@ -672,6 +678,64 @@ boolean CComboPauseMenu::ConsumePendingDiskSelection(unsigned *drive_index, char
     m_PendingDiskDrive = 0u;
     CopySmallText(m_PendingDiskPath, sizeof(m_PendingDiskPath), "");
     return TRUE;
+}
+
+boolean CComboPauseMenu::ConsumePendingRomBrowserOpen(unsigned *slot_index, char *path, unsigned path_size)
+{
+    if (!m_HasPendingRomBrowserOpen)
+    {
+        return FALSE;
+    }
+    if (slot_index != 0)
+    {
+        *slot_index = m_PendingRomBrowserSlot;
+    }
+    if (path != 0 && path_size > 0u)
+    {
+        CopySmallText(path, path_size, m_PendingRomBrowserPath);
+    }
+    m_HasPendingRomBrowserOpen = FALSE;
+    m_PendingRomBrowserSlot = 0u;
+    CopySmallText(m_PendingRomBrowserPath, sizeof(m_PendingRomBrowserPath), "");
+    return TRUE;
+}
+
+boolean CComboPauseMenu::ConsumePendingDiskBrowserOpen(unsigned *drive_index, char *path, unsigned path_size)
+{
+    if (!m_HasPendingDiskBrowserOpen)
+    {
+        return FALSE;
+    }
+    if (drive_index != 0)
+    {
+        *drive_index = m_PendingDiskBrowserDrive;
+    }
+    if (path != 0 && path_size > 0u)
+    {
+        CopySmallText(path, path_size, m_PendingDiskBrowserPath);
+    }
+    m_HasPendingDiskBrowserOpen = FALSE;
+    m_PendingDiskBrowserDrive = 0u;
+    CopySmallText(m_PendingDiskBrowserPath, sizeof(m_PendingDiskBrowserPath), "");
+    return TRUE;
+}
+
+void CComboPauseMenu::OpenFileBrowser(unsigned mode, unsigned slot_index, const char *path)
+{
+    if (path != 0 && path[0] != '\0')
+    {
+        m_FileBrowser.EnterDirectory(path);
+    }
+    else
+    {
+        m_FileBrowser.Open(mode, slot_index);
+    }
+    m_View = (mode == (unsigned) ComboFileBrowserModeDisk) ? MenuViewLoadDiskBrowser : MenuViewLoadRomBrowser;
+    m_Selected = 0u;
+    m_ForceRedraw = TRUE;
+    m_ForceHighlightRedraw = FALSE;
+    m_RequestBackgroundRestore = TRUE;
+    m_BrowserWarmupRedraws = 1u;
 }
 
 boolean CComboPauseMenu::IsInSettings(void) const
@@ -1041,6 +1105,23 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
 
         if (browser_event == ComboFileBrowserEventEnteredDirectory)
         {
+            if (selected_path[0] != '\0')
+            {
+                if (m_FileBrowser.GetMode() == (unsigned) ComboFileBrowserModeRom)
+                {
+                    m_HasPendingRomBrowserOpen = TRUE;
+                    m_PendingRomBrowserSlot = m_FileBrowser.GetSlotIndex();
+                    CopySmallText(m_PendingRomBrowserPath, sizeof(m_PendingRomBrowserPath), selected_path);
+                    action = (m_PendingRomBrowserSlot == 0u) ? ComboMenuActionCartridgeA : ComboMenuActionCartridgeB;
+                }
+                else
+                {
+                    m_HasPendingDiskBrowserOpen = TRUE;
+                    m_PendingDiskBrowserDrive = m_FileBrowser.GetSlotIndex();
+                    CopySmallText(m_PendingDiskBrowserPath, sizeof(m_PendingDiskBrowserPath), selected_path);
+                    action = (m_PendingDiskBrowserDrive == 0u) ? ComboMenuActionDiskDriveA : ComboMenuActionDiskDriveB;
+                }
+            }
             m_ForceRedraw = TRUE;
             m_ForceHighlightRedraw = FALSE;
             m_ForceContentRedraw = FALSE;
@@ -1377,28 +1458,20 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         else if (m_View == MenuViewLoadRom
               && (items[m_Selected].action == ComboMenuActionCartridgeA || items[m_Selected].action == ComboMenuActionCartridgeB))
         {
-            ComboDrainMediaCatalogForBrowser();
             const unsigned slot = (items[m_Selected].action == ComboMenuActionCartridgeA) ? 0u : 1u;
-            m_FileBrowser.Open((unsigned) ComboFileBrowserModeRom, slot);
-            m_View = MenuViewLoadRomBrowser;
-            m_Selected = 0u;
-            m_ForceRedraw = TRUE;
-            m_ForceHighlightRedraw = FALSE;
-            m_RequestBackgroundRestore = TRUE;
-            m_BrowserWarmupRedraws = 1u;
+            m_HasPendingRomBrowserOpen = TRUE;
+            m_PendingRomBrowserSlot = slot;
+            CopySmallText(m_PendingRomBrowserPath, sizeof(m_PendingRomBrowserPath), "");
+            action = items[m_Selected].action;
         }
         else if (m_View == MenuViewLoadDisk
               && (items[m_Selected].action == ComboMenuActionDiskDriveA || items[m_Selected].action == ComboMenuActionDiskDriveB))
         {
-            ComboDrainMediaCatalogForBrowser();
             const unsigned slot = (items[m_Selected].action == ComboMenuActionDiskDriveA) ? 0u : 1u;
-            m_FileBrowser.Open((unsigned) ComboFileBrowserModeDisk, slot);
-            m_View = MenuViewLoadDiskBrowser;
-            m_Selected = 0u;
-            m_ForceRedraw = TRUE;
-            m_ForceHighlightRedraw = FALSE;
-            m_RequestBackgroundRestore = TRUE;
-            m_BrowserWarmupRedraws = 1u;
+            m_HasPendingDiskBrowserOpen = TRUE;
+            m_PendingDiskBrowserDrive = slot;
+            CopySmallText(m_PendingDiskBrowserPath, sizeof(m_PendingDiskBrowserPath), "");
+            action = items[m_Selected].action;
         }
         else
         {

@@ -549,6 +549,36 @@ boolean fmsx_runtime_reboot_basic(void)
     return fmsx_runtime_start(TRUE);
 }
 
+boolean fmsx_runtime_menu_reset(void)
+{
+    if (!g_fmsx_status.running)
+    {
+        return FALSE;
+    }
+
+    int new_mode = Mode;
+    if (g_disk_rom_enabled)
+    {
+        /* Keep behavior aligned with disk-ROM toggle path. */
+        Mode |= MSX_PATCHBDOS;
+        new_mode = Mode & ~MSX_PATCHBDOS;
+    }
+
+    (void) ResetMSX(new_mode, RAMPages, VRAMPages);
+    if (!g_disk_rom_enabled)
+    {
+        fmsx_runtime_force_disk_rom_off_mapping();
+    }
+
+    g_boot_warmup_frames_remaining = 0u;
+    g_boot_forced_turbo = FALSE;
+    g_boot_video_gate_frames_remaining = 0u;
+    fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+    fmsx_runtime_apply_audio_channels();
+    g_fmsx_status.last_pc = (int) CPU.PC.W;
+    return TRUE;
+}
+
 boolean fmsx_runtime_hard_reset(void)
 {
     if (!g_fmsx_status.running)
