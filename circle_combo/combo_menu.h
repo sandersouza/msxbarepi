@@ -12,10 +12,13 @@ public:
     ~CComboPauseMenu(void);
 
     void Reset(void);
-    void SetOverscanPercent(unsigned percent);
+    void SetScalePercent(unsigned percent);
+    void SetMaxScalePercent(unsigned percent);
     void SetLanguage(unsigned language);
+    void SetResolutionMode(unsigned mode);
     unsigned GetLanguage(void) const;
-    unsigned GetOverscanPercent(void) const;
+    unsigned GetResolutionMode(void) const;
+    unsigned GetScalePercent(void) const;
     void SetWidescreenEnabled(boolean enabled);
     void SetScanlineMode(unsigned mode);
     void SetRefreshRateHz(unsigned hz);
@@ -29,8 +32,10 @@ public:
     void SetZ80TurboMode(unsigned mode);
     unsigned GetZ80TurboMode(void) const;
     void SetRenshaMode(unsigned mode);
+    void SetFmMusicEnabled(boolean enabled);
     void SetSccCartEnabled(boolean enabled);
     void SetOverlayEnabled(boolean enabled, boolean available);
+    void SetDebugLogEnabled(boolean enabled);
     void SetAudioGainPercent(unsigned percent);
     void SetLoadRomSlotNames(const char *slot1_name, const char *slot2_name);
     void SetLoadDiskDriveNames(const char *drive1_name, const char *drive2_name);
@@ -80,8 +85,10 @@ private:
     unsigned m_LastDrawnSelected;
     boolean m_Visible;
     unsigned m_View;
-    unsigned m_OverscanPercent;
+    unsigned m_ScalePercent;
+    unsigned m_MaxScalePercent;
     unsigned m_Language;
+    unsigned m_ResolutionMode;
     boolean m_WidescreenEnabled;
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;
@@ -90,9 +97,11 @@ private:
     unsigned m_MachineProfile;
     unsigned m_Z80TurboMode;
     unsigned m_RenshaMode;
+    boolean m_FmMusicEnabled;
     boolean m_SccCartEnabled;
     boolean m_OverlayEnabled;
     boolean m_OverlayAvailable;
+    boolean m_DebugLogEnabled;
     unsigned m_AudioGainPercent;
     char m_LoadRomSlot1Name[17];
     char m_LoadRomSlot2Name[17];
@@ -110,8 +119,10 @@ private:
     char m_PendingDiskPath[192];
     boolean m_LastBackPressed;
     unsigned m_LastDrawnView;
-    unsigned m_LastDrawnOverscanPercent;
+    unsigned m_LastDrawnScalePercent;
+    unsigned m_LastDrawnMaxScalePercent;
     unsigned m_LastDrawnLanguage;
+    unsigned m_LastDrawnResolutionMode;
     boolean m_LastDrawnWidescreen;
     unsigned m_LastDrawnScanlineMode;
     unsigned m_LastDrawnRefreshRateHz;
@@ -120,9 +131,11 @@ private:
     unsigned m_LastDrawnMachineProfile;
     unsigned m_LastDrawnZ80TurboMode;
     unsigned m_LastDrawnRenshaMode;
+    boolean m_LastDrawnFmMusic;
     boolean m_LastDrawnSccCart;
     boolean m_LastDrawnOverlay;
     boolean m_LastDrawnOverlayAvailable;
+    boolean m_LastDrawnDebugLogEnabled;
     unsigned m_LastDrawnAudioGainPercent;
     char m_LastDrawnLoadRomSlot1Name[17];
     char m_LastDrawnLoadRomSlot2Name[17];

@@ -61,6 +61,8 @@ private:
     void SetDebugOverlayEnabled(boolean enabled);
     void UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux);
     void UpdateLoadDiagTelemetry(unsigned stage);
+    unsigned LoadResolutionModeFromBootConfig(void);
+    void PersistResolutionModeToBootConfig(unsigned mode);
     void LoadSettingsFromStorage(void);
     void SaveSettingsToStorage(void);
     boolean EnsureStateIoBuffer(unsigned min_capacity);
@@ -123,8 +125,12 @@ private:
     boolean m_DebugOverlayEnabled;
     boolean m_EmulationPaused;
     boolean m_LastF12Pressed;
+    boolean m_LastF6Pressed;
+    boolean m_LastF7Pressed;
+    boolean m_LastF8Pressed;
     boolean m_LastF9Pressed;
     boolean m_LastF10Pressed;
+    boolean m_LastPauseWasInSettings;
     boolean m_LastPausePressed;
     boolean m_LastMenuBackPressed;
     boolean m_PauseNeedsBackgroundRedraw;
@@ -163,6 +169,7 @@ private:
     CComboPauseMenu m_PauseMenu;
     unsigned m_OverscanPercent;
     unsigned m_Language;
+    unsigned m_ResolutionMode;
     boolean m_WidescreenEnabled;
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;
@@ -174,6 +181,7 @@ private:
     unsigned m_RenshaPhase;
     unsigned char m_LastKeyboardModifiers;
     unsigned char m_LastKeyboardRawKeys[6];
+    boolean m_FmMusicEnabled;
     boolean m_SccCartEnabled;
     u64 m_FrameIntervalUs;
     boolean m_FramePacingResetPending;
@@ -186,6 +194,7 @@ private:
     boolean m_SettingsLoadPending;
     boolean m_InitramfsDeferredMountPending;
     boolean m_SettingsSavePending;
+    volatile boolean m_ResolutionModeLoadPending;
     boolean m_StateSavePending;
     boolean m_StateLoadPending;
     boolean m_MediaCatalogStarted;

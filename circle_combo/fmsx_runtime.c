@@ -65,9 +65,11 @@ extern Z80 CPU;
 extern int ScanLine;
 extern uint8_t UPeriod;
 extern int Mode;
+extern int MasterSwitch;
 extern int RAMPages;
 extern int VRAMPages;
 extern uint8_t DiskROMLoaded;
+extern AY8910 PSG;
 extern void fmsx_cpu_set_turbo_percent(unsigned percent);
 extern unsigned fmsx_video_get_latest(const u16 **pixels, unsigned *width, unsigned *height);
 extern const char *ROMName[];
@@ -94,7 +96,12 @@ static unsigned g_model_profile = FMSX_MODEL_PROFILE_MSX1;
 static unsigned g_active_model_profile = FMSX_MODEL_PROFILE_MSX1;
 static boolean g_use_embedded_bios = FALSE;
 static unsigned g_z80_turbo_mode = 0u;
+static boolean g_fm_music_enabled = TRUE;
 static boolean g_scc_cart_enabled = TRUE;
+static boolean g_audio_layer1_muted = FALSE; /* PSG + noise */
+static boolean g_audio_layer2_muted = FALSE; /* FM */
+static boolean g_audio_layer3_muted = FALSE; /* SCC */
+int g_fmsx_fmpac_enabled = 1;
 
 static boolean fmsx_runtime_find_slot_map(unsigned slot, unsigned *out_ps, unsigned *out_ss)
 {
@@ -209,10 +216,32 @@ static void fmsx_runtime_apply_audio_channels(void)
 {
 #if COMBO_FMSX_AUDIO
     unsigned mask = (1u << SND_CHANNELS) - 1u;
+    const unsigned psg_mask = ((1u << AY8910_CHANNELS) - 1u) << FIRST_AY8910_CHANNEL;
+    const unsigned fm_mask = ((1u << YM2413_CHANNELS) - 1u) << FIRST_YM2413_CHANNEL;
+    const unsigned scc_mask = ((1u << SCC_CHANNELS) - 1u) << FIRST_SCC_CHANNEL;
+    if (!g_fm_music_enabled)
+    {
+        mask &= ~fm_mask;
+    }
     if (!g_scc_cart_enabled)
     {
-        const unsigned scc_mask = ((1u << SCC_CHANNELS) - 1u) << FIRST_SCC_CHANNEL;
         mask &= ~scc_mask;
+    }
+    if (g_audio_layer1_muted)
+    {
+        mask &= ~psg_mask;
+    }
+    if (g_audio_layer2_muted)
+    {
+        mask &= ~fm_mask;
+    }
+    if (g_audio_layer3_muted)
+    {
+        mask &= ~scc_mask;
+    }
+    if (!g_audio_layer1_muted)
+    {
+        mask |= psg_mask;
     }
     SetChannels(150, mask);
 #endif
@@ -222,6 +251,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
 {
     fmsx_runtime_set_load_diag(2100u); /* runtime_start begin */
     g_active_boot_mode = g_boot_mode;
+    g_fmsx_fmpac_enabled = g_fm_music_enabled ? 1 : 0;
     g_fmsx_status.initialized = TRUE;
     g_fmsx_status.running = FALSE;
     g_fmsx_status.frames = 0u;
@@ -267,6 +297,8 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     startup_mode |= (COMBO_FMSX_CARTB_MAPPER & 0x0F) << 12;
     startup_mode &= ~MSX_GUESSB;
 #endif
+    /* Keep internal fMSX autofire disabled. Project handles input explicitly. */
+    startup_mode &= ~(MSX_AUTOSPACE | MSX_AUTOFIREA | MSX_AUTOFIREB);
 
     const boolean game_mode = (g_boot_mode == 2u) ? TRUE : FALSE;
     const unsigned requested_model_profile = g_model_profile;
@@ -314,6 +346,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
         g_fmsx_status.last_error = 1;
         return FALSE;
     }
+    Mode &= ~(MSX_AUTOSPACE | MSX_AUTOFIREA | MSX_AUTOFIREB);
     g_active_model_profile = started_model_profile;
 
     if (!g_disk_rom_enabled)
@@ -660,6 +693,52 @@ void fmsx_runtime_set_scc_cart_enabled(boolean enabled)
 boolean fmsx_runtime_get_scc_cart_enabled(void)
 {
     return g_scc_cart_enabled;
+}
+
+void fmsx_runtime_set_fm_music_enabled(boolean enabled)
+{
+    g_fm_music_enabled = enabled ? TRUE : FALSE;
+    g_fmsx_fmpac_enabled = g_fm_music_enabled ? 1 : 0;
+    fmsx_runtime_apply_audio_channels();
+}
+
+boolean fmsx_runtime_get_fm_music_enabled(void)
+{
+    return g_fm_music_enabled;
+}
+
+void fmsx_runtime_set_audio_layer_muted(unsigned layer_index, boolean muted)
+{
+    const boolean value = muted ? TRUE : FALSE;
+    switch (layer_index)
+    {
+    case 1u: g_audio_layer1_muted = value; break;
+    case 2u: g_audio_layer2_muted = value; break;
+    case 3u: g_audio_layer3_muted = value; break;
+    default: return;
+    }
+    fmsx_runtime_apply_audio_channels();
+}
+
+boolean fmsx_runtime_get_audio_layer_muted(unsigned layer_index)
+{
+    switch (layer_index)
+    {
+    case 1u: return g_audio_layer1_muted;
+    case 2u: return g_audio_layer2_muted;
+    case 3u: return g_audio_layer3_muted;
+    default: return FALSE;
+    }
+}
+
+unsigned fmsx_runtime_get_psg_mixer_reg7(void)
+{
+    return (unsigned) PSG.R[7];
+}
+
+unsigned fmsx_runtime_get_master_switch(void)
+{
+    return (unsigned) MasterSwitch;
 }
 
 const char *fmsx_runtime_get_cartridge_name(unsigned slot_index)

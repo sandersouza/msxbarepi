@@ -157,8 +157,10 @@ CComboPauseMenu::CComboPauseMenu(void)
   m_LastDrawnSelected(0xFFFFFFFFu),
   m_Visible(FALSE),
     m_View(MenuViewRoot),
-    m_OverscanPercent(0u),
+    m_ScalePercent(250u),
+    m_MaxScalePercent(450u),
     m_Language(ComboLanguageEN),
+    m_ResolutionMode(0u),
     m_WidescreenEnabled(FALSE),
     m_ScanlineMode(0u),
     m_RefreshRateHz(60u),
@@ -167,9 +169,11 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_MachineProfile(0u),
     m_Z80TurboMode(0u),
     m_RenshaMode(0u),
+    m_FmMusicEnabled(TRUE),
     m_SccCartEnabled(TRUE),
     m_OverlayEnabled(FALSE),
     m_OverlayAvailable(FALSE),
+    m_DebugLogEnabled(FALSE),
     m_AudioGainPercent(50u),
     m_LoadRomSlot1Name{0},
     m_LoadRomSlot2Name{0},
@@ -187,8 +191,10 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_PendingDiskPath{0},
     m_LastBackPressed(FALSE),
     m_LastDrawnView(MenuViewRoot),
-    m_LastDrawnOverscanPercent(0u),
+    m_LastDrawnScalePercent(0u),
+    m_LastDrawnMaxScalePercent(0u),
     m_LastDrawnLanguage(ComboLanguageEN),
+    m_LastDrawnResolutionMode(0u),
     m_LastDrawnWidescreen(FALSE),
     m_LastDrawnScanlineMode(0u),
     m_LastDrawnRefreshRateHz(60u),
@@ -197,9 +203,11 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnMachineProfile(0u),
     m_LastDrawnZ80TurboMode(0u),
     m_LastDrawnRenshaMode(0u),
+    m_LastDrawnFmMusic(TRUE),
     m_LastDrawnSccCart(TRUE),
     m_LastDrawnOverlay(FALSE),
     m_LastDrawnOverlayAvailable(FALSE),
+    m_LastDrawnDebugLogEnabled(FALSE),
     m_LastDrawnAudioGainPercent(50u),
     m_LastDrawnLoadRomSlot1Name{0},
     m_LastDrawnLoadRomSlot2Name{0},
@@ -278,8 +286,10 @@ void CComboPauseMenu::Reset(void)
     m_Visible = FALSE;
     m_LastBackPressed = FALSE;
     m_LastDrawnView = MenuViewRoot;
-    m_LastDrawnOverscanPercent = m_OverscanPercent;
+    m_LastDrawnScalePercent = m_ScalePercent;
+    m_LastDrawnMaxScalePercent = m_MaxScalePercent;
     m_LastDrawnLanguage = m_Language;
+    m_LastDrawnResolutionMode = m_ResolutionMode;
     m_LastDrawnWidescreen = m_WidescreenEnabled;
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
@@ -288,9 +298,11 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnMachineProfile = m_MachineProfile;
     m_LastDrawnZ80TurboMode = m_Z80TurboMode;
     m_LastDrawnRenshaMode = m_RenshaMode;
+    m_LastDrawnFmMusic = m_FmMusicEnabled;
     m_LastDrawnSccCart = m_SccCartEnabled;
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
+    m_LastDrawnDebugLogEnabled = m_DebugLogEnabled;
     m_LastDrawnAudioGainPercent = m_AudioGainPercent;
     m_LastDrawnBrowserTop = 0xFFFFFFFFu;
     m_LastDrawnBrowserCount = 0xFFFFFFFFu;
@@ -330,16 +342,33 @@ void CComboPauseMenu::Reset(void)
     m_MenuBackbufferY = 0u;
 }
 
-void CComboPauseMenu::SetOverscanPercent(unsigned percent)
+void CComboPauseMenu::SetScalePercent(unsigned percent)
 {
-    if (percent > 100u)
+    if (percent < 250u)
     {
-        percent = 100u;
+        percent = 250u;
     }
+    if (percent > 450u) percent = 450u;
+    if (percent > m_MaxScalePercent) percent = m_MaxScalePercent;
 
-    if (m_OverscanPercent != percent)
+    if (m_ScalePercent != percent)
     {
-        m_OverscanPercent = percent;
+        m_ScalePercent = percent;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+void CComboPauseMenu::SetMaxScalePercent(unsigned percent)
+{
+    if (percent < 250u) percent = 250u;
+    if (percent > 450u) percent = 450u;
+    if (m_MaxScalePercent != percent)
+    {
+        m_MaxScalePercent = percent;
+        if (m_ScalePercent > m_MaxScalePercent)
+        {
+            m_ScalePercent = m_MaxScalePercent;
+        }
         m_ForceRedraw = TRUE;
     }
 }
@@ -354,14 +383,32 @@ void CComboPauseMenu::SetLanguage(unsigned language)
     }
 }
 
+void CComboPauseMenu::SetResolutionMode(unsigned mode)
+{
+    if (mode > 3u)
+    {
+        mode = 0u;
+    }
+    if (m_ResolutionMode != mode)
+    {
+        m_ResolutionMode = mode;
+        m_ForceRedraw = TRUE;
+    }
+}
+
 unsigned CComboPauseMenu::GetLanguage(void) const
 {
     return m_Language;
 }
 
-unsigned CComboPauseMenu::GetOverscanPercent(void) const
+unsigned CComboPauseMenu::GetResolutionMode(void) const
 {
-    return m_OverscanPercent;
+    return m_ResolutionMode;
+}
+
+unsigned CComboPauseMenu::GetScalePercent(void) const
+{
+    return m_ScalePercent;
 }
 
 void CComboPauseMenu::SetWidescreenEnabled(boolean enabled)
@@ -491,6 +538,16 @@ void CComboPauseMenu::SetRenshaMode(unsigned mode)
     }
 }
 
+void CComboPauseMenu::SetFmMusicEnabled(boolean enabled)
+{
+    enabled = enabled ? TRUE : FALSE;
+    if (m_FmMusicEnabled != enabled)
+    {
+        m_FmMusicEnabled = enabled;
+        m_ForceRedraw = TRUE;
+    }
+}
+
 void CComboPauseMenu::SetSccCartEnabled(boolean enabled)
 {
     enabled = enabled ? TRUE : FALSE;
@@ -507,6 +564,16 @@ void CComboPauseMenu::SetOverlayEnabled(boolean enabled, boolean available)
     {
         m_OverlayEnabled = enabled;
         m_OverlayAvailable = available;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+void CComboPauseMenu::SetDebugLogEnabled(boolean enabled)
+{
+    enabled = enabled ? TRUE : FALSE;
+    if (m_DebugLogEnabled != enabled)
+    {
+        m_DebugLogEnabled = enabled;
         m_ForceRedraw = TRUE;
     }
 }
@@ -692,8 +759,10 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
     if (m_View == MenuViewSettings)
     {
         return combo_menu_settings_items_get(
-            m_OverscanPercent,
+            m_ScalePercent,
+            m_MaxScalePercent,
             m_Language,
+            m_ResolutionMode,
             m_WidescreenEnabled,
             m_ScanlineMode,
             m_RefreshRateHz,
@@ -702,9 +771,11 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_MachineProfile,
             m_Z80TurboMode,
             m_RenshaMode,
+            m_FmMusicEnabled,
             m_SccCartEnabled,
             m_OverlayEnabled,
             m_OverlayAvailable,
+            m_DebugLogEnabled,
             m_AudioGainPercent,
             count);
     }
@@ -1073,23 +1144,19 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
 
         if (items[m_Selected].action == ComboMenuActionOverscanChanged)
         {
-            unsigned next_value = m_OverscanPercent;
+            unsigned next_value = m_ScalePercent;
             if (left_edge)
             {
-                next_value = (next_value == 0u) ? 100u : (next_value - 10u);
+                next_value = (next_value <= 250u) ? 250u : (next_value - 50u);
             }
-            if ((right_edge || enter_edge) && next_value <= 100u)
+            if (right_edge || enter_edge)
             {
-                next_value = (next_value >= 100u) ? 0u : (next_value + 10u);
-                if (next_value > 100u)
-                {
-                    next_value = 100u;
-                }
+                next_value = (next_value >= m_MaxScalePercent) ? m_MaxScalePercent : (next_value + 50u);
             }
 
-            if (next_value != m_OverscanPercent)
+            if (next_value != m_ScalePercent)
             {
-                m_OverscanPercent = next_value;
+                m_ScalePercent = next_value;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
                 action = ComboMenuActionOverscanChanged;
@@ -1192,7 +1259,25 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
-        else if (items[m_Selected].action == ComboMenuActionToggleSccCart)
+        else if (items[m_Selected].action == ComboMenuActionCycleResolution)
+        {
+            if (left_edge)
+            {
+                action = ComboMenuActionCycleResolutionPrev;
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
+            }
+            else if (right_edge || enter_edge)
+            {
+                action = ComboMenuActionCycleResolution;
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
+            }
+            handled_settings_input = enter_edge || left_edge || right_edge;
+        }
+        else if ((items[m_Selected].action == ComboMenuActionToggleFmMusic)
+              || (items[m_Selected].action == ComboMenuActionToggleSccCart)
+              || (items[m_Selected].action == ComboMenuActionToggleDebugLog))
         {
             if (enter_edge || left_edge || right_edge)
             {
@@ -1389,8 +1474,8 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     const TGfxTextStyle title_style = { BRIGHT_WHITE_COLOR, kPauseMenuBgColor, TRUE };
     const TGfxTextStyle normal_style = { BRIGHT_WHITE_COLOR, kPauseMenuBgColor, FALSE };
     const TGfxTextStyle selected_style = { BLACK_COLOR, BRIGHT_WHITE_COLOR, FALSE };
-    const unsigned scale_x = 2u;
-    const unsigned scale_y = 2u;
+    const unsigned scale_x = 1u;
+    const unsigned scale_y = 1u;
 
     if (renderer == 0)
     {
@@ -1542,8 +1627,10 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastBoxH == box_h_px
      && m_LastDrawnSelected == m_Selected
      && m_LastDrawnView == m_View
-     && m_LastDrawnOverscanPercent == m_OverscanPercent
+     && m_LastDrawnScalePercent == m_ScalePercent
+     && m_LastDrawnMaxScalePercent == m_MaxScalePercent
      && m_LastDrawnLanguage == m_Language
+     && m_LastDrawnResolutionMode == m_ResolutionMode
      && m_LastDrawnWidescreen == m_WidescreenEnabled
      && m_LastDrawnScanlineMode == m_ScanlineMode
      && m_LastDrawnRefreshRateHz == m_RefreshRateHz
@@ -1552,9 +1639,11 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnMachineProfile == m_MachineProfile
      && m_LastDrawnZ80TurboMode == m_Z80TurboMode
      && m_LastDrawnRenshaMode == m_RenshaMode
+     && m_LastDrawnFmMusic == m_FmMusicEnabled
      && m_LastDrawnSccCart == m_SccCartEnabled
      && m_LastDrawnOverlay == m_OverlayEnabled
      && m_LastDrawnOverlayAvailable == m_OverlayAvailable
+     && m_LastDrawnDebugLogEnabled == m_DebugLogEnabled
      && m_LastDrawnAudioGainPercent == m_AudioGainPercent
      && ComboTextEquals(m_LastDrawnLoadRomSlot1Name, m_LoadRomSlot1Name)
      && ComboTextEquals(m_LastDrawnLoadRomSlot2Name, m_LoadRomSlot2Name)
@@ -1828,8 +1917,10 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_Col = box_x;
     m_LastDrawnSelected = m_Selected;
     m_LastDrawnView = m_View;
-    m_LastDrawnOverscanPercent = m_OverscanPercent;
+    m_LastDrawnScalePercent = m_ScalePercent;
+    m_LastDrawnMaxScalePercent = m_MaxScalePercent;
     m_LastDrawnLanguage = m_Language;
+    m_LastDrawnResolutionMode = m_ResolutionMode;
     m_LastDrawnWidescreen = m_WidescreenEnabled;
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
@@ -1838,9 +1929,11 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnMachineProfile = m_MachineProfile;
     m_LastDrawnZ80TurboMode = m_Z80TurboMode;
     m_LastDrawnRenshaMode = m_RenshaMode;
+    m_LastDrawnFmMusic = m_FmMusicEnabled;
     m_LastDrawnSccCart = m_SccCartEnabled;
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
+    m_LastDrawnDebugLogEnabled = m_DebugLogEnabled;
     m_LastDrawnAudioGainPercent = m_AudioGainPercent;
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), m_LoadRomSlot1Name);
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), m_LoadRomSlot2Name);
