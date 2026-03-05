@@ -24,12 +24,14 @@ MAX_BYTES=$((128 * 1024 * 1024 * 1024))
 DRY_RUN="${DRY_RUN:-0}"
 NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
 AUTO_CONFIRM="${AUTO_CONFIRM:-0}"
+DEBUG_BUILD="${DEBUG_BUILD:-0}"
+VIDEO_MODE_PRESET="${VIDEO_MODE_PRESET:-auto}"
 
 KERNEL_IMG="${KERNEL_IMG:-${PROJECT_ROOT}/artifacts/kernel8-default.img}"
 CONFIG_TXT="${CONFIG_TXT:-${PROJECT_ROOT}/sdcard/config.txt}"
 CMDLINE_TXT="${CMDLINE_TXT:-${PROJECT_ROOT}/sdcard/cmdline.txt}"
 INITRAMFS_IMG="${INITRAMFS_IMG:-${PROJECT_ROOT}/sdcard/msx.cpio}"
-INITRAMFS_SRC_DIR="${INITRAMFS_SRC_DIR:-${PROJECT_ROOT}/roms/msx1}"
+INITRAMFS_SRC_DIR="${INITRAMFS_SRC_DIR:-${PROJECT_ROOT}/roms/msx2}"
 FIRMWARE_DIR="${FIRMWARE_DIR:-${PROJECT_ROOT}/rpi-firmware/}"
 SETTINGS_CFG="${SETTINGS_CFG:-${PROJECT_ROOT}/sdcard/MSXBARE.CFG}"
 IGNORED_SD_PAYLOAD_DIRS=("${PROJECT_ROOT}/sdcard/roms" "${PROJECT_ROOT}/sdcard/disks")
@@ -78,6 +80,67 @@ run_or_echo() {
   fi
 }
 
+set_or_append_config_key() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  if grep -Eq "^[[:space:]]*${key}=" "$file"; then
+    sed -E "s|^[[:space:]]*${key}=.*|${key}=${value}|" "$file" > "${file}.new"
+    mv "${file}.new" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$file"
+  fi
+}
+
+drop_config_key_if_present() {
+  local file="$1"
+  local key="$2"
+  if grep -Eq "^[[:space:]]*${key}=" "$file"; then
+    sed -E "/^[[:space:]]*${key}=.*/d" "$file" > "${file}.new"
+    mv "${file}.new" "$file"
+  fi
+}
+
+apply_video_mode_preset() {
+  local file="$1"
+  local preset="$2"
+  case "$preset" in
+    auto|"")
+      drop_config_key_if_present "$file" "hdmi_group"
+      drop_config_key_if_present "$file" "hdmi_mode"
+      drop_config_key_if_present "$file" "framebuffer_width"
+      drop_config_key_if_present "$file" "framebuffer_height"
+      echo "[INFO] VIDEO_MODE_PRESET=auto: mantendo EDID automatico"
+      ;;
+    1080|1080p)
+      set_or_append_config_key "$file" "hdmi_group" "1"
+      set_or_append_config_key "$file" "hdmi_mode" "16"
+      set_or_append_config_key "$file" "framebuffer_width" "1920"
+      set_or_append_config_key "$file" "framebuffer_height" "1080"
+      echo "[INFO] VIDEO_MODE_PRESET=${preset}: forçando 1920x1080 (CEA 1080p60)"
+      ;;
+    720|720p|16:9)
+      set_or_append_config_key "$file" "hdmi_group" "1"
+      set_or_append_config_key "$file" "hdmi_mode" "4"
+      set_or_append_config_key "$file" "framebuffer_width" "1280"
+      set_or_append_config_key "$file" "framebuffer_height" "720"
+      echo "[INFO] VIDEO_MODE_PRESET=${preset}: forçando 1280x720 (CEA 720p60)"
+      ;;
+    768|1024x768|4:3)
+      set_or_append_config_key "$file" "hdmi_group" "2"
+      set_or_append_config_key "$file" "hdmi_mode" "16"
+      set_or_append_config_key "$file" "framebuffer_width" "1024"
+      set_or_append_config_key "$file" "framebuffer_height" "768"
+      echo "[INFO] VIDEO_MODE_PRESET=${preset}: forçando 1024x768 (DMT)"
+      ;;
+    *)
+      echo "[ERRO] VIDEO_MODE_PRESET invalido: ${preset}"
+      echo "[ERRO] Use: auto | 1080 | 720 | 768 | 16:9 | 4:3"
+      exit 1
+      ;;
+  esac
+}
+
 ensure_settings_cfg() {
   if [ -f "$SETTINGS_CFG" ]; then
     return 0
@@ -86,18 +149,27 @@ ensure_settings_cfg() {
   echo "[INFO] Arquivo de configuracao nao encontrado; gerando default: ${SETTINGS_CFG}"
   mkdir -p "$(dirname "$SETTINGS_CFG")"
   cat > "$SETTINGS_CFG" <<'EOF'
-overscan=0
+scale=250
+resolution=0
 language=0
 widescreen=0
 scanline=0
 refresh=60
-boot_mode=1
+disk_rom=1
+boot_mode=0
+machine=0
 z80_turbo=0
 rensha=0
-scc_cart=1
-debugger=1
+scc_cart=0
+fm_music=0
+debugger=0
+debug_log=0
 audio_mute=0
-audio_gain=50
+audio_gain=100
+cart_a_path=EMPTY
+cart_b_path=EMPTY
+disk_a_path=EMPTY
+disk_b_path=EMPTY
 #END
 EOF
 }
@@ -322,7 +394,32 @@ if [ -f "$CONFIG_TXT" ]; then
     echo "[ERRO] Ajuste ${CONFIG_TXT} antes de preparar o SD."
     exit 1
   fi
-  run_or_echo cp "$CONFIG_TXT" "${TARGET_VOLUME}/config.txt"
+  config_src="$CONFIG_TXT"
+  config_tmp=""
+  if [ "$DEBUG_BUILD" = "1" ]; then
+    config_tmp="$(mktemp)"
+    cp "$CONFIG_TXT" "$config_tmp"
+    if grep -Eq '^[[:space:]]*disable_splash=' "$config_tmp"; then
+      sed -E 's/^[[:space:]]*disable_splash=.*/disable_splash=0/' "$config_tmp" > "${config_tmp}.new"
+      mv "${config_tmp}.new" "$config_tmp"
+    else
+      printf '\ndisable_splash=0\n' >> "$config_tmp"
+    fi
+    config_src="$config_tmp"
+    echo "[INFO] DEBUG_BUILD=1: forçando disable_splash=0 em config.txt"
+  fi
+  if [ "$VIDEO_MODE_PRESET" != "auto" ]; then
+    if [ -z "$config_tmp" ]; then
+      config_tmp="$(mktemp)"
+      cp "$CONFIG_TXT" "$config_tmp"
+      config_src="$config_tmp"
+    fi
+    apply_video_mode_preset "$config_src" "$VIDEO_MODE_PRESET"
+  fi
+  run_or_echo cp "$config_src" "${TARGET_VOLUME}/config.txt"
+  if [ -n "$config_tmp" ] && [ -f "$config_tmp" ]; then
+    rm -f "$config_tmp"
+  fi
   echo "[OK] Copiado: config.txt"
 else
   echo "[WARN] Nao encontrado: ${CONFIG_TXT}"

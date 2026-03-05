@@ -18,6 +18,11 @@
 #include "Floppy.h"
 #include "SHA1.h"
 #include "MCF.h"
+#include "../fmsx_carts_sha_fallback.h"
+
+#ifndef COMBO_FMSX_SYNC_SCC_FM_EVERY_8LINES
+#define COMBO_FMSX_SYNC_SCC_FM_EVERY_8LINES 1
+#endif
 
 #include <string.h>
 #include <stdlib.h>
@@ -34,6 +39,7 @@
 
 extern retro_log_printf_t log_cb;
 extern void fmsx_runtime_notify_media_probe(void);
+extern int g_fmsx_fmpac_enabled;
 
 #define RGB2INT(R,G,B)    ((B)|((int)(G)<<8)|((int)(R)<<16))
 
@@ -371,6 +377,21 @@ const uint8_t Keys[][2] =
 /*************************************************************/
 uint8_t *LoadROM(const char *Name,int Size,uint8_t *Buf);
 int  GuessROM(const uint8_t *Buf,int Size);
+
+static int local_sha1_equals_ignore_case(const char *a,const char *b)
+{
+  int i;
+  if(!a||!b) return(0);
+  for(i=0;i<40;++i)
+  {
+    char ca=a[i],cb=b[i];
+    if(!ca||!cb) return(0);
+    if(ca>='A'&&ca<='F') ca=(char)(ca-'A'+'a');
+    if(cb>='A'&&cb<='F') cb=(char)(cb-'A'+'a');
+    if(ca!=cb) return(0);
+  }
+  return(!a[40]&&!b[40]);
+}
 void SetMegaROM(int Slot,uint8_t P0,uint8_t P1,uint8_t P2,uint8_t P3);
 void MapROM(uint16_t A,uint8_t V);       /* Switch MegaROM banks            */
 void PSlot(uint8_t V);               /* Switch primary slots            */
@@ -607,9 +628,12 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
     if((J<MAXSLOTS)&&LoadCart("PAINTER.ROM",J,0)) ++J;
   }
 
-  /* Load FMPAC cartridge */
-  for(;(J<MAXSLOTS)&&ROMData[J];++J);
-  if((J<MAXSLOTS)&&LoadCart("FMPAC.ROM",J,MAP_FMPAC)) ++J;
+  /* Load FMPAC cartridge when runtime FM-PAC is enabled. */
+  if(g_fmsx_fmpac_enabled)
+  {
+    for(;(J<MAXSLOTS)&&ROMData[J];++J);
+    if((J<MAXSLOTS)&&LoadCart("FMPAC.ROM",J,MAP_FMPAC)) ++J;
+  }
 
   /* Load Konami GameMaster2/GameMaster cartridges */
   J=0; // by default load GM2&GM in slot A
@@ -637,6 +661,13 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   }
 #else
   if(log_cb) log_cb(1,"StartMSX: minimal startup (skip optional ROM probes)\n");
+  /* Keep FM-PAC available in minimal startup only when enabled. */
+  if(g_fmsx_fmpac_enabled)
+  {
+    J=MAXCARTS;
+    for(;(J<MAXSLOTS)&&ROMData[J];++J);
+    if((J<MAXSLOTS)&&LoadCart("FMPAC.ROM",J,MAP_FMPAC)) ++J;
+  }
 #endif
 
   /* We are now back to working directory */
@@ -2413,7 +2444,14 @@ uint16_t LoopZ80(Z80 *R)
     /* Flush changes to sound channels */
     Sync8910(&PSG,AY8910_FLUSH);
 
-    // fmsx-libretro: do not sync SCC & FM-PAC every 8 scanlines; causes interference
+#if COMBO_FMSX_SYNC_SCC_FM_EVERY_8LINES
+#if !defined(FMSX_BAREMETAL_PSG_AUDIO_ONLY)
+    /* Keep SCC/FM cadence aligned with PSG to avoid source handoff artifacts. */
+    SyncSCC(&SCChip,SCC_FLUSH);
+    if(!OPTION(MSX_NUKEYKT))
+      Sync2413(&OPLL,YM2413_FLUSH);
+#endif
+#endif
   }
 
 #if !defined(FMSX_BAREMETAL_PSG_AUDIO_ONLY)
@@ -2432,9 +2470,9 @@ uint16_t LoopZ80(Z80 *R)
     /* Check sprites and set Collision bit */
     if(!(VDPStatus[0]&0x20)&&CheckSprites()) VDPStatus[0]|=0x20;
 
-    // fmsx-libretro: keep sync SCC & FM-PAC at scanline 192 (version 4.9 & earlier)
 #ifndef FMSX_BAREMETAL_SKIP_AUDIO_RUNTIME
 #if !defined(FMSX_BAREMETAL_PSG_AUDIO_ONLY)
+    /* Frame-end safety flush for SCC/FM. */
     SyncSCC(&SCChip,SCC_FLUSH);
     if(!OPTION(MSX_NUKEYKT))
       Sync2413(&OPLL,YM2413_FLUSH);
@@ -3002,6 +3040,7 @@ int Cheats(int Switch)
 int GuessROM(const uint8_t *Buf,int Size)
 {
   int J,I,K,Result,ROMCount[MAXMAPPERS];
+  int BestScore,BestPrio,CandidatePrio;
   char S[256];
   RFILE *F;
 
@@ -3038,12 +3077,21 @@ int GuessROM(const uint8_t *Buf,int Size)
     if(ComputeSHA1(&C) && OutputSHA1(&C,S1,sizeof(S1)))
     {
       while(rfgets(S,sizeof(S)-4,F))
-        if((sscanf(S,"%40s %d",S2,&J)==2) && !strcmp(S1,S2))
+        if((sscanf(S,"%40s %d",S2,&J)==2) && local_sha1_equals_ignore_case(S1,S2))
         { Result=J;break; }
     }
 
     /* Done with the file */
     rfclose(F);
+  }
+  else if(Result<0)
+  {
+    char S1[41];
+    SHA1 C;
+    ResetSHA1(&C);
+    InputSHA1(&C,Buf,Size);
+    if(ComputeSHA1(&C) && OutputSHA1(&C,S1,sizeof(S1)))
+      if(fmsx_carts_sha_fallback_lookup(S1,&J)) Result=J;
   }
 
   /* We are now back to working directory */
@@ -3085,9 +3133,34 @@ int GuessROM(const uint8_t *Buf,int Size)
     }
   }
 
-  /* Find which mapper type got more hits */
-  for(I=0,J=0;J<MAXMAPPERS;++J)
-    if(ROMCount[J]>ROMCount[I]) I=J;
+  /* Prefer practical MegaROM mappers over generic ones on ties. */
+  static const int MapperTiePriority[MAXMAPPERS] =
+  {
+    10, /* MAP_GEN8     */
+    20, /* MAP_GEN16    */
+    45, /* MAP_KONAMI5  */
+    40, /* MAP_KONAMI4  */
+    35, /* MAP_ASCII8   */
+    50, /* MAP_ASCII16  */
+    5,  /* MAP_GMASTER2 */
+    5   /* MAP_FMPAC    */
+  };
+
+  /* Find mapper with best score; break ties by mapper priority. */
+  I=0;
+  BestScore=ROMCount[0];
+  BestPrio=MapperTiePriority[0];
+  for(J=1;J<MAXMAPPERS;++J)
+  {
+    CandidatePrio=MapperTiePriority[J];
+    if((ROMCount[J]>BestScore)
+    || ((ROMCount[J]==BestScore) && (CandidatePrio>BestPrio)))
+    {
+      I=J;
+      BestScore=ROMCount[J];
+      BestPrio=CandidatePrio;
+    }
+  }
 
   /* Return the most likely mapper type */
   return(I);

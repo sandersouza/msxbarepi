@@ -37,6 +37,7 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Reutilizar o padrao de painel validado em `docs/debug-overlay-hdmi-template.md` para novos debugs HDMI; preservar formato/layout quando ele estiver legivel e alterar apenas indicadores/contadores durante iteracoes de diagnostico.
 - Para debug em runtime com framebuffer HDMI (especialmente com MMU/cache ativo), preferir painel de debug dedicado com area reservada (viewport de blit deslocado) e overlay desenhado apos o frame; evitar misturar `console_puts()` com o painel. Em modo de debug visual, silenciar escrita do console HDMI apos o boot do core, manter logs compactos (codigos curtos em poucas linhas), e fazer flush de cache do framebuffer (`dc cvac` + `dsb`) apos desenhar o overlay para evitar caracteres parciais/corrompidos. Se a leitura visual continuar ruim, usar preset `text-only` (sem blit do emulador) ou UART como fallback.
 - Preset de debug visual que se mostrou funcional na pratica (Circle input + HDMI): emulador em `0,0` com escala limitada a `2x`, overlay compacto no canto superior esquerdo (4 linhas: `TXTDBG/CI/EV/JY`), texto branco sobre caixa preta, `console` HDMI silenciado apos boot do core, e `framebuffer_flush_rect()` apenas na area do painel com throttle de flush (para reduzir flicker e evitar travas por flush em MMU/cache). Reutilizar este formato antes de tentar novos overlays complexos.
+- Manter `docs/debug-layer.md` atualizado sempre que houver alteracao na layer de debug (compilacao, teclas de atalho, labels/linhas do overlay, itens de menu e semantica dos campos).
 
 ## Fluxo de trabalho
 
@@ -49,6 +50,7 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Gestão de projeto no GitHub deve seguir `docs/github-project-management.md` (fonte de verdade para fluxo de issues/milestones/branches/PRs)
 - Manter espelho local das milestones/issues em `docs/milestones/` sincronizado com o remoto
 - Toda milestone remota deve ter pasta local com `README.md` e campo `Milestone remota: #<numero>` para permitir auditoria/sync automática
+- Toda pasta de milestone deve conter `CHALLENGES.md`, com registro por issue dos desafios enfrentados, solucao definitiva adotada (ou mitigacao) e eventual encaminhamento para issue/milestone futura
 - Toda issue vinculada a milestone remota deve ter arquivo local `<numero>-<slug>.md` dentro da pasta da milestone correspondente (inclusive fechadas para histórico)
 - Ao criar/atualizar milestones e issues no GitHub, refletir no espelho local `docs/milestones/` no mesmo ciclo de trabalho
 - Toda branch de trabalho de issue deve ser criada/vinculada via issue de origem (GitHub/`gh issue develop`)
@@ -62,6 +64,7 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Antes de deletar qualquer branch local, confirmar explicitamente com o usuário
 - Nunca alterar, deletar ou reescrever a branch `main`
 - Manter um arquivo de CONTEXT persistente para handoff entre IAs em `docs/ai-handoff-context.md`; atualizar esse arquivo ao final de cada ciclo relevante (build, milestone, bug, decisão técnica) com estado atual, artefatos gerados, comandos executados, próximos passos e riscos abertos, para permitir continuidade sem perda de contexto
+- A cada iteracao de build entregue para teste (estavel, A/B, debug), gerar e informar no chat um `Build Tracking ID` curto no formato `BTID:<timestamp>-<git>-<sha8>` (timestamp `YYYYMMDDHHMM`, commit curto e hash SHA1 curto do artefato principal) para facilitar rollback/rastreio entre testes
 - A documentacao do projeto deve sempre referenciar explicitamente as fontes de consulta/referencias utilizadas (ex.: arquivos/classes de `third_party/fmsx` e `third_party/circle`) quando influenciarem implementacoes ou correcoes
 - Por padrao, seguir iterando de forma autonoma ate entregar build/resultado testavel; so pausar para status intermediario se o usuario pedir explicitamente
 - Commits pequenos e focados

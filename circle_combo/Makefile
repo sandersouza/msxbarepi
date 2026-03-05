@@ -28,8 +28,15 @@ COMBO_DEFER_INITRAMFS_FULL_MOUNT_FRAMES ?= 120
 COMBO_SIZE_OPT ?= 1
 COMBO_FMSX_BOOT_MINIMAL_STARTUP ?= 1
 COMBO_ENABLE_DEBUG_OVERLAY ?= 1
+COMBO_DEBUG_OVERLAY_STAGE ?= 1
 COMBO_ENABLE_SETTINGS_SAVE_EXPERIMENTAL ?= 1
 COMBO_MENU_DOUBLE_BUFFER ?= 1
+COMBO_FMSX_SCC_BALANCE_PCT ?= 96
+COMBO_FMSX_FMPAC_BALANCE_PCT ?= 92
+COMBO_FMSX_FMPAC_ATTENUATION_PCT ?= 58
+COMBO_FMSX_SYNC_SCC_FM_EVERY_8LINES ?= 1
+COMBO_BUILD_BID ?=
+COMBO_BUILD_OWNER ?=
 
 CPPFLAGS += -DCOMBO_DEBUG_OVERLAY_DEFAULT=$(COMBO_DEBUG_OVERLAY_DEFAULT)
 CPPFLAGS += -DCOMBO_ENABLE_FMSX=$(COMBO_ENABLE_FMSX)
@@ -58,8 +65,15 @@ CPPFLAGS += -DCOMBO_DEFER_INITRAMFS_FULL_MOUNT_FRAMES=$(COMBO_DEFER_INITRAMFS_FU
 CPPFLAGS += -DCOMBO_SIZE_OPT=$(COMBO_SIZE_OPT)
 CPPFLAGS += -DCOMBO_FMSX_BOOT_MINIMAL_STARTUP=$(COMBO_FMSX_BOOT_MINIMAL_STARTUP)
 CPPFLAGS += -DCOMBO_ENABLE_DEBUG_OVERLAY=$(COMBO_ENABLE_DEBUG_OVERLAY)
+CPPFLAGS += -DCOMBO_DEBUG_OVERLAY_STAGE=$(COMBO_DEBUG_OVERLAY_STAGE)
 CPPFLAGS += -DCOMBO_ENABLE_SETTINGS_SAVE_EXPERIMENTAL=$(COMBO_ENABLE_SETTINGS_SAVE_EXPERIMENTAL)
 CPPFLAGS += -DCOMBO_MENU_DOUBLE_BUFFER=$(COMBO_MENU_DOUBLE_BUFFER)
+CPPFLAGS += -DCOMBO_FMSX_SCC_BALANCE_PCT=$(COMBO_FMSX_SCC_BALANCE_PCT)
+CPPFLAGS += -DCOMBO_FMSX_FMPAC_BALANCE_PCT=$(COMBO_FMSX_FMPAC_BALANCE_PCT)
+CPPFLAGS += -DCOMBO_FMSX_FMPAC_ATTENUATION_PCT=$(COMBO_FMSX_FMPAC_ATTENUATION_PCT)
+CPPFLAGS += -DCOMBO_FMSX_SYNC_SCC_FM_EVERY_8LINES=$(COMBO_FMSX_SYNC_SCC_FM_EVERY_8LINES)
+CPPFLAGS += '-DCOMBO_BUILD_BID="$(COMBO_BUILD_BID)"'
+CPPFLAGS += '-DCOMBO_BUILD_OWNER="$(COMBO_BUILD_OWNER)"'
 
 ifeq ($(COMBO_SUPPRESS_WARNINGS),1)
 CFLAGS += -w
@@ -95,18 +109,19 @@ CXXFLAGS += -Os -ffunction-sections -fdata-sections
 LDFLAGS += --gc-sections
 endif
 
-OBJS = main.o kernel.o keyboard_input.o gfx_textbox.o viewport_screenshot.o combo_menu.o combo_menu_items.o media_catalog.o combo_file_browser.o
+OBJS = main.o kernel.o keyboard_input.o gfx_textbox.o viewport_screenshot.o combo_menu.o combo_menu_items.o media_catalog.o combo_file_browser.o combo_debug_overlay.o
 OBJS += combo_locale.o combo_locale_pt.o combo_locale_en.o combo_locale_es.o
 
 ifeq ($(COMBO_ENABLE_FMSX),1)
 OBJS += fmsx_runtime.o fmsx_host_stubs.o fmsx_compat_stubs.o fmsx_libc_shim.o
 OBJS += fmsx_virtual_fs.o fmsx_initramfs.o
+OBJS += fmsx_carts_sha_fallback.o
 OBJS += fmsx_embedded_initramfs.o
 OBJS += fmsx_embedded_roms.o
 OBJS += fmsx_upstream_msx.o fmsx_upstream_v9938.o fmsx_upstream_z80.o
 OBJS += fmsx_upstream_sound.o fmsx_upstream_sha1.o
 OBJS += fmsx_upstream_fdidisk.o
-OBJS += fmsx_upstream_i8255.o fmsx_upstream_ym2413.o fmsx_upstream_ay8910.o fmsx_upstream_scc.o fmsx_upstream_wd1793.o
+OBJS += fmsx_upstream_i8255.o fmsx_local_ym2413.o fmsx_upstream_ay8910.o fmsx_local_scc.o fmsx_upstream_wd1793.o
 OBJS += fmsx_upstream_opll.o fmsx_upstream_wrapnukeykt.o
 endif
 
