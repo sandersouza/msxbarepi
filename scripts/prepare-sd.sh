@@ -24,10 +24,11 @@ MAX_BYTES=$((128 * 1024 * 1024 * 1024))
 DRY_RUN="${DRY_RUN:-0}"
 NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
 AUTO_CONFIRM="${AUTO_CONFIRM:-0}"
-DEBUG_BUILD="${DEBUG_BUILD:-0}"
+DEBUG="${DEBUG:-0}"
 VIDEO_MODE_PRESET="${VIDEO_MODE_PRESET:-auto}"
 COPY_GAMES_TO_ROOT="${COPY_GAMES_TO_ROOT:-}"
 OFFLINE_DRY_PACKAGE="${OFFLINE_DRY_PACKAGE:-0}"
+PACKAGE_ZIP="${PACKAGE_ZIP:-}"
 
 KERNEL_IMG="${KERNEL_IMG:-${PROJECT_ROOT}/artifacts/kernel8-default.img}"
 CONFIG_TXT="${CONFIG_TXT:-${PROJECT_ROOT}/sdcard/config.txt}"
@@ -183,9 +184,12 @@ generate_dry_run_package() {
     copy_games_flag="1"
   fi
 
-  local package_timestamp
-  package_timestamp="$(date +%Y%m%d%H%M)"
-  local package_zip="${PROJECT_ROOT}/artifacts/sdcard-package-${package_timestamp}.zip"
+  local package_timestamp=""
+  local package_zip="${PACKAGE_ZIP:-}"
+  if [ -z "$package_zip" ]; then
+    package_timestamp="$(date +%Y%m%d%H%M)"
+    package_zip="${PROJECT_ROOT}/artifacts/sdcard-package-${package_timestamp}.zip"
+  fi
 
   echo "[INFO] DRY_RUN=1: gerando pacote SD em artifacts (simulacao de resultado final)..."
   PACKAGE_KERNEL_IMG="$KERNEL_IMG" \
@@ -281,6 +285,8 @@ refresh=60
 disk_rom=1
 boot_mode=0
 machine=0
+rammapper_kb=256
+megaram_kb=0
 z80_turbo=0
 rensha=0
 scc_cart=0
@@ -553,7 +559,7 @@ if [ -f "$CONFIG_TXT" ]; then
     exit 1
   fi
   config_src="$CONFIG_TXT"
-  if [ "$DEBUG_BUILD" = "1" ]; then
+  if [ "$DEBUG" = "1" ]; then
     config_tmp="$(mktemp)"
     cp "$CONFIG_TXT" "$config_tmp"
     if grep -Eq '^[[:space:]]*disable_splash=' "$config_tmp"; then
@@ -563,7 +569,7 @@ if [ -f "$CONFIG_TXT" ]; then
       printf '\ndisable_splash=0\n' >> "$config_tmp"
     fi
     config_src="$config_tmp"
-    echo "[INFO] DEBUG_BUILD=1: forçando disable_splash=0 em config.txt"
+    echo "[INFO] DEBUG=1: forçando disable_splash=0 em config.txt"
   fi
   if [ "$VIDEO_MODE_PRESET" != "auto" ]; then
     if [ -z "$config_tmp" ]; then

@@ -35,7 +35,7 @@ check_repo_clean() {
     echo "  git -C $repo restore ."
     echo "  git -C $repo clean -fd"
     echo
-    echo "Se precisar de patch funcional, replique em camada local fora de third_party (ex.: circle_combo/)."
+    echo "Se precisar de patch funcional, replique em camada local fora de third_party (ex.: src/)."
     return 1
   fi
 

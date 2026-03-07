@@ -56,14 +56,14 @@ Definir a arquitetura de firmware para usar teclado físico de MSX como disposit
 ## Integração com o MSX BarePI (lado RPi)
 - O kernel continua consumindo teclado como HID USB padrão (sem driver custom no MVP).
 - Compatível com rotina atual de leitura/conversão em:
-  - `circle_combo/keyboard_input.cpp`
-  - `circle_combo/kernel.cpp`
+  - `src/keyboard_input.cpp`
+  - `src/kernel.cpp`
 - A integração dedicada por bridge/telemetria fica para a issue #69.
 
 ## Referências de consulta
 - Leitura HID no projeto atual:
-  - `circle_combo/kernel.cpp`
-  - `circle_combo/keyboard_input.cpp`
+  - `src/kernel.cpp`
+  - `src/keyboard_input.cpp`
 - Mapeamentos e códigos de teclado no upstream fMSX (base conceitual):
   - `third_party/fmsx/fMSX/MSX.h`
   - `third_party/fmsx/libretro.c`

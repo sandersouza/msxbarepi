@@ -18,7 +18,7 @@
 ## Notas de implementação (local)
 
 - Novos presets reprodutíveis no `Makefile`: `m2-fmsx-normal`, `m2-fmsx-fastboot`, `m2-fmsx-gameboot`.
-- `scripts/build-m2-config.sh` agora assume `FAST BOOT` como padrão em modo não interativo.
+- `scripts/build-config.sh` agora assume `FAST BOOT` como padrão em modo não interativo.
 - Runtime ganhou knobs explícitos de warmup/burst por perfil:
   - `COMBO_FMSX_BOOT_BURST_STEPS_FAST=5`
   - `COMBO_FMSX_BOOT_BURST_STEPS_GAME=10`

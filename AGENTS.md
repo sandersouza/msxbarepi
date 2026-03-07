@@ -31,6 +31,9 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Sempre que o fluxo de boot exigir novos arquivos no SD, atualizar `scripts/prepare-sd.sh` para copiar esses arquivos automaticamente
 - Sempre que uma nova opção/label de menu for criada ou alterada, atualizar todos os idiomas suportados no sistema de locales (mínimo: `PT`, `EN`, `ES`) na mesma mudança; isso inclui títulos de submenu, nomes de campos/slots, estados (`[ EMPTY ]` etc.) e qualquer string visível ao usuário. Nao deixar textos hardcoded fora do sistema de locale
 - Ao finalizar qualquer build para teste, sempre informar ao usuário o comando de preparação do SD **sem** `DRY_RUN=1` (ex.: `KERNEL_IMG=... FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh`)
+- Para empacotamento via `make package`, usar flags simples:
+  - `DEBUG=0|1` para controlar debug compilado no kernel
+  - `OWNER="<nome>"` para identificação no debug e para nomear o ZIP como `artifacts/sdcard-package-<OWNER>.zip`
 - Por padrao, o build deve gerar `artifacts/kernel8-default.img` e, quando a branch atual for de issue (`<numero>-...`), tambem gerar `artifacts/kernel8-issue<numero>.img` (ex.: branch `61-...` -> `artifacts/kernel8-issue61.img`); priorizar este artefato de issue nos testes da issue ativa
 - Todo comando para terminal deve ser entregue em bloco de código Markdown com linguagem `bash` (```bash ... ```), inclusive quando houver múltiplos comandos; evitar links/markup dentro de comandos para não quebrar copy/paste
 - Quando houver trade-off de estabilidade vs desempenho (ex.: otimização do frontend do renderer), manter knobs de build explícitos no `Makefile` e documentados no `README.md`
@@ -41,8 +44,8 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 
 ## Fluxo de trabalho
 
-- Diretorio de trabalho deste projeto (workspace atual): `/Users/sandersouza/Developer/msxbarepi`; usar este caminho como referencia padrao nas operacoes locais e comandos
-- Antes de rodar builds/iteracoes de debug, confirmar `PWD` em `/Users/sandersouza/Developer/msxbarepi` para evitar executar comandos no repositorio errado
+- Diretorio de trabalho deste projeto (workspace atual): `/Users/sandersouza/Developer/msxbarepi-circle`; usar este caminho como referencia padrao nas operacoes locais e comandos
+- Antes de rodar builds/iteracoes de debug, confirmar `PWD` em `/Users/sandersouza/Developer/msxbarepi-circle` para evitar executar comandos no repositorio errado
 - Em cada iteracao, o agente deve executar localmente os builds/makes necessarios (em vez de delegar ao usuario) para validar compilacao, capturar erros e analisar warnings antes de orientar os proximos passos
 - Cada mudança deve atualizar documentação mínima em `docs/`
 - A evolução do projeto deve refletir em documentação continuamente, incluindo atualização deste `AGENTS.md` quando necessário
@@ -63,7 +66,7 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Sincronizar branches locais com remotas (`git fetch --prune`); se branch remota for removida, propor remoção da local correspondente
 - Antes de deletar qualquer branch local, confirmar explicitamente com o usuário
 - Nunca alterar, deletar ou reescrever a branch `main`
-- Manter um arquivo de CONTEXT persistente para handoff entre IAs em `docs/ai-handoff-context.md`; atualizar esse arquivo ao final de cada ciclo relevante (build, milestone, bug, decisão técnica) com estado atual, artefatos gerados, comandos executados, próximos passos e riscos abertos, para permitir continuidade sem perda de contexto
+- Manter um arquivo de CONTEXT persistente para handoff entre IAs em `docs/ai-handoff-context.md` (com ponteiro em `CONTEXT.md`); atualizar esse arquivo ao final de cada ciclo relevante (build, milestone, bug, decisão técnica) com estado atual, artefatos gerados, comandos executados, próximos passos e riscos abertos, para permitir continuidade sem perda de contexto
 - A cada iteracao de build entregue para teste (estavel, A/B, debug), gerar e informar no chat um identificador curto de rastreio no formato `BUILD_HASH:<git>-<sha1>` (ou `BTID:<timestamp>-<git>-<sha8>` como alias legado), usando commit curto atual + SHA1 do artefato principal, para facilitar rollback/rastreio entre testes
 - A documentacao do projeto deve sempre referenciar explicitamente as fontes de consulta/referencias utilizadas (ex.: arquivos/classes de `third_party/fmsx` e `third_party/circle`) quando influenciarem implementacoes ou correcoes
 - Por padrao, seguir iterando de forma autonoma ate entregar build/resultado testavel; so pausar para status intermediario se o usuario pedir explicitamente

@@ -18,6 +18,12 @@ PACKAGE_ZIP="${PACKAGE_ZIP:-${PROJECT_ROOT}/artifacts/sdcard-package-${PACKAGE_T
 
 required_fw_files="bootcode.bin start.elf fixup.dat bcm2710-rpi-3-b.dtb"
 
+# Normaliza caminhos para absolutos quando necessário (evita falha após 'cd' no stage).
+case "$PACKAGE_ZIP" in
+  /*) ;;
+  *) PACKAGE_ZIP="${PROJECT_ROOT}/${PACKAGE_ZIP}" ;;
+esac
+
 # Evita gravacao de AppleDouble/extended attributes no stage ZIP.
 export COPYFILE_DISABLE=1
 

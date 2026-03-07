@@ -3,7 +3,7 @@
 ## Objetivo
 Padronizar a gestão do projeto no GitHub (Issues, Milestones, Branches e PRs) e manter espelho local em `docs/milestones/` sincronizado com o remoto.
 
-Data de referência desta versão: 27 de fevereiro de 2026.
+Data de referência desta versão: 5 de março de 2026.
 
 ## Regras operacionais
 - Descrições de milestones e issues devem ser claras, objetivas, conter checklist de progresso (sub-tasks).
@@ -39,7 +39,7 @@ Data de referência desta versão: 27 de fevereiro de 2026.
 - Repositório: `sandersouza/msxbarepi`
 - Projeto oficial (GitHub Projects): `MSX BarePI`
 - URL do projeto: `https://github.com/users/sandersouza/projects/3`
-- Branch de trabalho por issue ativa: `issue/<numero>-<slug-curto>`
+- Branch de trabalho por issue ativa: preferencialmente `<numero>-<slug-curto>` (ex.: `77-p1-validar-vdp9938-e-modos-de-vídeo-msx2-prioritários`) criada via `gh issue develop`.
 - Branch de release: `release/<versao>` (obrigatório; não usar branch de release fora do prefixo `release/`)
 - Estrutura local:
   - `docs/milestones/m<numero-da-milestone>/`
@@ -53,7 +53,7 @@ Data de referência desta versão: 27 de fevereiro de 2026.
 1. Selecionar issue alvo no GitHub.
 2. Criar branch somente nesse momento:
 ```bash
-gh issue develop <numero> -R sandersouza/msxbarepi --name issue/<numero>-<slug> --base main --checkout
+gh issue develop <numero> -R sandersouza/msxbarepi --name <numero>-<slug> --base main --checkout
 git pull --ff-only
 ```
 2.1 Validar vínculo branch <-> issue:
@@ -88,7 +88,7 @@ done
 ```
 6. Quando estabilizada em hardware, abrir PR para `main`:
 ```bash
-gh pr create -B main -H issue/<numero>-<slug> --fill
+gh pr create -B main -H <branch-da-issue> --fill
 ```
 6.1 Ao entrar em fase de teste/review, atualizar `Status` para `In review`:
 ```bash
@@ -109,6 +109,13 @@ gh pr edit <numero-pr> -R sandersouza/msxbarepi --add-project "MSX BarePI"
 DONE_OPTION_ID=$(gh project field-list 3 --owner sandersouza --format json --jq '.fields[] | select(.name=="Status") | .options[] | select(.name=="Done") | .id')
 gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$STATUS_FIELD_ID" --single-select-option-id "$DONE_OPTION_ID"
 ```
+
+## Empacotamento para testes
+- Para builds de distribuição rápida, usar:
+```bash
+DEBUG=0|1 OWNER="<nome>" make package
+```
+- `OWNER` nomeia o artefato final como `artifacts/sdcard-package-<OWNER>.zip`.
 
 ## Rotina de sincronização
 - Sincronização de leitura (início/fim de ciclo):
@@ -144,7 +151,7 @@ gh issue list -R sandersouza/msxbarepi -L 200 --json number,title,state,mileston
 
 Criar branch da issue ativa:
 ```bash
-git checkout -b issue/29-circle-usb-hid-runtime
+gh issue develop 29 -R sandersouza/msxbarepi --name 29-circle-usb-hid-runtime --base main --checkout
 ```
 
 Atualizar issue com progresso:
@@ -159,7 +166,7 @@ gh issue edit 29 -R sandersouza/msxbarepi --add-project "MSX BarePI"
 
 Abrir PR da issue estabilizada:
 ```bash
-gh pr create -R sandersouza/msxbarepi -B main -H issue/29-circle-usb-hid-runtime --title "Issue #29: runtime Circle USB/HID no binário principal" --body "Closes #29"
+gh pr create -R sandersouza/msxbarepi -B main -H 29-circle-usb-hid-runtime --title "Issue #29: runtime Circle USB/HID no binário principal" --body "Closes #29"
 ```
 
 Vincular PR ao projeto:

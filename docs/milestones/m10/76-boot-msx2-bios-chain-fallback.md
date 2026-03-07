@@ -2,7 +2,7 @@
 
 - URL: https://github.com/sandersouza/msxbarepi/issues/76
 - Milestone: Release: Suporte MSX2 (m10)
-- Estado remoto: OPEN
+- Estado remoto: CLOSED
 - Prioridade: P0
 - Labels: `priority:P0`, `type:feature`, `area:boot`, `area:storage`, `area:emulation`
 
