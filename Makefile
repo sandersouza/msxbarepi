@@ -6,6 +6,14 @@ BUILD_DIR := build
 FB_WIDTH ?= 1024
 FB_HEIGHT ?= 768
 DEBUG ?= 0
+DEBUG_EFFECTIVE := $(DEBUG)
+ifneq ($(origin DEBUG_BUILD), undefined)
+DEBUG_EFFECTIVE := $(DEBUG_BUILD)
+endif
+DEBUG_BOOL := 0
+ifeq ($(strip $(DEBUG_EFFECTIVE)),1)
+DEBUG_BOOL := 1
+endif
 CIRCLE_INPUT ?= 0
 CIRCLE_INPUT_SAFE ?= 0
 CIRCLE_AUDIO ?= 0
@@ -32,7 +40,7 @@ COMBO_DEFER_SETTINGS_LOAD_FRAMES ?= 0
 COMBO_DEFER_INITRAMFS_FULL_MOUNT_FRAMES ?= 120
 COMBO_SIZE_OPT ?= 1
 COMBO_FMSX_BOOT_MINIMAL_STARTUP ?= 1
-COMBO_ENABLE_DEBUG_OVERLAY ?= 0
+COMBO_ENABLE_DEBUG_OVERLAY ?= $(DEBUG_BOOL)
 COMBO_DEBUG_OVERLAY_STAGE ?= 1
 COMBO_TEST_TONE_DEFAULT ?= 0
 COMBO_DEBUG_OVERLAY_DEFAULT ?= 0
@@ -41,7 +49,7 @@ OWNER ?=
 BUILD_BID ?= $(shell date +%Y%m%d%H%M)-$(shell git rev-parse --short HEAD 2>/dev/null || echo nogit)
 CIRCLE_KERNEL_MAX_SIZE ?= 0x400000
 CIRCLE_EXTRAINCLUDE ?= -DKERNEL_MAX_SIZE=$(CIRCLE_KERNEL_MAX_SIZE)
-PACKAGE_DEBUG_BUILD ?= 1
+PACKAGE_DEBUG_BUILD ?= $(DEBUG_BOOL)
 PACKAGE_COPY_GAMES_TO_ROOT ?= 1
 PACKAGE_FIRMWARE_DIR ?= ./rpi-firmware
 PACKAGE_OFFLINE_DRY_PACKAGE ?= 1
@@ -63,7 +71,7 @@ SIZE := $(CROSS)size
 
 CFLAGS := -Wall -Wextra -O2 -ffreestanding -nostdlib -nostartfiles -mcpu=cortex-a53
 CFLAGS += -Iinclude -DMSXBARE_FB_WIDTH=$(FB_WIDTH)u -DMSXBARE_FB_HEIGHT=$(FB_HEIGHT)u
-ifeq ($(DEBUG),1)
+ifeq ($(DEBUG_BOOL),1)
 CFLAGS += -DMSXBARE_DEBUG=1
 endif
 
@@ -241,17 +249,26 @@ initramfs:
 package: default initramfs
 	@issue_branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true); \
 	issue_id=$$(printf "%s" "$$issue_branch" | sed -n 's/^\([0-9][0-9]*\)-.*/\1/p'); \
+	owner_slug=$$(printf "%s" "$(OWNER)" | tr '[:space:]' '_' | tr -cd '[:alnum:]_.-'); \
+	package_zip=""; \
+	if [ -n "$$owner_slug" ]; then \
+		package_zip="artifacts/sdcard-package-$${owner_slug}.zip"; \
+	fi; \
 	if [ -n "$$issue_id" ] && [ -f "artifacts/kernel8-issue$${issue_id}.img" ]; then \
 		kernel_img="artifacts/kernel8-issue$${issue_id}.img"; \
 	else \
 		kernel_img="$(DEFAULT_ARTIFACT)"; \
 	fi; \
 	echo "Pacote (DRY_RUN) usando kernel: $$kernel_img"; \
+	if [ -n "$$package_zip" ]; then \
+		echo "Pacote (OWNER) em: $$package_zip"; \
+	fi; \
 	DRY_RUN=1 NON_INTERACTIVE=1 AUTO_CONFIRM=1 \
 	COPY_GAMES_TO_ROOT=$(PACKAGE_COPY_GAMES_TO_ROOT) \
 	DEBUG_BUILD=$(PACKAGE_DEBUG_BUILD) \
 	OFFLINE_DRY_PACKAGE=$(PACKAGE_OFFLINE_DRY_PACKAGE) \
 	KERNEL_IMG="$$kernel_img" \
+	PACKAGE_ZIP="$$package_zip" \
 	FIRMWARE_DIR="$(PACKAGE_FIRMWARE_DIR)" \
 	./scripts/prepare-sd.sh
 
@@ -262,6 +279,7 @@ help:
 	@echo "SD incremental update (sem formatar): make sdcard-update"
 	@echo "Initramfs: make initramfs INITRAMFS_IN=roms/initramfs INITRAMFS_OUT=sdcard/msx.cpio"
 	@echo "SD package zip (via prepare-sd dry-run offline): make package -> artifacts/sdcard-package-YYYYMMDDHHMM.zip"
+	@echo "Flags uteis: make package DEBUG=0|1 OWNER=<nome>"
 	@echo "Cross prefix auto: aarch64-none-elf- | aarch64-elf-"
 	@echo "Override: make CROSS=aarch64-elf-"
 	@echo "Use flags COMBO_*/DEBUG/FB_* conforme necessario"

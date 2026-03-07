@@ -368,6 +368,17 @@ make package
 
 Saída padrão: `artifacts/sdcard-package-YYYYMMDDHHMM.zip`
 
+Flags rápidas de package/build:
+- `DEBUG=0|1`: ativa/desativa debug compilado no kernel (overlay/hotkeys de debug).
+- `OWNER="<nome>"`: injeta identificador no kernel debug e nomeia o ZIP como `artifacts/sdcard-package-<OWNER>.zip`.
+- Compatibilidade: `DEBUG_BUILD=1` também é aceito e mapeado para o mesmo comportamento de `DEBUG=1`.
+
+Exemplo:
+
+```bash
+DEBUG=1 OWNER="GustavoLeal" make package
+```
+
 Defaults do script:
 - `KERNEL_IMG=artifacts/kernel8-default.img`
 - `FIRMWARE_DIR=rpi-firmware/`

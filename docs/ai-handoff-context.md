@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 05/03/2026 16:18
+Última atualização: 06/03/2026 12:28
 
 ## Objetivo deste arquivo
 
@@ -1648,3 +1648,30 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-03-05 16:17:45 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
 - 2026-03-05 16:17:45 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue138.img
 - 2026-03-05 16:18:15 | stage=package | status=dry-run-offline-ok | artifact=artifacts/sdcard-package-202603051617.zip | note=make package offline dry-run sem disco fisico
+- 2026-03-05 17:12:18 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-05 17:12:18 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-05 17:12:18 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue77.img
+- 2026-03-05 17:19:14 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-05 17:19:14 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-05 17:19:14 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue77.img
+- 2026-03-05 17:19:38 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-05 17:19:38 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-05 17:19:38 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue77.img
+- 2026-03-05 17:21:27 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-05 17:21:27 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-05 17:21:27 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue77.img
+- 2026-03-05 17:22:03 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-05 17:22:03 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-05 17:22:03 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue77.img
+- 2026-03-05 17:27:40 | stage=docs | status=milestone-m17-sync | artifact=n/a | note=Milestone m17 sincronizada com remoto: #138 CLOSED, contadores ajustados (open=4/closed=1), CHALLENGES atualizado com solução final.
+- 2026-03-05 17:27:52 | stage=docs | status=context-entrypoint-added | artifact=CONTEXT.md | note=Adicionado CONTEXT.md na raiz apontando para docs/ai-handoff-context.md.
+- 2026-03-05 17:28:06 | stage=docs | status=process-docs-refreshed | artifact=docs/github-project-management.md | note=Convenção de branch por issue alinhada com fluxo atual (gh issue develop) e seção de package DEBUG/OWNER adicionada.
+- 2026-03-06 12:24:46 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-06 12:24:46 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-06 12:24:46 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue77.img
+- 2026-03-06 12:28:17 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-06 12:28:17 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-06 12:28:17 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue77.img
+- 2026-03-06 12:28:40 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-06 12:28:40 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-06 12:28:40 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue77.img

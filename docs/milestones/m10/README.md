@@ -5,8 +5,8 @@
 - Título: Release: Suporte MSX2
 - Estado: open
 - Due date: sem-data
-- Open issues: 5
-- Closed issues: 0
+- Open issues: 3
+- Closed issues: 2
 - URL: https://github.com/sandersouza/msxbarepi/milestone/11
 
 ## Descrição (GitHub)

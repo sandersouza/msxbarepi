@@ -18,13 +18,13 @@ Registro consolidado da fase de suporte MSX2 (BIOS chain, modelo de maquina e es
 ### #76 — Boot MSX2 com cadeia de BIOS/fallback
 - Desafio: BIOS reais de MSX2 com travamentos em combinacoes de ROM; fallback e cadeia de carga precisavam robustez.
 - Solucao adotada: cadeia de validacao/fallback reforcada, suporte a conjuntos de ROMs validados e telemetria de boot.
-- Status: Parcial (boot estabilizado; ajustes finos de audio/mix ainda em iteracao).
+- Status: Resolvido.
 - Referencia: [76-boot-msx2-bios-chain-fallback.md](/Users/sandersouza/Developer/msxbarepi-circle/docs/milestones/m10/76-boot-msx2-bios-chain-fallback.md)
 
 ### #77 — Validar VDP9938 modos de video
 - Desafio: preservar aspect ratio/viewport e evitar artefatos de limpeza em trocas de estado.
-- Solucao adotada: correcoes de limpeza de framebuffer e harmonizacao de viewport com settings de video.
-- Status: Parcial (funcional, com tuning continuo de UI/viewport em paralelo).
+- Solucao adotada: issue ativa na branch `77-*`; foco atual em validacao dos modos prioritarios do VDP9938 sem regressao de pacing.
+- Status: Parcial (em andamento).
 - Referencia: [77-validar-vdp9938-modos-video-msx2.md](/Users/sandersouza/Developer/msxbarepi-circle/docs/milestones/m10/77-validar-vdp9938-modos-video-msx2.md)
 
 ### #78 — Suite de regressao de compatibilidade MSX2
@@ -35,6 +35,6 @@ Registro consolidado da fase de suporte MSX2 (BIOS chain, modelo de maquina e es
 
 ### #79 — Telemetria de modelo ativo no overlay
 - Desafio: diagnostico de estado de maquina/audio em runtime para depuracao acelerada.
-- Solucao adotada: extensao do overlay com campos de modelo/mapper/canais e codigos de carga.
-- Status: Resolvido.
+- Solucao adotada: escopo definido; implementacao ainda pendente dentro da milestone.
+- Status: Futuro.
 - Referencia: [79-telemetria-modelo-ativo-overlay.md](/Users/sandersouza/Developer/msxbarepi-circle/docs/milestones/m10/79-telemetria-modelo-ativo-overlay.md)

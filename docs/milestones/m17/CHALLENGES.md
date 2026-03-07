@@ -35,6 +35,6 @@ Registro de desafios enfrentados por issue, decisão adotada e status da soluç�
 
 ### #138 — leitura/listagem de diretórios no SD inconsistente no navegador
 - Desafio: Itens existentes em `SD:/roms` e `SD:/disks` às vezes não aparecem no navegador sem padrão determinístico; após reescrita podem aparecer.
-- Solução adotada: Em backlog; investigar scanner FAT32, filtros de nome e invalidação de cache/render do browser.
-- Status: Futuro
+- Solução adotada: leitura do browser migrada para varredura do diretório corrente via FatFS (sem cache global truncado), com recarga por `current_dir` em cada entrada/retorno de subdiretório; estabilizou listagem e eliminou sumiços intermitentes.
+- Status: Resolvido
 - Referência: [138-bug-leitura-listagem-diretorios-sd-inconsistente-navegador.md](/Users/sandersouza/Developer/msxbarepi-circle/docs/milestones/m17/138-bug-leitura-listagem-diretorios-sd-inconsistente-navegador.md)

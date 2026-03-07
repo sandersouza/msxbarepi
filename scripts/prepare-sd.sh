@@ -28,6 +28,7 @@ DEBUG_BUILD="${DEBUG_BUILD:-0}"
 VIDEO_MODE_PRESET="${VIDEO_MODE_PRESET:-auto}"
 COPY_GAMES_TO_ROOT="${COPY_GAMES_TO_ROOT:-}"
 OFFLINE_DRY_PACKAGE="${OFFLINE_DRY_PACKAGE:-0}"
+PACKAGE_ZIP="${PACKAGE_ZIP:-}"
 
 KERNEL_IMG="${KERNEL_IMG:-${PROJECT_ROOT}/artifacts/kernel8-default.img}"
 CONFIG_TXT="${CONFIG_TXT:-${PROJECT_ROOT}/sdcard/config.txt}"
@@ -183,9 +184,12 @@ generate_dry_run_package() {
     copy_games_flag="1"
   fi
 
-  local package_timestamp
-  package_timestamp="$(date +%Y%m%d%H%M)"
-  local package_zip="${PROJECT_ROOT}/artifacts/sdcard-package-${package_timestamp}.zip"
+  local package_timestamp=""
+  local package_zip="${PACKAGE_ZIP:-}"
+  if [ -z "$package_zip" ]; then
+    package_timestamp="$(date +%Y%m%d%H%M)"
+    package_zip="${PROJECT_ROOT}/artifacts/sdcard-package-${package_timestamp}.zip"
+  fi
 
   echo "[INFO] DRY_RUN=1: gerando pacote SD em artifacts (simulacao de resultado final)..."
   PACKAGE_KERNEL_IMG="$KERNEL_IMG" \
