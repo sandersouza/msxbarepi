@@ -1,36 +1,36 @@
 # M2 — Bootstrap do core fMSX (status atual)
 
 ## Resultado deste passo
-- Foi preparada uma integração inicial do core fMSX no app `circle_combo` em modo frame-step.
+- Foi preparada uma integração inicial do core fMSX no app `src` em modo frame-step.
 - O build experimental com core habilitado já fecha:
   - `COMBO_ENABLE_FMSX=1` (experimental, compila e gera imagem)
   - `COMBO_ENABLE_FMSX=0` (default estável)
 
 ## O que foi adicionado
 - Scaffolding de runtime:
-  - `circle_combo/fmsx_runtime.h`
-  - `circle_combo/fmsx_runtime.c`
+  - `src/fmsx_runtime.h`
+  - `src/fmsx_runtime.c`
 - Host stubs de plataforma para callbacks exigidos pelo fMSX:
-  - `circle_combo/fmsx_host_stubs.c`
+  - `src/fmsx_host_stubs.c`
 - Wrappers locais para compilar fontes upstream sem editar `third_party/`:
-  - `circle_combo/fmsx_upstream_*.c`
+  - `src/fmsx_upstream_*.c`
 - Compat layer local para APIs de `libretro-common` usadas pelo core:
-  - `circle_combo/fmsx_compat/**`
-  - `circle_combo/fmsx_compat_stubs.c`
+  - `src/fmsx_compat/**`
+  - `src/fmsx_compat_stubs.c`
 - Loader de initramfs CPIO (`msx.cpio`) no runtime:
-  - `circle_combo/fmsx_initramfs.cpp` parseia DTB (`/chosen/linux,initrd-start/end`) e monta arquivos do `newc` em VFS de memória
-  - `circle_combo/fmsx_virtual_fs.c` faz lookup case-insensitive por basename para `fopen/rfopen`
+  - `src/fmsx_initramfs.cpp` parseia DTB (`/chosen/linux,initrd-start/end`) e monta arquivos do `newc` em VFS de memória
+  - `src/fmsx_virtual_fs.c` faz lookup case-insensitive por basename para `fopen/rfopen`
   - `kernel.cpp` chama `fmsx_initramfs_mount()` antes de `StartMSX()` e loga quantidade de arquivos detectados
   - nomes padrão do fMSX passam a funcionar diretamente quando presentes no `msx.cpio`:
     - `MSX.ROM` (BIOS)
     - `CARTA.ROM` e `CARTB.ROM` (slots A/B)
     - `DRIVEA.DSK` e `DRIVEB.DSK` (drives A/B)
 - Backend temporário de BIOS embutida para bootstrap:
-  - `circle_combo/fmsx_embedded_roms.S` (`.incbin` de `roms/msx1/MSX.ROM`)
+  - `src/fmsx_embedded_roms.S` (`.incbin` de `roms/msx1/MSX.ROM`)
   - `fopen/rfopen` em `fmsx_libc_shim.c` e `fmsx_compat_stubs.c` agora atendem leitura de `MSX.ROM` em memória
 - Frontend de vídeo fMSX no bootstrap (software renderer):
-  - `circle_combo/fmsx_host_stubs.c` agora usa `CommonMux.h` para `RefreshLine*`
-  - `PutImage()` publica frame RGB565 para blit no `circle_combo/kernel.cpp`
+  - `src/fmsx_host_stubs.c` agora usa `CommonMux.h` para `RefreshLine*`
+  - `PutImage()` publica frame RGB565 para blit no `src/kernel.cpp`
   - Blit HDMI agora escala e centraliza automaticamente o frame do MSX para a resolução ativa do display
   - Overlay de debug passou a ser redesenhado continuamente após o blit, mantendo leitura estável por cima da imagem do emulador
   - Diagnóstico de frame vazio no blit:
@@ -88,13 +88,13 @@
 
 ## Impacto
 - `make m0-combo` permanece estável e gera artefato testável.
-- `make default` gera imagem experimental com core integrado no loop em `artifacts/kernel8-fmsx-bootstrap.img`.
+- `make default` gera imagem experimental com core integrado no loop em `artifacts/kernel8-bootstrap.img`.
 - Overlay debug com toggle (`F1`) e input/audio continuam funcionando.
 - Áudio de teste contínuo foi desativado por padrão (`COMBO_TEST_TONE_DEFAULT=0`).
 
 ## Knobs de build úteis
-- `COMBO_ENABLE_FMSX=1`: habilita bootstrap do core fMSX no `circle_combo`.
-- `COMBO_FMSX_BOOT_PROFILE=1`: default de build (Fast Boot) no `Makefile` raiz, `circle_combo/Makefile` e no configurador `scripts/build-m2-config.sh`.
+- `COMBO_ENABLE_FMSX=1`: habilita bootstrap do core fMSX no `src`.
+- `COMBO_FMSX_BOOT_PROFILE=1`: default de build (Fast Boot) no `Makefile` raiz, `src/Makefile` e no configurador `scripts/build-config.sh`.
 - `COMBO_TEST_TONE_DEFAULT=0`: desativa tom de teste HDMI (default).
 - `COMBO_TEST_TONE_DEFAULT=1`: reativa tom de teste HDMI para diagnóstico.
 

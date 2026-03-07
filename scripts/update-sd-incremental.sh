@@ -18,7 +18,7 @@ SETTINGS_CFG="${SETTINGS_CFG:-${PROJECT_ROOT}/sdcard/MSXBARE.CFG}"
 FIRMWARE_DIR="${FIRMWARE_DIR:-${PROJECT_ROOT}/rpi-firmware}"
 GAMES_SRC_DIR="${GAMES_SRC_DIR:-${PROJECT_ROOT}/roms/games}"
 COPY_GAMES_TO_ROOT="${COPY_GAMES_TO_ROOT:-0}"
-DEBUG_BUILD="${DEBUG_BUILD:-0}"
+DEBUG="${DEBUG:-0}"
 VIDEO_MODE_PRESET="${VIDEO_MODE_PRESET:-auto}"
 EJECT_AT_END="${EJECT_AT_END:-0}"
 
@@ -176,12 +176,12 @@ ensure_settings_cfg
 config_src="$CONFIG_TXT"
 config_tmp=""
 if [ -f "$CONFIG_TXT" ]; then
-  if [ "$DEBUG_BUILD" = "1" ] || [ "$VIDEO_MODE_PRESET" != "auto" ]; then
+  if [ "$DEBUG" = "1" ] || [ "$VIDEO_MODE_PRESET" != "auto" ]; then
     config_tmp="$(mktemp)"
     cp "$CONFIG_TXT" "$config_tmp"
     config_src="$config_tmp"
   fi
-  if [ "$DEBUG_BUILD" = "1" ]; then
+  if [ "$DEBUG" = "1" ]; then
     if grep -Eq '^[[:space:]]*disable_splash=' "$config_src"; then
       sed -E 's/^[[:space:]]*disable_splash=.*/disable_splash=0/' "$config_src" > "${config_src}.new"
       mv "${config_src}.new" "$config_src"
@@ -228,4 +228,3 @@ fi
 if [ -n "$config_tmp" ] && [ -f "$config_tmp" ]; then
   rm -f "$config_tmp"
 fi
-

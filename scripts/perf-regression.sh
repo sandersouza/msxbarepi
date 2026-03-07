@@ -113,7 +113,7 @@ init_cmd() {
   local build_end
   build_end="$(date +%s)"
 
-  local artifact="$ROOT_DIR/artifacts/kernel8-fmsx-bootstrap.img"
+  local artifact="$ROOT_DIR/artifacts/kernel8-bootstrap.img"
   if [[ "$make_target" == "stable" ]]; then
     artifact="$ROOT_DIR/artifacts/kernel8.img"
   fi

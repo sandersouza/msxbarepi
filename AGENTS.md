@@ -32,7 +32,7 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Sempre que uma nova opção/label de menu for criada ou alterada, atualizar todos os idiomas suportados no sistema de locales (mínimo: `PT`, `EN`, `ES`) na mesma mudança; isso inclui títulos de submenu, nomes de campos/slots, estados (`[ EMPTY ]` etc.) e qualquer string visível ao usuário. Nao deixar textos hardcoded fora do sistema de locale
 - Ao finalizar qualquer build para teste, sempre informar ao usuário o comando de preparação do SD **sem** `DRY_RUN=1` (ex.: `KERNEL_IMG=... FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh`)
 - Para empacotamento via `make package`, usar flags simples:
-  - `DEBUG=0|1` (ou compatibilidade `DEBUG_BUILD=0|1`) para controlar debug compilado no kernel
+  - `DEBUG=0|1` para controlar debug compilado no kernel
   - `OWNER="<nome>"` para identificação no debug e para nomear o ZIP como `artifacts/sdcard-package-<OWNER>.zip`
 - Por padrao, o build deve gerar `artifacts/kernel8-default.img` e, quando a branch atual for de issue (`<numero>-...`), tambem gerar `artifacts/kernel8-issue<numero>.img` (ex.: branch `61-...` -> `artifacts/kernel8-issue61.img`); priorizar este artefato de issue nos testes da issue ativa
 - Todo comando para terminal deve ser entregue em bloco de código Markdown com linguagem `bash` (```bash ... ```), inclusive quando houver múltiplos comandos; evitar links/markup dentro de comandos para não quebrar copy/paste
