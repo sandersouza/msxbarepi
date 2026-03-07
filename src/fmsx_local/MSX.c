@@ -20,10 +20,6 @@
 #include "MCF.h"
 #include "../fmsx_carts_sha_fallback.h"
 
-#ifndef MSXBARE_FMSX_SYNC_SCC_FM_EVERY_8LINES
-#define MSXBARE_FMSX_SYNC_SCC_FM_EVERY_8LINES 1
-#endif
-
 #include <string.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -40,25 +36,30 @@
 extern retro_log_printf_t log_cb;
 extern void fmsx_runtime_notify_media_probe(void);
 extern int g_fmsx_fmpac_enabled;
+extern unsigned g_fmsx_megaram_kb;
 
 #define RGB2INT(R,G,B)    ((B)|((int)(G)<<8)|((int)(R)<<16))
 
-#ifndef MSXBARE_FMSX_MEGARAM_KB
-#define MSXBARE_FMSX_MEGARAM_KB 256
-#endif
+static unsigned fmsx_megaram_pages_from_kb(void)
+{
+  switch(g_fmsx_megaram_kb)
+  {
+    case 512u:  return 64u;
+    case 1024u: return 128u;
+    case 256u:
+    default:    return 32u;
+  }
+}
 
-#if (MSXBARE_FMSX_MEGARAM_KB == 256)
-#define MSXBARE_FMSX_MEGARAM_PAGES 32
-#elif (MSXBARE_FMSX_MEGARAM_KB == 512)
-#define MSXBARE_FMSX_MEGARAM_PAGES 64
-#elif (MSXBARE_FMSX_MEGARAM_KB == 1024)
-#define MSXBARE_FMSX_MEGARAM_PAGES 128
-#else
-#error "MSXBARE_FMSX_MEGARAM_KB must be 256, 512, or 1024"
-#endif
+static unsigned fmsx_megaram_bytes(void)
+{
+  return fmsx_megaram_pages_from_kb() * 0x2000u;
+}
 
-#define MSXBARE_FMSX_MEGARAM_BYTES (MSXBARE_FMSX_MEGARAM_PAGES * 0x2000)
-#define MSXBARE_FMSX_MEGARAM_MASK  (MSXBARE_FMSX_MEGARAM_PAGES - 1)
+static unsigned fmsx_megaram_mask(void)
+{
+  return fmsx_megaram_pages_from_kb() - 1u;
+}
 
 /* MSDOS chdir() is broken and has to be replaced :( */
 #ifdef MSDOS
@@ -561,8 +562,9 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   /* Allocate 128kB (16x8kB pages) for SCC-I expanded RAM */
   if(!(Mode&MSX_NO_MEGARAM))
   {
-    if(!(SCCIRAM=GetMemory(MSXBARE_FMSX_MEGARAM_BYTES))) { return(0); }
-    memset(SCCIRAM,0,MSXBARE_FMSX_MEGARAM_BYTES);
+    const unsigned megaram_bytes = fmsx_megaram_bytes();
+    if(!(SCCIRAM=GetMemory(megaram_bytes))) { return(0); }
+    memset(SCCIRAM,0,megaram_bytes);
   }
   if(log_cb) log_cb(1,"StartMSX: SCCIRAM ok\n");
 
@@ -1671,7 +1673,7 @@ void MapROM(uint16_t A,uint8_t V)
           SCCOn[I]=(V&0x80); // SCC-I a.k.a. SCC+ enable - write 1xxxxxxx to B000-B7FF
           break;
       }
-      V&=MSXBARE_FMSX_MEGARAM_MASK; // bitmask for configured MegaRAM pages
+      V&=fmsx_megaram_mask(); // bitmask for configured MegaRAM pages
       if(V!=ROMMapper[I][J] && !(Mode&MSX_NO_MEGARAM) && SCCIRAM)
       {
         RAM[J+2]=MemMap[PS][SS][J+2]=SCCIRAM+((int)V<<13);
@@ -2444,13 +2446,11 @@ uint16_t LoopZ80(Z80 *R)
     /* Flush changes to sound channels */
     Sync8910(&PSG,AY8910_FLUSH);
 
-#if MSXBARE_FMSX_SYNC_SCC_FM_EVERY_8LINES
 #if !defined(FMSX_BAREMETAL_PSG_AUDIO_ONLY)
     /* Keep SCC/FM cadence aligned with PSG to avoid source handoff artifacts. */
     SyncSCC(&SCChip,SCC_FLUSH);
     if(!OPTION(MSX_NUKEYKT))
       Sync2413(&OPLL,YM2413_FLUSH);
-#endif
 #endif
   }
 
@@ -3738,7 +3738,7 @@ unsigned int SaveState(unsigned char *Buf,unsigned int MaxSize)
   SaveDATA(RAMData,RAMPages*0x4000);
   SaveDATA(VRAM,VRAMPages*0x4000);
   if (!(Mode&MSX_NO_MEGARAM) && SCCIRAM)
-    SaveDATA(SCCIRAM,MSXBARE_FMSX_MEGARAM_BYTES);
+    SaveDATA(SCCIRAM,fmsx_megaram_bytes());
   SaveSTRUCT(OPLL_NukeYKT);
 
   /* Return amount of data written */
@@ -3770,7 +3770,7 @@ unsigned int LoadState(unsigned char *Buf,unsigned int MaxSize)
   LoadDATA(RAMData,RAMPages*0x4000);
   LoadDATA(VRAM,VRAMPages*0x4000);
   if (!(Mode&MSX_NO_MEGARAM) && SCCIRAM)
-    LoadDATA(SCCIRAM,MSXBARE_FMSX_MEGARAM_BYTES);
+    LoadDATA(SCCIRAM,fmsx_megaram_bytes());
   LoadSTRUCT(OPLL_NukeYKT);
 
   /* Parse hardware state */

@@ -8,10 +8,6 @@ static const TScreenColor kPauseMenuBgColor = COLOR32(0, 0, 0x9B, 0xFF);
 static const TScreenColor kPauseMenuBgColor = COLOR16(0, 0, 0x9B >> 3);
 #endif
 
-#ifndef MSXBARE_MENU_DOUBLE_BUFFER
-#define MSXBARE_MENU_DOUBLE_BUFFER 1
-#endif
-
 static unsigned ComboStrLen(const char *text)
 {
     if (text == 0)
@@ -155,6 +151,8 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_DiskRomEnabled(TRUE),
     m_BootMode(0u),
     m_MachineProfile(0u),
+    m_RamMapperKb(256u),
+    m_MegaRamKb(0u),
     m_Z80TurboMode(0u),
     m_RenshaMode(0u),
     m_FmMusicEnabled(TRUE),
@@ -195,6 +193,8 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnDiskRomEnabled(TRUE),
     m_LastDrawnBootMode(0u),
     m_LastDrawnMachineProfile(0u),
+    m_LastDrawnRamMapperKb(0u),
+    m_LastDrawnMegaRamKb(0u),
     m_LastDrawnZ80TurboMode(0u),
     m_LastDrawnRenshaMode(0u),
     m_LastDrawnFmMusic(TRUE),
@@ -510,6 +510,42 @@ void CComboPauseMenu::SetMachineProfile(unsigned profile)
 unsigned CComboPauseMenu::GetMachineProfile(void) const
 {
     return m_MachineProfile;
+}
+
+void CComboPauseMenu::SetRamMapperKb(unsigned kb)
+{
+    if (kb != 256u && kb != 512u && kb != 1024u)
+    {
+        kb = 256u;
+    }
+    if (m_RamMapperKb != kb)
+    {
+        m_RamMapperKb = kb;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+unsigned CComboPauseMenu::GetRamMapperKb(void) const
+{
+    return m_RamMapperKb;
+}
+
+void CComboPauseMenu::SetMegaRamKb(unsigned kb)
+{
+    if (kb != 0u && kb != 256u && kb != 512u && kb != 1024u)
+    {
+        kb = 0u;
+    }
+    if (m_MegaRamKb != kb)
+    {
+        m_MegaRamKb = kb;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+unsigned CComboPauseMenu::GetMegaRamKb(void) const
+{
+    return m_MegaRamKb;
 }
 
 void CComboPauseMenu::SetZ80TurboMode(unsigned mode)
@@ -833,6 +869,8 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_DiskRomEnabled,
             m_BootMode,
             m_MachineProfile,
+            m_RamMapperKb,
+            m_MegaRamKb,
             m_Z80TurboMode,
             m_RenshaMode,
             m_FmMusicEnabled,
@@ -1308,6 +1346,38 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
+        else if (items[m_Selected].action == ComboMenuActionCycleRamMapper)
+        {
+            if (left_edge)
+            {
+                action = ComboMenuActionCycleRamMapperPrev;
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
+            }
+            else if (right_edge || enter_edge)
+            {
+                action = ComboMenuActionCycleRamMapper;
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
+            }
+            handled_settings_input = enter_edge || left_edge || right_edge;
+        }
+        else if (items[m_Selected].action == ComboMenuActionCycleMegaRam)
+        {
+            if (left_edge)
+            {
+                action = ComboMenuActionCycleMegaRamPrev;
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
+            }
+            else if (right_edge || enter_edge)
+            {
+                action = ComboMenuActionCycleMegaRam;
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
+            }
+            handled_settings_input = enter_edge || left_edge || right_edge;
+        }
         else if (items[m_Selected].action == ComboMenuActionCycleZ80Turbo)
         {
             if (left_edge)
@@ -1709,6 +1779,8 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnDiskRomEnabled == m_DiskRomEnabled
      && m_LastDrawnBootMode == m_BootMode
      && m_LastDrawnMachineProfile == m_MachineProfile
+     && m_LastDrawnRamMapperKb == m_RamMapperKb
+     && m_LastDrawnMegaRamKb == m_MegaRamKb
      && m_LastDrawnZ80TurboMode == m_Z80TurboMode
      && m_LastDrawnRenshaMode == m_RenshaMode
      && m_LastDrawnFmMusic == m_FmMusicEnabled
@@ -1735,7 +1807,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
 
     const unsigned title_x = box_x + ((box_cols - title_len) / 2u) * cell_w;
     const unsigned title_y = box_y;
-    const boolean allow_backbuffer = MSXBARE_MENU_DOUBLE_BUFFER ? TRUE : FALSE;
+    const boolean allow_backbuffer = TRUE;
     boolean use_backbuffer = FALSE;
     if (allow_backbuffer)
     {
@@ -1999,6 +2071,8 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnDiskRomEnabled = m_DiskRomEnabled;
     m_LastDrawnBootMode = m_BootMode;
     m_LastDrawnMachineProfile = m_MachineProfile;
+    m_LastDrawnRamMapperKb = m_RamMapperKb;
+    m_LastDrawnMegaRamKb = m_MegaRamKb;
     m_LastDrawnZ80TurboMode = m_Z80TurboMode;
     m_LastDrawnRenshaMode = m_RenshaMode;
     m_LastDrawnFmMusic = m_FmMusicEnabled;

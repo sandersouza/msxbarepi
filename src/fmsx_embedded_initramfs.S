@@ -1,14 +1,11 @@
 .section .rodata
 .align 4
 
-#ifndef MSXBARE_EMBED_INITRAMFS
-#define MSXBARE_EMBED_INITRAMFS 0
-#endif
-
 .global fmsx_embedded_initramfs_start
 .global fmsx_embedded_initramfs_end
 fmsx_embedded_initramfs_start:
-#if MSXBARE_EMBED_INITRAMFS
+/* Project policy: initramfs is external on SD; keep kernel embedding disabled. */
+#if 0
 .incbin "../sdcard/msx.cpio"
 #endif
 fmsx_embedded_initramfs_end:

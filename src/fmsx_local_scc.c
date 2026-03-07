@@ -15,13 +15,11 @@
 #include "Sound.h"
 #include <string.h>
 
-#ifndef MSXBARE_FMSX_SCC_BALANCE_PCT
-#define MSXBARE_FMSX_SCC_BALANCE_PCT 98
-#endif
+static const int kSccBalancePct = 98;
 
 static int ApplySccBalancePct(int volume)
 {
-  int out = (volume * MSXBARE_FMSX_SCC_BALANCE_PCT) / 100;
+  int out = (volume * kSccBalancePct) / 100;
   if(out < 0) out = 0;
   if(out > 255) out = 255;
   return out;

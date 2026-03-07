@@ -16,21 +16,16 @@
 #include "Sound.h"
 #include <string.h>
 
-#ifndef MSXBARE_FMSX_FMPAC_ATTENUATION_PCT
-#define MSXBARE_FMSX_FMPAC_ATTENUATION_PCT 55
-#endif
-
-#ifndef MSXBARE_FMSX_FMPAC_BALANCE_PCT
-#define MSXBARE_FMSX_FMPAC_BALANCE_PCT 96
-#endif
+static const int kFmPacAttenuationPct = 55;
+static const int kFmPacBalancePct = 96;
 
 static unsigned g_fm_layer_gain_pct = 100u;
 
 static int ComputeFmVolume(uint8_t reg3x)
 {
   int vol = 255 * ((~reg3x) & 0x0F) / 15;
-  vol = (vol * MSXBARE_FMSX_FMPAC_ATTENUATION_PCT) / 100;
-  vol = (vol * MSXBARE_FMSX_FMPAC_BALANCE_PCT) / 100;
+  vol = (vol * kFmPacAttenuationPct) / 100;
+  vol = (vol * kFmPacBalancePct) / 100;
   vol = (vol * (int) g_fm_layer_gain_pct) / 100;
   if(vol < 0) vol = 0;
   if(vol > 255) vol = 255;

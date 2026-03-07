@@ -9,7 +9,7 @@ Guia operacional da layer de debug do MSXBarePI: como compilar, usar, atalhos e 
 ## Como compilar
 - Build com debug overlay habilitado:
 ```bash
-make DEBUG=1 MSXBARE_ENABLE_DEBUG_OVERLAY=1
+make DEBUG=1
 ```
 - Forma simplificada para pacote (tambem habilita debug no kernel):
 ```bash
@@ -17,15 +17,15 @@ DEBUG=1 OWNER="beta@exemplo.com" make package
 ```
 - Build com identificacao de rastreio visivel:
 ```bash
-make DEBUG=1 MSXBARE_ENABLE_DEBUG_OVERLAY=1 OWNER="beta@exemplo.com" BUILD_BID="BTID:202603041405-07bf64e-83b0c25b"
+make DEBUG=1 OWNER="beta@exemplo.com" BUILD_BID="BTID:202603041405-07bf64e-83b0c25b"
 ```
 - Build sem debug overlay:
 ```bash
-make DEBUG=0 MSXBARE_ENABLE_DEBUG_OVERLAY=0
+make DEBUG=0
 ```
 
 ## Regra de seguranca
-- Toda tecla/hotkey de debug so atua quando `MSXBARE_ENABLE_DEBUG_OVERLAY=1`.
+- Toda tecla/hotkey de debug so atua quando o kernel foi compilado com `DEBUG=1`.
 - Em build sem debug, hotkeys de debug ficam inertes (somente `F12` pausa/menu).
 
 ## Teclas de atalho (com debug compilado)

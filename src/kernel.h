@@ -179,10 +179,13 @@ private:
     boolean m_DiskRomEnabled;
     unsigned m_BootMode;
     unsigned m_MachineProfile;
+    unsigned m_RamMapperKb;
+    unsigned m_MegaRamKb;
     unsigned m_Z80TurboMode;
     unsigned m_RenshaMode;
     unsigned m_RenshaPhase;
     boolean m_RenshaFireAHeld;
+    boolean m_RenshaSpaceHeld;
     unsigned char m_LastKeyboardModifiers;
     unsigned char m_LastKeyboardRawKeys[6];
     boolean m_FmMusicEnabled;

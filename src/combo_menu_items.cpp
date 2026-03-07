@@ -227,6 +227,8 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
                                                      boolean disk_rom_enabled,
                                                      unsigned boot_mode,
                                                      unsigned machine_profile,
+                                                     unsigned rammapper_kb,
+                                                     unsigned megaram_kb,
                                                      unsigned z80_turbo_mode,
                                                      unsigned rensha_mode,
                                                      boolean fm_music_enabled,
@@ -237,7 +239,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
                                                      unsigned audio_gain_percent,
                                                      unsigned *count)
 {
-    static TComboMenuItem settings_items[24];
+    static TComboMenuItem settings_items[28];
     static char language_label[32];
     static char resolution_label[32];
     static char scale_label[32];
@@ -247,6 +249,8 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     static char disk_rom_label[32];
     static char boot_label[32];
     static char machine_label[32];
+    static char mapper_label[32];
+    static char megaram_label[32];
     static char turbo_label[32];
     static char rensha_label[32];
     static char fm_music_label[32];
@@ -269,6 +273,8 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     if (scanline_mode > 2u) scanline_mode = 2u;
     if (refresh_rate_hz != 50u) refresh_rate_hz = 60u;
     if (machine_profile > 2u) machine_profile = 0u;
+    if (rammapper_kb != 256u && rammapper_kb != 512u && rammapper_kb != 1024u) rammapper_kb = 256u;
+    if (megaram_kb != 0u && megaram_kb != 256u && megaram_kb != 512u && megaram_kb != 1024u) megaram_kb = 0u;
     if (z80_turbo_mode > 2u) z80_turbo_mode = 0u;
     if (boot_mode > 2u) boot_mode = 0u;
     if (rensha_mode > 3u) rensha_mode = 0u;
@@ -298,6 +304,16 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
                    boot_mode == 0u ? "NORM" : (boot_mode == 1u ? "FAST" : "GAME"));
     BuildLabelFlag(machine_label, sizeof(machine_label), locale->settings_machine,
                    machine_profile == 0u ? "MSX1" : (machine_profile == 1u ? "MSX2" : "MSX2+"));
+    {
+        const char *mapper_flag = locale->flag_na;
+        if (machine_profile != 0u)
+        {
+            mapper_flag = (rammapper_kb == 512u) ? "512" : (rammapper_kb == 1024u ? "1024" : "256");
+        }
+        BuildLabelFlag(mapper_label, sizeof(mapper_label), locale->settings_mapper, mapper_flag);
+    }
+    BuildLabelFlag(megaram_label, sizeof(megaram_label), locale->settings_megaram,
+                   megaram_kb == 0u ? locale->flag_off : (megaram_kb == 512u ? "512" : (megaram_kb == 1024u ? "1024" : "256")));
     BuildLabelFlag(turbo_label, sizeof(turbo_label), locale->settings_z80_turbo,
                    z80_turbo_mode == 0u ? locale->flag_off : (z80_turbo_mode == 1u ? "PAN" : "MAX"));
     BuildLabelFlag(rensha_label, sizeof(rensha_label), locale->settings_rensha,
@@ -369,6 +385,14 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     settings_items[item_count].action = ComboMenuActionSeparator;
     settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
     settings_items[item_count++].selectable = FALSE;
+    settings_items[item_count].label = mapper_label;
+    settings_items[item_count].action = ComboMenuActionCycleRamMapper;
+    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
+    settings_items[item_count++].selectable = TRUE;
+    settings_items[item_count].label = megaram_label;
+    settings_items[item_count].action = ComboMenuActionCycleMegaRam;
+    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
+    settings_items[item_count++].selectable = TRUE;
     settings_items[item_count].label = machine_label;
     settings_items[item_count].action = ComboMenuActionCycleMachine;
     settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;

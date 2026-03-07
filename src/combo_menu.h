@@ -29,6 +29,10 @@ public:
     unsigned GetBootMode(void) const;
     void SetMachineProfile(unsigned profile);
     unsigned GetMachineProfile(void) const;
+    void SetRamMapperKb(unsigned kb);
+    unsigned GetRamMapperKb(void) const;
+    void SetMegaRamKb(unsigned kb);
+    unsigned GetMegaRamKb(void) const;
     void SetZ80TurboMode(unsigned mode);
     unsigned GetZ80TurboMode(void) const;
     void SetRenshaMode(unsigned mode);
@@ -98,6 +102,8 @@ private:
     boolean m_DiskRomEnabled;
     unsigned m_BootMode;
     unsigned m_MachineProfile;
+    unsigned m_RamMapperKb;
+    unsigned m_MegaRamKb;
     unsigned m_Z80TurboMode;
     unsigned m_RenshaMode;
     boolean m_FmMusicEnabled;
@@ -138,6 +144,8 @@ private:
     boolean m_LastDrawnDiskRomEnabled;
     unsigned m_LastDrawnBootMode;
     unsigned m_LastDrawnMachineProfile;
+    unsigned m_LastDrawnRamMapperKb;
+    unsigned m_LastDrawnMegaRamKb;
     unsigned m_LastDrawnZ80TurboMode;
     unsigned m_LastDrawnRenshaMode;
     boolean m_LastDrawnFmMusic;

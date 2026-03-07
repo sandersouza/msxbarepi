@@ -115,7 +115,6 @@ gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$STA
 ```bash
 DEBUG=0|1 OWNER="<nome>" make package
 ```
-- `DEBUG_BUILD=0|1` permanece como compatibilidade.
 - `OWNER` nomeia o artefato final como `artifacts/sdcard-package-<OWNER>.zip`.
 
 ## Rotina de sincronização

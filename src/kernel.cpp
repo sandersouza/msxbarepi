@@ -39,6 +39,8 @@ static const unsigned kBootModeGame = 2u;
 static const unsigned kMachineProfileMsx1 = 0u;
 static const unsigned kMachineProfileMsx2 = 1u;
 static const unsigned kMachineProfileMsx2p = 2u;
+static const unsigned kRamMapperKbDefault = 256u;
+static const unsigned kMegaRamKbDefault = 0u;
 static const unsigned kResolutionModeAuto = 0u;
 static const unsigned kResolutionMode1080 = 1u;
 static const unsigned kResolutionMode720 = 2u;
@@ -56,6 +58,7 @@ static const unsigned kTelemetryViewOff = 0u;
 static const unsigned kTelemetryViewSnapshot = 1u;
 static const unsigned kTelemetryRequestNone = 0xFFFFFFFFu;
 static const u8 kJoyBridgeFireA = (u8) (1u << 4);
+static const boolean kBootQuiet = TRUE;
 /* Rensha modes are expressed in pulses per 10 frames (0.5, 1.0, 1.5). */
 static const unsigned kRenshaRateDen = 20u; /* 1/20 pulse per frame unit */
 static const unsigned kRgb565LutSize = 65536u;
@@ -166,9 +169,51 @@ static boolean IsMsx2FamilyProfile(unsigned profile)
 	return (profile == kMachineProfileMsx2 || profile == kMachineProfileMsx2p) ? TRUE : FALSE;
 }
 
-static boolean ShouldFrontLoadDeferredBootWork(unsigned boot_mode, unsigned machine_profile)
+static unsigned ClampRamMapperKb(unsigned kb)
 {
-	return (boot_mode == kBootModeFast && IsMsx2FamilyProfile(machine_profile)) ? TRUE : FALSE;
+	switch (kb)
+	{
+	case 512u:
+	case 1024u:
+		return kb;
+	case 256u:
+	default:
+		return 256u;
+	}
+}
+
+static unsigned CycleRamMapperKb(unsigned kb, boolean reverse)
+{
+	kb = ClampRamMapperKb(kb);
+	if (!reverse)
+	{
+		return (kb == 256u) ? 512u : ((kb == 512u) ? 1024u : 256u);
+	}
+	return (kb == 1024u) ? 512u : ((kb == 512u) ? 256u : 1024u);
+}
+
+static unsigned ClampMegaRamKb(unsigned kb)
+{
+	switch (kb)
+	{
+	case 0u:
+	case 256u:
+	case 512u:
+	case 1024u:
+		return kb;
+	default:
+		return 0u;
+	}
+}
+
+static unsigned CycleMegaRamKb(unsigned kb, boolean reverse)
+{
+	kb = ClampMegaRamKb(kb);
+	if (!reverse)
+	{
+		return (kb == 0u) ? 256u : ((kb == 256u) ? 512u : ((kb == 512u) ? 1024u : 0u));
+	}
+	return (kb == 0u) ? 1024u : ((kb == 1024u) ? 512u : ((kb == 512u) ? 256u : 0u));
 }
 
 static unsigned AudioGainEffectivePct(unsigned ui_pct)
@@ -606,22 +651,6 @@ static void FillRectScreen(CScreenDevice *screen,
 	}
 }
 
-#ifndef MSXBARE_DEBUG_OVERLAY_DEFAULT
-#define MSXBARE_DEBUG_OVERLAY_DEFAULT 1
-#endif
-
-#ifndef MSXBARE_TEST_TONE_DEFAULT
-#define MSXBARE_TEST_TONE_DEFAULT 0
-#endif
-
-#ifndef MSXBARE_INITRAMFS_MOUNT
-#define MSXBARE_INITRAMFS_MOUNT 1
-#endif
-
-#ifndef MSXBARE_FMSX_AUDIO
-#define MSXBARE_FMSX_AUDIO 1
-#endif
-
 #ifndef MSXBARE_FMSX_AUDIO_GAIN
 #define MSXBARE_FMSX_AUDIO_GAIN 1
 #endif
@@ -646,32 +675,8 @@ static void FillRectScreen(CScreenDevice *screen,
 #define MSXBARE_AUDIO_BOOT_TONE_AMP 12000
 #endif
 
-#ifndef MSXBARE_BOOT_QUIET
-#define MSXBARE_BOOT_QUIET 0
-#endif
-
 #ifndef MSXBARE_ENABLE_DEBUG_OVERLAY
-#define MSXBARE_ENABLE_DEBUG_OVERLAY 1
-#endif
-
-#ifndef MSXBARE_DEBUG_OVERLAY_BOOT_GUARD
-#define MSXBARE_DEBUG_OVERLAY_BOOT_GUARD 1
-#endif
-
-#ifndef MSXBARE_ENABLE_SETTINGS_SAVE_EXPERIMENTAL
-#define MSXBARE_ENABLE_SETTINGS_SAVE_EXPERIMENTAL 0
-#endif
-
-#ifndef MSXBARE_DEFER_USB_INIT_FRAMES
-#define MSXBARE_DEFER_USB_INIT_FRAMES 90u
-#endif
-
-#ifndef MSXBARE_DEFER_SETTINGS_LOAD_FRAMES
-#define MSXBARE_DEFER_SETTINGS_LOAD_FRAMES 0u
-#endif
-
-#ifndef MSXBARE_DEFER_INITRAMFS_FULL_MOUNT_FRAMES
-#define MSXBARE_DEFER_INITRAMFS_FULL_MOUNT_FRAMES 120u
+#define MSXBARE_ENABLE_DEBUG_OVERLAY 0
 #endif
 
 CComboKernel *CComboKernel::s_Instance = 0;
@@ -708,7 +713,7 @@ CComboKernel::CComboKernel(void)
 	m_UsbReady(FALSE),
 	m_JoyBridgeBits(0),
 	m_JoyMappedBits(ComboKeyboardJoyMask()),
-	m_DebugOverlayEnabled((MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_DEBUG_OVERLAY_DEFAULT) ? TRUE : FALSE),
+	m_DebugOverlayEnabled(MSXBARE_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE),
 	m_DebugOverlayUnlocked(MSXBARE_ENABLE_DEBUG_OVERLAY ? FALSE : TRUE),
 	m_EmulationPaused(FALSE),
 	m_LastF12Pressed(FALSE),
@@ -726,7 +731,7 @@ CComboKernel::CComboKernel(void)
 	m_PauseNeedsFullViewportClear(FALSE),
 	m_ForceViewportFullClearNextFrame(FALSE),
 	m_PauseRenderSuppressed(FALSE),
-	m_FmsxEnabled(MSXBARE_ENABLE_FMSX ? TRUE : FALSE),
+	m_FmsxEnabled(TRUE),
 	m_FmsxReady(FALSE),
 	m_FmsxFrames(0),
 	m_FmsxLastError(0),
@@ -760,12 +765,15 @@ CComboKernel::CComboKernel(void)
 	m_ScanlineMode(kScanlineModeOff),
 	m_RefreshRateHz(60u),
 	m_DiskRomEnabled(TRUE),
-	m_BootMode((MSXBARE_FMSX_BOOT_PROFILE > 2) ? kBootModeNorm : (unsigned) MSXBARE_FMSX_BOOT_PROFILE),
+	m_BootMode(kBootModeNorm),
 	m_MachineProfile(kMachineProfileMsx1),
+	m_RamMapperKb(kRamMapperKbDefault),
+	m_MegaRamKb(kMegaRamKbDefault),
 	m_Z80TurboMode(kZ80TurboModeDes),
 	m_RenshaMode(0u),
 	m_RenshaPhase(0u),
 	m_RenshaFireAHeld(FALSE),
+	m_RenshaSpaceHeld(FALSE),
 	m_LastKeyboardModifiers(0u),
 	m_LastKeyboardRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
 	m_FmMusicEnabled(TRUE),
@@ -774,7 +782,7 @@ CComboKernel::CComboKernel(void)
 	m_FrameIntervalUs(FrameIntervalFromRefreshHz(60u)),
 	m_FramePacingResetPending(FALSE),
 	m_FmsxFallbackPattern(FALSE),
-	m_TestToneEnabled(MSXBARE_TEST_TONE_DEFAULT ? TRUE : FALSE),
+	m_TestToneEnabled(FALSE),
 	m_MmuEnabled(FALSE),
 	m_DCacheEnabled(FALSE),
 	m_ICacheEnabled(FALSE),
@@ -857,7 +865,7 @@ boolean CComboKernel::Initialize(void)
 
 TComboShutdownMode CComboKernel::Run(void)
 {
-	if (!MSXBARE_BOOT_QUIET)
+	if (!kBootQuiet)
 	{
 		BootTrace("R0");
 	}
@@ -873,7 +881,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	CString mem_line;
 	mem_line.Format("MMU/Caches M:%u C:%u I:%u", m_MmuEnabled ? 1u : 0u, m_DCacheEnabled ? 1u : 0u, m_ICacheEnabled ? 1u : 0u);
 	m_Logger.Write(FromKernel, LogNotice, mem_line);
-	const boolean fmsx_audio_enabled = (m_FmsxEnabled && (MSXBARE_FMSX_AUDIO ? TRUE : FALSE));
+	const boolean fmsx_audio_enabled = m_FmsxEnabled ? TRUE : FALSE;
 	if (!(m_TestToneEnabled || fmsx_audio_enabled))
 	{
 		m_Logger.Write(FromKernel, LogNotice, "Audio OFF");
@@ -883,7 +891,6 @@ TComboShutdownMode CComboKernel::Run(void)
 		m_Logger.Write(FromKernel, LogNotice, "Audio init deferred until first fMSX frames");
 	}
 
-	boolean front_load_deferred_boot_work = FALSE;
 	if (m_SettingsStorageReady)
 	{
 		/* Must be applied before fMSX init so boot/runtime settings take effect on first boot. */
@@ -897,51 +904,43 @@ TComboShutdownMode CComboKernel::Run(void)
 			m_Logger.Write(FromKernel, LogWarning, "Settings mount failed on SD:; persistence disabled");
 		}
 	}
-	front_load_deferred_boot_work = ShouldFrontLoadDeferredBootWork(m_BootMode, m_MachineProfile);
-	if (front_load_deferred_boot_work)
-	{
-		m_Logger.Write(FromKernel, LogNotice, "FAST MSX2/MSX2+: preloading deferred boot work at frame 0");
-	}
-	else
-	{
-		m_Logger.Write(FromKernel, LogNotice, "USB init deferred for faster first frame");
-	}
 #if MSXBARE_ENABLE_FMSX
 	if (m_FmsxEnabled)
 	{
-		if (!MSXBARE_BOOT_QUIET)
+		if (!kBootQuiet)
 		{
 			BootTrace("R1");
 		}
 		unsigned mounted_files = 0;
-			#if MSXBARE_INITRAMFS_MOUNT
-			mounted_files = fmsx_initramfs_mount_boot_minimal();
-			m_InitramfsDeferredMountPending = TRUE;
-			if (front_load_deferred_boot_work && m_InitramfsDeferredMountPending)
-			{
-				const unsigned later_files = fmsx_initramfs_mount_remaining();
-				m_InitramfsDeferredMountPending = FALSE;
-				mounted_files += later_files;
-				CString early_mount_line;
-				early_mount_line.Format("initramfs frame0 mount: +%u", later_files);
-				m_Logger.Write(FromKernel, LogNotice, early_mount_line);
-			}
-			#else
-			m_Logger.Write(FromKernel, LogNotice, "initramfs mount: disabled by build flag");
-			#endif
-			if (!MSXBARE_BOOT_QUIET)
-			{
-				BootTrace("R2");
-			}
+		mounted_files = fmsx_initramfs_mount_boot_minimal();
+		{
+			const unsigned later_files = fmsx_initramfs_mount_remaining();
+			mounted_files += later_files;
+			m_InitramfsDeferredMountPending = FALSE;
+		}
+		if (!kBootQuiet)
+		{
+			BootTrace("R2");
+		}
 		m_InitramfsFiles = mounted_files;
 		CString initramfs_line;
 		initramfs_line.Format("initramfs files: %u", mounted_files);
 		m_Logger.Write(FromKernel, LogNotice, initramfs_line);
 
-		if (!MSXBARE_BOOT_QUIET)
+		if (!kBootQuiet)
 		{
 			BootTrace("R3");
 		}
+		fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
+		fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
+		fmsx_runtime_set_boot_mode(m_BootMode);
+		fmsx_runtime_set_model_profile(m_MachineProfile);
+		fmsx_runtime_set_rammapper_kb(m_RamMapperKb);
+		fmsx_runtime_set_megaram_kb(m_MegaRamKb);
+		fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
+		fmsx_runtime_set_fm_music_enabled(m_FmMusicEnabled);
+		fmsx_runtime_set_fm_layer_gain_pct(m_FmLayerGainPct);
+		fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
 		m_FmsxReady = fmsx_runtime_init();
 		{
 			const u64 boot_elapsed_us = CTimer::GetClockTicks64() - m_BootStartUs;
@@ -950,7 +949,7 @@ TComboShutdownMode CComboKernel::Run(void)
 		if (!m_FmsxReady)
 		{
 			m_FmsxLastError = 1;
-			if (!MSXBARE_BOOT_QUIET)
+			if (!kBootQuiet)
 			{
 				BootTrace("R4E");
 			}
@@ -958,7 +957,7 @@ TComboShutdownMode CComboKernel::Run(void)
 		}
 		else
 		{
-			if (!MSXBARE_BOOT_QUIET)
+			if (!kBootQuiet)
 			{
 				BootTrace("R4O");
 			}
@@ -992,7 +991,7 @@ TComboShutdownMode CComboKernel::Run(void)
 #endif
 	if (MSXBARE_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
 	{
-		if (!MSXBARE_BOOT_QUIET)
+		if (!kBootQuiet)
 		{
 			WriteScreenText("\x1b[2J\x1b[H\x1b[?25l");
 		}
@@ -1017,6 +1016,8 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
 	m_PauseMenu.SetBootMode(m_BootMode);
 	m_PauseMenu.SetMachineProfile(m_MachineProfile);
+	m_PauseMenu.SetRamMapperKb(m_RamMapperKb);
+	m_PauseMenu.SetMegaRamKb(m_MegaRamKb);
 	m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
 	m_PauseMenu.SetRenshaMode(m_RenshaMode);
 	m_PauseMenu.SetFmMusicEnabled(m_FmMusicEnabled);
@@ -1034,17 +1035,18 @@ TComboShutdownMode CComboKernel::Run(void)
 	}
 	#if MSXBARE_ENABLE_FMSX
 		ApplyRuntimeSettingsToFmsx();
-		if (front_load_deferred_boot_work && !m_UsbReady)
+		if (!m_UsbReady)
 		{
 			if (m_USBHCI.Initialize())
 			{
 				m_UsbReady = TRUE;
-				m_Logger.Write(FromKernel, LogNotice, "USB host ready (frame0 preload)");
+				m_Logger.Write(FromKernel, LogNotice, "USB host ready");
 				m_Logger.Write(FromKernel, LogNotice, "Attach USB keyboard and type");
 			}
 			else
 			{
-				m_Logger.Write(FromKernel, LogWarning, "USB host frame0 preload failed; retry deferred");
+				m_Logger.Write(FromKernel, LogWarning, "USB host init failed; retrying");
+				m_UsbInitRetryTick = 300u;
 			}
 		}
 		/* Force first visible frame to use current viewport policy (avoid transient wide boot frame). */
@@ -1070,64 +1072,9 @@ TComboShutdownMode CComboKernel::Run(void)
 				InitializeAudioOutput(fmsx_audio_enabled);
 			}
 		}
-		if (m_SettingsLoadPending)
-		{
-			boolean should_load_settings = FALSE;
-			if (m_FmsxEnabled && m_FmsxReady)
-			{
-				should_load_settings = (m_FmsxFrames >= MSXBARE_DEFER_SETTINGS_LOAD_FRAMES) ? TRUE : FALSE;
-			}
-			else if (tick >= MSXBARE_DEFER_SETTINGS_LOAD_FRAMES)
-			{
-				should_load_settings = TRUE;
-			}
-			if (should_load_settings)
-			{
-				m_SettingsLoadPending = FALSE;
-				if (f_mount(&m_SettingsFileSystem, kSettingsDrive, 1) == FR_OK)
-				{
-					LoadSettingsFromStorage();
-				}
-				else
-				{
-					m_SettingsStorageReady = FALSE;
-					m_Logger.Write(FromKernel, LogWarning, "Settings mount failed on SD:; persistence disabled");
-				}
-			}
-		}
-		if (m_InitramfsDeferredMountPending)
-		{
-			boolean should_full_mount = FALSE;
-			if (m_FmsxEnabled && m_FmsxReady)
-			{
-				should_full_mount = (m_FmsxFrames >= MSXBARE_DEFER_INITRAMFS_FULL_MOUNT_FRAMES) ? TRUE : FALSE;
-			}
-			else if (tick >= MSXBARE_DEFER_INITRAMFS_FULL_MOUNT_FRAMES)
-			{
-				should_full_mount = TRUE;
-			}
-			if (should_full_mount)
-			{
-				const unsigned later_files = fmsx_initramfs_mount_remaining();
-				m_InitramfsDeferredMountPending = FALSE;
-				m_InitramfsFiles += later_files;
-				CString initramfs_line;
-				initramfs_line.Format("initramfs deferred files: +%u", later_files);
-				m_Logger.Write(FromKernel, LogNotice, initramfs_line);
-			}
-		}
 		if (!m_UsbReady)
 		{
-			boolean should_init_usb = FALSE;
-			if (m_FmsxEnabled && m_FmsxReady)
-			{
-				should_init_usb = (m_FmsxFrames >= MSXBARE_DEFER_USB_INIT_FRAMES) ? TRUE : FALSE;
-			}
-			else if (tick >= MSXBARE_DEFER_USB_INIT_FRAMES)
-			{
-				should_init_usb = TRUE;
-			}
-			if (should_init_usb && tick >= m_UsbInitRetryTick)
+			if (tick >= m_UsbInitRetryTick)
 			{
 				if (m_USBHCI.Initialize())
 				{
@@ -1260,7 +1207,8 @@ TComboShutdownMode CComboKernel::Run(void)
 				u8 joy_bits_runtime = m_JoyBridgeBits;
 				const unsigned rate_num = (m_RenshaMode > 3u) ? 0u : m_RenshaMode;
 				const boolean firea_pressed = (joy_bits_runtime & kJoyBridgeFireA) ? TRUE : FALSE;
-				if (rate_num > 0u && firea_pressed)
+				const boolean rensha_pressed = m_RenshaSpaceHeld ? TRUE : FALSE;
+				if (rate_num > 0u && rensha_pressed && firea_pressed)
 				{
 					if (!m_RenshaFireAHeld)
 					{
@@ -1821,11 +1769,13 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		m_BootToFmsxMs > 9999u ? 9999u : m_BootToFmsxMs);
 	WriteScreenText(line);
 
-	line.Format("\x1b[97m\x1b[49m\x1b[8;1HSD2 CA:%u CB:%u BM:%u MP:%u                    ",
+	line.Format("\x1b[97m\x1b[49m\x1b[8;1HSD2 CA:%u CB:%u BM:%u MP:%u RM:%4u MR:%4u      ",
 		(fmsx_runtime_get_cartridge_name(0u) != 0) ? 1u : 0u,
 		(fmsx_runtime_get_cartridge_name(1u) != 0) ? 1u : 0u,
 		active_boot_mode > 9u ? 9u : active_boot_mode,
-		active_model_profile > 9u ? 9u : active_model_profile);
+		active_model_profile > 9u ? 9u : active_model_profile,
+		fmsx_runtime_get_rammapper_kb(),
+		fmsx_runtime_get_megaram_kb());
 	WriteScreenText(line);
 
 	m_FmLayerGainPct = fmsx_runtime_get_fm_layer_gain_pct();
@@ -2252,6 +2202,8 @@ void CComboKernel::ApplyRuntimeSettingsToFmsx(void)
 	fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 	fmsx_runtime_set_boot_mode(m_BootMode);
 	fmsx_runtime_set_model_profile(m_MachineProfile);
+	fmsx_runtime_set_rammapper_kb(m_RamMapperKb);
+	fmsx_runtime_set_megaram_kb(m_MegaRamKb);
 	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
 	fmsx_runtime_set_fm_music_enabled(m_FmMusicEnabled);
 	fmsx_runtime_set_fm_layer_gain_pct(m_FmLayerGainPct);
@@ -2436,6 +2388,14 @@ void CComboKernel::LoadSettingsFromStorage(void)
 				{
 					m_MachineProfile = (value > 2u) ? kMachineProfileMsx1 : value;
 				}
+				else if (SettingsKeyEquals(line, key_len, "rammapper_kb"))
+				{
+					m_RamMapperKb = ClampRamMapperKb(value);
+				}
+				else if (SettingsKeyEquals(line, key_len, "megaram_kb"))
+				{
+					m_MegaRamKb = ClampMegaRamKb(value);
+				}
 				else if (SettingsKeyEquals(line, key_len, "z80_turbo"))
 				{
 					m_Z80TurboMode = value > 2u ? 0u : value;
@@ -2507,6 +2467,8 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
 	m_PauseMenu.SetBootMode(m_BootMode);
 	m_PauseMenu.SetMachineProfile(m_MachineProfile);
+	m_PauseMenu.SetRamMapperKb(m_RamMapperKb);
+	m_PauseMenu.SetMegaRamKb(m_MegaRamKb);
 	m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
 	m_PauseMenu.SetRenshaMode(m_RenshaMode);
 	m_PauseMenu.SetFmMusicEnabled(m_FmMusicEnabled);
@@ -2528,6 +2490,8 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 	fmsx_runtime_set_boot_mode(m_BootMode);
 	fmsx_runtime_set_model_profile(m_MachineProfile);
+	fmsx_runtime_set_rammapper_kb(m_RamMapperKb);
+	fmsx_runtime_set_megaram_kb(m_MegaRamKb);
 	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
 	fmsx_runtime_set_fm_music_enabled(m_FmMusicEnabled);
 	fmsx_runtime_set_fm_layer_gain_pct(m_FmLayerGainPct);
@@ -2546,11 +2510,6 @@ void CComboKernel::LoadSettingsFromStorage(void)
 void CComboKernel::SaveSettingsToStorage(void)
 {
 	UpdateSettingsSaveTelemetry(1u, 0u, 0u); /* begin */
-#if !MSXBARE_ENABLE_SETTINGS_SAVE_EXPERIMENTAL
-	UpdateSettingsSaveTelemetry(95u, 0u, 0u); /* save disabled fail-safe */
-	m_Logger.Write(FromKernel, LogWarning, "Settings save disabled (experimental backend OFF)");
-	return;
-#endif
 	if (!m_SettingsStorageReady)
 	{
 		UpdateSettingsSaveTelemetry(90u, 0u, 0u); /* storage unavailable */
@@ -2602,6 +2561,8 @@ void CComboKernel::SaveSettingsToStorage(void)
 	APPEND_LINE_FMT("disk_rom=%u\n", m_DiskRomEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("boot_mode=%u\n", m_BootMode);
 	APPEND_LINE_FMT("machine=%u\n", m_MachineProfile);
+	APPEND_LINE_FMT("rammapper_kb=%u\n", m_RamMapperKb);
+	APPEND_LINE_FMT("megaram_kb=%u\n", m_MegaRamKb);
 	APPEND_LINE_FMT("z80_turbo=%u\n", m_Z80TurboMode);
 	APPEND_LINE_FMT("rensha=%u\n", m_RenshaMode);
 	APPEND_LINE_FMT("fm_music=%u\n", m_FmMusicEnabled ? 1u : 0u);
@@ -3565,7 +3526,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		m_PauseMenu.SetMachineProfile(m_MachineProfile);
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX
-		fmsx_runtime_set_model_profile(m_MachineProfile);
+		ApplyRuntimeSettingsToFmsx();
 	#endif
 		{
 			CString line;
@@ -3579,13 +3540,55 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		m_PauseMenu.SetMachineProfile(m_MachineProfile);
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX
-		fmsx_runtime_set_model_profile(m_MachineProfile);
+		ApplyRuntimeSettingsToFmsx();
 	#endif
 		{
 			CString line;
 			line.Format("Settings: Machine %s", MachineLabelFromProfile(m_MachineProfile));
 			m_Logger.Write(FromKernel, LogNotice, line);
 		}
+		break;
+
+	case ComboMenuActionCycleRamMapper:
+		if (IsMsx2FamilyProfile(m_MachineProfile))
+		{
+			m_RamMapperKb = CycleRamMapperKb(m_RamMapperKb, FALSE);
+			m_PauseMenu.SetRamMapperKb(m_RamMapperKb);
+			RefreshSettingsUiAfterAction();
+		#if MSXBARE_ENABLE_FMSX
+			fmsx_runtime_set_rammapper_kb(m_RamMapperKb);
+		#endif
+		}
+		break;
+
+	case ComboMenuActionCycleRamMapperPrev:
+		if (IsMsx2FamilyProfile(m_MachineProfile))
+		{
+			m_RamMapperKb = CycleRamMapperKb(m_RamMapperKb, TRUE);
+			m_PauseMenu.SetRamMapperKb(m_RamMapperKb);
+			RefreshSettingsUiAfterAction();
+		#if MSXBARE_ENABLE_FMSX
+			fmsx_runtime_set_rammapper_kb(m_RamMapperKb);
+		#endif
+		}
+		break;
+
+	case ComboMenuActionCycleMegaRam:
+		m_MegaRamKb = CycleMegaRamKb(m_MegaRamKb, FALSE);
+		m_PauseMenu.SetMegaRamKb(m_MegaRamKb);
+		RefreshSettingsUiAfterAction();
+	#if MSXBARE_ENABLE_FMSX
+		fmsx_runtime_set_megaram_kb(m_MegaRamKb);
+	#endif
+		break;
+
+	case ComboMenuActionCycleMegaRamPrev:
+		m_MegaRamKb = CycleMegaRamKb(m_MegaRamKb, TRUE);
+		m_PauseMenu.SetMegaRamKb(m_MegaRamKb);
+		RefreshSettingsUiAfterAction();
+	#if MSXBARE_ENABLE_FMSX
+		fmsx_runtime_set_megaram_kb(m_MegaRamKb);
+	#endif
 		break;
 
 	case ComboMenuActionCycleZ80Turbo:
@@ -3886,7 +3889,7 @@ void CComboKernel::ProcessPendingViewportScreenshot(void)
 
 void CComboKernel::BootTrace(const char *tag)
 {
-	if (MSXBARE_BOOT_QUIET)
+	if (kBootQuiet)
 	{
 		return;
 	}
@@ -3919,8 +3922,13 @@ void CComboKernel::PushKeyboardStateToRuntime(boolean rensha_fire_on)
 		modifiers &= (u8) ~0x22u; /* clear left/right SHIFT modifier */
 		for (unsigned i = 0u; i < 6u; ++i)
 		{
-			if (raw_keys[i] == 0x2Cu /* SPACE */
-			 || raw_keys[i] == 0x1Du /* Z */
+			/* Rensha must gate SPACE only (auto-fire pulse), without affecting SHIFT/Z/X semantics. */
+			if (raw_keys[i] == 0x2Cu /* SPACE */ && !rensha_fire_on)
+			{
+				raw_keys[i] = 0u;
+				continue;
+			}
+			if (raw_keys[i] == 0x1Du /* Z */
 			 || raw_keys[i] == 0x1Bu /* X */)
 			{
 				raw_keys[i] = 0u;
@@ -3936,6 +3944,19 @@ void CComboKernel::PushKeyboardStateToRuntime(boolean rensha_fire_on)
 
 void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned char raw_keys[6])
 {
+	m_RenshaSpaceHeld = FALSE;
+	if (raw_keys != 0)
+	{
+		for (unsigned i = 0u; i < 6u; ++i)
+		{
+			if (raw_keys[i] == 0x2Cu) /* SPACE */
+			{
+				m_RenshaSpaceHeld = TRUE;
+				break;
+			}
+		}
+	}
+
 	const u64 now_us = CTimer::GetClockTicks64();
 	boolean same_report = (m_LastKeyboardModifiers == modifiers) ? TRUE : FALSE;
 	for (unsigned i = 0u; same_report && i < 6u; ++i)

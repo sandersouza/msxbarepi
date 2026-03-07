@@ -6,38 +6,6 @@
 #include "fmsx_virtual_fs.h"
 #include "fmsx_initramfs.h"
 
-#ifndef MSXBARE_FMSX_AUDIO
-#define MSXBARE_FMSX_AUDIO 1
-#endif
-
-#ifndef MSXBARE_FMSX_MSX1_TEXT80
-#define MSXBARE_FMSX_MSX1_TEXT80 1
-#endif
-
-#ifndef MSXBARE_FMSX_CART_GUESS
-#define MSXBARE_FMSX_CART_GUESS 1
-#endif
-
-#ifndef MSXBARE_FMSX_CARTA_MAPPER
-#define MSXBARE_FMSX_CARTA_MAPPER 255
-#endif
-
-#ifndef MSXBARE_FMSX_CARTB_MAPPER
-#define MSXBARE_FMSX_CARTB_MAPPER 255
-#endif
-
-#ifndef MSXBARE_FMSX_RAMMAPPER_KB
-#define MSXBARE_FMSX_RAMMAPPER_KB 256
-#endif
-
-#ifndef MSXBARE_FMSX_MEGARAM_ENABLED
-#define MSXBARE_FMSX_MEGARAM_ENABLED 1
-#endif
-
-#ifndef MSXBARE_FMSX_BOOT_PROFILE
-#define MSXBARE_FMSX_BOOT_PROFILE 0
-#endif
-
 #ifndef MSXBARE_FMSX_FAST_CUTOFF_FRAMES_MSX1
 #define MSXBARE_FMSX_FAST_CUTOFF_FRAMES_MSX1 154u
 #endif
@@ -74,18 +42,6 @@
 #define MSXBARE_FMSX_GAME_VIDEO_SKIP_FRAMES_MSX2P 0u
 #endif
 
-#if (MSXBARE_FMSX_RAMMAPPER_KB == 64)
-#define MSXBARE_FMSX_RAMMAPPER_PAGES 4
-#elif (MSXBARE_FMSX_RAMMAPPER_KB == 256)
-#define MSXBARE_FMSX_RAMMAPPER_PAGES 16
-#elif (MSXBARE_FMSX_RAMMAPPER_KB == 512)
-#define MSXBARE_FMSX_RAMMAPPER_PAGES 32
-#elif (MSXBARE_FMSX_RAMMAPPER_KB == 1024)
-#define MSXBARE_FMSX_RAMMAPPER_PAGES 64
-#else
-#error "MSXBARE_FMSX_RAMMAPPER_KB must be 64, 256, 512, or 1024"
-#endif
-
 extern Z80 CPU;
 extern int ScanLine;
 extern uint8_t UPeriod;
@@ -120,10 +76,12 @@ static boolean g_boot_forced_turbo = FALSE;
 static unsigned g_boot_video_gate_frames_remaining = 0u;
 static unsigned g_refresh_hz = 60u;
 static boolean g_disk_rom_enabled = TRUE;
-static unsigned g_boot_mode = (MSXBARE_FMSX_BOOT_PROFILE > 2) ? 0u : (unsigned) MSXBARE_FMSX_BOOT_PROFILE;
-static unsigned g_active_boot_mode = (MSXBARE_FMSX_BOOT_PROFILE > 2) ? 0u : (unsigned) MSXBARE_FMSX_BOOT_PROFILE;
+static unsigned g_boot_mode = 0u;
+static unsigned g_active_boot_mode = 0u;
 static unsigned g_model_profile = FMSX_MODEL_PROFILE_MSX1;
 static unsigned g_active_model_profile = FMSX_MODEL_PROFILE_MSX1;
+static unsigned g_rammapper_kb = 256u;
+unsigned g_fmsx_megaram_kb = 0u;
 static boolean g_use_embedded_bios = FALSE;
 static unsigned g_z80_turbo_mode = 0u;
 static boolean g_fm_music_enabled = TRUE;
@@ -133,6 +91,44 @@ static boolean g_audio_layer2_muted = FALSE; /* FM */
 static boolean g_audio_layer3_muted = FALSE; /* SCC */
 static unsigned g_fm_layer_gain_pct = 100u;
 int g_fmsx_fmpac_enabled = 1;
+
+static unsigned fmsx_runtime_clamp_rammapper_kb(unsigned kb)
+{
+    switch (kb)
+    {
+    case 512u:
+    case 1024u:
+        return kb;
+    case 256u:
+    default:
+        return 256u;
+    }
+}
+
+static unsigned fmsx_runtime_rammapper_pages(void)
+{
+    switch (g_rammapper_kb)
+    {
+    case 512u:  return 32u;
+    case 1024u: return 64u;
+    case 256u:
+    default:    return 16u;
+    }
+}
+
+static unsigned fmsx_runtime_clamp_megaram_kb(unsigned kb)
+{
+    switch (kb)
+    {
+    case 0u:
+    case 256u:
+    case 512u:
+    case 1024u:
+        return kb;
+    default:
+        return 0u;
+    }
+}
 
 static boolean fmsx_runtime_find_slot_map(unsigned slot, unsigned *out_ps, unsigned *out_ss)
 {
@@ -305,7 +301,6 @@ static void fmsx_runtime_apply_game_boot_override(void)
 
 static void fmsx_runtime_apply_audio_channels(void)
 {
-#if MSXBARE_FMSX_AUDIO
     unsigned mask = (1u << SND_CHANNELS) - 1u;
     const unsigned psg_mask = ((1u << AY8910_CHANNELS) - 1u) << FIRST_AY8910_CHANNEL;
     const unsigned fm_mask = ((1u << YM2413_CHANNELS) - 1u) << FIRST_YM2413_CHANNEL;
@@ -335,7 +330,6 @@ static void fmsx_runtime_apply_audio_channels(void)
         mask |= psg_mask;
     }
     SetChannels(150, mask);
-#endif
 }
 
 static boolean fmsx_runtime_start(boolean boot_basic)
@@ -371,25 +365,11 @@ static boolean fmsx_runtime_start(boolean boot_basic)
          */
         Mode |= MSX_PATCHBDOS;
     }
-#if MSXBARE_FMSX_MSX1_TEXT80
-    startup_mode |= MSX_FIXEDFONT;
-#endif
-#if !MSXBARE_FMSX_MEGARAM_ENABLED
-    startup_mode |= MSX_NO_MEGARAM;
-#endif
-#if MSXBARE_FMSX_CART_GUESS
+    if (g_fmsx_megaram_kb == 0u)
+    {
+        startup_mode |= MSX_NO_MEGARAM;
+    }
     startup_mode |= MSX_GUESSA | MSX_GUESSB;
-#endif
-#if (MSXBARE_FMSX_CARTA_MAPPER != 255)
-    startup_mode &= ~MSX_MAPPERA;
-    startup_mode |= (MSXBARE_FMSX_CARTA_MAPPER & 0x0F) << 8;
-    startup_mode &= ~MSX_GUESSA;
-#endif
-#if (MSXBARE_FMSX_CARTB_MAPPER != 255)
-    startup_mode &= ~MSX_MAPPERB;
-    startup_mode |= (MSXBARE_FMSX_CARTB_MAPPER & 0x0F) << 12;
-    startup_mode &= ~MSX_GUESSB;
-#endif
     /* Keep internal fMSX autofire disabled. Project handles input explicitly. */
     startup_mode &= ~(MSX_AUTOSPACE | MSX_AUTOFIREA | MSX_AUTOFIREB);
 
@@ -408,7 +388,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
 
     g_use_embedded_bios = FALSE;
     fmsx_runtime_set_load_diag(2101u); /* before StartMSX */
-    boolean started = StartMSX(startup_mode, MSXBARE_FMSX_RAMMAPPER_PAGES, 2) ? TRUE : FALSE;
+    boolean started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages(), 2) ? TRUE : FALSE;
     fmsx_runtime_set_load_diag(started ? 2102u : 9102u); /* after StartMSX */
     g_use_embedded_bios = FALSE;
 
@@ -421,7 +401,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
         TrashMSX();
         g_use_embedded_bios = TRUE;
         fmsx_runtime_set_load_diag(2107u); /* MSX1 GAME retry with forced embedded BIOS */
-        started = StartMSX(startup_mode, MSXBARE_FMSX_RAMMAPPER_PAGES, 2) ? TRUE : FALSE;
+        started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages(), 2) ? TRUE : FALSE;
         fmsx_runtime_set_load_diag(started ? 2108u : 9108u); /* forced BIOS retry result */
         g_use_embedded_bios = FALSE;
     }
@@ -438,7 +418,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
             TrashMSX();
             g_use_embedded_bios = FALSE;
             fmsx_runtime_set_load_diag(2105u); /* retry after full initramfs mount */
-            started = StartMSX(startup_mode, MSXBARE_FMSX_RAMMAPPER_PAGES, 2) ? TRUE : FALSE;
+            started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages(), 2) ? TRUE : FALSE;
             fmsx_runtime_set_load_diag(started ? 2106u : 9106u); /* retry result */
             g_use_embedded_bios = FALSE;
         }
@@ -455,7 +435,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
         startup_mode = fmsx_runtime_machine_mode_bits_for_profile(FMSX_MODEL_PROFILE_MSX1) | base_mode;
         g_use_embedded_bios = FALSE;
         fmsx_runtime_set_load_diag(2103u); /* fallback retry as MSX1 */
-        started = StartMSX(startup_mode, MSXBARE_FMSX_RAMMAPPER_PAGES, 2) ? TRUE : FALSE;
+        started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages(), 2) ? TRUE : FALSE;
         fmsx_runtime_set_load_diag(started ? 2104u : 9104u); /* fallback result */
         g_use_embedded_bios = FALSE;
         if (!started && game_mode)
@@ -466,7 +446,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
             TrashMSX();
             g_use_embedded_bios = TRUE;
             fmsx_runtime_set_load_diag(2109u); /* MSX2->MSX1 fallback retry forced embedded BIOS */
-            started = StartMSX(startup_mode, MSXBARE_FMSX_RAMMAPPER_PAGES, 2) ? TRUE : FALSE;
+            started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages(), 2) ? TRUE : FALSE;
             fmsx_runtime_set_load_diag(started ? 2110u : 9110u); /* forced BIOS fallback result */
             g_use_embedded_bios = FALSE;
         }
@@ -506,27 +486,13 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     }
     fmsx_runtime_apply_game_boot_override();
 
-#if MSXBARE_FMSX_AUDIO
     InitSound(kFmsxAudioRate);
     fmsx_runtime_apply_audio_channels();
     fmsx_local_ym2413_refresh(&OPLL);
-#endif
 
     g_fmsx_status.running = TRUE;
     return TRUE;
 }
-
-#if (MSXBARE_FMSX_BOOT_PROFILE < 0) || (MSXBARE_FMSX_BOOT_PROFILE > 2)
-#error "MSXBARE_FMSX_BOOT_PROFILE must be 0 (normal), 1 (fast), or 2 (game)"
-#endif
-
-#if (MSXBARE_FMSX_CARTA_MAPPER != 255) && ((MSXBARE_FMSX_CARTA_MAPPER < 0) || (MSXBARE_FMSX_CARTA_MAPPER > 8))
-#error "MSXBARE_FMSX_CARTA_MAPPER must be 0..8 or 255 (auto/default)"
-#endif
-
-#if (MSXBARE_FMSX_CARTB_MAPPER != 255) && ((MSXBARE_FMSX_CARTB_MAPPER < 0) || (MSXBARE_FMSX_CARTB_MAPPER > 8))
-#error "MSXBARE_FMSX_CARTB_MAPPER must be 0..8 or 255 (auto/default)"
-#endif
 
 boolean fmsx_runtime_init(void)
 {
@@ -686,12 +652,10 @@ boolean fmsx_runtime_step_frame(void)
         }
     }
 
-#if MSXBARE_FMSX_AUDIO
     if (g_boot_warmup_frames_remaining == 0u)
     {
         RenderAndPlayAudio(kFmsxAudioRate / fmsx_runtime_effective_refresh_hz());
     }
-#endif
     return TRUE;
 }
 
@@ -829,6 +793,26 @@ unsigned fmsx_runtime_get_model_profile(void)
 unsigned fmsx_runtime_get_active_model_profile(void)
 {
     return g_active_model_profile;
+}
+
+void fmsx_runtime_set_rammapper_kb(unsigned kb)
+{
+    g_rammapper_kb = fmsx_runtime_clamp_rammapper_kb(kb);
+}
+
+unsigned fmsx_runtime_get_rammapper_kb(void)
+{
+    return g_rammapper_kb;
+}
+
+void fmsx_runtime_set_megaram_kb(unsigned kb)
+{
+    g_fmsx_megaram_kb = fmsx_runtime_clamp_megaram_kb(kb);
+}
+
+unsigned fmsx_runtime_get_megaram_kb(void)
+{
+    return g_fmsx_megaram_kb;
 }
 
 boolean fmsx_runtime_use_embedded_bios(void)

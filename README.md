@@ -52,6 +52,7 @@ Atualmente o desenvolvimento é focado em macOS, com toolchain de compilação c
 - `docs/legal`: licenças e atribuições de código de terceiros
 
 ## Third-party
+
 A pasta `third_party/` inclui código de terceiros usado no projeto, organizado por componente e precisa ser populada manualmente ( ver third_party/README.md para detalhes ).
 
 - `third_party/fmsx/`: código do emulador fMSX (GPLv2)
@@ -70,114 +71,70 @@ Prefixos suportados por auto-detecção:
 make
 ```
 
-Artefatos em `build/`.
+Artefatos em `artifacts/`.
 
-Opcoes uteis de build (estado atual):
+Flags públicas de build (estado atual):
 
 - `DEBUG=0|1`: liga/desliga debug compilado no kernel.
 - `OWNER="<nome>"`: etiqueta de identificação em build debug e no nome do pacote.
-- `MSXBARE_ENABLE_DEBUG_OVERLAY=0|1`: controle explícito do overlay de debug.
-- `MSXBARE_*`: knobs de runtime do `src` (boot profile, áudio, initramfs, mappers etc.; ver seção de knobs abaixo).
+- `MSXBARE_SIZE_OPT=0|1`: otimização de tamanho (`-Os`, gc-sections).
+- `FIRMWARE_DIR=<dir>`: caminho do firmware RPi para `make package`/`make sdcard`.
+
+Flags de infraestrutura (uso avançado):
+
+- `CROSS=<prefixo>`: prefixo do toolchain (ex.: `aarch64-elf-`).
+- `CIRCLE_KERNEL_MAX_SIZE=<hex>`: limite do tamanho do kernel (default `0x400000`).
+- `BUILD_BID=<id>`: identificador textual da build.
+- `INITRAMFS_IN=<dir>` / `INITRAMFS_OUT=<path>`: entrada/saída do alvo `make initramfs`.
+- `MSXBARE_CARTA_ONLY=0|1`: compat legado de cartucho A only.
 
 Exemplos:
 
 ```bash
 make
 DEBUG=1 OWNER="BetaUser" make package
+DEBUG=1 OWNER="BetaUser" FIRMWARE_DIR=./rpi-firmware make package
 ```
 
 ## M2 fMSX: politica de BIOS/ROM/DSK (compliance)
 
-- Por padrao, o build M2 **nao** embute `msx.cpio` no kernel (`MSXBARE_EMBED_INITRAMFS=0`).
-- Assim, BIOS/ROM/DSK devem vir do `initramfs` externo no SD/DTB.
-- Fallback de BIOS embutida (somente BIOS) permanece disponivel para bootstrap e usa por default:
-  - `roms/cbios/cbios_main_msx1_br.rom`
-- Otimizacao de boot atual: o mount inicial do `initramfs` e minimo (BIOS + CARTx + DSKx) para reduzir tempo ate `fmsx_runtime_init()`; o restante dos arquivos e montado de forma adiada em runtime.
+- O `msx.cpio` no SD e obrigatorio no fluxo do projeto (`initramfs` externo).
+- A BIOS dentro do `msx.cpio` e opcional: se nao existir, o kernel faz fallback para C-BIOS estatica.
+- O build nao embute `msx.cpio` no kernel (fixo em compile-time).
+- A BIOS estatica de fallback e fixa e vem de `roms/cbios` (atualmente `cbios_main_msx1.rom`).
+- O boot sempre realiza carga completa (sem startup minimo/deferred por flag de build).
 
 Knobs de build relevantes no target `default`:
 
-- `MSXBARE_EMBED_INITRAMFS=0|1`:
-  - `0` (default): nao embute `msx.cpio` no kernel
-  - `1`: embute `sdcard/msx.cpio` no kernel (uso de diagnostico)
-- `MSXBARE_EMBEDDED_BIOS_PATH=<caminho>`:
-  - caminho da BIOS embutida de fallback compilada estaticamente
-  - default: `../roms/cbios/cbios_main_msx1_br.rom` (relativo a `src/`)
-- `MSXBARE_FMSX_MSX1_TEXT80=0|1`:
-  - `1` (default): habilita no startup MSX1 a opcao de fonte fixa usada pelo caminho de texto de 80 colunas no core
-  - `0`: mantem startup MSX1 sem essa opcao
-- `MSXBARE_FMSX_RAMMAPPER_KB=256|512|1024`:
-  - define o tamanho do RAM mapper do MSX no boot (`StartMSX(..., RAMPages, ...)`)
-  - default: `256`
-- `MSXBARE_FMSX_MEGARAM_KB=256|512|1024`:
-  - define o tamanho do SCC-I MegaRAM no core local fMSX (paginas de 8kB)
-  - default: `256`
-- `MSXBARE_FMSX_CART_GUESS=0|1`:
-  - `1` (default): habilita auto-deteccao de mapper para cartuchos (`MSX_GUESSA|MSX_GUESSB`)
-  - recomendado para ROMs maiores (ex.: 256KB) que dependem de mapper
-- `MSXBARE_FMSX_CARTA_MAPPER=0..8|255`:
-  - `255` (default): sem override explicito (usa guess/default)
-  - `0..8`: forca mapper de `CARTA` no boot (0=GEN8, 1=GEN16, 2=KONAMI5, 3=KONAMI4, 4=ASCII8, 5=ASCII16, 6=GMASTER2, 7=FMPAC, 8=GUESS)
-  - ao forcar `CARTA_MAPPER`, o `GUESSA` e desabilitado para o slot A
+- `RAM Mapper` e `MegaRAM` agora sao configurados em runtime no menu `Settings` e persistidos em `MSXBARE.CFG` (`rammapper_kb` e `megaram_kb`).
+- `RAM Mapper` ativo somente para `MSX2/MSX2+`; em `MSX1` aparece como `N/A`.
+- `MegaRAM` possui opcoes `OFF/256/512/1024`.
 
 Nota importante:
-- `MSXBARE_FMSX_MEGARAM_KB` controla MegaRAM do SCC-I (RAM de cartucho), nao substitui configuracao de mapper da ROM.
-- Para ROM de 256KB em `CARTA.ROM`, priorize `MSXBARE_FMSX_CART_GUESS=1` (default) ou force mapper apropriado em `MSXBARE_FMSX_CARTA_MAPPER`.
+- `MegaRAM` controla RAM do SCC-I (cartucho), nao substitui a deteccao de mapper da ROM.
+- A deteccao de mapper de cartucho e fixa em auto-detect (`MSX_GUESSA|MSX_GUESSB`) no startup.
 
-Exemplo (mapper e MegaRAM em 1024KB):
-
-```bash
-make default MSXBARE_FMSX_RAMMAPPER_KB=1024 MSXBARE_FMSX_MEGARAM_KB=1024
-```
-
-Exemplo para cartucho 256KB em `CARTA.ROM` com mapper guess habilitado:
+Exemplo:
 
 ```bash
-make default MSXBARE_FMSX_RAMMAPPER_KB=256 MSXBARE_FMSX_MEGARAM_KB=256 MSXBARE_FMSX_CART_GUESS=1
+make default
 ```
 
-## Build configuravel (menu interativo)
+## Build configurável (menu interativo)
 
-Para evitar dezenas de flags manuais, use:
+Para selecionar rapidamente se o debug será compilado:
 
 ```bash
 bash ./scripts/build-config.sh
 ```
 
 O script permite selecionar:
-- RAM mapper: `OFF` / `256` / `512` / `1024`
-- MegaRAM: `OFF` / `256` / `512` / `1024`
-- Mapper de `CARTA` e `CARTB`: `AUTO` ou tipo explicito
-- Modo de boot: `NORMAL` / `FAST BOOT` / `GAME BOOT`
-- Debug overlay: `ON/OFF`
-
-Perfis de boot:
-- `NORMAL`: comportamento padrão.
-- `FAST BOOT`: acelera apenas o bootstrap inicial (frames acelerados + turbo Z80 MAX temporário), sem bypass de BIOS.
-- `GAME BOOT`: replica o `FAST BOOT`, porém força a C-BIOS estática para `MSX.ROM`.
-- Default atual do configurador: `FAST BOOT`.
+- Debug compilado: `ON/OFF`
 
 Seleção de boot:
 - Use um build normal (`make default`) e escolha o modo em `Settings -> Boot Mode [NORM/FAST/GAME]`.
 - Para persistir no próximo boot, use `Gravar` no menu settings.
-- Artefato gerado por esse target: `artifacts/kernel8-bootstrap.img`.
-
-Knobs adicionais relevantes:
-- `MSXBARE_FMSX_MEGARAM_ENABLED=0|1` (default `1`)
-- `MSXBARE_FMSX_CARTB_MAPPER=0..8|255` (default `255` = auto/default)
-- `MSXBARE_FMSX_BOOT_PROFILE=0|1|2` (default `1`; 0=`NORMAL`, 1=`FAST BOOT`, 2=`GAME BOOT`)
-- `MSXBARE_FMSX_FAST_CUTOFF_FRAMES_MSX1|MSX2|MSX2P` (default `150`)
-- `MSXBARE_ENABLE_DEBUG_OVERLAY=0|1` (default `1`, quando `0` remove toggle/render do DBG no build)
-- `MSXBARE_BOOT_QUIET=0|1` (default `0`)
-- `MSXBARE_DEFER_USB_INIT_FRAMES=<n>` (default `90`; adia init USB/HID para reduzir tempo até primeiro frame)
-- `MSXBARE_DEFER_SETTINGS_LOAD_FRAMES=<n>` (default `0`; manter `0` para aplicar `MSXBARE.CFG` ainda no boot inicial)
-- `MSXBARE_DEFER_INITRAMFS_FULL_MOUNT_FRAMES=<n>` (default `120`; adia mount completo do `msx.cpio`)
-- `MSXBARE_SIZE_OPT=0|1` (default `1`; usa `-Os` + `-ffunction-sections/-fdata-sections` + `--gc-sections`)
-- `MSXBARE_FMSX_BOOT_MINIMAL_STARTUP=0|1` (default `1`; reduz probes opcionais no `StartMSX` durante bootstrap)
-
-Matriz de perfil (padrao atual):
-- `NORMAL`: profile `0`, sem frame-skip de boot, sem turbo forçado e sem bypass.
-- `FAST BOOT`: profile `1`, burst interno `4x` por cutoff dependente do modelo (`MSX1/MSX2/MSX2+`), turbo Z80 MAX apenas durante warmup.
-- `GAME BOOT`: profile `2`, mesma estratégia temporal do `FAST`, com C-BIOS estática forçada.
+- Artefato gerado por esse target: `artifacts/kernel8-default.img`.
 
 ## Build default estavel (`make`)
 
@@ -188,18 +145,12 @@ make
 ```
 
 Perfil aplicado no default:
-- Debug OFF (`MSXBARE_ENABLE_DEBUG_OVERLAY=0`, `MSXBARE_DEBUG_OVERLAY_DEFAULT=0`)
-- Fast Boot (`MSXBARE_FMSX_BOOT_PROFILE=1`)
-- Mapper OFF (`MSXBARE_FMSX_RAMMAPPER_KB=64`)
-- MegaRAM OFF (`MSXBARE_FMSX_MEGARAM_ENABLED=0`)
-
-Observacao sobre `WIDTH 80` no BASIC:
-- No modo atual MSX1 (`MSX_MSX1`), `WIDTH 80` nao e suportado pelo hardware/BIOS do MSX1.
-- A flag `MSXBARE_FMSX_MSX1_TEXT80` controla fonte fixa de texto no fMSX, mas nao converte o sistema para modo MSX2 nem habilita 80 colunas reais no BASIC do MSX1.
+- Debug OFF (`DEBUG=0`)
+- Boot mode definido em runtime via `Settings -> Boot Mode`
 
 Atalhos de teclado no runtime:
 - `F12`: pausa/retoma emulacao
-- `F11`: toggle do overlay de debug (somente quando `MSXBARE_ENABLE_DEBUG_OVERLAY=1`)
+- `F11`: toggle do overlay de debug (somente quando compilado com `DEBUG=1`)
 - `Pause` (teclado PC): mapeado para `STOP` do MSX
 - No menu pausado: `Enter` abre/ativa item, `ESC` volta do submenu `Settings` para o menu principal, `F12` fecha o menu (retoma emulacao)
 
@@ -211,16 +162,9 @@ Submenu `Settings` (mock inicial):
   - `LCD`: scanline clássico (linhas ímpares de destino em 50%)
   - `CRT`: scanline por paridade da linha fonte MSX (`src_y`), com linhas ímpares em 85%
 - `Debugger ON/OFF`: habilita/desabilita o overlay visual de debug em runtime (quando o build suporta overlay)
-- `Audio Mute ON/OFF`: silencia/reativa a saida de audio HDMI em runtime
 - Controles de flags no Settings:
   - `Enter`: ciclo/incremento (ex.: `DES->LCD->CRT->DES`, `0->10->...->100->0`, `DES<->LIG`)
   - `Seta Esquerda/Direita`: decremento/incremento da flag (ou toggle para flags binárias)
-
-Exemplo (fallback para outra BIOS):
-
-```bash
-make default MSXBARE_EMBEDDED_BIOS_PATH=../roms/cbios/cbios_main_msx1_eu.rom
-```
 
 Esse preset gera `artifacts/kernel8-fastboot.img` e usa:
 
@@ -363,12 +307,18 @@ Saída padrão: `artifacts/sdcard-package-YYYYMMDDHHMM.zip`
 Flags rápidas de package/build:
 - `DEBUG=0|1`: ativa/desativa debug compilado no kernel (overlay/hotkeys de debug).
 - `OWNER="<nome>"`: injeta identificador no kernel debug e nomeia o ZIP como `artifacts/sdcard-package-<OWNER>.zip`.
-- Compatibilidade: `DEBUG_BUILD=1` também é aceito e mapeado para o mesmo comportamento de `DEBUG=1`.
+- `FIRMWARE_DIR=<dir>`: diretório de firmware usado no empacotamento.
+
+No `make package`, o conteúdo de `roms/games/` é sempre copiado para a raiz do pacote SD.
 
 Exemplo:
 
 ```bash
 DEBUG=1 OWNER="GustavoLeal" make package
+```
+
+```bash
+DEBUG=1 OWNER="GustavoLeal" FIRMWARE_DIR=./rpi-firmware make package
 ```
 
 Defaults do script:
