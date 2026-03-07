@@ -4,7 +4,7 @@
 Implementar overlay HDMI compacto de runtime para debug sem depender de UART, preservando o formato validado em hardware.
 
 ## Implementação
-- Alvo: `circle_combo/kernel.cpp`
+- Alvo: `src/kernel.cpp`
 - Formato de 4 linhas no canto superior esquerdo:
   - `TXTDBG OS:xx`
   - `CI R:? F:? K:? S:? G:? B:? P:?????`

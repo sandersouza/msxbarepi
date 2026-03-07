@@ -27,7 +27,7 @@ Os cenários ficam no `metrics.csv` gerado pelo script:
 ## Como executar
 1. Gerar uma sessão (compila e prepara estrutura de benchmark):
 ```bash
-./scripts/perf-regression.sh init --tag baseline --make-target default --make-flags "COMBO_FMSX_BOOT_PROFILE=1 COMBO_ENABLE_DEBUG_OVERLAY=1"
+./scripts/perf-regression.sh init --tag baseline --make-target default --make-flags "MSXBARE_FMSX_BOOT_PROFILE=1 MSXBARE_ENABLE_DEBUG_OVERLAY=1"
 ```
 
 2. Testar no hardware e preencher:

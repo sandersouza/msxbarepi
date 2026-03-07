@@ -43,7 +43,7 @@ Objetivo: painel de debug legível no framebuffer HDMI com MMU/cache ativo, sem 
 	- menu so e redesenhado quando houver mudanca de estado (mostrar/ocultar, selecao ou reposicionamento)
 	- evita repaint continuo do fundo da caixa em todos os ticks do loop
 - O desenho ocorre sem faixa opaca global; ao sair do `PAUSE`, o texto do menu deixa de ser redesenhado e o proximo frame do emulador recompõe a area.
-- Implementacao de referencia: `circle_combo/kernel.cpp` em `DrawMenuSkeleton()`.
+- Implementacao de referencia: `src/kernel.cpp` em `DrawMenuSkeleton()`.
 
 ## Formato compacto sugerido (cabendo em poucas linhas)
 - `TXTDBG OS:xx`

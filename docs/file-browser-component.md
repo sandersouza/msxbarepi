@@ -1,4 +1,4 @@
-# File Browser Component (`circle_combo/combo_file_browser.*`)
+# File Browser Component (`src/combo_file_browser.*`)
 
 ## Objetivo
 
@@ -24,6 +24,6 @@ Desacoplar a navegação de arquivos do `combo_menu` para permitir reuso em outr
 
 ## Integração atual
 
-- Consumidor atual: `CComboPauseMenu` em `circle_combo/combo_menu.cpp`.
+- Consumidor atual: `CComboPauseMenu` em `src/combo_menu.cpp`.
 - O menu apenas orquestra estado visual/ações (`LOAD ROM` e `LOAD DISK`).
 - A lógica de catálogo, navegação e seleção fica centralizada no componente.

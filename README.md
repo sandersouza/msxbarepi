@@ -2,12 +2,12 @@
 
 Projeto de emulação de MSX em baremetal no Raspberry Pi 3B.
 
-## Estado atual (M0 em andamento)
+## Estado atual
 
-- Baseline compilável implementado para bring-up: boot AArch64 + UART + framebuffer HDMI + stubs de áudio/input.
-- Comando principal atual: `make` (gera `build/kernel8.img`) e `make m0` (copia para `artifacts/kernel8-m0.img`).
-- Procedimento de validação manual em hardware: `docs/milestones/m0/hello-world.md`.
-- Este README contém histórico de fases anteriores; para execução imediata do estado vigente, siga a seção acima.
+- Fluxo principal de build usa `src` (kernel fMSX/Circle).
+- Comando principal atual: `make` (gera `artifacts/kernel8-default.img` e, em branch de issue, `artifacts/kernel8-issue<id>.img`).
+- Preparação de mídia: `make sdcard` (interativo) ou `make package` (pacote ZIP em dry-run offline por padrão).
+- Pastas `boot/` e `src/` são legado do bring-up inicial (M0), mantidas temporariamente para histórico.
 
 > demais versões do RPi podem ser suportadas, mas o foco inicial é o 3B (SoC BCM2837, AArch64, 1GB RAM).
 
@@ -39,11 +39,12 @@ Atualmente o desenvolvimento é focado em macOS, com toolchain de compilação c
 - Bootstrap inicial: `AArch64 Assembly` (vetor de entrada e setup mínimo da stack)
 - Scripts de build/deploy: `Bash` (simplicidade e portabilidade, sem dependências externas)
 
-## Estrutura do projeto ( scaffold )
+## Estrutura do projeto (scaffold)
 
 - `artifacts/`: binários e imagens gerados (ex.: `kernel8.img`, variantes otimizadas, builds de teste)
-- `boot/`: ponto de entrada em assembly
-- `src/`: código C do kernel
+- `src/`: runtime principal atual (kernel C++ + fMSX + menu + debug + storage)
+- `boot/`: legado do bootstrap inicial
+- `src/`: legado do kernel C inicial
 - `include/`: headers
 - `linker/`: script de link
 - `scripts/`: utilitários de build/deploy
@@ -71,32 +72,23 @@ make
 
 Artefatos em `build/`.
 
-Opcoes uteis de build (estado atual do bring-up do core):
+Opcoes uteis de build (estado atual):
 
-- `DEBUG=1`: reativa logs detalhados de diagnostico (`fMSX` + glue code)
-- `FMSX_FRONTEND_OPT=0|1|2`: nivel de otimizacao apenas do `src/fmsx/fmsx_frontend.c`
-- `FMSX_FRAME_SKIP=N`: apresenta 1 frame a cada `N+1` frames (apos boot)
-- `FMSX_BOOT_FRAME_SKIP=N`: frame skip temporario durante o boot
-- `FMSX_BOOT_FRAME_COUNT=N`: limite maximo de frames para `FMSX_BOOT_FRAME_SKIP` (tambem desliga ao fim da inicializacao do core)
-- `FB_WIDTH=N FB_HEIGHT=N`: resolucao do framebuffer solicitada ao firmware (impacta custo de blit no CPU)
-- `ENABLE_AUDIO=1`: reativa pipeline de audio em modo PSG-only (teste; backend atual via P2/PWM)
-- `AUDIO_BACKEND=p2|hdmi`: seleciona backend de saida de audio (`p2` padrao)
+- `DEBUG=0|1`: liga/desliga debug compilado no kernel.
+- `OWNER="<nome>"`: etiqueta de identificação em build debug e no nome do pacote.
+- `MSXBARE_ENABLE_DEBUG_OVERLAY=0|1`: controle explícito do overlay de debug.
+- `MSXBARE_*`: knobs de runtime do `src` (boot profile, áudio, initramfs, mappers etc.; ver seção de knobs abaixo).
 
-Perfil recomendado atual (estavel):
+Exemplos:
 
 ```bash
-make DEBUG=0 FMSX_FRONTEND_OPT=0
-```
-
-Preset recomendado atual (hardware real, boot mais rapido):
-
-```bash
-make fastboot
+make
+DEBUG=1 OWNER="BetaUser" make package
 ```
 
 ## M2 fMSX: politica de BIOS/ROM/DSK (compliance)
 
-- Por padrao, o build M2 **nao** embute `msx.cpio` no kernel (`COMBO_EMBED_INITRAMFS=0`).
+- Por padrao, o build M2 **nao** embute `msx.cpio` no kernel (`MSXBARE_EMBED_INITRAMFS=0`).
 - Assim, BIOS/ROM/DSK devem vir do `initramfs` externo no SD/DTB.
 - Fallback de BIOS embutida (somente BIOS) permanece disponivel para bootstrap e usa por default:
   - `roms/cbios/cbios_main_msx1_br.rom`
@@ -104,43 +96,43 @@ make fastboot
 
 Knobs de build relevantes no target `default`:
 
-- `COMBO_EMBED_INITRAMFS=0|1`:
+- `MSXBARE_EMBED_INITRAMFS=0|1`:
   - `0` (default): nao embute `msx.cpio` no kernel
   - `1`: embute `sdcard/msx.cpio` no kernel (uso de diagnostico)
-- `COMBO_EMBEDDED_BIOS_PATH=<caminho>`:
+- `MSXBARE_EMBEDDED_BIOS_PATH=<caminho>`:
   - caminho da BIOS embutida de fallback compilada estaticamente
-  - default: `../roms/cbios/cbios_main_msx1_br.rom` (relativo a `circle_combo/`)
-- `COMBO_FMSX_MSX1_TEXT80=0|1`:
+  - default: `../roms/cbios/cbios_main_msx1_br.rom` (relativo a `src/`)
+- `MSXBARE_FMSX_MSX1_TEXT80=0|1`:
   - `1` (default): habilita no startup MSX1 a opcao de fonte fixa usada pelo caminho de texto de 80 colunas no core
   - `0`: mantem startup MSX1 sem essa opcao
-- `COMBO_FMSX_RAMMAPPER_KB=256|512|1024`:
+- `MSXBARE_FMSX_RAMMAPPER_KB=256|512|1024`:
   - define o tamanho do RAM mapper do MSX no boot (`StartMSX(..., RAMPages, ...)`)
   - default: `256`
-- `COMBO_FMSX_MEGARAM_KB=256|512|1024`:
+- `MSXBARE_FMSX_MEGARAM_KB=256|512|1024`:
   - define o tamanho do SCC-I MegaRAM no core local fMSX (paginas de 8kB)
   - default: `256`
-- `COMBO_FMSX_CART_GUESS=0|1`:
+- `MSXBARE_FMSX_CART_GUESS=0|1`:
   - `1` (default): habilita auto-deteccao de mapper para cartuchos (`MSX_GUESSA|MSX_GUESSB`)
   - recomendado para ROMs maiores (ex.: 256KB) que dependem de mapper
-- `COMBO_FMSX_CARTA_MAPPER=0..8|255`:
+- `MSXBARE_FMSX_CARTA_MAPPER=0..8|255`:
   - `255` (default): sem override explicito (usa guess/default)
   - `0..8`: forca mapper de `CARTA` no boot (0=GEN8, 1=GEN16, 2=KONAMI5, 3=KONAMI4, 4=ASCII8, 5=ASCII16, 6=GMASTER2, 7=FMPAC, 8=GUESS)
   - ao forcar `CARTA_MAPPER`, o `GUESSA` e desabilitado para o slot A
 
 Nota importante:
-- `COMBO_FMSX_MEGARAM_KB` controla MegaRAM do SCC-I (RAM de cartucho), nao substitui configuracao de mapper da ROM.
-- Para ROM de 256KB em `CARTA.ROM`, priorize `COMBO_FMSX_CART_GUESS=1` (default) ou force mapper apropriado em `COMBO_FMSX_CARTA_MAPPER`.
+- `MSXBARE_FMSX_MEGARAM_KB` controla MegaRAM do SCC-I (RAM de cartucho), nao substitui configuracao de mapper da ROM.
+- Para ROM de 256KB em `CARTA.ROM`, priorize `MSXBARE_FMSX_CART_GUESS=1` (default) ou force mapper apropriado em `MSXBARE_FMSX_CARTA_MAPPER`.
 
 Exemplo (mapper e MegaRAM em 1024KB):
 
 ```bash
-make default COMBO_FMSX_RAMMAPPER_KB=1024 COMBO_FMSX_MEGARAM_KB=1024
+make default MSXBARE_FMSX_RAMMAPPER_KB=1024 MSXBARE_FMSX_MEGARAM_KB=1024
 ```
 
 Exemplo para cartucho 256KB em `CARTA.ROM` com mapper guess habilitado:
 
 ```bash
-make default COMBO_FMSX_RAMMAPPER_KB=256 COMBO_FMSX_MEGARAM_KB=256 COMBO_FMSX_CART_GUESS=1
+make default MSXBARE_FMSX_RAMMAPPER_KB=256 MSXBARE_FMSX_MEGARAM_KB=256 MSXBARE_FMSX_CART_GUESS=1
 ```
 
 ## Build configuravel (menu interativo)
@@ -148,7 +140,7 @@ make default COMBO_FMSX_RAMMAPPER_KB=256 COMBO_FMSX_MEGARAM_KB=256 COMBO_FMSX_CA
 Para evitar dezenas de flags manuais, use:
 
 ```bash
-bash ./scripts/build-m2-config.sh
+bash ./scripts/build-config.sh
 ```
 
 O script permite selecionar:
@@ -167,20 +159,20 @@ Perfis de boot:
 Seleção de boot:
 - Use um build normal (`make default`) e escolha o modo em `Settings -> Boot Mode [NORM/FAST/GAME]`.
 - Para persistir no próximo boot, use `Gravar` no menu settings.
-- Artefato gerado por esse target: `artifacts/kernel8-fmsx-bootstrap.img`.
+- Artefato gerado por esse target: `artifacts/kernel8-bootstrap.img`.
 
 Knobs adicionais relevantes:
-- `COMBO_FMSX_MEGARAM_ENABLED=0|1` (default `1`)
-- `COMBO_FMSX_CARTB_MAPPER=0..8|255` (default `255` = auto/default)
-- `COMBO_FMSX_BOOT_PROFILE=0|1|2` (default `1`; 0=`NORMAL`, 1=`FAST BOOT`, 2=`GAME BOOT`)
-- `COMBO_FMSX_FAST_CUTOFF_FRAMES_MSX1|MSX2|MSX2P` (default `150`)
-- `COMBO_ENABLE_DEBUG_OVERLAY=0|1` (default `1`, quando `0` remove toggle/render do DBG no build)
-- `COMBO_BOOT_QUIET=0|1` (default `0`)
-- `COMBO_DEFER_USB_INIT_FRAMES=<n>` (default `90`; adia init USB/HID para reduzir tempo até primeiro frame)
-- `COMBO_DEFER_SETTINGS_LOAD_FRAMES=<n>` (default `0`; manter `0` para aplicar `MSXBARE.CFG` ainda no boot inicial)
-- `COMBO_DEFER_INITRAMFS_FULL_MOUNT_FRAMES=<n>` (default `120`; adia mount completo do `msx.cpio`)
-- `COMBO_SIZE_OPT=0|1` (default `1`; usa `-Os` + `-ffunction-sections/-fdata-sections` + `--gc-sections`)
-- `COMBO_FMSX_BOOT_MINIMAL_STARTUP=0|1` (default `1`; reduz probes opcionais no `StartMSX` durante bootstrap)
+- `MSXBARE_FMSX_MEGARAM_ENABLED=0|1` (default `1`)
+- `MSXBARE_FMSX_CARTB_MAPPER=0..8|255` (default `255` = auto/default)
+- `MSXBARE_FMSX_BOOT_PROFILE=0|1|2` (default `1`; 0=`NORMAL`, 1=`FAST BOOT`, 2=`GAME BOOT`)
+- `MSXBARE_FMSX_FAST_CUTOFF_FRAMES_MSX1|MSX2|MSX2P` (default `150`)
+- `MSXBARE_ENABLE_DEBUG_OVERLAY=0|1` (default `1`, quando `0` remove toggle/render do DBG no build)
+- `MSXBARE_BOOT_QUIET=0|1` (default `0`)
+- `MSXBARE_DEFER_USB_INIT_FRAMES=<n>` (default `90`; adia init USB/HID para reduzir tempo até primeiro frame)
+- `MSXBARE_DEFER_SETTINGS_LOAD_FRAMES=<n>` (default `0`; manter `0` para aplicar `MSXBARE.CFG` ainda no boot inicial)
+- `MSXBARE_DEFER_INITRAMFS_FULL_MOUNT_FRAMES=<n>` (default `120`; adia mount completo do `msx.cpio`)
+- `MSXBARE_SIZE_OPT=0|1` (default `1`; usa `-Os` + `-ffunction-sections/-fdata-sections` + `--gc-sections`)
+- `MSXBARE_FMSX_BOOT_MINIMAL_STARTUP=0|1` (default `1`; reduz probes opcionais no `StartMSX` durante bootstrap)
 
 Matriz de perfil (padrao atual):
 - `NORMAL`: profile `0`, sem frame-skip de boot, sem turbo forçado e sem bypass.
@@ -196,18 +188,18 @@ make
 ```
 
 Perfil aplicado no default:
-- Debug OFF (`COMBO_ENABLE_DEBUG_OVERLAY=0`, `COMBO_DEBUG_OVERLAY_DEFAULT=0`)
-- Fast Boot (`COMBO_FMSX_BOOT_PROFILE=1`)
-- Mapper OFF (`COMBO_FMSX_RAMMAPPER_KB=64`)
-- MegaRAM OFF (`COMBO_FMSX_MEGARAM_ENABLED=0`)
+- Debug OFF (`MSXBARE_ENABLE_DEBUG_OVERLAY=0`, `MSXBARE_DEBUG_OVERLAY_DEFAULT=0`)
+- Fast Boot (`MSXBARE_FMSX_BOOT_PROFILE=1`)
+- Mapper OFF (`MSXBARE_FMSX_RAMMAPPER_KB=64`)
+- MegaRAM OFF (`MSXBARE_FMSX_MEGARAM_ENABLED=0`)
 
 Observacao sobre `WIDTH 80` no BASIC:
 - No modo atual MSX1 (`MSX_MSX1`), `WIDTH 80` nao e suportado pelo hardware/BIOS do MSX1.
-- A flag `COMBO_FMSX_MSX1_TEXT80` controla fonte fixa de texto no fMSX, mas nao converte o sistema para modo MSX2 nem habilita 80 colunas reais no BASIC do MSX1.
+- A flag `MSXBARE_FMSX_MSX1_TEXT80` controla fonte fixa de texto no fMSX, mas nao converte o sistema para modo MSX2 nem habilita 80 colunas reais no BASIC do MSX1.
 
 Atalhos de teclado no runtime:
 - `F12`: pausa/retoma emulacao
-- `F11`: toggle do overlay de debug (somente quando `COMBO_ENABLE_DEBUG_OVERLAY=1`)
+- `F11`: toggle do overlay de debug (somente quando `MSXBARE_ENABLE_DEBUG_OVERLAY=1`)
 - `Pause` (teclado PC): mapeado para `STOP` do MSX
 - No menu pausado: `Enter` abre/ativa item, `ESC` volta do submenu `Settings` para o menu principal, `F12` fecha o menu (retoma emulacao)
 
@@ -227,7 +219,7 @@ Submenu `Settings` (mock inicial):
 Exemplo (fallback para outra BIOS):
 
 ```bash
-make default COMBO_EMBEDDED_BIOS_PATH=../roms/cbios/cbios_main_msx1_eu.rom
+make default MSXBARE_EMBEDDED_BIOS_PATH=../roms/cbios/cbios_main_msx1_eu.rom
 ```
 
 Esse preset gera `artifacts/kernel8-fastboot.img` e usa:
@@ -342,7 +334,7 @@ Nota sobre `config.txt`:
 - Futuramente, será implementada saída de vídeo composto via GPIO visando compatibilidade com TVs antigas, mas isso é um plano de médio prazo.
 - UART permanece ativa para diagnóstico, mas toda evolução funcional deve considerar exibição em HDMI.
 - A "borda externa" fora da imagem MSX e o preenchimento de letterbox do framebuffer do projeto.
-- A "borda interna" faz parte da imagem gerada pelo VDP/MSX (emulação). Ver src/mailbox.c para detalhes.
+- A "borda interna" faz parte da imagem gerada pelo VDP/MSX (emulação). Ver o pipeline de viewport/blit em `src/kernel.cpp`.
 
 ## Performance no RPi 3B (clock)
 

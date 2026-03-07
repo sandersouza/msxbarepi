@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 06/03/2026 12:28
+Última atualização: 07/03/2026 01:14
 
 ## Objetivo deste arquivo
 
@@ -340,7 +340,7 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-02-27 01:11:25 | stage=m2-carta-mapper-override-knob | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=novo knob COMBO_FMSX_CARTA_MAPPER=0..8|255 permite forcar mapper de CARTA (255=auto/default)
 - 2026-02-27 01:15:05 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
 - 2026-02-27 01:18:46 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
-- 2026-02-27 01:18:46 | stage=m2-build-configurator-script | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=novo script scripts/build-m2-config.sh com selecao interativa de RAM mapper/MegaRAM (inclui OFF), mapper CARTA/CARTB (AUTO/manual), debug overlay e boot limpo
+- 2026-02-27 01:18:46 | stage=m2-build-configurator-script | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=novo script scripts/build-config.sh com selecao interativa de RAM mapper/MegaRAM (inclui OFF), mapper CARTA/CARTB (AUTO/manual), debug overlay e boot limpo
 - 2026-02-27 01:18:46 | stage=m2-cartb-mapper-and-clean-boot-knobs | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=note=novos knobs COMBO_FMSX_CARTB_MAPPER, COMBO_FMSX_MEGARAM_ENABLED e COMBO_BOOT_QUIET; runtime passa a suportar override de mapper do slot B e desativacao explicita de MegaRAM
 - 2026-02-27 01:18:46 | stage=m2-config-txt-disable-splash | status=build-ok | artifact=sdcard/config.txt | note=note=disable_splash=1 habilitado para reduzir tela colorida de firmware no boot
 - 2026-02-27 01:23:55 | stage=m2-bootstrap | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img
@@ -413,7 +413,7 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-02-27 13:58:53 | stage=stable | status=default-ok | artifact=artifacts/kernel8.img
 - 2026-02-27 14:39:46 | stage=m2-overscan-zoom-trim-10pct | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=Overscan ON mantido em aspect-fill, mas com reducao de ~10% no zoom (crop menor) para respeitar melhor limites de tela
 - 2026-02-27 14:52:11 | stage=m2-overscan-runtime-calibration | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=Settings ganhou Overscan [000..100] com ajuste por setas esquerda/direita (passo 5), aplicacao imediata no frame pausado; valor 0=sem overscan e 100=maximo
-- 2026-02-27 15:02:26 | stage=m2-fastboot-default | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=Fast Boot virou default global de compilacao: COMBO_FMSX_BOOT_PROFILE=1 no Makefile raiz, circle_combo/Makefile e default do scripts/build-m2-config.sh
+- 2026-02-27 15:02:26 | stage=m2-fastboot-default | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=Fast Boot virou default global de compilacao: COMBO_FMSX_BOOT_PROFILE=1 no Makefile raiz, circle_combo/Makefile e default do scripts/build-config.sh
 - 2026-02-27 15:11:03 | stage=m2-overscan-keep-4x3 | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=overscan numerico 0..100 agora so ajusta escala da viewport; renderer voltou a manter aspecto do frame (4:3) sem crop/stretch widescreen
 - 2026-02-27 15:24:58 | stage=m2-settings-widescreen-toggle | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=novo item Widescreen ON/OFF no Settings; OFF preserva 4:3, ON força stretch 16:9 da viewport; overscan 0..100 mantido em ajuste por setas
 - 2026-02-27 15:35:44 | stage=m2-overscan-step-10 | status=build-ok | artifact=artifacts/kernel8-m2-fmsx-bootstrap.img | note=ajuste de Overscan [000..100] no menu mudou de passo 5 para passo 10 em setas esquerda/direita
@@ -1675,3 +1675,22 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-03-06 12:28:40 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
 - 2026-03-06 12:28:40 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
 - 2026-03-06 12:28:40 | stage=default | status=issue-ok | artifact=artifacts/kernel8-issue77.img
+- 2026-03-07 00:54:36 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-07 00:54:36 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-07 00:54:58 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-07 00:54:58 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-07 00:57:17 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-07 00:57:17 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-07 00:57:46 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-07 00:57:46 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-07 01:00:02 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-07 01:00:02 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-07 01:00:20 | stage=default | status=build-ok | artifact=artifacts/kernel8-fmsx-bootstrap.img
+- 2026-03-07 01:00:20 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-07 01:01:35 | stage=refactor | status=dir-rename-circle_combo-to-src | artifact=artifacts/kernel8-default.img | note=Runtime principal renomeado de circle_combo/ para src/; Makefile raiz e docs de referencia ajustados para novo caminho.
+- 2026-03-07 01:05:10 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-07 01:05:10 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-07 01:13:48 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-07 01:13:48 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-07 01:14:05 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-07 01:14:05 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
