@@ -29,7 +29,7 @@ extern const TComboLocaleStrings g_ComboLocalePT = {
     "Disk ROM",
     "Modo de Boot",
     "Máquina",
-    "Mapper",
+    "MEM Mapper",
     "MegaRAM",
     "Z80 Turbo",
     "Rensha",

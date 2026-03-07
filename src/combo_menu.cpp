@@ -1726,8 +1726,8 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         {
             browser_name_cols = 5u;
         }
-        /* +3 for folder icon slot, +4 for inner paddings/borders. */
-        const unsigned browser_content_cols = browser_name_cols + 7u;
+        /* +3 for folder icon slot, +4 for inner paddings/borders, +1 safety col to avoid clipping. */
+        const unsigned browser_content_cols = browser_name_cols + 8u;
         content_cols = browser_content_cols > title_len ? browser_content_cols : title_len;
     }
 
@@ -2026,18 +2026,22 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
 
         if (bottom_row > top_row + 1u)
         {
-            const unsigned track_start_row = top_row;
-            const unsigned track_end_row = bottom_row;
-            const unsigned track_len = track_end_row - track_start_row + 1u;
-            const unsigned max_top = m_FileBrowser.GetCount() - item_count;
-            unsigned thumb_row = track_start_row;
-            if (max_top > 0u)
+            /* Keep one full row gap from arrows to avoid overlap with arrow glyphs. */
+            const unsigned track_start_row = top_row + 1u;
+            const unsigned track_end_row = (bottom_row > 0u) ? (bottom_row - 1u) : bottom_row;
+            if (track_end_row >= track_start_row)
             {
-                const unsigned rel = ((track_len - 1u) * m_FileBrowser.GetTop()) / max_top;
-                thumb_row = track_start_row + rel;
+                const unsigned track_len = track_end_row - track_start_row + 1u;
+                const unsigned max_top = m_FileBrowser.GetCount() - item_count;
+                unsigned thumb_row = track_start_row;
+                if (max_top > 0u)
+                {
+                    const unsigned rel = ((track_len - 1u) * m_FileBrowser.GetTop()) / max_top;
+                    thumb_row = track_start_row + rel;
+                }
+                const unsigned thumb_y = box_y + (thumb_row * cell_h);
+                renderer->DrawText(bar_x, thumb_y, "\x1B", normal_style, scale_x, scale_y);
             }
-            const unsigned thumb_y = box_y + (thumb_row * cell_h);
-            renderer->DrawText(bar_x, thumb_y, "\x1B", normal_style, scale_x, scale_y);
         }
         renderer->DrawText(bar_x, top_y, "\x1C", normal_style, scale_x, scale_y);
         renderer->DrawText(bar_x, bottom_y, "\x1D", normal_style, scale_x, scale_y);

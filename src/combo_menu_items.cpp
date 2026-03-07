@@ -393,6 +393,10 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     settings_items[item_count].action = ComboMenuActionCycleMegaRam;
     settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
     settings_items[item_count++].selectable = TRUE;
+    settings_items[item_count].label = "";
+    settings_items[item_count].action = ComboMenuActionSeparator;
+    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
+    settings_items[item_count++].selectable = FALSE;
     settings_items[item_count].label = machine_label;
     settings_items[item_count].action = ComboMenuActionCycleMachine;
     settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
