@@ -1,7 +1,7 @@
 # .gitignore for MSX-BarePi Circle project
 build/
 artifacts/
-third_party/fmsx
+third_party/fmsx*
 third_party/circle
 third_party/openMSX
 
