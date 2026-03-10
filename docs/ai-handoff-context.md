@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 10/03/2026 14:15
+Última atualização: 10/03/2026 15:23
 
 ## Objetivo deste arquivo
 
@@ -110,6 +110,10 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - Ajuste adicional no mixer de áudio: após `InitSound(48000)`, runtime agora chama `SetChannels(255/MAXCHANNELS, (1<<SND_CHANNELS)-1)` (padrão usado no `libretro.c`) para garantir canais habilitados
 - Ajuste de ganho no mixer EMULib: `SetChannels()` atualizado para volume mestre `255` com todos os canais habilitados (evita quantização excessiva para zero)
 - Correção de fila HDMI: `RefillAudioQueue()` não escreve mais blocos de silêncio quando `fmsx_audio_pull_samples()` retorna 0; agora escreve somente frames realmente gerados pelo core
+- MSX2+ boot (HB-F1XDJ): correção de mapeamento no core local para `KANJIBASIC.ROM` em `slot 3-1` (`0x4000-0xBFFF`) durante `ResetMSX()`; referência: `third_party/openMSX/share/machines/Sony_HB-F1XDJ.xml`
+- Em MSX2+ com `KANJIBASIC` mapeado, caminho de `DISK.ROM` foi ajustado para não sobrescrever `slot 3-1:4000h-7FFFh` (preserva rotina de boot logo)
+- Overlay `TM2` ganhou campo `KB` para confirmar em runtime que o mapeamento de `KANJIBASIC` está ativo (`KB:1`)
+- Alias de ROM/initramfs adicionados para `KANJIBASIC` e `MSX2P SUBROM` (`HB-F1XDJ_*`, `FS-A1FX_*`)
 
 ## Sinais esperados em runtime
 
@@ -1785,3 +1789,17 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-03-10 03:43:35 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
 - 2026-03-10 14:15:07 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
 - 2026-03-10 14:15:07 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 14:21:15 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 14:21:15 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 14:22:30 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 14:22:30 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 14:27:51 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 14:27:51 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 14:36:28 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 14:36:28 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 14:48:29 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 14:48:29 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 15:00:52 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 15:00:52 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 15:23:44 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 15:23:44 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img

@@ -43,6 +43,10 @@ typedef struct {
     unsigned reg25;
     unsigned reg26;
     unsigned reg27;
+    unsigned reg19;
+    unsigned ie1_enabled;
+    unsigned ie1_flag;
+    unsigned msx2p_kanji_basic;
     unsigned hscroll;
     unsigned hscroll512;
     unsigned mode_yjk;

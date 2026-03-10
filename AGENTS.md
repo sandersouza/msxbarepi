@@ -34,6 +34,7 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Para empacotamento via `make package`, usar flags simples:
   - `DEBUG=0|1` para controlar debug compilado no kernel
   - `OWNER="<nome>"` para identificação no debug e para nomear o ZIP como `artifacts/sdcard-package-<OWNER>.zip`
+- Durante a fase de desenvolvimento, builds devem usar `DEBUG=1` obrigatoriamente; usar `DEBUG=0` apenas quando o usuário solicitar explicitamente.
 - Por padrao, o build deve gerar `artifacts/kernel8-default.img` e, quando a branch atual for de issue (`<numero>-...`), tambem gerar `artifacts/kernel8-issue<numero>.img` (ex.: branch `61-...` -> `artifacts/kernel8-issue61.img`); priorizar este artefato de issue nos testes da issue ativa
 - Todo comando para terminal deve ser entregue em bloco de código Markdown com linguagem `bash` (```bash ... ```), inclusive quando houver múltiplos comandos; evitar links/markup dentro de comandos para não quebrar copy/paste
 - Quando houver trade-off de estabilidade vs desempenho (ex.: otimização do frontend do renderer), manter knobs de build explícitos no `Makefile` e documentados no `README.md`

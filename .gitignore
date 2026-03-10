@@ -5,6 +5,7 @@ third_party/fmsx*
 third_party/circle
 third_party/openMSX
 third_party/V9958-Super
+third_party/ocm-pld-dev
 
 # Ignore ROM files and SD card contents, which are not part of the source code and may contain large binary files.
 roms/*.rom

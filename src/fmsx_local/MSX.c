@@ -161,6 +161,7 @@ uint8_t *SRAMData[MAXSLOTS];          /* SRAM (battery backed)  */
 /** Disk images used by fMSX *********************************/
 const char *DSKName[MAXDRIVES] = { "DRIVEA.DSK","DRIVEB.DSK" };
 uint8_t DiskROMLoaded = 0;            /* 1 when DISK.ROM loaded */
+uint8_t FmsxMSX2PKanjiBasicLoaded = 0;/* 1 when slot 3-1:4000h maps Kanji BASIC */
 
 /** Fixed font used by fMSX **********************************/
 const char *FNTName = "DEFAULT.FNT"; /* Font file for text   */
@@ -540,6 +541,7 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   CheatCount  = 0;
   MCFCount    = 0;
   DiskROMLoaded = 0;
+  FmsxMSX2PKanjiBasicLoaded = 0;
 
   /* Zero cartridge related data */
   for(J=0;J<MAXSLOTS;++J)
@@ -792,7 +794,7 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
     0x00208020,0x00C040A0,0x00A0A0A0,0x00E0E0E0
   };
 
-  uint8_t *P1,*P2;
+  uint8_t *P1,*P2,*P3;
   int J,I;
 
   if(log_cb) log_cb(1,"ResetMSX: begin\n");
@@ -807,6 +809,7 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
     switch(NewMode&MSX_MODEL)
     {
       case MSX_MSX1:
+        FmsxMSX2PKanjiBasicLoaded = 0;
         if(log_cb) log_cb(1,"ResetMSX: loading MSX.ROM\n");
         P1=LoadROM("MSX.ROM",0x8000,0);
         if(log_cb) log_cb(1,P1?"ResetMSX: MSX.ROM ok\n":"ResetMSX: MSX.ROM fail\n");
@@ -825,8 +828,11 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
         break;
 
       case MSX_MSX2:
+        FmsxMSX2PKanjiBasicLoaded = 0;
         P1=LoadROM("MSX2.ROM",0x8000,0);
         P2=LoadROM("MSX2EXT.ROM",0x4000,0);
+        if(!P2) P2=LoadROM("MSX2SUB.ROM",0x4000,0);
+        if(!P2) P2=LoadROM("SUBROM.ROM",0x4000,0);
         if(!P1||!P2)
         {
           NewMode=(NewMode&~MSX_MODEL)|(Mode&MSX_MODEL);
@@ -849,27 +855,53 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
       case MSX_MSX2P:
         P1=LoadROM("MSX2P.ROM",0x8000,0);
         P2=LoadROM("MSX2PEXT.ROM",0x4000,0);
+        if(!P2) P2=LoadROM("MSX2SUB.ROM",0x4000,0);
+        if(!P2) P2=LoadROM("SUBROM.ROM",0x4000,0);
+        /* openMSX Sony_HB-F1XDJ maps Kanji BASIC at slot 3-1, 4000h- BFFFh. */
+        P3=LoadROM("KANJIBASIC.ROM",0x8000,0);
+        if(!P3) P3=LoadROM("HB-F1XDJ_KANJIBASIC.ROM",0x8000,0);
+        if(!P3) P3=LoadROM("FS-A1FX_KANJIBASIC.ROM",0x8000,0);
         if(!P1||!P2)
         {
           NewMode=(NewMode&~MSX_MODEL)|(Mode&MSX_MODEL);
           FreeMemory(P1);
           FreeMemory(P2);
+          FreeMemory(P3);
+          FmsxMSX2PKanjiBasicLoaded = 0;
         }
         else
         {
           FreeMemory(MemMap[0][0][0]);
           FreeMemory(MemMap[3][1][0]);
+          FreeMemory(MemMap[3][1][2]);
           MemMap[0][0][0]=P1;
           MemMap[0][0][1]=P1+0x2000;
           MemMap[0][0][2]=P1+0x4000;
           MemMap[0][0][3]=P1+0x6000;
           MemMap[3][1][0]=P2;
           MemMap[3][1][1]=P2+0x2000;
+          if(P3)
+          {
+            MemMap[3][1][2]=P3;
+            MemMap[3][1][3]=P3+0x2000;
+            MemMap[3][1][4]=P3+0x4000;
+            MemMap[3][1][5]=P3+0x6000;
+            FmsxMSX2PKanjiBasicLoaded = 1;
+          }
+          else
+          {
+            MemMap[3][1][2]=EmptyRAM;
+            MemMap[3][1][3]=EmptyRAM;
+            MemMap[3][1][4]=EmptyRAM;
+            MemMap[3][1][5]=EmptyRAM;
+            FmsxMSX2PKanjiBasicLoaded = 0;
+          }
         }
         break;
 
       default:
         /* Unknown MSX model, keep old model */
+        FmsxMSX2PKanjiBasicLoaded = 0;
         NewMode=(NewMode&~MSX_MODEL)|(Mode&MSX_MODEL);
         break;
     }
@@ -916,19 +948,31 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
     if(!P1) NewMode=(NewMode&~MSX_PATCHBDOS)|(Mode&MSX_PATCHBDOS);
     else
     {
-      /* Assign new DiskROM */
-      FreeMemory(MemMap[3][1][2]);
-      MemMap[3][1][2]=P1;
-      MemMap[3][1][3]=P1+0x2000;
-
-      /* If BDOS patching requested... */
-      if(NewMode&MSX_PATCHBDOS)
+      if(MODEL(MSX_MSX2P) && FmsxMSX2PKanjiBasicLoaded)
       {
-        /* Apply patches to BDOS */
-        for(J=0;DiskPatches[J];++J)
+        /*
+         * Keep MSX2+ Kanji BASIC visible at slot 3-1:4000h-7FFFh.
+         * This preserves the boot-logo startup routine used by real ROM sets.
+         */
+        FreeMemory(P1);
+        DiskROMLoaded=0;
+      }
+      else
+      {
+        /* Assign new DiskROM */
+        FreeMemory(MemMap[3][1][2]);
+        MemMap[3][1][2]=P1;
+        MemMap[3][1][3]=P1+0x2000;
+
+        /* If BDOS patching requested... */
+        if(NewMode&MSX_PATCHBDOS)
         {
-          P2=P1+DiskPatches[J]-0x4000;
-          P2[0]=0xED;P2[1]=0xFE;P2[2]=0xC9;
+          /* Apply patches to BDOS */
+          for(J=0;DiskPatches[J];++J)
+          {
+            P2=P1+DiskPatches[J]-0x4000;
+            P2[0]=0xED;P2[1]=0xFE;P2[2]=0xC9;
+          }
         }
       }
     }

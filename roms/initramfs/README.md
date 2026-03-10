@@ -13,6 +13,14 @@ DRIVEA.DSK - Drive de disquete virtual A
 DRIVEB.DSK - Drive de disquete virtual B
 ```
 
+Para boot completo de MSX2+ (logo do HB-F1XDJ), incluir também:
+
+```bash
+cp roms/machines/sony/hb-f1xdj_kanjibasic.rom roms/initramfs/KANJIBASIC.ROM
+```
+
+Sem `KANJIBASIC.ROM`, o boot pode seguir sem ativar a rotina de logo/h-scroll por linha.
+
 Para fins de desenvolvimento, a `BIOS` usada nessa etapa, é a do `MSX Expert 1.1` da `Gradiente`. Ela é compatível com o padrão `MSX1` e pode ser encontrada em diversos sites de ROMs de **MSX**.
 
 Não nos responsabilizamos por qualquer uso indevido dessas ROMs, e recomendamos que você obtenha as ROMs de fontes legítimas, como a partir de um cartucho ou BIOS original, ou de um repositório confiável que distribua ROMs legalmente.

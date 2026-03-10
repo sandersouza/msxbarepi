@@ -138,14 +138,15 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
 /*************************************************************/
 void RefreshLine6(uint8_t Y)
 {
-  uint8_t X,*T,*R,C;
-  int I;
+  uint8_t X,*T,*R,*T0,*T1,C;
+  int I,Src;
   unsigned Coarse;
   unsigned Fine;
   unsigned LeftMask;
+  unsigned VirtualWidth;
+  uint16_t Bg;
   uint8_t ZBuf[304];
-  uint16_t BgRaw[512];
-  uint16_t BgLine[512];
+  uint16_t BgRaw[1024];
   uint8_t *R0;
   uint16_t *P0;
   uint16_t *P=RefreshBorder512(Y,XPal[BGColor&0x03]);
@@ -164,8 +165,10 @@ void RefreshLine6(uint8_t Y)
     Coarse = V9958CoarseScroll512();
     Fine = V9958FineScroll512();
     LeftMask = V9958MaskLeft512();
+    VirtualWidth = V9958VirtualWidth512();
 
-    for(X=0;X<64;X++,T+=2)
+    T0=T;
+    for(X=0,T=T0;X<64;X++,T+=2)
     {
       BgRaw[(X<<3)+0]=XPal[T[0]>>6];
       BgRaw[(X<<3)+1]=XPal[(T[0]>>4)&0x03];
@@ -177,18 +180,32 @@ void RefreshLine6(uint8_t Y)
       BgRaw[(X<<3)+7]=XPal[T[1]&0x03];
     }
 
-    for(I=0;I<512;I++) BgLine[I]=BgRaw[(I+(int)Coarse)&0x1FF];
-
-    if(Fine)
-      for(I=511;I>=0;--I)
-        BgLine[I]=(I>=(int)Fine)? BgLine[I-(int)Fine]:XPal[BGColor&0x03];
-
-    for(I=0;I<(int)LeftMask&&I<512;++I) BgLine[I]=XPal[BGColor&0x03];
+    if(VirtualWidth>512u)
+    {
+      T1=V9958ScrollPagePtr(T0,0x8000);
+      for(X=0,T=T1;X<64;X++,T+=2)
+      {
+        BgRaw[512+(X<<3)+0]=XPal[T[0]>>6];
+        BgRaw[512+(X<<3)+1]=XPal[(T[0]>>4)&0x03];
+        BgRaw[512+(X<<3)+2]=XPal[(T[0]>>2)&0x03];
+        BgRaw[512+(X<<3)+3]=XPal[T[0]&0x03];
+        BgRaw[512+(X<<3)+4]=XPal[T[1]>>6];
+        BgRaw[512+(X<<3)+5]=XPal[(T[1]>>4)&0x03];
+        BgRaw[512+(X<<3)+6]=XPal[(T[1]>>2)&0x03];
+        BgRaw[512+(X<<3)+7]=XPal[T[1]&0x03];
+      }
+    }
 
     for(I=0;I<512;I++)
     {
+      Bg=XPal[BGColor&0x03];
+      if(I>=(int)LeftMask)
+      {
+        Src=I-(int)Fine+(int)Coarse;
+        if(Src>=0) Bg=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
+      }
       C=R0[I>>1];
-      P0[I]=C? XPal[C]:BgLine[I];
+      P0[I]=C? XPal[C]:Bg;
     }
   }
 }
@@ -198,14 +215,15 @@ void RefreshLine6(uint8_t Y)
 /*************************************************************/
 void RefreshLine7(uint8_t Y)
 {
-  uint8_t C,X,*T,*R;
-  int I;
+  uint8_t C,X,*T,*R,*T0,*T1;
+  int I,Src;
   unsigned Coarse;
   unsigned Fine;
   unsigned LeftMask;
+  unsigned VirtualWidth;
+  uint16_t Bg;
   uint8_t ZBuf[304];
-  uint16_t BgRaw[512];
-  uint16_t BgLine[512];
+  uint16_t BgRaw[1024];
   uint8_t *R0;
   uint16_t *P0;
   uint16_t *P=RefreshBorder512(Y,XPal[BGColor]);
@@ -224,8 +242,10 @@ void RefreshLine7(uint8_t Y)
     Coarse = V9958CoarseScroll512();
     Fine = V9958FineScroll512();
     LeftMask = V9958MaskLeft512();
+    VirtualWidth = V9958VirtualWidth512();
 
-    for(X=0;X<64;X++,T+=4)
+    T0=T;
+    for(X=0,T=T0;X<64;X++,T+=4)
     {
       BgRaw[(X<<3)+0]=XPal[T[0]>>4];
       BgRaw[(X<<3)+1]=XPal[T[0]&0x0F];
@@ -237,18 +257,32 @@ void RefreshLine7(uint8_t Y)
       BgRaw[(X<<3)+7]=XPal[T[3]&0x0F];
     }
 
-    for(I=0;I<512;I++) BgLine[I]=BgRaw[(I+(int)Coarse)&0x1FF];
-
-    if(Fine)
-      for(I=511;I>=0;--I)
-        BgLine[I]=(I>=(int)Fine)? BgLine[I-(int)Fine]:XPal[BGColor];
-
-    for(I=0;I<(int)LeftMask&&I<512;++I) BgLine[I]=XPal[BGColor];
+    if(VirtualWidth>512u)
+    {
+      T1=V9958ScrollPagePtr(T0,0x10000);
+      for(X=0,T=T1;X<64;X++,T+=4)
+      {
+        BgRaw[512+(X<<3)+0]=XPal[T[0]>>4];
+        BgRaw[512+(X<<3)+1]=XPal[T[0]&0x0F];
+        BgRaw[512+(X<<3)+2]=XPal[T[1]>>4];
+        BgRaw[512+(X<<3)+3]=XPal[T[1]&0x0F];
+        BgRaw[512+(X<<3)+4]=XPal[T[2]>>4];
+        BgRaw[512+(X<<3)+5]=XPal[T[2]&0x0F];
+        BgRaw[512+(X<<3)+6]=XPal[T[3]>>4];
+        BgRaw[512+(X<<3)+7]=XPal[T[3]&0x0F];
+      }
+    }
 
     for(I=0;I<512;I++)
     {
+      Bg=XPal[BGColor];
+      if(I>=(int)LeftMask)
+      {
+        Src=I-(int)Fine+(int)Coarse;
+        if(Src>=0) Bg=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
+      }
       C=R0[I>>1];
-      P0[I]=C? XPal[C]:BgLine[I];
+      P0[I]=C? XPal[C]:Bg;
     }
   }
 }

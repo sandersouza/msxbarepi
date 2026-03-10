@@ -1702,7 +1702,7 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 	CString line;
 	TFmsxAudioStats audio_stats = { 0, 0, 0, 0, 0 };
 	TFmsxKeyboardDebug kbd_stats = { 0, 0 };
-	TFmsxTimingDebug timing_stats = { 0, 0, 0, 0, 0, 0, 0 };
+	TFmsxTimingDebug timing_stats = { 0 };
 	unsigned load_diag = 0u;
 	unsigned active_boot_mode = 0u;
 	unsigned active_model_profile = 0u;
@@ -1813,12 +1813,16 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		timing_stats.turbo_percent > 999u ? 999u : timing_stats.turbo_percent);
 	WriteScreenText(line);
 
-	line.Format("\x1b[97m\x1b[49m\x1b[12;1HTM2 SM:%02u R25:%02X R26:%02X R27:%02X HS:%03u S:%u Y:%u A:%u",
+	line.Format("\x1b[97m\x1b[49m\x1b[12;1HTM2 SM:%02u R25:%02X R26:%02X R27:%02X R19:%02X HS:%03u I1:%u F1:%u KB:%u S:%u Y:%u A:%u",
 		timing_stats.scr_mode > 99u ? 99u : timing_stats.scr_mode,
 		timing_stats.reg25 & 0xFFu,
 		timing_stats.reg26 & 0xFFu,
 		timing_stats.reg27 & 0xFFu,
+		timing_stats.reg19 & 0xFFu,
 		timing_stats.hscroll > 999u ? 999u : timing_stats.hscroll,
+		timing_stats.ie1_enabled ? 1u : 0u,
+		timing_stats.ie1_flag ? 1u : 0u,
+		timing_stats.msx2p_kanji_basic ? 1u : 0u,
 		timing_stats.hscroll512 ? 1u : 0u,
 		timing_stats.mode_yjk ? 1u : 0u,
 		timing_stats.mode_yae ? 1u : 0u);

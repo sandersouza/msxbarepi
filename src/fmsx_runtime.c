@@ -52,8 +52,10 @@ extern int VPeriod;
 extern int RAMPages;
 extern int VRAMPages;
 extern uint8_t DiskROMLoaded;
+extern uint8_t FmsxMSX2PKanjiBasicLoaded;
 extern uint8_t ScrMode;
 extern uint8_t VDP[64];
+extern uint8_t VDPStatus[16];
 extern AY8910 PSG;
 extern YM2413 OPLL;
 extern void fmsx_cpu_set_turbo_percent(unsigned percent);
@@ -167,8 +169,11 @@ static void fmsx_runtime_force_disk_rom_off_mapping(void)
      * fMSX may keep DiskROM mapped even when MSX_PATCHBDOS is toggled off.
      * Enforce OFF policy by unmapping slot 3:1 pages 2-3 explicitly.
      */
-    MemMap[3][1][2] = EmptyRAM;
-    MemMap[3][1][3] = EmptyRAM;
+    if (!(MODEL(MSX_MSX2P) && FmsxMSX2PKanjiBasicLoaded))
+    {
+        MemMap[3][1][2] = EmptyRAM;
+        MemMap[3][1][3] = EmptyRAM;
+    }
     DiskROMLoaded = 0u;
     Mode &= ~MSX_PATCHBDOS;
 }
@@ -1191,6 +1196,10 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
     stats->reg25 = (unsigned) VDP[25];
     stats->reg26 = (unsigned) VDP[26];
     stats->reg27 = (unsigned) VDP[27];
+    stats->reg19 = (unsigned) VDP[19];
+    stats->ie1_enabled = (VDP[0] & 0x10u) ? 1u : 0u;
+    stats->ie1_flag = (VDPStatus[1] & 0x01u) ? 1u : 0u;
+    stats->msx2p_kanji_basic = FmsxMSX2PKanjiBasicLoaded ? 1u : 0u;
     stats->hscroll = (unsigned) HScroll;
     stats->hscroll512 = HScroll512 ? 1u : 0u;
     stats->mode_yjk = ModeYJK ? 1u : 0u;

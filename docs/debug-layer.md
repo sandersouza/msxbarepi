@@ -7,6 +7,7 @@ Guia operacional da layer de debug do MSXBarePI: como compilar, usar, atalhos e 
 - Permitir testes A/B de audio (chips e layers) sem recompilar.
 
 ## Como compilar
+- Regra operacional da fase atual: durante desenvolvimento, usar `DEBUG=1` por padrão; `DEBUG=0` somente quando o usuário solicitar explicitamente.
 - Build com debug overlay habilitado:
 ```bash
 make DEBUG=1
@@ -70,6 +71,14 @@ make DEBUG=0
   - `L1` + `PSG`: mute layer 1 e atividade de canais PSG.
   - `L2` + `FM`: mute layer 2 e atividade de canais FM.
   - `L3` + `SCC`: mute layer 3 e atividade de canais SCC.
+- `TM2`: telemetria VDP/timing útil para MSX2+:
+  - `SM`: screen mode atual.
+  - `R25/R26/R27`: registradores de scroll/máscara.
+  - `R19`: linha de coincidência (line interrupt).
+  - `I1/F1`: IE1 habilitado (`R0 bit4`) e flag de coincidência ativa (`S#1 bit0`).
+  - `KB`: `1` quando `KANJIBASIC` está mapeado em `slot 3-1:4000h-7FFFh` (pré-condição do boot logo no set HB-F1XDJ).
+  - `HS/S`: valor de scroll horizontal consolidado e bit de largura dupla.
+  - `Y/A`: estado YJK/YAE.
 
 ## Arquitetura (modular)
 - Renderer da debug layer desacoplado em objeto plugavel:
