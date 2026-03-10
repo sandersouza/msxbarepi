@@ -23,6 +23,43 @@ static uint16_t YJKColor(int Y,int J,int K);
 
 extern void PutImage(void);
 
+/* V9958 horizontal scroll helpers:
+ * R26 = coarse scroll
+ * R27 = fine scroll
+ * R25 bit1 = left-edge mask
+ */
+INLINE unsigned V9958CoarseScroll256(void)
+{
+  return MODEL(MSX_MSX2P) ? ((VDP[26] & 0x1Fu) << 3) : 0u;
+}
+
+INLINE unsigned V9958CoarseScroll512(void)
+{
+  return MODEL(MSX_MSX2P) ? ((VDP[26] & 0x1Fu) << 4) : 0u;
+}
+
+INLINE unsigned V9958FineScroll256(void)
+{
+  return MODEL(MSX_MSX2P) ? (VDP[27] & 0x07u) : 0u;
+}
+
+INLINE unsigned V9958FineScroll512(void)
+{
+  return MODEL(MSX_MSX2P) ? ((VDP[27] & 0x07u) << 1) : 0u;
+}
+
+INLINE unsigned V9958MaskLeft256(void)
+{
+  unsigned Fine = V9958FineScroll256();
+  return (MODEL(MSX_MSX2P) && (VDP[25] & 0x02u)) ? (8u - Fine) : 0u;
+}
+
+INLINE unsigned V9958MaskLeft512(void)
+{
+  unsigned Fine = V9958FineScroll512();
+  return (MODEL(MSX_MSX2P) && (VDP[25] & 0x02u)) ? (16u - Fine) : 0u;
+}
+
 /** ClearLine() **********************************************/
 /** Clear 256 uint16_ts from P with color C.                   **/
 /*************************************************************/
@@ -61,27 +98,6 @@ INLINE uint16_t YJKColor(int Y,int J,int K)
 /*************************************************************/
 uint16_t *RefreshBorder(uint8_t Y,uint16_t C)
 {
-#ifdef FMSX_BAREMETAL_SIMPLE_REFRESHBORDER
-  uint16_t *P;
-  int line;
-  int x;
-
-  /* Ignore VAdjust during baremetal bring-up until scanline renderer is stable. */
-  if(!Y) FirstLine=(ScanLines212?0:10)+BORDER;
-  if(Y>(OverscanMode?MAX_SCANLINE:211)) return(0);
-
-  XPal[0]=(!BGColor||SolidColor0)? XPal0:XPal[BGColor];
-
-  P=(uint16_t *)XBuf;
-  line = FirstLine + (int)Y;
-  if(line < 0 || line >= HEIGHT) return(0);
-
-  P += WIDTH * line;
-  for(x=0;x<WIDTH;x++) P[x]=C;
-
-  /* Ignore HAdjust during baremetal bring-up until scanline renderer is stable. */
-  return(P+(WIDTH-256)/2);
-#else
   uint16_t *P;
   int H,L,A;
 
@@ -180,7 +196,6 @@ uint16_t *RefreshBorder(uint8_t Y,uint16_t C)
 
   /* Return pointer to the scanline in XBuf */
   return(P+(WIDTH-256)/2+HAdjust);
-#endif
 }
 
 /** Sprites() ************************************************/
@@ -526,157 +541,11 @@ void RefreshLineF(uint8_t Y)
 /*************************************************************/
 void RefreshLine0(uint8_t Y)
 {
-  static uint8_t RL0LogEnter = 0;
-  static uint8_t RL0LogBorder = 0;
-  static uint8_t RL0LogPattern = 0;
-  static uint8_t RL0LogDirect = 0;
-  static uint8_t RL0LogStep1 = 0;
-  static uint8_t RL0LogStep2 = 0;
-  static uint8_t RL0LogStep3 = 0;
-  static uint8_t RL0LogStep4 = 0;
-  static uint8_t RL0LogStep5 = 0;
-  static uint8_t RL0LogStep6 = 0;
-  static uint8_t RL0LogStep7 = 0;
-  static uint8_t RL0LogStep8 = 0;
-  static uint8_t RL0LogStep9 = 0;
-  static uint8_t RL0LogStep10 = 0;
-  static uint8_t RL0LogStep11 = 0;
-  static uint8_t RL0LogStep12 = 0;
-  static uint8_t RL0LogStep13 = 0;
-  static uint8_t RL0LogStep14 = 0;
   uint16_t FC;
   uint8_t X,*T,*G;
   uint16_t BC=XPal[BGColor];
-  if(!RL0LogEnter)
-  {
-    if(log_cb) log_cb(1,"RefreshLine0: enter\n");
-    RL0LogEnter = 1;
-  }
-
-#ifdef FMSX_BAREMETAL_RL0_TEST_PATTERN
-  {
-    uint16_t *P;
-    int line;
-    int i;
-    uint16_t c0 = PIXEL(0,0,0);
-    uint16_t c1 = PIXEL(255,255,255);
-
-    /* Bypass RefreshBorder() completely to isolate scanline-pointer issues. */
-    if(!RL0LogStep1)
-    {
-      if(log_cb) log_cb(1,"RefreshLine0: direct step1\n");
-      RL0LogStep1 = 1;
-    }
-    if(!Y) FirstLine=(ScanLines212?0:10)+BORDER;
-    line = FirstLine + (int)Y;
-    if(line < 0 || line >= HEIGHT) return;
-    if(!RL0LogStep2)
-    {
-      if(log_cb) log_cb(1,"RefreshLine0: direct step2\n");
-      RL0LogStep2 = 1;
-    }
-
-    if(!XBuf)
-    {
-      if(log_cb) log_cb(1,"RefreshLine0: XBuf null\n");
-      return;
-    }
-
-    P = ((uint16_t *)XBuf) + WIDTH * line;
-    if(!RL0LogStep3)
-    {
-      if(log_cb) log_cb(1,"RefreshLine0: direct step3\n");
-      RL0LogStep3 = 1;
-    }
-    P[0]=BC;
-    if(!RL0LogStep4)
-    {
-      if(log_cb) log_cb(1,"RefreshLine0: direct step4\n");
-      RL0LogStep4 = 1;
-    }
-    P[1]=BC;
-    if(!RL0LogStep5)
-    {
-      if(log_cb) log_cb(1,"RefreshLine0: direct step5\n");
-      RL0LogStep5 = 1;
-    }
-    P[16]=BC;
-    if(!RL0LogStep6)
-    {
-      if(log_cb) log_cb(1,"RefreshLine0: direct step6\n");
-      RL0LogStep6 = 1;
-    }
-    P[64]=BC;
-    if(!RL0LogStep7)
-    {
-      if(log_cb) log_cb(1,"RefreshLine0: direct step7\n");
-      RL0LogStep7 = 1;
-    }
-    P[128]=BC;
-    if(!RL0LogStep8)
-    {
-      if(log_cb) log_cb(1,"RefreshLine0: direct step8\n");
-      RL0LogStep8 = 1;
-    }
-    P[WIDTH-1]=BC;
-    if(!RL0LogStep9)
-    {
-      if(log_cb) log_cb(1,"RefreshLine0: direct step9\n");
-      RL0LogStep9 = 1;
-    }
-
-    for(i=2;i<32;i++) P[i]=BC;
-    if(!RL0LogStep10)
-    {
-      if(log_cb) log_cb(1,"RefreshLine0: direct step10\n");
-      RL0LogStep10 = 1;
-    }
-    for(i=32;i<128;i++) P[i]=BC;
-    if(!RL0LogStep11)
-    {
-      if(log_cb) log_cb(1,"RefreshLine0: direct step11\n");
-      RL0LogStep11 = 1;
-    }
-    for(i=128;i<WIDTH-1;i++) P[i]=BC;
-    if(!RL0LogStep12)
-    {
-      if(log_cb) log_cb(1,"RefreshLine0: direct step12\n");
-      RL0LogStep12 = 1;
-    }
-    P += (WIDTH-256)/2;
-    if(!RL0LogStep13)
-    {
-      if(log_cb) log_cb(1,"RefreshLine0: direct step13\n");
-      RL0LogStep13 = 1;
-    }
-    for(i=0;i<256;i++) P[i] = ((i ^ Y) & 1) ? c1 : c0;
-    if(!RL0LogStep14)
-    {
-      if(log_cb) log_cb(1,"RefreshLine0: direct step14\n");
-      RL0LogStep14 = 1;
-    }
-
-    if(!RL0LogDirect)
-    {
-      if(log_cb) log_cb(1,"RefreshLine0: direct pattern ok\n");
-      RL0LogDirect = 1;
-    }
-    if(!RL0LogPattern)
-    {
-      if(log_cb) log_cb(1,"RefreshLine0: pattern ok\n");
-      RL0LogPattern = 1;
-    }
-    return;
-  }
-#endif
-
   uint16_t *P=RefreshBorder(Y,BC);
   if(!P) return;
-  if(!RL0LogBorder)
-  {
-    if(log_cb) log_cb(1,"RefreshLine0: border ok\n");
-    RL0LogBorder = 1;
-  }
 
   if(!ScreenON) ClearLine(P,BC);
   else
@@ -811,9 +680,16 @@ void RefreshLine3(uint8_t Y)
 void RefreshLine4(uint8_t Y)
 {
   uint16_t FC,BC;
-  uint8_t K,X,C,*T,*R;
+  uint8_t K,X,C,*T,*T0,*R;
   int I,J;
+  int PIdx;
+  unsigned Coarse;
+  unsigned Fine;
+  unsigned LeftMask;
   uint8_t ZBuf[320];
+  uint16_t BgLine[256];
+  uint8_t *R0;
+  uint16_t *P0;
   uint16_t *P=RefreshBorder(Y,XPal[BGColor]);
   if(!P) return;
 
@@ -823,26 +699,48 @@ void RefreshLine4(uint8_t Y)
     LastScanline = Y + FirstLine;
     ColorSprites(Y,ZBuf);
     R=ZBuf+32;
+    R0=R;
+    P0=P;
     Y+=VScroll;
     T=ChrTab+((int)(Y&0xF8)<<2);
+    T0=T;
     I=((int)(Y&0xC0)<<5)+(Y&0x07);
+    Coarse = MODEL(MSX_MSX2P)? (VDP[26]&0x1F):0u;
+    Fine   = MODEL(MSX_MSX2P)? (VDP[27]&0x07):0u;
+    LeftMask = (MODEL(MSX_MSX2P) && (VDP[25]&0x02))? (8u-Fine):0u;
 
-    for(X=0;X<32;X++,R+=8,P+=8,T++)
+    /* Build background first, then apply V9958 coarse/fine scroll and mask. */
+    for(X=0;X<32;X++)
     {
-      J=(int)*T<<3;
+      J=(int)T0[(X+Coarse)&0x1F]<<3;
       K=ColTab[(I+J)&ColTabM];
       FC=XPal[K>>4];
       BC=XPal[K&0x0F];
       K=ChrGen[(I+J)&ChrGenM];
 
-      C=R[0];P[0]=C? XPal[C]:(K&0x80)? FC:BC;
-      C=R[1];P[1]=C? XPal[C]:(K&0x40)? FC:BC;
-      C=R[2];P[2]=C? XPal[C]:(K&0x20)? FC:BC;
-      C=R[3];P[3]=C? XPal[C]:(K&0x10)? FC:BC;
-      C=R[4];P[4]=C? XPal[C]:(K&0x08)? FC:BC;
-      C=R[5];P[5]=C? XPal[C]:(K&0x04)? FC:BC;
-      C=R[6];P[6]=C? XPal[C]:(K&0x02)? FC:BC;
-      C=R[7];P[7]=C? XPal[C]:(K&0x01)? FC:BC;
+      BgLine[(X<<3)+0]=(K&0x80)? FC:BC;
+      BgLine[(X<<3)+1]=(K&0x40)? FC:BC;
+      BgLine[(X<<3)+2]=(K&0x20)? FC:BC;
+      BgLine[(X<<3)+3]=(K&0x10)? FC:BC;
+      BgLine[(X<<3)+4]=(K&0x08)? FC:BC;
+      BgLine[(X<<3)+5]=(K&0x04)? FC:BC;
+      BgLine[(X<<3)+6]=(K&0x02)? FC:BC;
+      BgLine[(X<<3)+7]=(K&0x01)? FC:BC;
+    }
+
+    if(Fine)
+    {
+      for(PIdx=255;PIdx>=0;--PIdx)
+        BgLine[PIdx]=(PIdx>=(int)Fine)? BgLine[PIdx-(int)Fine]:XPal[BGColor];
+    }
+
+    for(PIdx=0;PIdx<(int)LeftMask&&PIdx<256;++PIdx)
+      BgLine[PIdx]=XPal[BGColor];
+
+    for(PIdx=0;PIdx<256;++PIdx)
+    {
+      C=R0[PIdx];
+      P0[PIdx]=C? XPal[C]:BgLine[PIdx];
     }
   }
 }
@@ -854,7 +752,16 @@ void RefreshLine4(uint8_t Y)
 void RefreshLine5(uint8_t Y)
 {
   uint8_t I,X,*T,*R;
+  uint8_t C;
+  int PIdx;
+  unsigned Coarse;
+  unsigned Fine;
+  unsigned LeftMask;
   uint8_t ZBuf[320];
+  uint16_t BgRaw[256];
+  uint16_t BgLine[256];
+  uint8_t *R0;
+  uint16_t *P0;
   uint16_t *P=RefreshBorder(Y,XPal[BGColor]);
   if(!P) return;
 
@@ -864,27 +771,50 @@ void RefreshLine5(uint8_t Y)
     LastScanline = Y + FirstLine;
     ColorSprites(Y,ZBuf);
     R=ZBuf+32;
+    R0=R;
+    P0=P;
     T=ChrTab+(((int)(Y+VScroll)<<7)&ChrTabM&0x7FFF);
     if (FlipEvenOdd && OddPage && VRAM<=T-0x8000) T-=0x8000;
+    Coarse = V9958CoarseScroll256();
+    Fine = V9958FineScroll256();
+    LeftMask = V9958MaskLeft256();
 
-    for(X=0;X<16;X++,R+=16,P+=16,T+=8)
+    for(X=0;X<16;X++,T+=8)
     {
-      I=R[0];P[0]=XPal[I? I:T[0]>>4];
-      I=R[1];P[1]=XPal[I? I:T[0]&0x0F];
-      I=R[2];P[2]=XPal[I? I:T[1]>>4];
-      I=R[3];P[3]=XPal[I? I:T[1]&0x0F];
-      I=R[4];P[4]=XPal[I? I:T[2]>>4];
-      I=R[5];P[5]=XPal[I? I:T[2]&0x0F];
-      I=R[6];P[6]=XPal[I? I:T[3]>>4];
-      I=R[7];P[7]=XPal[I? I:T[3]&0x0F];
-      I=R[8];P[8]=XPal[I? I:T[4]>>4];
-      I=R[9];P[9]=XPal[I? I:T[4]&0x0F];
-      I=R[10];P[10]=XPal[I? I:T[5]>>4];
-      I=R[11];P[11]=XPal[I? I:T[5]&0x0F];
-      I=R[12];P[12]=XPal[I? I:T[6]>>4];
-      I=R[13];P[13]=XPal[I? I:T[6]&0x0F];
-      I=R[14];P[14]=XPal[I? I:T[7]>>4];
-      I=R[15];P[15]=XPal[I? I:T[7]&0x0F];
+      BgRaw[(X<<4)+0]=XPal[T[0]>>4];
+      BgRaw[(X<<4)+1]=XPal[T[0]&0x0F];
+      BgRaw[(X<<4)+2]=XPal[T[1]>>4];
+      BgRaw[(X<<4)+3]=XPal[T[1]&0x0F];
+      BgRaw[(X<<4)+4]=XPal[T[2]>>4];
+      BgRaw[(X<<4)+5]=XPal[T[2]&0x0F];
+      BgRaw[(X<<4)+6]=XPal[T[3]>>4];
+      BgRaw[(X<<4)+7]=XPal[T[3]&0x0F];
+      BgRaw[(X<<4)+8]=XPal[T[4]>>4];
+      BgRaw[(X<<4)+9]=XPal[T[4]&0x0F];
+      BgRaw[(X<<4)+10]=XPal[T[5]>>4];
+      BgRaw[(X<<4)+11]=XPal[T[5]&0x0F];
+      BgRaw[(X<<4)+12]=XPal[T[6]>>4];
+      BgRaw[(X<<4)+13]=XPal[T[6]&0x0F];
+      BgRaw[(X<<4)+14]=XPal[T[7]>>4];
+      BgRaw[(X<<4)+15]=XPal[T[7]&0x0F];
+    }
+
+    for(PIdx=0;PIdx<256;++PIdx)
+      BgLine[PIdx]=BgRaw[(PIdx+(int)Coarse)&0xFF];
+
+    if(Fine)
+    {
+      for(PIdx=255;PIdx>=0;--PIdx)
+        BgLine[PIdx]=(PIdx>=(int)Fine)? BgLine[PIdx-(int)Fine]:XPal[BGColor];
+    }
+
+    for(PIdx=0;PIdx<(int)LeftMask&&PIdx<256;++PIdx)
+      BgLine[PIdx]=XPal[BGColor];
+
+    for(PIdx=0;PIdx<256;++PIdx)
+    {
+      C=R0[PIdx];
+      P0[PIdx]=C? XPal[C]:BgLine[PIdx];
     }
   }
 }

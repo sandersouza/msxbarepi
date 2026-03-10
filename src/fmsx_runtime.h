@@ -31,6 +31,24 @@ typedef struct {
     unsigned last_msx;
 } TFmsxKeyboardDebug;
 
+typedef struct {
+    unsigned h_period;
+    unsigned v_period;
+    unsigned i_period;
+    unsigned scanline;
+    unsigned pal_video;
+    unsigned lines_212;
+    unsigned turbo_percent;
+    unsigned scr_mode;
+    unsigned reg25;
+    unsigned reg26;
+    unsigned reg27;
+    unsigned hscroll;
+    unsigned hscroll512;
+    unsigned mode_yjk;
+    unsigned mode_yae;
+} TFmsxTimingDebug;
+
 #define FMSX_MODEL_PROFILE_MSX1  0u
 #define FMSX_MODEL_PROFILE_MSX2  1u
 #define FMSX_MODEL_PROFILE_MSX2P 2u
@@ -90,6 +108,7 @@ unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsig
 unsigned fmsx_audio_pull_samples(int16_t *dst, unsigned max_samples);
 void fmsx_audio_get_stats(TFmsxAudioStats *stats);
 void fmsx_keyboard_get_debug(TFmsxKeyboardDebug *stats);
+void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats);
 
 #ifdef __cplusplus
 }

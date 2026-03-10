@@ -37,6 +37,7 @@ extern retro_log_printf_t log_cb;
 extern void fmsx_runtime_notify_media_probe(void);
 extern int g_fmsx_fmpac_enabled;
 extern unsigned g_fmsx_megaram_kb;
+int g_fmsx_quit_after_vblank = 1;
 
 #define RGB2INT(R,G,B)    ((B)|((int)(G)<<8)|((int)(R)<<16))
 
@@ -2552,11 +2553,15 @@ uint16_t LoopZ80(Z80 *R)
     }
   }
 
-  /* Exit emulation frame-step only after VBlank window */
+  /* Exit emulation frame-step policy:
+   * - NORM: legacy cadence at line 192 (upstream behavior).
+   * - FAST/GAME: delayed quit after VBlank window.
+   */
   if(ExitNow)
   {
-    const int QuitLine = PALVideo ? (ScanLines212 ? (212+43) : (192+53))
-                                 : (ScanLines212 ? (212+19) : (192+29));
+    const int QuitLineVBlank = PALVideo ? (ScanLines212 ? (212+43) : (192+53))
+                                        : (ScanLines212 ? (212+19) : (192+29));
+    const int QuitLine = g_fmsx_quit_after_vblank ? QuitLineVBlank : 192;
     if(ScanLine==QuitLine)
     {
       if(log_cb)

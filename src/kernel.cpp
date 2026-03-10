@@ -1702,12 +1702,14 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 	CString line;
 	TFmsxAudioStats audio_stats = { 0, 0, 0, 0, 0 };
 	TFmsxKeyboardDebug kbd_stats = { 0, 0 };
+	TFmsxTimingDebug timing_stats = { 0, 0, 0, 0, 0, 0, 0 };
 	unsigned load_diag = 0u;
 	unsigned active_boot_mode = 0u;
 	unsigned active_model_profile = 0u;
 #if MSXBARE_ENABLE_FMSX
 	fmsx_audio_get_stats(&audio_stats);
 	fmsx_keyboard_get_debug(&kbd_stats);
+	fmsx_runtime_get_timing_debug(&timing_stats);
 	load_diag = fmsx_runtime_get_load_diag();
 	active_boot_mode = fmsx_runtime_get_active_boot_mode();
 	active_model_profile = fmsx_runtime_get_active_model_profile();
@@ -1801,13 +1803,34 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		fmsx_runtime_get_audio_layer_muted(3u) ? 0u : 1u);
 	WriteScreenText(line);
 
+	line.Format("\x1b[97m\x1b[49m\x1b[11;1HTM1 HP:%05u VP:%05u IP:%05u SL:%03u %s L212:%u T:%03u%%",
+		timing_stats.h_period > 99999u ? 99999u : timing_stats.h_period,
+		timing_stats.v_period > 99999u ? 99999u : timing_stats.v_period,
+		timing_stats.i_period > 99999u ? 99999u : timing_stats.i_period,
+		timing_stats.scanline > 999u ? 999u : timing_stats.scanline,
+		timing_stats.pal_video ? "PAL " : "NTSC",
+		timing_stats.lines_212 ? 1u : 0u,
+		timing_stats.turbo_percent > 999u ? 999u : timing_stats.turbo_percent);
+	WriteScreenText(line);
+
+	line.Format("\x1b[97m\x1b[49m\x1b[12;1HTM2 SM:%02u R25:%02X R26:%02X R27:%02X HS:%03u S:%u Y:%u A:%u",
+		timing_stats.scr_mode > 99u ? 99u : timing_stats.scr_mode,
+		timing_stats.reg25 & 0xFFu,
+		timing_stats.reg26 & 0xFFu,
+		timing_stats.reg27 & 0xFFu,
+		timing_stats.hscroll > 999u ? 999u : timing_stats.hscroll,
+		timing_stats.hscroll512 ? 1u : 0u,
+		timing_stats.mode_yjk ? 1u : 0u,
+		timing_stats.mode_yae ? 1u : 0u);
+	WriteScreenText(line);
+
 	if (MSXBARE_BUILD_OWNER[0] != '\0')
 	{
-		line.Format("\x1b[97m\x1b[49m\x1b[11;1H@Beta: %s                                                   ", MSXBARE_BUILD_OWNER);
+		line.Format("\x1b[97m\x1b[49m\x1b[13;1H@Beta: %s                                                   ", MSXBARE_BUILD_OWNER);
 	}
 	else
 	{
-		line.Format("\x1b[97m\x1b[49m\x1b[11;1H                                                                                ");
+		line.Format("\x1b[97m\x1b[49m\x1b[13;1H                                                                                ");
 	}
 	WriteScreenText(line);
 
@@ -3754,6 +3777,8 @@ void CComboKernel::ClearDebugOverlay(void)
 	WriteScreenText("\x1b[9;1H                                                                                ");
 	WriteScreenText("\x1b[10;1H                                                                                ");
 	WriteScreenText("\x1b[11;1H                                                                                ");
+	WriteScreenText("\x1b[12;1H                                                                                ");
+	WriteScreenText("\x1b[13;1H                                                                                ");
 	WriteScreenText("\x1b[0m");
 }
 

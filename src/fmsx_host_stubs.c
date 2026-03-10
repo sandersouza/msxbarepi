@@ -45,7 +45,7 @@ static int g_video_tables_ready = 0;
 #define WBuf g_image_buffer
 int LastScanline;
 
-#include "../third_party/fmsx/fMSX/CommonMux.h"
+#include "fmsx_local/CommonMux.h"
 
 static volatile u8 g_bridge_bits = 0;
 static uint8_t g_sram_disk_blob[(64 * 1024) + 1];

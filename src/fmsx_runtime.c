@@ -47,9 +47,13 @@ extern int ScanLine;
 extern uint8_t UPeriod;
 extern int Mode;
 extern int MasterSwitch;
+extern int HPeriod;
+extern int VPeriod;
 extern int RAMPages;
 extern int VRAMPages;
 extern uint8_t DiskROMLoaded;
+extern uint8_t ScrMode;
+extern uint8_t VDP[64];
 extern AY8910 PSG;
 extern YM2413 OPLL;
 extern void fmsx_cpu_set_turbo_percent(unsigned percent);
@@ -65,6 +69,8 @@ extern void fmsx_video_set_overscan(boolean enabled);
 extern void fmsx_local_ym2413_set_layer_gain_pct(unsigned pct);
 extern unsigned fmsx_local_ym2413_get_layer_gain_pct(void);
 extern void fmsx_local_ym2413_refresh(YM2413 *D);
+extern unsigned FmsxTurboPercent;
+extern int g_fmsx_quit_after_vblank;
 
 static TFmsxRuntimeStatus g_fmsx_status = { FALSE, FALSE, 0u, 0, 0 };
 static char g_cartridge_path[2][192] = {{0}};
@@ -344,6 +350,11 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     g_fmsx_status.frames = 0u;
     g_fmsx_status.last_pc = 0;
     g_fmsx_status.last_error = 0;
+    /*
+     * NORM must run full frame cadence (post-VBlank quit), without any
+     * mid-frame cut. FAST/GAME also keep post-VBlank quit.
+     */
+    g_fmsx_quit_after_vblank = 1;
 
     const int base_mode = (fmsx_runtime_effective_refresh_hz() == 50u ? MSX_PAL : MSX_NTSC) | MSX_JOY1;
     int startup_mode = fmsx_runtime_machine_mode_bits() | base_mode;
@@ -634,7 +645,11 @@ boolean fmsx_runtime_step_frame(void)
 
     for (unsigned i = 0; i < steps; ++i)
     {
-        ScanLine = 261;
+        if (g_boot_warmup_frames_remaining > 0u)
+        {
+            /* During FAST/GAME warmup, keep deterministic frame-step entry. */
+            ScanLine = 261;
+        }
         g_fmsx_status.last_pc = (int) RunZ80(&CPU);
         g_fmsx_status.frames++;
         if (g_boot_warmup_frames_remaining > 0u)
@@ -1156,6 +1171,30 @@ unsigned fmsx_runtime_get_load_diag(void)
 TFmsxRuntimeStatus fmsx_runtime_get_status(void)
 {
     return g_fmsx_status;
+}
+
+void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
+{
+    if (stats == 0)
+    {
+        return;
+    }
+
+    stats->h_period = (HPeriod > 0) ? (unsigned) HPeriod : 0u;
+    stats->v_period = (VPeriod > 0) ? (unsigned) VPeriod : 0u;
+    stats->i_period = (CPU.IPeriod > 0) ? (unsigned) CPU.IPeriod : 0u;
+    stats->scanline = (ScanLine >= 0) ? (unsigned) ScanLine : 0u;
+    stats->pal_video = PALVideo ? 1u : 0u;
+    stats->lines_212 = ScanLines212 ? 1u : 0u;
+    stats->turbo_percent = FmsxTurboPercent;
+    stats->scr_mode = (unsigned) ScrMode;
+    stats->reg25 = (unsigned) VDP[25];
+    stats->reg26 = (unsigned) VDP[26];
+    stats->reg27 = (unsigned) VDP[27];
+    stats->hscroll = (unsigned) HScroll;
+    stats->hscroll512 = HScroll512 ? 1u : 0u;
+    stats->mode_yjk = ModeYJK ? 1u : 0u;
+    stats->mode_yae = ModeYAE ? 1u : 0u;
 }
 
 unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsigned *height)
