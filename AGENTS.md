@@ -38,7 +38,7 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Por padrao, o build deve gerar `artifacts/kernel8-default.img` e, quando a branch atual for de issue (`<numero>-...`), tambem gerar `artifacts/kernel8-issue<numero>.img` (ex.: branch `61-...` -> `artifacts/kernel8-issue61.img`); priorizar este artefato de issue nos testes da issue ativa
 - Todo comando para terminal deve ser entregue em bloco de código Markdown com linguagem `bash` (```bash ... ```), inclusive quando houver múltiplos comandos; evitar links/markup dentro de comandos para não quebrar copy/paste
 - Quando houver trade-off de estabilidade vs desempenho (ex.: otimização do frontend do renderer), manter knobs de build explícitos no `Makefile` e documentados no `README.md`
-- Reutilizar o padrao de painel validado em `docs/debug-overlay-hdmi-template.md` para novos debugs HDMI; preservar formato/layout quando ele estiver legivel e alterar apenas indicadores/contadores durante iteracoes de diagnostico.
+- Reutilizar o padrao de painel validado em `docs/debug-layer.md` para novos debugs HDMI; preservar formato/layout quando ele estiver legivel e alterar apenas indicadores/contadores durante iteracoes de diagnostico.
 - Para debug em runtime com framebuffer HDMI (especialmente com MMU/cache ativo), preferir painel de debug dedicado com area reservada (viewport de blit deslocado) e overlay desenhado apos o frame; evitar misturar `console_puts()` com o painel. Em modo de debug visual, silenciar escrita do console HDMI apos o boot do core, manter logs compactos (codigos curtos em poucas linhas), e fazer flush de cache do framebuffer (`dc cvac` + `dsb`) apos desenhar o overlay para evitar caracteres parciais/corrompidos. Se a leitura visual continuar ruim, usar preset `text-only` (sem blit do emulador) ou UART como fallback.
 - Preset de debug visual que se mostrou funcional na pratica (Circle input + HDMI): emulador em `0,0` com escala limitada a `2x`, overlay compacto no canto superior esquerdo (4 linhas: `TXTDBG/CI/EV/JY`), texto branco sobre caixa preta, `console` HDMI silenciado apos boot do core, e `framebuffer_flush_rect()` apenas na area do painel com throttle de flush (para reduzir flicker e evitar travas por flush em MMU/cache). Reutilizar este formato antes de tentar novos overlays complexos.
 - Manter `docs/debug-layer.md` atualizado sempre que houver alteracao na layer de debug (compilacao, teclas de atalho, labels/linhas do overlay, itens de menu e semantica dos campos).
@@ -73,6 +73,7 @@ Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX
 - Por padrao, seguir iterando de forma autonoma ate entregar build/resultado testavel; so pausar para status intermediario se o usuario pedir explicitamente
 - Commits pequenos e focados
 - Antes de avançar para próximo marco: build limpo (`make clean && make`) e validação em hardware
+- atualize o handoff-lastsession.md de forma que ele vire sua memória de longo prazo, a cada nova iteração em `docs/handoff/{nome da branch corrente}.md` e atualize o ponteiro `CONTEXT.md` para apontar para o novo arquivo de contexto
 
 ## Marcos técnicos (alto nível)
 

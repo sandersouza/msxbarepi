@@ -41,7 +41,7 @@ Implementar overlay HDMI compacto de runtime para debug sem depender de UART, pr
   - Mapeamento atual: setas (`↑↓←→`) + `Space/Z` (botão 1) + `X` (botão 2)
 
 ## Referências
-- Template de layout/regras: `docs/debug-overlay-hdmi-template.md`
+- Template de layout/regras: `docs/debug-layer.md`
 - API de console/framebuffer Circle: `third_party/circle/include/circle/screen.h` e `third_party/circle/doc/screen.txt`
 - Base conceitual de áudio (fila/refill): `third_party/circle/sample/34-sounddevices/kernel.cpp`
 

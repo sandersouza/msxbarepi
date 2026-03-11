@@ -37,6 +37,7 @@ extern retro_log_printf_t log_cb;
 extern void fmsx_runtime_notify_media_probe(void);
 extern int g_fmsx_fmpac_enabled;
 extern unsigned g_fmsx_megaram_kb;
+/* 0=line192 (legacy), 1=post-VBlank, 2=full-frame boundary */
 int g_fmsx_quit_after_vblank = 1;
 
 #define RGB2INT(R,G,B)    ((B)|((int)(G)<<8)|((int)(R)<<16))
@@ -179,6 +180,12 @@ uint32_t FmsxKanjiReadCount = 0;      /* Reads from Kanji data port D9h */
 uint32_t FmsxKanjiAddrWriteCount = 0; /* Writes to Kanji address ports D8h/D9h */
 uint32_t FmsxKanjiNullReadCount = 0;  /* D9h reads while Kanji ROM pointer is null */
 uint8_t FmsxResetStatus = 0xFF;       /* Port F4h: reset status register stub */
+uint8_t FmsxS1985Addr = 0;
+uint8_t FmsxS1985Color1 = 0;
+uint8_t FmsxS1985Color2 = 0;
+uint8_t FmsxS1985Pattern = 0;
+uint8_t FmsxS1985RAM[16];
+uint8_t FmsxS1985InitDone = 0;
 
 /** Fixed font used by fMSX **********************************/
 const char *FNTName = "DEFAULT.FNT"; /* Font file for text   */
@@ -246,6 +253,75 @@ uint8_t VDPData;                      /* VDP data buffer        */
 uint8_t PLatch;                       /* Palette buffer         */
 uint8_t ALatch;                       /* Address buffer         */
 int  Palette[16];                  /* Current palette        */
+
+static void fmsx_force_ntsc_60_policy(void)
+{
+  Mode &= ~MSX_PAL;
+  VDP[9] &= (uint8_t)~0x02u;
+  if((RTCMode&0x03u)==2u) RTC[2][3] &= (uint8_t)~0x01u;
+}
+
+static void fmsx_sync_bios_vdp_r9_shadow(void)
+{
+  /* BIOS VDP mirror starts at F3DF; R#9 shadow is F3E8. */
+  const uint16_t Addr = 0xF3E8u;
+  const uint8_t ram_ss = ((Mode&MSX_MODEL)==MSX_MSX2P)? 0:2;
+  if((PSL[3]==3) && (SSL[3]==ram_ss) && EnWrite[3] && RAM[Addr>>13])
+    RAM[Addr>>13][Addr&0x1FFF] = VDP[9];
+}
+
+static void fmsx_s1985_init_once(void)
+{
+  if(!FmsxS1985InitDone)
+  {
+    memset(FmsxS1985RAM,0xFF,sizeof(FmsxS1985RAM));
+    FmsxS1985Addr = 0;
+    FmsxS1985Color1 = 0;
+    FmsxS1985Color2 = 0;
+    FmsxS1985Pattern = 0;
+    FmsxS1985InitDone = 1;
+  }
+}
+
+static uint8_t fmsx_s1985_read(uint8_t reg, int advance_pattern)
+{
+  switch(reg&0x0F)
+  {
+    case 0x00:
+      return (uint8_t)~0xFEu;
+    case 0x02:
+      return FmsxS1985RAM[FmsxS1985Addr&0x0F];
+    case 0x07:
+    {
+      const uint8_t value = (FmsxS1985Pattern&0x80u)? FmsxS1985Color2:FmsxS1985Color1;
+      if(advance_pattern)
+        FmsxS1985Pattern = (uint8_t)((FmsxS1985Pattern<<1)|(FmsxS1985Pattern>>7));
+      return value;
+    }
+    default:
+      return 0xFF;
+  }
+}
+
+static void fmsx_s1985_write(uint8_t reg, uint8_t value)
+{
+  switch(reg&0x0F)
+  {
+    case 0x01:
+      FmsxS1985Addr = value&0x0F;
+      break;
+    case 0x02:
+      FmsxS1985RAM[FmsxS1985Addr&0x0F] = value;
+      break;
+    case 0x06:
+      FmsxS1985Color2 = FmsxS1985Color1;
+      FmsxS1985Color1 = value;
+      break;
+    case 0x07:
+      FmsxS1985Pattern = value;
+      break;
+  }
+}
 
 /** Cheat entries ********************************************/
 int MCFCount     = 0;              /* Size of MCFEntries[]   */
@@ -626,7 +702,7 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   if(log_cb) log_cb(1,"StartMSX: LoadFNT done\n");
 
   /* Try loading CMOS memory contents */
-  if(!LoadROM("CMOS.ROM",sizeof(RTC),(uint8_t *)RTC))
+    if(!LoadROM("CMOS.ROM",sizeof(RTC),(uint8_t *)RTC))
   {
      memcpy(RTC,RTCInit,sizeof(RTC));
      if(MODEL(MSX_MSX2P))
@@ -645,8 +721,11 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   }
   if(MODEL(MSX_MSX2P))
   {
-    /* Keep RTC startup frequency policy aligned with selected machine video mode. */
-    RTC[2][3] = VIDEO(MSX_PAL) ? 0x01 : 0x00;
+    /*
+     * Project policy: fixed NTSC 60Hz.
+     * Keep RTC setup byte in 60Hz mode to match diagnostics that query RTC config.
+     */
+    RTC[2][3] = 0x00;
   }
   if(log_cb) log_cb(1,"StartMSX: CMOS done\n");
 
@@ -842,6 +921,11 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   int J,I;
 
   if(log_cb) log_cb(1,"ResetMSX: begin\n");
+
+  fmsx_s1985_init_once();
+
+  /* Project policy: fixed NTSC 60Hz. */
+  NewMode &= ~MSX_PAL;
 
   /* If changing hardware model, load new system ROMs */
   if((Mode^NewMode)&MSX_MODEL)
@@ -1078,7 +1162,7 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   }
 
   /* Assign new modes */
-  Mode           = NewMode;
+  Mode           = NewMode & ~MSX_PAL;
   FmsxResetStatus = MODEL(MSX_MSX2P)? 0x00:0xFF;
   if(log_cb) log_cb(1,"ResetMSX: mode assigned\n");
 
@@ -1233,6 +1317,8 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   memcpy(VDPStatus,VDPSInit,sizeof(VDPStatus));
   if(VIDEO(MSX_PAL)) VDP[9]|=0x02;
   else               VDP[9]&=~0x02;
+  fmsx_force_ntsc_60_policy();
+  fmsx_sync_bios_vdp_r9_shadow();
   if(log_cb) log_cb(1,"ResetMSX: VDP reset\n");
 
   /* Reset keyboard */
@@ -1429,6 +1515,28 @@ uint8_t InZ80(uint16_t Port)
   {
 
 case 0x90: return(0xFD);                   /* Printer READY signal */
+case 0x40:
+case 0x41:
+case 0x42:
+case 0x43:
+case 0x44:
+case 0x45:
+case 0x46:
+case 0x47:
+case 0x48:
+case 0x49:
+case 0x4A:
+case 0x4B:
+case 0x4C:
+case 0x4D:
+case 0x4E:
+case 0x4F:
+  if(MODEL(MSX_MSX2P))
+  {
+    fmsx_s1985_init_once();
+    return fmsx_s1985_read((uint8_t)Port,1);
+  }
+  return NORAM;
 case 0xF4:
   /* Reset status register exists on S1985-based machines (MSX2+ profile here). */
   return MODEL(MSX_MSX2P)? FmsxResetStatus:NORAM;
@@ -1606,6 +1714,28 @@ case 0x7D:
   return;
 #endif
 case 0x91: Printer(Value);return;                 /* Printer Data   */
+case 0x40:
+case 0x41:
+case 0x42:
+case 0x43:
+case 0x44:
+case 0x45:
+case 0x46:
+case 0x47:
+case 0x48:
+case 0x49:
+case 0x4A:
+case 0x4B:
+case 0x4C:
+case 0x4D:
+case 0x4E:
+case 0x4F:
+  if(MODEL(MSX_MSX2P))
+  {
+    fmsx_s1985_init_once();
+    fmsx_s1985_write((uint8_t)Port,Value);
+  }
+  return;
 case 0xA0:
 #ifdef FMSX_BAREMETAL_HARD_DISABLE_AUDIO
   PSG.Latch=Value&0x0F;
@@ -1765,7 +1895,8 @@ case 0xB5: /* RTC Data */
   {
     /* J = register bank# now */
     J=RTCMode&0x03;
-    /* Store the value */
+    /* Store the value (force RTC video setup nibble to 60Hz policy). */
+    if((J==2)&&(RTCReg==3)) Value&=~0x01;
     RTC[J][RTCReg]=Value&0x0f;
     /* If CMOS modified, we need to save it */
     if(J>1) SaveCMOS=1;
@@ -2376,6 +2507,14 @@ void VDPOut(uint8_t R,uint8_t V)
              break;
     case  6: V&=0x3F;SprGen=VRAM+((int)V<<11);break;
     case  7: FGColor=V>>4;BGColor=V&0x0F;break;
+    case  9:
+             /*
+              * Project policy: fixed NTSC 60Hz.
+              * Keep only 212/192 scanline control (bit7), force PAL bit (bit1) to 0.
+              */
+             V&=~0x02;
+             Mode&=~MSX_PAL;
+             break;
     case 10: V&=0x07;
              ColTab=VRAM+((int)(VDP[3]&MSK[ScrMode].R3)<<6)+((int)V<<14);
              break;
@@ -2397,6 +2536,7 @@ void VDPOut(uint8_t R,uint8_t V)
 
   /* Write value into a register */
   VDP[R]=V;
+  if(R==9) fmsx_sync_bios_vdp_r9_shadow();
 }
 
 /** Printer() ************************************************/
@@ -2432,7 +2572,11 @@ uint8_t RTCIn(uint8_t R)
 
   if(R>12) J=R==13? RTCMode:NORAM;
   else
-    if(J) J=RTC[J][R];
+    if(J)
+    {
+      J=RTC[J][R];
+      if(((RTCMode&0x03)==2)&&(R==3)) J&=~0x01;
+    }
     else
     {
       /* Retrieve system time if any time passed */
@@ -2801,14 +2945,11 @@ uint16_t LoopZ80(Z80 *R)
     }
   }
 
-  /* Exit emulation frame-step policy:
-   * - NORM: legacy cadence at line 192 (upstream behavior).
-   * - FAST/GAME: delayed quit after VBlank window.
-   */
+  /* Exit emulation frame-step only after VBlank window */
   if(ExitNow)
   {
     const int QuitLineVBlank = PALVideo ? (ScanLines212 ? (212+43) : (192+53))
-                                        : (ScanLines212 ? (212+19) : (192+29));
+                                     : (ScanLines212 ? (212+19) : (192+29));
     const int QuitLine = g_fmsx_quit_after_vblank ? QuitLineVBlank : 192;
     if(ScanLine==QuitLine)
     {
@@ -4045,6 +4186,9 @@ unsigned int LoadState(unsigned char *Buf,unsigned int MaxSize)
   PSLReg     = State[J++];
   FMPACKey   = State[J++];
 
+  /* Enforce fixed NTSC policy after loading raw hardware state. */
+  fmsx_force_ntsc_60_policy();
+
   /* Memory setup */
   for(I=0;I<4;++I)
   {
@@ -4114,6 +4258,7 @@ unsigned int LoadState(unsigned char *Buf,unsigned int MaxSize)
   BGColor  = VDP[7]&0x0F;
   XFGColor = FGColor;
   XBGColor = BGColor;
+  fmsx_sync_bios_vdp_r9_shadow();
 
   /* All sound channels could have been changed */
   PSG.Changed     = (1<<AY8910_CHANNELS)-1;

@@ -31,7 +31,6 @@ BOOTSTRAP_ARTIFACT := artifacts/kernel8-bootstrap.img
 DEFAULT_ARTIFACT := artifacts/kernel8-default.img
 INITRAMFS_IN ?= roms/initramfs
 INITRAMFS_OUT ?= sdcard/msx.cpio
-CONTEXT_UPDATER := ./scripts/update-ai-context.sh
 THIRD_PARTY_GUARD := ./scripts/check-third-party-pristine.sh
 
 .PHONY: all default clean help guard-third-party circle-configure sdcard sdcard-update initramfs package
@@ -60,15 +59,12 @@ default: circle-configure
 	cp "$$img" build/src/kernel8.img; \
 	cp build/src/kernel8.img $(BOOTSTRAP_ARTIFACT)
 	$(MAKE) -C src clean >/dev/null
-	bash $(CONTEXT_UPDATER) default build-ok $(BOOTSTRAP_ARTIFACT)
 	cp $(BOOTSTRAP_ARTIFACT) $(DEFAULT_ARTIFACT)
-	bash $(CONTEXT_UPDATER) default default-ok $(DEFAULT_ARTIFACT)
 	@issue_branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true); \
 	issue_id=$$(printf "%s" "$$issue_branch" | sed -n 's/^\([0-9][0-9]*\)-.*/\1/p'); \
 	if [ -n "$$issue_id" ]; then \
 		issue_artifact="artifacts/kernel8-issue$${issue_id}.img"; \
 		cp $(BOOTSTRAP_ARTIFACT) "$$issue_artifact"; \
-		bash $(CONTEXT_UPDATER) default issue-ok "$$issue_artifact"; \
 		echo "Artefato issue estavel: $$issue_artifact"; \
 	fi
 	@echo "Artefato default estavel: $(DEFAULT_ARTIFACT)"

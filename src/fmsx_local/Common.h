@@ -58,14 +58,12 @@ INLINE unsigned V9958FineScroll512(void)
 
 INLINE unsigned V9958MaskLeft256(void)
 {
-  unsigned Fine = V9958FineScroll256();
-  return (MODEL(MSX_MSX2P) && (VDP[25] & 0x02u)) ? (8u - Fine) : 0u;
+  return (MODEL(MSX_MSX2P) && (VDP[25] & 0x02u)) ? 8u : 0u;
 }
 
 INLINE unsigned V9958MaskLeft512(void)
 {
-  unsigned Fine = V9958FineScroll512();
-  return (MODEL(MSX_MSX2P) && (VDP[25] & 0x02u)) ? (8u - Fine) : 0u;
+  return (MODEL(MSX_MSX2P) && (VDP[25] & 0x02u)) ? 8u : 0u;
 }
 
 INLINE unsigned V9958VirtualWidth256(void)
@@ -90,6 +88,30 @@ INLINE uint8_t *V9958ScrollPagePtr(uint8_t *Base,int Offset)
   Pos%=Size;
   if(Pos<0) Pos+=Size;
   return VRAM+Pos;
+}
+
+INLINE void V9958ComposeScrolledLine256(
+  uint16_t *Dst,
+  const uint16_t *Raw,
+  unsigned Coarse,
+  unsigned Fine,
+  unsigned LeftMask,
+  unsigned VirtualWidth,
+  uint16_t MaskColor)
+{
+  int PIdx,Src;
+  uint16_t Bg;
+
+  for(PIdx=0;PIdx<256;++PIdx)
+  {
+    Bg=MaskColor;
+    if(PIdx>=(int)LeftMask)
+    {
+      Src=PIdx-(int)Fine+(int)Coarse;
+      Bg=Raw[(unsigned)Src&(VirtualWidth-1u)];
+    }
+    Dst[PIdx]=Bg;
+  }
 }
 
 /** ClearLine() **********************************************/
@@ -574,7 +596,13 @@ void RefreshLineF(uint8_t Y)
 void RefreshLine0(uint8_t Y)
 {
   uint16_t FC;
-  uint8_t X,*T,*G;
+  uint8_t X,*T,*T0,*T1,*G;
+  uint8_t K;
+  unsigned Coarse;
+  unsigned Fine;
+  unsigned LeftMask;
+  unsigned VirtualWidth;
+  uint16_t BgRaw[512];
   uint16_t BC=XPal[BGColor];
   uint16_t *P=RefreshBorder(Y,BC);
   if(!P) return;
@@ -583,22 +611,54 @@ void RefreshLine0(uint8_t Y)
   else
   {
     LastScanline = Y + FirstLine;
-    P[0]=P[1]=P[2]=P[3]=P[4]=P[5]=P[6]=P[7]=P[8]=BC;
-
     G=(FontBuf&&(Mode&MSX_FIXEDFONT)? FontBuf:ChrGen)+((Y+VScroll)&0x07);
     T=ChrTab+40*(Y>>3);
     FC=XPal[FGColor];
-    P+=9;
 
-    for(X=0;X<40;X++,T++,P+=6)
+    Coarse = V9958CoarseScroll256();
+    Fine = V9958FineScroll256();
+    LeftMask = V9958MaskLeft256();
+    VirtualWidth = V9958VirtualWidth256();
+
+    for(X=0;X<256;X++) BgRaw[X]=BC;
+
+    T0=T;
+    for(X=0;X<40;X++,T0++)
     {
-      Y=G[(int)*T<<3];
-      P[0]=Y&0x80? FC:BC;P[1]=Y&0x40? FC:BC;
-      P[2]=Y&0x20? FC:BC;P[3]=Y&0x10? FC:BC;
-      P[4]=Y&0x08? FC:BC;P[5]=Y&0x04? FC:BC;
+      K=G[(int)*T0<<3];
+      BgRaw[9+X*6+0]=K&0x80? FC:BC;
+      BgRaw[9+X*6+1]=K&0x40? FC:BC;
+      BgRaw[9+X*6+2]=K&0x20? FC:BC;
+      BgRaw[9+X*6+3]=K&0x10? FC:BC;
+      BgRaw[9+X*6+4]=K&0x08? FC:BC;
+      BgRaw[9+X*6+5]=K&0x04? FC:BC;
     }
 
-    P[0]=P[1]=P[2]=P[3]=P[4]=P[5]=P[6]=BC;
+    if(VirtualWidth>256u)
+    {
+      for(X=0;X<256;X++) BgRaw[256+X]=BC;
+
+      T1=V9958ScrollPagePtr(T,0x8000);
+      for(X=0;X<40;X++,T1++)
+      {
+        K=G[(int)*T1<<3];
+        BgRaw[256+9+X*6+0]=K&0x80? FC:BC;
+        BgRaw[256+9+X*6+1]=K&0x40? FC:BC;
+        BgRaw[256+9+X*6+2]=K&0x20? FC:BC;
+        BgRaw[256+9+X*6+3]=K&0x10? FC:BC;
+        BgRaw[256+9+X*6+4]=K&0x08? FC:BC;
+        BgRaw[256+9+X*6+5]=K&0x04? FC:BC;
+      }
+    }
+
+    V9958ComposeScrolledLine256(
+      P,
+      BgRaw,
+      Coarse,
+      Fine,
+      LeftMask,
+      VirtualWidth,
+      BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)]);
   }
 }
 
@@ -609,7 +669,12 @@ void RefreshLine0(uint8_t Y)
 void RefreshLine1(uint8_t Y)
 {
   uint16_t FC,BC;
-  uint8_t K,X,*T,*G;
+  uint8_t K,X,*T,*T0,*T1,*G;
+  unsigned Coarse;
+  unsigned Fine;
+  unsigned LeftMask;
+  unsigned VirtualWidth;
+  uint16_t BgRaw[512];
   uint16_t *P=RefreshBorder(Y,XPal[BGColor]);
   if(!P)
      return;
@@ -623,19 +688,58 @@ void RefreshLine1(uint8_t Y)
     G=(FontBuf&&(Mode&MSX_FIXEDFONT)? FontBuf:ChrGen)+(Y&0x07);
     T=ChrTab+((int)(Y&0xF8)<<2);
 
-    for(X=0;X<32;X++,T++,P+=8)
+    Coarse = V9958CoarseScroll256();
+    Fine = V9958FineScroll256();
+    LeftMask = V9958MaskLeft256();
+    VirtualWidth = V9958VirtualWidth256();
+
+    T0=T;
+    for(X=0;X<32;X++)
     {
-      K=ColTab[*T>>3];
+      K=ColTab[T0[X]>>3];
       FC=XPal[K>>4];
       BC=XPal[K&0x0F];
-      K=G[(int)*T<<3];
-      P[0]=K&0x80? FC:BC;P[1]=K&0x40? FC:BC;
-      P[2]=K&0x20? FC:BC;P[3]=K&0x10? FC:BC;
-      P[4]=K&0x08? FC:BC;P[5]=K&0x04? FC:BC;
-      P[6]=K&0x02? FC:BC;P[7]=K&0x01? FC:BC;
+      K=G[(int)T0[X]<<3];
+      BgRaw[(X<<3)+0]=K&0x80? FC:BC;
+      BgRaw[(X<<3)+1]=K&0x40? FC:BC;
+      BgRaw[(X<<3)+2]=K&0x20? FC:BC;
+      BgRaw[(X<<3)+3]=K&0x10? FC:BC;
+      BgRaw[(X<<3)+4]=K&0x08? FC:BC;
+      BgRaw[(X<<3)+5]=K&0x04? FC:BC;
+      BgRaw[(X<<3)+6]=K&0x02? FC:BC;
+      BgRaw[(X<<3)+7]=K&0x01? FC:BC;
     }
 
-    if(!SpritesOFF) Sprites(Y,P-256);
+    if(VirtualWidth>256u)
+    {
+      T1=V9958ScrollPagePtr(T0,0x8000);
+      for(X=0;X<32;X++)
+      {
+        K=ColTab[T1[X]>>3];
+        FC=XPal[K>>4];
+        BC=XPal[K&0x0F];
+        K=G[(int)T1[X]<<3];
+        BgRaw[256+(X<<3)+0]=K&0x80? FC:BC;
+        BgRaw[256+(X<<3)+1]=K&0x40? FC:BC;
+        BgRaw[256+(X<<3)+2]=K&0x20? FC:BC;
+        BgRaw[256+(X<<3)+3]=K&0x10? FC:BC;
+        BgRaw[256+(X<<3)+4]=K&0x08? FC:BC;
+        BgRaw[256+(X<<3)+5]=K&0x04? FC:BC;
+        BgRaw[256+(X<<3)+6]=K&0x02? FC:BC;
+        BgRaw[256+(X<<3)+7]=K&0x01? FC:BC;
+      }
+    }
+
+    V9958ComposeScrolledLine256(
+      P,
+      BgRaw,
+      Coarse,
+      Fine,
+      LeftMask,
+      VirtualWidth,
+      BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)]);
+
+    if(!SpritesOFF) Sprites(Y,P);
   }
 }
 
@@ -734,7 +838,12 @@ void RefreshLine2(uint8_t Y)
 /*************************************************************/
 void RefreshLine3(uint8_t Y)
 {
-  uint8_t X,K,*T,*G;
+  uint8_t X,K,*T,*T0,*T1,*G;
+  unsigned Coarse;
+  unsigned Fine;
+  unsigned LeftMask;
+  unsigned VirtualWidth;
+  uint16_t BgRaw[512];
   uint16_t *P=RefreshBorder(Y,XPal[BGColor]);
   if(!P) return;
 
@@ -746,14 +855,40 @@ void RefreshLine3(uint8_t Y)
     T=ChrTab+((int)(Y&0xF8)<<2);
     G=ChrGen+((Y&0x1C)>>2);
 
-    for(X=0;X<32;X++,T++,P+=8)
+    Coarse = V9958CoarseScroll256();
+    Fine = V9958FineScroll256();
+    LeftMask = V9958MaskLeft256();
+    VirtualWidth = V9958VirtualWidth256();
+
+    T0=T;
+    for(X=0;X<32;X++)
     {
-      K=G[(int)*T<<3];
-      P[0]=P[1]=P[2]=P[3]=XPal[K>>4];
-      P[4]=P[5]=P[6]=P[7]=XPal[K&0x0F];
+      K=G[(int)T0[X]<<3];
+      BgRaw[(X<<3)+0]=BgRaw[(X<<3)+1]=BgRaw[(X<<3)+2]=BgRaw[(X<<3)+3]=XPal[K>>4];
+      BgRaw[(X<<3)+4]=BgRaw[(X<<3)+5]=BgRaw[(X<<3)+6]=BgRaw[(X<<3)+7]=XPal[K&0x0F];
     }
 
-    if(!SpritesOFF) Sprites(Y,P-256);
+    if(VirtualWidth>256u)
+    {
+      T1=V9958ScrollPagePtr(T0,0x8000);
+      for(X=0;X<32;X++)
+      {
+        K=G[(int)T1[X]<<3];
+        BgRaw[256+(X<<3)+0]=BgRaw[256+(X<<3)+1]=BgRaw[256+(X<<3)+2]=BgRaw[256+(X<<3)+3]=XPal[K>>4];
+        BgRaw[256+(X<<3)+4]=BgRaw[256+(X<<3)+5]=BgRaw[256+(X<<3)+6]=BgRaw[256+(X<<3)+7]=XPal[K&0x0F];
+      }
+    }
+
+    V9958ComposeScrolledLine256(
+      P,
+      BgRaw,
+      Coarse,
+      Fine,
+      LeftMask,
+      VirtualWidth,
+      BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)]);
+
+    if(!SpritesOFF) Sprites(Y,P);
   }
 }
 
@@ -871,6 +1006,8 @@ void RefreshLine5(uint8_t Y)
   uint16_t BgRaw[512];
   uint8_t *R0;
   uint16_t *P0;
+  const boolean suppress_boot_logo_mask_sprites =
+    MODEL(MSX_MSX2P) && (VDP[25] & 0x02u) && ((VDP[26] | VDP[27]) != 0u);
   uint16_t *P=RefreshBorder(Y,XPal[BGColor]);
   if(!P) return;
 
@@ -945,6 +1082,7 @@ void RefreshLine5(uint8_t Y)
         Bg=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
       }
       C=R0[PIdx];
+      if(suppress_boot_logo_mask_sprites) C=0;
       P0[PIdx]=C? XPal[C]:Bg;
     }
   }

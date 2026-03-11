@@ -2,6 +2,8 @@
 
 Guia operacional da layer de debug do MSXBarePI: como compilar, usar, atalhos e significado de cada linha/label.
 
+Documento canonico para debug HDMI/runtime. O conteudo do antigo guia de template foi consolidado aqui.
+
 ## Objetivo
 - Fornecer telemetria em tempo real para diagnostico de boot, video, input, audio e I/O de SD.
 - Permitir testes A/B de audio (chips e layers) sem recompilar.
@@ -41,6 +43,46 @@ make DEBUG=0
 ## Tag de build na tela
 - No preset atual de diagnostico MSX2+, a `linha 14` foi reservada para `TM4` (telemetria adicional de boot/VDP/KANJI).
 - Com isso, a tag `@Beta: <OWNER>` nao e exibida nesse preset.
+
+## Baseline de layout e runtime (HDMI)
+
+Objetivo: painel legivel no framebuffer HDMI com MMU/cache ativo, sem depender de UART.
+
+- Overlay compacto no canto superior esquerdo.
+- Emulador segue rodando ao fundo.
+- Em preset de debug, limitar escala do blit do emulador (ex.: `2x`) para reduzir sobreposicao visual.
+
+Regras validadas em hardware:
+
+- Nao misturar `console_puts()` com painel de debug durante runtime.
+- Silenciar console HDMI apos boot do core (`console_set_enabled(0)`).
+- Desenhar overlay apos blit do emulador.
+- Usar caixa opaca antes do texto (`framebuffer_fill_rect`).
+- Texto branco sobre fundo preto (`framebuffer_set_text_colors(0x00FFFFFF, 0x00000000)`).
+- Fazer flush de cache apenas na area do painel (`framebuffer_flush_rect`) com throttle.
+- Evitar flush global no hot path.
+- Preferir getters escalares de debug para evitar copia de structs grandes.
+
+Diretriz visual (overlay e menu):
+
+- Evitar fundo preto em linha inteira quando o objetivo for destacar apenas um rotulo.
+- Preferir caixa opaca curta no texto de status (ex.: `PAUSE ||`).
+- Em menu, destacar item selecionado/titulo com caixa local e preservar imagem do emulador.
+- Usar faixa opaca inteira apenas quando a legibilidade realmente exigir.
+
+## Esqueleto de menu (PAUSE)
+
+- Caixa flutuante preta centralizada sobre box do emulador.
+- Titulo: `PAUSE II`.
+- Itens iniciais:
+  - `Cartridge A`
+  - `Cartridge B`
+  - `Disk Drive A`
+  - `Disk Drive B`
+  - `Settings`
+- Selecao visual: inversao de cores, faixa com margem lateral, itens centralizados.
+- Navegacao: `Up/Down` edge-trigger, sem repeticao por hold.
+- Anti-flicker: redesenhar menu apenas em mudanca de estado (mostrar/ocultar, selecao, reposicionamento).
 
 ## Menu relacionado
 - `Settings -> Debugger`: liga/desliga overlay (quando compilado com debug).
@@ -107,4 +149,6 @@ make DEBUG=0
 - Em investigacoes de SD/boot, priorize `SD1/SD2` e correlacione com logs do kernel.
 
 ## Referencias
-- Template historico de painel: [debug-overlay-hdmi-template.md](/Users/sandersouza/Developer/msxbarepi-circle/docs/debug-overlay-hdmi-template.md)
+- Implementacao principal: `src/combo_debug_overlay.cpp`
+- Integracao de runtime/menu: `src/kernel.cpp`
+- Render helper/framebuffer: `src/framebuffer.c`

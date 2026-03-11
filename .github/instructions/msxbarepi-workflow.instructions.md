@@ -47,7 +47,7 @@ applyTo: "**"
 
 ## Consistencia de UX/debug
 
-- Em novos trabalhos de overlay de debug, reutilizar baseline de `docs/debug-overlay-hdmi-template.md`, salvo motivo concreto para divergir.
+- Em novos trabalhos de overlay de debug, reutilizar baseline de `docs/debug-layer.md`, salvo motivo concreto para divergir.
 - Manter `docs/debug-layer.md` atualizado quando mudarem flags de build de debug, hotkeys, labels, itens de menu ou semantica de campos.
 - Ao adicionar/alterar labels visiveis ao usuario, atualizar locales PT/EN/ES na mesma mudanca; evitar strings hardcoded fora do sistema de locale.
 

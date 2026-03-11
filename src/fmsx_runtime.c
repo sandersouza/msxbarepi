@@ -34,10 +34,6 @@
 #define MSXBARE_FMSX_GAME_FAST_FORWARD_STEPS_MSX2P 6u
 #endif
 
-#ifndef MSXBARE_FMSX_Z80_SLICES_PER_FRAME_MAX
-#define MSXBARE_FMSX_Z80_SLICES_PER_FRAME_MAX 4096u
-#endif
-
 #ifndef MSXBARE_FMSX_GAME_VIDEO_SKIP_FRAMES_MSX2
 #define MSXBARE_FMSX_GAME_VIDEO_SKIP_FRAMES_MSX2 192u
 #endif
@@ -396,8 +392,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     g_fmsx_status.last_pc = 0;
     g_fmsx_status.last_error = 0;
     /*
-     * NORM must run full frame cadence (post-VBlank quit), without any
-     * mid-frame cut. FAST/GAME also keep post-VBlank quit.
+     * Stable cadence: quit after VBlank window.
      */
     g_fmsx_quit_after_vblank = 1;
 
@@ -692,33 +687,18 @@ boolean fmsx_runtime_step_frame(void)
     unsigned frames_done = 0u;
     for (unsigned i = 0; i < steps; ++i)
     {
-        const unsigned seq_before = fmsx_video_get_latest(0, 0, 0);
-        unsigned slices = 0u;
-        boolean frame_done = FALSE;
-
         if (g_boot_warmup_frames_remaining > 0u)
         {
             /* During FAST/GAME warmup, keep deterministic frame-step entry. */
             ScanLine = 261;
         }
 
-        while (slices < MSXBARE_FMSX_Z80_SLICES_PER_FRAME_MAX)
-        {
-            g_fmsx_status.last_pc = (int) RunZ80(&CPU);
-            ++slices;
-
-            if (fmsx_video_get_latest(0, 0, 0) != seq_before)
-            {
-                frame_done = TRUE;
-                break;
-            }
-        }
-
-        if (!frame_done)
-        {
-            /* Bail out instead of spinning forever if a frame is not produced. */
-            break;
-        }
+        /*
+         * Run one emulated frame boundary. fMSX exits RunZ80() on INT_QUIT,
+         * which in our local core is aligned to post-VBlank when
+         * g_fmsx_quit_after_vblank=1.
+         */
+        g_fmsx_status.last_pc = (int) RunZ80(&CPU);
 
         ++frames_done;
         ++g_fmsx_status.frames;

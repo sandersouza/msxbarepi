@@ -181,6 +181,17 @@ INLINE int VdpOpsQuantum(void)
   return MODEL(MSX_MSX2P) ? 250000 : 12500;
 }
 
+INLINE int VdpCommandScreenMode(void)
+{
+  /*
+   * V9958 command-enable (R#25 bit6) allows commands outside SCR5..8.
+   * Mirror BlueMSX behavior by mapping those cases to the SCR7 command map.
+   */
+  if((ScrMode>=5)&&(ScrMode<=8)) return ScrMode-5;
+  if(MODEL(MSX_MSX2P) && (VDP[25]&0x40u)) return 2;
+  return -1;
+}
+
                       /*  SprOn SprOn SprOf SprOf */
                       /*  ScrOf ScrOn ScrOf ScrOn */
 static int srch_timing[8]={ 818, 1025,  818,  830,   /* ntsc */
@@ -866,11 +877,8 @@ uint8_t VDPDraw(uint8_t Op)
 {
   int SM;
 
-  /* V9938 ops only work in SCREENs 5-8 */
-  if (ScrMode<5)
-    return(0);
-
-  SM = ScrMode-5;         /* Screen mode index 0..3  */
+  SM = VdpCommandScreenMode();
+  if(SM<0) return(0);
 
   MMC.CM = Op>>4;
   if ((MMC.CM & 0x0C) != 0x0C && MMC.CM != 0)
