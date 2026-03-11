@@ -6,6 +6,7 @@ BUILD_DIR := build
 FB_WIDTH ?= 1024
 FB_HEIGHT ?= 768
 DEBUG ?= 0
+EMULATOR_BACKEND ?= fmsx
 DEBUG_BOOL := 0
 ifeq ($(strip $(DEBUG)),1)
 DEBUG_BOOL := 1
@@ -46,6 +47,7 @@ default: circle-configure
 	$(MAKE) -C src CHECK_DEPS=0 \
 		EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' \
 		DEBUG=$(DEBUG_BOOL) \
+		EMULATOR_BACKEND=$(EMULATOR_BACKEND) \
 		MSXBARE_CARTA_ONLY=$(MSXBARE_CARTA_ONLY) \
 		MSXBARE_SIZE_OPT=$(MSXBARE_SIZE_OPT) \
 		MSXBARE_BUILD_BID="$(BUILD_BID)" \
@@ -126,5 +128,6 @@ help:
 	@echo "Cross prefix auto: aarch64-none-elf- | aarch64-elf-"
 	@echo "Override: make CROSS=aarch64-elf-"
 	@echo "Use flags principais: DEBUG=0|1 OWNER=<nome> FIRMWARE_DIR=<dir>"
+	@echo "Backend do emulador: EMULATOR_BACKEND=fmsx|bluemsx (default: fmsx)"
 	@echo "Boot mode selecionavel em runtime: Settings -> Boot Mode [NORM/FAST/GAME]"
 	@echo "Bypass temporario (nao recomendado): ALLOW_DIRTY_THIRD_PARTY=1 make"

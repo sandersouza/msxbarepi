@@ -32,7 +32,8 @@ extern void PutImage(void);
 INLINE unsigned V9958CoarseBlocks(void)
 {
   if(!MODEL(MSX_MSX2P)) return 0u;
-  return (unsigned)(VDP[26] & (HScroll512? 0x3Fu:0x1Fu));
+  /* openMSX behavior: multi-page scroll requires R25 bit0 AND R2 bit5. */
+  return (unsigned)(VDP[26] & (((VDP[25] & 0x01u) && (VDP[2] & 0x20u)) ? 0x3Fu : 0x1Fu));
 }
 
 INLINE unsigned V9958CoarseScroll256(void)
@@ -42,7 +43,7 @@ INLINE unsigned V9958CoarseScroll256(void)
 
 INLINE unsigned V9958CoarseScroll512(void)
 {
-  return V9958CoarseBlocks()<<4;
+  return V9958CoarseBlocks()<<3;
 }
 
 INLINE unsigned V9958FineScroll256(void)
@@ -52,7 +53,7 @@ INLINE unsigned V9958FineScroll256(void)
 
 INLINE unsigned V9958FineScroll512(void)
 {
-  return MODEL(MSX_MSX2P) ? ((VDP[27] & 0x07u) << 1) : 0u;
+  return MODEL(MSX_MSX2P) ? (VDP[27] & 0x07u) : 0u;
 }
 
 INLINE unsigned V9958MaskLeft256(void)
@@ -64,24 +65,24 @@ INLINE unsigned V9958MaskLeft256(void)
 INLINE unsigned V9958MaskLeft512(void)
 {
   unsigned Fine = V9958FineScroll512();
-  return (MODEL(MSX_MSX2P) && (VDP[25] & 0x02u)) ? (16u - Fine) : 0u;
+  return (MODEL(MSX_MSX2P) && (VDP[25] & 0x02u)) ? (8u - Fine) : 0u;
 }
 
 INLINE unsigned V9958VirtualWidth256(void)
 {
-  return (MODEL(MSX_MSX2P) && HScroll512)? 512u:256u;
+  return (MODEL(MSX_MSX2P) && (VDP[25] & 0x01u) && (VDP[2] & 0x20u)) ? 512u : 256u;
 }
 
 INLINE unsigned V9958VirtualWidth512(void)
 {
-  return (MODEL(MSX_MSX2P) && HScroll512)? 1024u:512u;
+  return (MODEL(MSX_MSX2P) && (VDP[25] & 0x01u) && (VDP[2] & 0x20u)) ? 1024u : 512u;
 }
 
 INLINE uint8_t *V9958ScrollPagePtr(uint8_t *Base,int Offset)
 {
   int Size,Pos;
 
-  if(!MODEL(MSX_MSX2P) || !HScroll512 || !Offset) return Base;
+  if(!MODEL(MSX_MSX2P) || !(VDP[25] & 0x01u) || !(VDP[2] & 0x20u) || !Offset) return Base;
   Size=VRAMPages<<14;
   if(Size<=0) return Base;
 
@@ -652,6 +653,7 @@ void RefreshLine2(uint8_t Y)
   unsigned LeftMask;
   unsigned VirtualWidth;
   uint16_t Bg;
+  uint16_t MaskBg;
   uint16_t BgRaw[512];
   uint16_t *P0;
   uint16_t *P=RefreshBorder(Y,XPal[BGColor]);
@@ -1081,8 +1083,17 @@ void RefreshLine12(uint8_t Y)
 /*************************************************************/
 void RefreshLine6(uint8_t Y)
 {
-  uint8_t X,*T,*R,C;
+  uint8_t X,*T,*R,*T0,*T1,C;
+  int I,Src;
+  unsigned Coarse;
+  unsigned Fine;
+  unsigned LeftMask;
+  unsigned VirtualWidth;
+  uint16_t Bg;
   uint8_t ZBuf[320];
+  uint16_t BgRaw[1024];
+  uint8_t *R0;
+  uint16_t *P0;
   uint16_t *P=RefreshBorder(Y,XPal[BGColor&0x03]);
   if(!P) return;
 
@@ -1092,20 +1103,48 @@ void RefreshLine6(uint8_t Y)
     LastScanline = Y + FirstLine;
     ColorSprites(Y,ZBuf);
     R=ZBuf+32;
+    R0=R;
+    P0=P;
     T=ChrTab+(((int)(Y+VScroll)<<7)&ChrTabM&0x7FFF);
     if (FlipEvenOdd && OddPage && VRAM<=T-0x8000) T-=0x8000;
+    Coarse = V9958CoarseScroll512();
+    Fine = V9958FineScroll512();
+    LeftMask = V9958MaskLeft512();
+    VirtualWidth = V9958VirtualWidth512();
 
-    for(X=0;X<32;X++)
+    T0=T;
+    for(X=0,T=T0;X<128;X++,T++)
     {
-      C=R[0];P[0]=XPal[C? C:T[0]>>6];
-      C=R[1];P[1]=XPal[C? C:(T[0]>>2)&0x03];
-      C=R[2];P[2]=XPal[C? C:T[1]>>6];
-      C=R[3];P[3]=XPal[C? C:(T[1]>>2)&0x03];
-      C=R[4];P[4]=XPal[C? C:T[2]>>6];
-      C=R[5];P[5]=XPal[C? C:(T[2]>>2)&0x03];
-      C=R[6];P[6]=XPal[C? C:T[3]>>6];
-      C=R[7];P[7]=XPal[C? C:(T[3]>>2)&0x03];
-      R+=8;P+=8;T+=4;
+      BgRaw[(X<<2)+0]=XPal[T[0]>>6];
+      BgRaw[(X<<2)+1]=XPal[(T[0]>>4)&0x03];
+      BgRaw[(X<<2)+2]=XPal[(T[0]>>2)&0x03];
+      BgRaw[(X<<2)+3]=XPal[T[0]&0x03];
+    }
+
+    if(VirtualWidth>512u)
+    {
+      T1=V9958ScrollPagePtr(T0,0x8000);
+      for(X=0,T=T1;X<128;X++,T++)
+      {
+        BgRaw[512+(X<<2)+0]=XPal[T[0]>>6];
+        BgRaw[512+(X<<2)+1]=XPal[(T[0]>>4)&0x03];
+        BgRaw[512+(X<<2)+2]=XPal[(T[0]>>2)&0x03];
+        BgRaw[512+(X<<2)+3]=XPal[T[0]&0x03];
+      }
+    }
+
+    /* Match left mask color to current scrolled backdrop pixel. */
+    MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];
+    for(I=0;I<256;I++)
+    {
+      Bg=MaskBg;
+      if((unsigned)(I<<1)>=(unsigned)LeftMask)
+      {
+        Src=(I<<1)-(int)Fine+(int)Coarse;
+        if(Src>=0) Bg=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
+      }
+      C=R0[I];
+      P0[I]=C? XPal[C]:Bg;
     }
   }
 }
@@ -1116,8 +1155,19 @@ void RefreshLine6(uint8_t Y)
 /*************************************************************/
 void RefreshLine7(uint8_t Y)
 {
-  uint8_t C,X,*T,*R;
+  uint8_t C,*T,*R,*T0,*T1;
+  unsigned X;
+  int I,Src;
+  unsigned Coarse;
+  unsigned Fine;
+  unsigned LeftMask;
+  unsigned VirtualWidth;
+  uint16_t Bg;
+  uint16_t MaskBg;
   uint8_t ZBuf[320];
+  uint16_t BgRaw[1024];
+  uint8_t *R0;
+  uint16_t *P0;
   uint16_t *P=RefreshBorder(Y,XPal[BGColor]);
   if(!P) return;
 
@@ -1127,20 +1177,44 @@ void RefreshLine7(uint8_t Y)
     LastScanline = Y + FirstLine;
     ColorSprites(Y,ZBuf);
     R=ZBuf+32;
+    R0=R;
+    P0=P;
     T=ChrTab+(((int)(Y+VScroll)<<8)&ChrTabM&0xFFFF);
     if (FlipEvenOdd && OddPage && VRAM<=T-0x10000) T-=0x10000;
+    Coarse = V9958CoarseScroll512();
+    Fine = V9958FineScroll512();
+    LeftMask = V9958MaskLeft512();
+    VirtualWidth = V9958VirtualWidth512();
 
-    for(X=0;X<32;X++)
+    T0=T;
+    for(X=0,T=T0;X<256;X++,T++)
     {
-      C=R[0];P[0]=XPal[C? C:T[0]>>4];
-      C=R[1];P[1]=XPal[C? C:T[1]>>4];
-      C=R[2];P[2]=XPal[C? C:T[2]>>4];
-      C=R[3];P[3]=XPal[C? C:T[3]>>4];
-      C=R[4];P[4]=XPal[C? C:T[4]>>4];
-      C=R[5];P[5]=XPal[C? C:T[5]>>4];
-      C=R[6];P[6]=XPal[C? C:T[6]>>4];
-      C=R[7];P[7]=XPal[C? C:T[7]>>4];
-      R+=8;P+=8;T+=8;
+      BgRaw[(X<<1)+0]=XPal[T[0]>>4];
+      BgRaw[(X<<1)+1]=XPal[T[0]&0x0F];
+    }
+
+    if(VirtualWidth>512u)
+    {
+      T1=V9958ScrollPagePtr(T0,0x10000);
+      for(X=0,T=T1;X<256;X++,T++)
+      {
+        BgRaw[512+(X<<1)+0]=XPal[T[0]>>4];
+        BgRaw[512+(X<<1)+1]=XPal[T[0]&0x0F];
+      }
+    }
+
+    /* Match left mask color to current scrolled backdrop pixel. */
+    MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];
+    for(I=0;I<256;I++)
+    {
+      Bg=MaskBg;
+      if((unsigned)(I<<1)>=(unsigned)LeftMask)
+      {
+        Src=(I<<1)-(int)Fine+(int)Coarse;
+        if(Src>=0) Bg=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
+      }
+      C=R0[I];
+      P0[I]=C? XPal[C]:Bg;
     }
   }
 }

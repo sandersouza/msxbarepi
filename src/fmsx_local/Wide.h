@@ -145,6 +145,7 @@ void RefreshLine6(uint8_t Y)
   unsigned LeftMask;
   unsigned VirtualWidth;
   uint16_t Bg;
+  uint16_t MaskBg;
   uint8_t ZBuf[304];
   uint16_t BgRaw[1024];
   uint8_t *R0;
@@ -182,6 +183,7 @@ void RefreshLine6(uint8_t Y)
 
     if(VirtualWidth>512u)
     {
+      /* SCR6 (512x192x4) next horizontal page is +0x8000 in fMSX VRAM layout. */
       T1=V9958ScrollPagePtr(T0,0x8000);
       for(X=0,T=T1;X<64;X++,T+=2)
       {
@@ -196,9 +198,11 @@ void RefreshLine6(uint8_t Y)
       }
     }
 
+    /* Match left mask color to current scrolled backdrop pixel. */
+    MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];
     for(I=0;I<512;I++)
     {
-      Bg=XPal[BGColor&0x03];
+      Bg=MaskBg;
       if(I>=(int)LeftMask)
       {
         Src=I-(int)Fine+(int)Coarse;
@@ -222,6 +226,7 @@ void RefreshLine7(uint8_t Y)
   unsigned LeftMask;
   unsigned VirtualWidth;
   uint16_t Bg;
+  uint16_t MaskBg;
   uint8_t ZBuf[304];
   uint16_t BgRaw[1024];
   uint8_t *R0;
@@ -273,9 +278,11 @@ void RefreshLine7(uint8_t Y)
       }
     }
 
+    /* Match left mask color to current scrolled backdrop pixel. */
+    MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];
     for(I=0;I<512;I++)
     {
-      Bg=XPal[BGColor];
+      Bg=MaskBg;
       if(I>=(int)LeftMask)
       {
         Src=I-(int)Fine+(int)Coarse;

@@ -142,6 +142,8 @@ private:
     boolean m_PauseRenderSuppressed;
     boolean m_FmsxEnabled;
     boolean m_FmsxReady;
+    const char *m_EmulatorBackendName;
+    unsigned m_BackendInitFailCode;
     unsigned long m_FmsxFrames;
     int m_FmsxLastError;
     int m_FmsxLastPC;

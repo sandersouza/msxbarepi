@@ -13,10 +13,22 @@ DRIVEA.DSK - Drive de disquete virtual A
 DRIVEB.DSK - Drive de disquete virtual B
 ```
 
-Para boot completo de MSX2+ (logo do HB-F1XDJ), incluir também:
+Para boot completo de MSX2+ (logo do HB-F1XDJ), use as ROMs Sony HB-F1XDJ
+nos nomes canônicos já usados pelo runtime:
 
 ```bash
+cp roms/machines/sony/hb-f1xdj_basic-bios2p.rom roms/initramfs/MSX2P.ROM
+cp roms/machines/sony/hb-f1xdj_msx2psub.rom roms/initramfs/MSX2PEXT.ROM
 cp roms/machines/sony/hb-f1xdj_kanjibasic.rom roms/initramfs/KANJIBASIC.ROM
+cp roms/machines/sony/hb-f1xdj.rom roms/initramfs/HB-F1XDJ.ROM
+cp roms/machines/sony/hb-f1xdj_disk.rom roms/initramfs/DISK.ROM
+```
+
+Opcional (variantes alternativas de DiskROM do HB-F1XDJ, escolhendo uma para `DISK.ROM`):
+
+```bash
+cp roms/machines/sony/hb-f1xdj_disk_205.rom roms/initramfs/DISK.ROM
+cp roms/machines/sony/hb-f1xdj_disk_206.rom roms/initramfs/DISK.ROM
 ```
 
 Sem `KANJIBASIC.ROM`, o boot pode seguir sem ativar a rotina de logo/h-scroll por linha.

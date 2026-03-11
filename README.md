@@ -76,6 +76,7 @@ Artefatos em `artifacts/`.
 Flags públicas de build (estado atual):
 
 - `DEBUG=0|1`: liga/desliga debug compilado no kernel.
+- `EMULATOR_BACKEND=fmsx|bluemsx`: seleciona backend de emulação no build (default `fmsx`).
 - `OWNER="<nome>"`: etiqueta de identificação em build debug e no nome do pacote.
 - `MSXBARE_SIZE_OPT=0|1`: otimização de tamanho (`-Os`, gc-sections).
 - `FIRMWARE_DIR=<dir>`: caminho do firmware RPi para `make package`/`make sdcard`.

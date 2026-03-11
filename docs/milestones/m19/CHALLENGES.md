@@ -9,68 +9,68 @@ Registro de desafios enfrentados por issue, decisão adotada e status da soluç�
 
 ## Itens por issue
 
-### #139 — spike técnico de viabilidade openMSX baremetal
-- Desafio: Definir recorte viável do openMSX sem acoplamento a stack desktop.
-- Solução adotada: Em backlog; executar spike de arquitetura e dependências.
+### #160 — [P0] Auditoria legal e técnica do blueMSX para uso baremetal
+- Desafio: Consolidar matriz de licença/obrigação sem contaminar assets protegidos no repositório.
+- Solução adotada: Em backlog para execução incremental com checklist formal de compliance.
 - Status: Futuro
-- Referência: [139-spike-viabilidade-openmsx-baremetal-rpi3b.md](/Users/sandersouza/Developer/msxbarepi-circle/docs/milestones/m19/139-spike-viabilidade-openmsx-baremetal-rpi3b.md)
+- Referência: [160-auditoria-legal-tecnica-bluemsx-baremetal.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m19/160-auditoria-legal-tecnica-bluemsx-baremetal.md)
 
-### #140 — vendor upstream openMSX + compliance
-- Desafio: Integrar upstream em `third_party` com guardrails e trilha de licença.
-- Solução adotada: Em backlog; pin de commit + documentação de compliance.
+### #161 — [P0] Vendor/sanitização de referência blueMSX + guardrail pristine
+- Desafio: Garantir referência upstream íntegra em `third_party` sem alterações diretas.
+- Solução adotada: Em backlog com guardrail e trilha de commit/tag de referência.
 - Status: Futuro
-- Referência: [140-vendor-upstream-openmsx-third-party-compliance.md](/Users/sandersouza/Developer/msxbarepi-circle/docs/milestones/m19/140-vendor-upstream-openmsx-third-party-compliance.md)
+- Referência: [161-vendor-sanitizacao-referencia-bluemsx-guardrail-pristine.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m19/161-vendor-sanitizacao-referencia-bluemsx-guardrail-pristine.md)
 
-### #141 — build mínimo openMSX core (sem SDL/OS)
-- Desafio: Ajustar toolchain/build para modo freestanding no kernel atual.
-- Solução adotada: Em backlog; alvo dedicado e resolução de dependências mínimas.
+### #162 — [P0] Spike de viabilidade AArch64 freestanding (recorte de módulos)
+- Desafio: Definir recorte mínimo do blueMSX sem SDL/X11/pthread em ambiente freestanding.
+- Solução adotada: Em backlog com resultado técnico GO/NO-GO.
 - Status: Futuro
-- Referência: [141-build-minimo-openmsx-core-sem-sdl-os.md](/Users/sandersouza/Developer/msxbarepi-circle/docs/milestones/m19/141-build-minimo-openmsx-core-sem-sdl-os.md)
+- Referência: [162-spike-viabilidade-aarch64-freestanding-recorte-modulos.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m19/162-spike-viabilidade-aarch64-freestanding-recorte-modulos.md)
 
-### #142 — camada host openMSX vídeo HDMI/framebuffer
-- Desafio: Mapear saída de vídeo do openMSX para viewport/framebuffer atual sem regressão visual.
-- Solução adotada: Em backlog; definir contrato de surface + blit e pacing.
-- Status: Futuro
-- Referência: [142-camada-host-openmsx-video-hdmi-framebuffer.md](/Users/sandersouza/Developer/msxbarepi-circle/docs/milestones/m19/142-camada-host-openmsx-video-hdmi-framebuffer.md)
+### #163 — [P0] Contrato backend v1 + shim de compatibilidade com runtime atual
+- Desafio: Introduzir API genérica de backend sem quebrar fluxo atual do fMSX.
+- Solução adotada: Em andamento com shim de compatibilidade e feature gate.
+- Status: Parcial
+- Referência: [163-contrato-backend-v1-shim-compat-runtime.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m19/163-contrato-backend-v1-shim-compat-runtime.md)
 
-### #143 — camada host openMSX áudio HDMI + sync A/V
-- Desafio: Integrar áudio com baixa latência e sincronismo de refresh 50/60Hz.
-- Solução adotada: Em backlog; adaptar mixer/fila HDMI e validar jitter.
+### #164 — [P1] Build mínimo blueMSX core sem SDL/X11/pthread
+- Desafio: Obter build do core em AArch64 freestanding com stubs de host mínimos.
+- Solução adotada: Em backlog por etapas após spike técnico inicial.
 - Status: Futuro
-- Referência: [143-camada-host-openmsx-audio-hdmi-sync-av.md](/Users/sandersouza/Developer/msxbarepi-circle/docs/milestones/m19/143-camada-host-openmsx-audio-hdmi-sync-av.md)
+- Referência: [164-build-minimo-bluemsx-sem-sdl-x11-pthread.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m19/164-build-minimo-bluemsx-sem-sdl-x11-pthread.md)
 
-### #144 — camada host openMSX input USB-HID
-- Desafio: Preservar comportamento de teclado/joystick e hotkeys no novo backend.
-- Solução adotada: Em backlog; implementar bridge de input com matriz MSX.
+### #165 — [P1] Host adapter de vídeo HDMI/framebuffer para blueMSX
+- Desafio: Integrar pipeline de frame no framebuffer HDMI com flush/cache correto.
+- Solução adotada: Em backlog com validação via overlay e smoke visual.
 - Status: Futuro
-- Referência: [144-camada-host-openmsx-input-usb-hid-mapeamento.md](/Users/sandersouza/Developer/msxbarepi-circle/docs/milestones/m19/144-camada-host-openmsx-input-usb-hid-mapeamento.md)
+- Referência: [165-host-adapter-video-hdmi-framebuffer-bluemsx.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m19/165-host-adapter-video-hdmi-framebuffer-bluemsx.md)
 
-### #145 — storage/media adapter openMSX
-- Desafio: Reusar fluxo de navegador/slots/drives para ROM/DSK no backend openMSX.
-- Solução adotada: Em backlog; adaptar APIs de carga e persistência de mídia.
+### #166 — [P1] Host adapter de áudio HDMI + sincronismo A/V
+- Desafio: Integrar áudio com baixa latência sem quebrar sincronismo com vídeo.
+- Solução adotada: Em backlog com métricas de underrun/jitter por refresh.
 - Status: Futuro
-- Referência: [145-storage-media-adapter-openmsx-rom-dsk-sd.md](/Users/sandersouza/Developer/msxbarepi-circle/docs/milestones/m19/145-storage-media-adapter-openmsx-rom-dsk-sd.md)
+- Referência: [166-host-adapter-audio-hdmi-sync-av-bluemsx.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m19/166-host-adapter-audio-hdmi-sync-av-bluemsx.md)
 
-### #146 — feature gate fMSX/openMSX com fallback
-- Desafio: Permitir rollout gradual sem quebrar estabilidade atual.
-- Solução adotada: Em backlog; gate de build + fallback automático para fMSX.
+### #167 — [P1] Bridge de input USB-HID -> matriz MSX no blueMSX
+- Desafio: Preservar teclado/joystick/hotkeys no novo backend.
+- Solução adotada: Em backlog com bridge USB-HID para matriz MSX.
 - Status: Futuro
-- Referência: [146-feature-gate-backend-fmsx-openmsx-fallback.md](/Users/sandersouza/Developer/msxbarepi-circle/docs/milestones/m19/146-feature-gate-backend-fmsx-openmsx-fallback.md)
+- Referência: [167-bridge-input-usb-hid-matriz-msx-bluemsx.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m19/167-bridge-input-usb-hid-matriz-msx-bluemsx.md)
 
-### #147 — suíte smoke de compatibilidade openMSX
-- Desafio: Definir baseline mínimo reproduzível de ROM/DSK para aceitação funcional.
-- Solução adotada: Em backlog; matriz inicial de compatibilidade por título.
+### #168 — [P1] Storage/media adapter (ROM/DSK/CAS + initramfs externo)
+- Desafio: Alinhar loader de mídia e fluxo de initramfs externo sem regressão.
+- Solução adotada: Em backlog com validação de persistência mínima.
 - Status: Futuro
-- Referência: [147-compatibilidade-minima-openmsx-suite-smoke-rom-dsk.md](/Users/sandersouza/Developer/msxbarepi-circle/docs/milestones/m19/147-compatibilidade-minima-openmsx-suite-smoke-rom-dsk.md)
+- Referência: [168-storage-media-adapter-rom-dsk-cas-initramfs.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m19/168-storage-media-adapter-rom-dsk-cas-initramfs.md)
 
-### #148 — benchmark comparativo fMSX vs openMSX
-- Desafio: Medir performance de forma equivalente e útil para decisão de migração.
-- Solução adotada: Em backlog; relatório objetivo de boot/FPS/áudio.
+### #169 — [P2] Suite smoke de compatibilidade + benchmark fMSX vs blueMSX
+- Desafio: Definir baseline objetivo para comparar boot/FPS/áudio entre backends.
+- Solução adotada: Em backlog com suíte smoke e evidências anexadas.
 - Status: Futuro
-- Referência: [148-benchmark-comparativo-fmsx-openmsx-boot-fps-audio.md](/Users/sandersouza/Developer/msxbarepi-circle/docs/milestones/m19/148-benchmark-comparativo-fmsx-openmsx-boot-fps-audio.md)
+- Referência: [169-suite-smoke-compat-benchmark-fmsx-vs-bluemsx.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m19/169-suite-smoke-compat-benchmark-fmsx-vs-bluemsx.md)
 
-### #149 — documentação de transição e depreciação do fMSX
-- Desafio: Consolidar critérios de saída e roadmap de depreciação sem perder fallback.
-- Solução adotada: Em backlog; documentação final por fases.
+### #170 — [P2] Feature gate final + plano de transição/depreciação do fMSX
+- Desafio: Definir critérios finais de migração e fallback seguro para operação.
+- Solução adotada: Em backlog com critérios de depreciação explícitos.
 - Status: Futuro
-- Referência: [149-documentacao-transicao-roadmap-depreciacao-fmsx.md](/Users/sandersouza/Developer/msxbarepi-circle/docs/milestones/m19/149-documentacao-transicao-roadmap-depreciacao-fmsx.md)
+- Referência: [170-feature-gate-final-transicao-depreciacao-fmsx.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m19/170-feature-gate-final-transicao-depreciacao-fmsx.md)

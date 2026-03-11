@@ -243,6 +243,15 @@ static int local_lookup_vfs_aliases_for_request(const char *name,
         return local_lookup_vfs_alias_list(kAliases, sizeof(kAliases) / sizeof(kAliases[0]), data, size);
     }
 
+    if (local_str_ieq(name, "MSXJE.ROM"))
+    {
+        static const char *kAliases[] = {
+            "HB-F1XDJ.ROM",
+            "HB-F1XDJ_MSXJE.ROM"
+        };
+        return local_lookup_vfs_alias_list(kAliases, sizeof(kAliases) / sizeof(kAliases[0]), data, size);
+    }
+
     if (local_str_ieq(name, "DISK.ROM"))
     {
         static const char *kAliases[] = {

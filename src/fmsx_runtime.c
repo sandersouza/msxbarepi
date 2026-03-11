@@ -34,6 +34,10 @@
 #define MSXBARE_FMSX_GAME_FAST_FORWARD_STEPS_MSX2P 6u
 #endif
 
+#ifndef MSXBARE_FMSX_Z80_SLICES_PER_FRAME_MAX
+#define MSXBARE_FMSX_Z80_SLICES_PER_FRAME_MAX 4096u
+#endif
+
 #ifndef MSXBARE_FMSX_GAME_VIDEO_SKIP_FRAMES_MSX2
 #define MSXBARE_FMSX_GAME_VIDEO_SKIP_FRAMES_MSX2 192u
 #endif
@@ -53,6 +57,21 @@ extern int RAMPages;
 extern int VRAMPages;
 extern uint8_t DiskROMLoaded;
 extern uint8_t FmsxMSX2PKanjiBasicLoaded;
+extern uint8_t *FmsxMSX2PKanjiBasicBase;
+extern uint8_t FmsxMSX2PMSXJELoaded;
+extern uint32_t FmsxP1Select31Count;
+extern uint32_t FmsxP1Select03Count;
+extern uint32_t FmsxRTCReadCount;
+extern uint32_t FmsxRTCWriteCount;
+extern uint8_t FmsxRTCLastReg;
+extern uint8_t FmsxRTCLastMode;
+extern uint32_t FmsxIE1EventCount;
+extern uint32_t FmsxIE1AckCount;
+extern uint32_t FmsxKanjiReadCount;
+extern uint32_t FmsxKanjiAddrWriteCount;
+extern uint32_t FmsxKanjiNullReadCount;
+extern uint8_t PSL[4];
+extern uint8_t SSL[4];
 extern uint8_t ScrMode;
 extern uint8_t VDP[64];
 extern uint8_t VDPStatus[16];
@@ -65,6 +84,7 @@ extern uint8_t *ROMData[];
 extern uint8_t ROMMask[];
 extern uint8_t *MemMap[4][4][8];
 extern uint8_t *EmptyRAM;
+extern uint8_t *Kanji;
 extern const char *DSKName[];
 extern FDIDisk FDD[];
 extern void fmsx_video_set_overscan(boolean enabled);
@@ -99,6 +119,16 @@ static boolean g_audio_layer2_muted = FALSE; /* FM */
 static boolean g_audio_layer3_muted = FALSE; /* SCC */
 static unsigned g_fm_layer_gain_pct = 100u;
 int g_fmsx_fmpac_enabled = 1;
+static unsigned g_vdp_prev_ce = 0u;
+static unsigned g_vdp_cmd_starts = 0u;
+static unsigned g_vdp_copy_starts = 0u;
+
+static void fmsx_runtime_reset_vdp_diag_counters(void)
+{
+    g_vdp_prev_ce = 0u;
+    g_vdp_cmd_starts = 0u;
+    g_vdp_copy_starts = 0u;
+}
 
 static unsigned fmsx_runtime_clamp_rammapper_kb(unsigned kb)
 {
@@ -163,16 +193,22 @@ static boolean fmsx_runtime_find_slot_map(unsigned slot, unsigned *out_ps, unsig
     return FALSE;
 }
 
+static unsigned fmsx_runtime_disk_subslot(void)
+{
+    return MODEL(MSX_MSX2P) ? 2u : 1u;
+}
+
 static void fmsx_runtime_force_disk_rom_off_mapping(void)
 {
+    const unsigned disk_subslot = fmsx_runtime_disk_subslot();
     /*
      * fMSX may keep DiskROM mapped even when MSX_PATCHBDOS is toggled off.
-     * Enforce OFF policy by unmapping slot 3:1 pages 2-3 explicitly.
+     * Enforce OFF policy by unmapping slot 3:<disk_subslot> pages 2-3 explicitly.
      */
-    if (!(MODEL(MSX_MSX2P) && FmsxMSX2PKanjiBasicLoaded))
+    if (!(MODEL(MSX_MSX2P) && FmsxMSX2PKanjiBasicLoaded && disk_subslot == 1u))
     {
-        MemMap[3][1][2] = EmptyRAM;
-        MemMap[3][1][3] = EmptyRAM;
+        MemMap[3][disk_subslot][2] = EmptyRAM;
+        MemMap[3][disk_subslot][3] = EmptyRAM;
     }
     DiskROMLoaded = 0u;
     Mode &= ~MSX_PATCHBDOS;
@@ -303,6 +339,11 @@ static unsigned fmsx_runtime_z80_turbo_percent(void)
     case 2u: return 224u; /* MAX */
     default: return 100u; /* DES */
     }
+}
+
+static unsigned fmsx_runtime_effective_turbo_percent(void)
+{
+    return fmsx_runtime_z80_turbo_percent();
 }
 
 static void fmsx_runtime_apply_game_boot_override(void)
@@ -498,7 +539,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     }
     else
     {
-        fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+        fmsx_cpu_set_turbo_percent(fmsx_runtime_effective_turbo_percent());
     }
     fmsx_runtime_apply_game_boot_override();
 
@@ -507,6 +548,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     fmsx_local_ym2413_refresh(&OPLL);
 
     g_fmsx_status.running = TRUE;
+    fmsx_runtime_reset_vdp_diag_counters();
     return TRUE;
 }
 
@@ -555,7 +597,8 @@ boolean fmsx_runtime_menu_reset(void)
     g_boot_warmup_frames_remaining = 0u;
     g_boot_forced_turbo = FALSE;
     g_boot_video_gate_frames_remaining = 0u;
-    fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+    fmsx_runtime_reset_vdp_diag_counters();
+    fmsx_cpu_set_turbo_percent(fmsx_runtime_effective_turbo_percent());
     fmsx_runtime_apply_audio_channels();
     g_fmsx_status.last_pc = (int) CPU.PC.W;
     return TRUE;
@@ -647,23 +690,47 @@ boolean fmsx_runtime_step_frame(void)
             steps = g_boot_warmup_frames_remaining;
         }
     }
-
+    unsigned frames_done = 0u;
     for (unsigned i = 0; i < steps; ++i)
     {
+        const unsigned seq_before = fmsx_video_get_latest(0, 0, 0);
+        unsigned slices = 0u;
+        boolean frame_done = FALSE;
+
         if (g_boot_warmup_frames_remaining > 0u)
         {
             /* During FAST/GAME warmup, keep deterministic frame-step entry. */
             ScanLine = 261;
         }
-        g_fmsx_status.last_pc = (int) RunZ80(&CPU);
-        g_fmsx_status.frames++;
+
+        while (slices < MSXBARE_FMSX_Z80_SLICES_PER_FRAME_MAX)
+        {
+            g_fmsx_status.last_pc = (int) RunZ80(&CPU);
+            ++slices;
+
+            if (fmsx_video_get_latest(0, 0, 0) != seq_before)
+            {
+                frame_done = TRUE;
+                break;
+            }
+        }
+
+        if (!frame_done)
+        {
+            /* Bail out instead of spinning forever if a frame is not produced. */
+            break;
+        }
+
+        ++frames_done;
+        ++g_fmsx_status.frames;
+
         if (g_boot_warmup_frames_remaining > 0u)
         {
             g_boot_warmup_frames_remaining--;
             if (g_boot_warmup_frames_remaining == 0u && g_boot_forced_turbo)
             {
                 g_boot_forced_turbo = FALSE;
-                fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+                fmsx_cpu_set_turbo_percent(fmsx_runtime_effective_turbo_percent());
             }
         }
         if (g_boot_video_gate_frames_remaining > 0u)
@@ -672,9 +739,10 @@ boolean fmsx_runtime_step_frame(void)
         }
     }
 
-    if (g_boot_warmup_frames_remaining == 0u)
+    if (g_boot_warmup_frames_remaining == 0u && frames_done > 0u)
     {
-        RenderAndPlayAudio(kFmsxAudioRate / fmsx_runtime_effective_refresh_hz());
+        const unsigned samples_per_frame = kFmsxAudioRate / fmsx_runtime_effective_refresh_hz();
+        RenderAndPlayAudio(samples_per_frame * frames_done);
     }
     return TRUE;
 }
@@ -725,7 +793,8 @@ boolean fmsx_runtime_load_state(const void *src, unsigned size)
     g_boot_warmup_frames_remaining = 0u;
     g_boot_forced_turbo = FALSE;
     g_boot_video_gate_frames_remaining = 0u;
-    fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+    fmsx_runtime_reset_vdp_diag_counters();
+    fmsx_cpu_set_turbo_percent(fmsx_runtime_effective_turbo_percent());
     fmsx_runtime_apply_audio_channels();
     g_fmsx_status.last_pc = (int) CPU.PC.W;
     return TRUE;
@@ -854,7 +923,7 @@ void fmsx_runtime_set_z80_turbo_mode(unsigned mode)
     g_z80_turbo_mode = mode;
     if (!g_boot_forced_turbo)
     {
-        fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+        fmsx_cpu_set_turbo_percent(fmsx_runtime_effective_turbo_percent());
     }
 }
 
@@ -1180,6 +1249,10 @@ TFmsxRuntimeStatus fmsx_runtime_get_status(void)
 
 void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
 {
+    unsigned ce;
+    unsigned cmd;
+    unsigned copy_cmd;
+
     if (stats == 0)
     {
         return;
@@ -1193,6 +1266,7 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
     stats->lines_212 = ScanLines212 ? 1u : 0u;
     stats->turbo_percent = FmsxTurboPercent;
     stats->scr_mode = (unsigned) ScrMode;
+    stats->reg2 = (unsigned) VDP[2];
     stats->reg25 = (unsigned) VDP[25];
     stats->reg26 = (unsigned) VDP[26];
     stats->reg27 = (unsigned) VDP[27];
@@ -1200,10 +1274,51 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
     stats->ie1_enabled = (VDP[0] & 0x10u) ? 1u : 0u;
     stats->ie1_flag = (VDPStatus[1] & 0x01u) ? 1u : 0u;
     stats->msx2p_kanji_basic = FmsxMSX2PKanjiBasicLoaded ? 1u : 0u;
+    stats->msx2p_kanji_basic_map_ok =
+        (FmsxMSX2PKanjiBasicBase != 0 &&
+         MemMap[3][1][2] == FmsxMSX2PKanjiBasicBase &&
+         MemMap[3][1][3] == (FmsxMSX2PKanjiBasicBase + 0x2000)) ? 1u : 0u;
+    stats->msx2p_kanji_basic_selected_p1 = (PSL[1] == 3u && SSL[1] == 1u) ? 1u : 0u;
+    stats->msx2p_kanji_basic_seen_p1 = (FmsxP1Select31Count > 0u) ? 1u : 0u;
+    stats->p1_ps = (unsigned) PSL[1];
+    stats->p1_ss = (unsigned) SSL[1];
+    stats->disk_rom_loaded = DiskROMLoaded ? 1u : 0u;
+    stats->msx2p_msxje_loaded = FmsxMSX2PMSXJELoaded ? 1u : 0u;
+    stats->msx2p_msxje_selected_p1 = (PSL[1] == 0u && SSL[1] == 3u) ? 1u : 0u;
+    stats->msx2p_msxje_seen_p1 = (FmsxP1Select03Count > 0u) ? 1u : 0u;
+    stats->rtc_reads = (unsigned) FmsxRTCReadCount;
+    stats->rtc_writes = (unsigned) FmsxRTCWriteCount;
+    stats->rtc_last_reg = (unsigned) FmsxRTCLastReg;
+    stats->rtc_mode = (unsigned) (FmsxRTCLastMode & 0x0Fu);
     stats->hscroll = (unsigned) HScroll;
     stats->hscroll512 = HScroll512 ? 1u : 0u;
+    stats->multipage_enabled = ((VDP[25] & 0x01u) && (VDP[2] & 0x20u)) ? 1u : 0u;
+    stats->display_page = (unsigned) ((VDP[2] >> 5) & 0x03u);
+    cmd = (unsigned) ((VDP[46] >> 4) & 0x0Fu);
+    ce = (VDPStatus[2] & 0x01u) ? 1u : 0u;
+    copy_cmd = (cmd == 0x09u || cmd == 0x0Du || cmd == 0x0Eu) ? 1u : 0u;
+    if (ce && !g_vdp_prev_ce)
+    {
+        ++g_vdp_cmd_starts;
+        if (copy_cmd)
+        {
+            ++g_vdp_copy_starts;
+        }
+    }
+    g_vdp_prev_ce = ce;
+    stats->vdp_cmd = cmd;
+    stats->vdp_ce = ce;
+    stats->vdp_tr = (VDPStatus[2] & 0x80u) ? 1u : 0u;
+    stats->vdp_cmd_starts = g_vdp_cmd_starts;
+    stats->vdp_copy_starts = g_vdp_copy_starts;
     stats->mode_yjk = ModeYJK ? 1u : 0u;
     stats->mode_yae = ModeYAE ? 1u : 0u;
+    stats->ie1_events = (unsigned) FmsxIE1EventCount;
+    stats->ie1_acks = (unsigned) FmsxIE1AckCount;
+    stats->kanji_available = (Kanji != 0) ? 1u : 0u;
+    stats->kanji_reads = (unsigned) FmsxKanjiReadCount;
+    stats->kanji_addr_writes = (unsigned) FmsxKanjiAddrWriteCount;
+    stats->kanji_null_reads = (unsigned) FmsxKanjiNullReadCount;
 }
 
 unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsigned *height)

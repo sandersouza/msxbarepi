@@ -40,6 +40,7 @@ typedef struct {
     unsigned lines_212;
     unsigned turbo_percent;
     unsigned scr_mode;
+    unsigned reg2;
     unsigned reg25;
     unsigned reg26;
     unsigned reg27;
@@ -47,10 +48,36 @@ typedef struct {
     unsigned ie1_enabled;
     unsigned ie1_flag;
     unsigned msx2p_kanji_basic;
+    unsigned msx2p_kanji_basic_map_ok;
+    unsigned msx2p_kanji_basic_selected_p1;
+    unsigned msx2p_kanji_basic_seen_p1;
+    unsigned p1_ps;
+    unsigned p1_ss;
+    unsigned disk_rom_loaded;
+    unsigned msx2p_msxje_loaded;
+    unsigned msx2p_msxje_selected_p1;
+    unsigned msx2p_msxje_seen_p1;
+    unsigned rtc_reads;
+    unsigned rtc_writes;
+    unsigned rtc_last_reg;
+    unsigned rtc_mode;
     unsigned hscroll;
     unsigned hscroll512;
+    unsigned multipage_enabled;
+    unsigned display_page;
+    unsigned vdp_cmd;
+    unsigned vdp_ce;
+    unsigned vdp_tr;
+    unsigned vdp_cmd_starts;
+    unsigned vdp_copy_starts;
     unsigned mode_yjk;
     unsigned mode_yae;
+    unsigned ie1_events;
+    unsigned ie1_acks;
+    unsigned kanji_available;
+    unsigned kanji_reads;
+    unsigned kanji_addr_writes;
+    unsigned kanji_null_reads;
 } TFmsxTimingDebug;
 
 #define FMSX_MODEL_PROFILE_MSX1  0u

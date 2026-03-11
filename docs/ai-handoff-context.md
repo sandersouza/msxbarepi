@@ -1,6 +1,6 @@
 # AI Handoff Context
 
-Última atualização: 10/03/2026 15:23
+Última atualização: 10/03/2026 22:16
 
 ## Objetivo deste arquivo
 
@@ -8,13 +8,36 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 
 ## Estado atual do projeto
 
-- Workspace alvo: `/Users/sandersouza/Developer/msxbarepi-circle`
+- Workspace alvo: `/Users/sandersouza/Developer/msxbarepi`
 - Fase: M0 consolidado + M2 bootstrap fMSX em evolução
 - Status confirmado em hardware:
   - Boot baremetal funcional no RPi 3B
   - HDMI com framebuffer funcional (tela colorida + barra em movimento)
   - Áudio HDMI funcional (sample Circle standalone com `sounddev=sndhdmi`)
   - Variantes com integração Circle compilam e foram preparadas para validação em hardware
+
+## Atualização 2026-03-10 (migração blueMSX)
+
+- Governança GitHub aplicada:
+  - Milestone remota criada/ajustada: `#20` (`Release: Migração fMSX -> blueMSX backend`, due `2026-07-03`).
+  - Issues `#160` a `#170` criadas com labels e vinculadas ao projeto `MSX BarePI`.
+  - Status no projeto: `#163` em `In review`; demais da milestone em `Ready`.
+- Espelho local sincronizado:
+  - `docs/milestones/m19` recriado para blueMSX (README, CHALLENGES e arquivos `160-170`).
+  - Draft openMSX anterior arquivado em `docs/milestones/archive/m19-openmsx-draft-2026-03-10/`.
+- Scaffold técnico entregue:
+  - Novo contrato de backend: `src/emulator_backend.{h,c}`.
+  - Shim de compatibilidade fMSX: `src/fmsx_backend_shim.{h,c}`.
+  - Stub de gate para blueMSX: `src/bluemsx_backend.{h,c}` (retorno de init com código explícito).
+  - Build knob: `EMULATOR_BACKEND=fmsx|bluemsx` em `Makefile` e `src/Makefile`.
+  - `kernel.cpp` integrado nos pontos críticos (`init/reset/step_frame/video_frame/audio_pull/input_push/status`) via `emulator_backend_*`.
+  - Overlay/log agora exibem backend ativo e código de falha de inicialização.
+- Guardrail atualizado:
+  - `scripts/check-third-party-pristine.sh` agora valida também `third_party/bluemsx` via `.gitbak`.
+- Comandos de validação executados nesta iteração:
+  - `make clean && make DEBUG=1 EMULATOR_BACKEND=fmsx`
+  - `make clean && make DEBUG=1 EMULATOR_BACKEND=bluemsx`
+  - Ambos concluídos com sucesso.
 
 ## Implementações concluídas até agora
 
@@ -113,6 +136,9 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - MSX2+ boot (HB-F1XDJ): correção de mapeamento no core local para `KANJIBASIC.ROM` em `slot 3-1` (`0x4000-0xBFFF`) durante `ResetMSX()`; referência: `third_party/openMSX/share/machines/Sony_HB-F1XDJ.xml`
 - Em MSX2+ com `KANJIBASIC` mapeado, caminho de `DISK.ROM` foi ajustado para não sobrescrever `slot 3-1:4000h-7FFFh` (preserva rotina de boot logo)
 - Overlay `TM2` ganhou campo `KB` para confirmar em runtime que o mapeamento de `KANJIBASIC` está ativo (`KB:1`)
+- Overlay `TM2` expandido para `KB:a/b/c P1:x-y D:z`:
+  - `a`=KANJIBASIC carregado, `b`=mapa `MemMap[3][1][2..3]` íntegro, `c`=selecionado na página `4000h`;
+  - `P1` mostra `PSL[1]-SSL[1]`; `D` reflete `DiskROMLoaded`.
 - Alias de ROM/initramfs adicionados para `KANJIBASIC` e `MSX2P SUBROM` (`HB-F1XDJ_*`, `FS-A1FX_*`)
 
 ## Sinais esperados em runtime
@@ -1803,3 +1829,70 @@ Registrar o estado operacional do projeto para continuidade entre agentes de IA 
 - 2026-03-10 15:00:52 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
 - 2026-03-10 15:23:44 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
 - 2026-03-10 15:23:44 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 15:33:21 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 15:33:21 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 15:36:35 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 15:36:35 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 15:46:39 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 15:46:39 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 16:09:18 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 16:09:18 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 16:10:09 | stage=issue82-msx2p-boot-logo | status=build-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 16:13:47 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 16:13:47 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 16:14:07 | stage=issue82-rtc-telemetry | status=build-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 16:16:51 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 16:16:51 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 16:27:44 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 16:27:44 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 16:27:54 | stage=issue82-hbf1xdj-initramfs | status=build-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 16:34:41 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 16:34:41 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 16:38:57 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 16:38:57 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 16:55:28 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 16:55:28 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 17:09:56 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 17:09:56 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 17:13:07 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 17:13:07 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 17:25:30 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 17:25:30 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 17:31:09 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 17:31:09 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 17:37:27 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 17:37:27 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 17:58:07 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 17:58:07 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 18:10:40 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 18:10:40 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 18:31:30 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 18:31:30 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 18:32:58 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 18:32:58 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 18:33:58 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 18:33:58 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 18:47:36 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 18:47:37 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 19:02:13 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 19:02:13 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 19:02:34 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 19:02:34 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 19:05:21 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 19:05:22 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 19:24:40 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 19:24:41 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 19:25:32 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 19:25:32 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+
+- 2026-03-10 21:11:00 | stage=issue82-v9938-local-quantum | status=in-progress | note=switched V9938 to local copy and raised MSX2+ LoopVDP quantum to 50000 for boot-logo command throughput
+- 2026-03-10 21:11:31 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 21:11:31 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 21:38:13 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 21:38:13 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 21:48:10 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 21:48:10 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 22:08:50 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 22:08:50 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img
+- 2026-03-10 22:16:41 | stage=default | status=build-ok | artifact=artifacts/kernel8-bootstrap.img
+- 2026-03-10 22:16:41 | stage=default | status=default-ok | artifact=artifacts/kernel8-default.img

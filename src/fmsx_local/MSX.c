@@ -162,6 +162,23 @@ uint8_t *SRAMData[MAXSLOTS];          /* SRAM (battery backed)  */
 const char *DSKName[MAXDRIVES] = { "DRIVEA.DSK","DRIVEB.DSK" };
 uint8_t DiskROMLoaded = 0;            /* 1 when DISK.ROM loaded */
 uint8_t FmsxMSX2PKanjiBasicLoaded = 0;/* 1 when slot 3-1:4000h maps Kanji BASIC */
+uint8_t *FmsxMSX2PKanjiBasicBase = 0; /* Base pointer of mapped KANJIBASIC blob */
+uint8_t FmsxMSX2PMSXJELoaded = 0;     /* 1 when slot 0-3 maps MSX-JE ROM */
+uint8_t *FmsxMSX2PMSXJEBase = 0;      /* Base pointer of mapped MSX-JE blob */
+uint32_t FmsxRTCReadCount = 0;        /* Count RTC reads from port B5h */
+uint32_t FmsxRTCWriteCount = 0;       /* Count RTC writes to port B5h */
+uint8_t FmsxRTCLastReg = 0;           /* Last RTC register selected via B4h */
+uint8_t FmsxRTCLastMode = 0;          /* Last RTC mode/bank value */
+uint32_t FmsxP1Select31Count = 0;     /* How many times page 1 selected slot 3-1 */
+uint32_t FmsxP1Select03Count = 0;     /* How many times page 1 selected slot 0-3 */
+uint8_t FmsxP1LastPS = 0xFF;          /* Last observed primary slot on page 1 */
+uint8_t FmsxP1LastSS = 0xFF;          /* Last observed secondary slot on page 1 */
+uint32_t FmsxIE1EventCount = 0;       /* Number of VDP line-coincidence events */
+uint32_t FmsxIE1AckCount = 0;         /* Number of S#1 reads that clear IE1 flag */
+uint32_t FmsxKanjiReadCount = 0;      /* Reads from Kanji data port D9h */
+uint32_t FmsxKanjiAddrWriteCount = 0; /* Writes to Kanji address ports D8h/D9h */
+uint32_t FmsxKanjiNullReadCount = 0;  /* D9h reads while Kanji ROM pointer is null */
+uint8_t FmsxResetStatus = 0xFF;       /* Port F4h: reset status register stub */
 
 /** Fixed font used by fMSX **********************************/
 const char *FNTName = "DEFAULT.FNT"; /* Font file for text   */
@@ -404,6 +421,10 @@ void Printer(uint8_t V);             /* Send a character to a printer   */
 void PPIOut(uint8_t New,uint8_t Old);   /* Set PPI bits (key click, etc.)  */
 int  CheckSprites(void);          /* Check for sprite collisions     */
 uint8_t RTCIn(uint8_t R);               /* Read RTC registers              */
+static int IsExpandedPrimarySlot(uint8_t PS); /* Whether PS has secondary slots */
+static void TrackP1SlotSelection(void);       /* Latch page-1 slot history      */
+static uint8_t RAMMapperSubSlot(void);        /* Model-dependent RAM subslot    */
+static uint8_t DiskROMSubSlot(void);          /* Model-dependent DISK subslot   */
 uint8_t SetScreen(void);             /* Change screen mode              */
 uint16_t SetIRQ(uint8_t IRQ);            /* Set/Reset IRQ                   */
 uint16_t StateID(void);               /* Compute emulation state ID      */
@@ -542,6 +563,9 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   MCFCount    = 0;
   DiskROMLoaded = 0;
   FmsxMSX2PKanjiBasicLoaded = 0;
+  FmsxMSX2PKanjiBasicBase = 0;
+  FmsxMSX2PMSXJELoaded = 0;
+  FmsxMSX2PMSXJEBase = 0;
 
   /* Zero cartridge related data */
   for(J=0;J<MAXSLOTS;++J)
@@ -603,7 +627,16 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
 
   /* Try loading CMOS memory contents */
   if(!LoadROM("CMOS.ROM",sizeof(RTC),(uint8_t *)RTC))
+  {
      memcpy(RTC,RTCInit,sizeof(RTC));
+     if(MODEL(MSX_MSX2P))
+     {
+       /* MSX2+ machines may skip startup logo when CMOS bank-2 defaults stay zeroed. */
+       static const uint8_t RTCInitMSX2P[13] =
+       { 0x0A,0x00,0x00,0x01,0x0D,0x01,0x0F,0x04,0x07,0x03,0x00,0x00,0x00 };
+       memcpy(RTC[2],RTCInitMSX2P,sizeof(RTCInitMSX2P));
+     }
+  }
   if(log_cb) log_cb(1,"StartMSX: CMOS done\n");
 
   /* Try loading Kanji alphabet ROM */
@@ -622,7 +655,7 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
 
   /* If MSX2 or better and DiskROM present...  */
   /* ...try loading MSXDOS2 cartridge into 3:0 */
-  if(!MODEL(MSX_MSX1)&&OPTION(MSX_MSXDOS2)&&(MemMap[3][1][2]!=EmptyRAM)&&!ROMData[2])
+  if(!MODEL(MSX_MSX1)&&OPTION(MSX_MSXDOS2)&&(MemMap[3][DiskROMSubSlot()][2]!=EmptyRAM)&&!ROMData[2])
     if(LoadCart("MSXDOS2.ROM",2,MAP_GEN16))
       SetMegaROM(2,0,1,ROMMask[J]-1,ROMMask[J]);
 
@@ -794,7 +827,7 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
     0x00208020,0x00C040A0,0x00A0A0A0,0x00E0E0E0
   };
 
-  uint8_t *P1,*P2,*P3;
+  uint8_t *P1,*P2,*P3,*P4;
   int J,I;
 
   if(log_cb) log_cb(1,"ResetMSX: begin\n");
@@ -810,6 +843,9 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
     {
       case MSX_MSX1:
         FmsxMSX2PKanjiBasicLoaded = 0;
+        FmsxMSX2PKanjiBasicBase = 0;
+        FmsxMSX2PMSXJELoaded = 0;
+        FmsxMSX2PMSXJEBase = 0;
         if(log_cb) log_cb(1,"ResetMSX: loading MSX.ROM\n");
         P1=LoadROM("MSX.ROM",0x8000,0);
         if(log_cb) log_cb(1,P1?"ResetMSX: MSX.ROM ok\n":"ResetMSX: MSX.ROM fail\n");
@@ -829,6 +865,9 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
 
       case MSX_MSX2:
         FmsxMSX2PKanjiBasicLoaded = 0;
+        FmsxMSX2PKanjiBasicBase = 0;
+        FmsxMSX2PMSXJELoaded = 0;
+        FmsxMSX2PMSXJEBase = 0;
         P1=LoadROM("MSX2.ROM",0x8000,0);
         P2=LoadROM("MSX2EXT.ROM",0x4000,0);
         if(!P2) P2=LoadROM("MSX2SUB.ROM",0x4000,0);
@@ -861,13 +900,21 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
         P3=LoadROM("KANJIBASIC.ROM",0x8000,0);
         if(!P3) P3=LoadROM("HB-F1XDJ_KANJIBASIC.ROM",0x8000,0);
         if(!P3) P3=LoadROM("FS-A1FX_KANJIBASIC.ROM",0x8000,0);
+        /* openMSX Sony_HB-F1XDJ also maps MSX-JE in slot 0-3. */
+        P4=LoadROM("MSXJE.ROM",0x10000,0);
+        if(!P4) P4=LoadROM("HB-F1XDJ.ROM",0x10000,0);
+        if(!P4) P4=LoadROM("HB-F1XDJ_MSXJE.ROM",0x10000,0);
         if(!P1||!P2)
         {
           NewMode=(NewMode&~MSX_MODEL)|(Mode&MSX_MODEL);
           FreeMemory(P1);
           FreeMemory(P2);
           FreeMemory(P3);
+          FreeMemory(P4);
           FmsxMSX2PKanjiBasicLoaded = 0;
+          FmsxMSX2PKanjiBasicBase = 0;
+          FmsxMSX2PMSXJELoaded = 0;
+          FmsxMSX2PMSXJEBase = 0;
         }
         else
         {
@@ -880,6 +927,35 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
           MemMap[0][0][3]=P1+0x6000;
           MemMap[3][1][0]=P2;
           MemMap[3][1][1]=P2+0x2000;
+
+          FreeMemory(MemMap[0][3][0]);
+          if(P4)
+          {
+            MemMap[0][3][0]=P4;
+            MemMap[0][3][1]=P4+0x2000;
+            MemMap[0][3][2]=P4+0x4000;
+            MemMap[0][3][3]=P4+0x6000;
+            MemMap[0][3][4]=P4+0x8000;
+            MemMap[0][3][5]=P4+0xA000;
+            MemMap[0][3][6]=P4+0xC000;
+            MemMap[0][3][7]=P4+0xE000;
+            FmsxMSX2PMSXJELoaded = 1;
+            FmsxMSX2PMSXJEBase = P4;
+          }
+          else
+          {
+            MemMap[0][3][0]=EmptyRAM;
+            MemMap[0][3][1]=EmptyRAM;
+            MemMap[0][3][2]=EmptyRAM;
+            MemMap[0][3][3]=EmptyRAM;
+            MemMap[0][3][4]=EmptyRAM;
+            MemMap[0][3][5]=EmptyRAM;
+            MemMap[0][3][6]=EmptyRAM;
+            MemMap[0][3][7]=EmptyRAM;
+            FmsxMSX2PMSXJELoaded = 0;
+            FmsxMSX2PMSXJEBase = 0;
+          }
+
           if(P3)
           {
             MemMap[3][1][2]=P3;
@@ -887,6 +963,7 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
             MemMap[3][1][4]=P3+0x4000;
             MemMap[3][1][5]=P3+0x6000;
             FmsxMSX2PKanjiBasicLoaded = 1;
+            FmsxMSX2PKanjiBasicBase = P3;
           }
           else
           {
@@ -895,6 +972,7 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
             MemMap[3][1][4]=EmptyRAM;
             MemMap[3][1][5]=EmptyRAM;
             FmsxMSX2PKanjiBasicLoaded = 0;
+            FmsxMSX2PKanjiBasicBase = 0;
           }
         }
         break;
@@ -902,6 +980,9 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
       default:
         /* Unknown MSX model, keep old model */
         FmsxMSX2PKanjiBasicLoaded = 0;
+        FmsxMSX2PKanjiBasicBase = 0;
+        FmsxMSX2PMSXJELoaded = 0;
+        FmsxMSX2PMSXJEBase = 0;
         NewMode=(NewMode&~MSX_MODEL)|(Mode&MSX_MODEL);
         break;
     }
@@ -916,15 +997,15 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   if((Mode^NewMode)&MSX_MODEL)
   {
     if(log_cb) log_cb(1,"ResetMSX: patch BIOS begin\n");
-#ifndef FMSX_BAREMETAL_SKIP_BIOS_PATCHES
-    /* Apply patches to BIOS */
+#if defined(PATCH_Z80) && !defined(FMSX_BAREMETAL_SKIP_BIOS_PATCHES)
+    /* Apply BIOS trampoline patches only when PatchZ80() trap handler is available. */
     for(J=0;BIOSPatches[J];++J)
     {
       P1=MemMap[0][0][0]+BIOSPatches[J];
       P1[0]=0xED;P1[1]=0xFE;P1[2]=0xC9;
     }
 #else
-    if(log_cb) log_cb(1,"ResetMSX: patch BIOS skipped (baremetal)\n");
+    if(log_cb) log_cb(1,"ResetMSX: patch BIOS skipped (no PATCH_Z80 trap)\n");
 #endif
     if(log_cb) log_cb(1,"ResetMSX: patch BIOS end\n");
   }
@@ -932,6 +1013,7 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   /* If toggling BDOS patches... */
   if((Mode^NewMode)&MSX_PATCHBDOS)
   {
+    const uint8_t disk_subslot = ((NewMode&MSX_MODEL)==MSX_MSX2P)? 2:1;
     if(log_cb) log_cb(1,"ResetMSX: PATCHBDOS begin\n");
     if(log_cb) log_cb(1,"ResetMSX: patchbdos branch\n");
     /* Change to the program directory */
@@ -948,7 +1030,7 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
     if(!P1) NewMode=(NewMode&~MSX_PATCHBDOS)|(Mode&MSX_PATCHBDOS);
     else
     {
-      if(MODEL(MSX_MSX2P) && FmsxMSX2PKanjiBasicLoaded)
+      if(((NewMode&MSX_MODEL)==MSX_MSX2P) && FmsxMSX2PKanjiBasicLoaded && (disk_subslot==1))
       {
         /*
          * Keep MSX2+ Kanji BASIC visible at slot 3-1:4000h-7FFFh.
@@ -960,11 +1042,12 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
       else
       {
         /* Assign new DiskROM */
-        FreeMemory(MemMap[3][1][2]);
-        MemMap[3][1][2]=P1;
-        MemMap[3][1][3]=P1+0x2000;
+        FreeMemory(MemMap[3][disk_subslot][2]);
+        MemMap[3][disk_subslot][2]=P1;
+        MemMap[3][disk_subslot][3]=P1+0x2000;
 
-        /* If BDOS patching requested... */
+        /* If BDOS patching requested and PatchZ80 trap exists... */
+#ifdef PATCH_Z80
         if(NewMode&MSX_PATCHBDOS)
         {
           /* Apply patches to BDOS */
@@ -974,6 +1057,10 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
             P2[0]=0xED;P2[1]=0xFE;P2[2]=0xC9;
           }
         }
+#else
+        if(NewMode&MSX_PATCHBDOS)
+          if(log_cb) log_cb(1,"ResetMSX: PATCHBDOS hooks skipped (no PATCH_Z80 trap)\n");
+#endif
       }
     }
     if(log_cb) log_cb(1,"ResetMSX: PATCHBDOS end\n");
@@ -981,6 +1068,7 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
 
   /* Assign new modes */
   Mode           = NewMode;
+  FmsxResetStatus = MODEL(MSX_MSX2P)? 0x00:0xFF;
   if(log_cb) log_cb(1,"ResetMSX: mode assigned\n");
 
   /* Set ROM types for cartridges A/B */
@@ -1057,9 +1145,9 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
     /* PSL=0:0:0:0, SSL=0:0:0:0 */
     PSL[J]              = 0;
     SSL[J]              = 0;
-    /* RAMMap=3:2:1:0 */
-    MemMap[3][2][J*2]   = RAMData+(3-J)*0x4000;
-    MemMap[3][2][J*2+1] = MemMap[3][2][J*2]+0x2000;
+    /* RAMMap=3:<model-dependent subslot>:1:0 */
+    MemMap[3][RAMMapperSubSlot()][J*2]   = RAMData+(3-J)*0x4000;
+    MemMap[3][RAMMapperSubSlot()][J*2+1] = MemMap[3][RAMMapperSubSlot()][J*2]+0x2000;
     RAMMapper[J]        = 3-J;
     /* Setting address space */
     RAM[J*2]            = MemMap[0][0][J*2];
@@ -1159,6 +1247,19 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   SCCOn[0]=SCCOn[1]=0;                  /* SCCs off for now */
   SCCIMode[0]=SCCIMode[1]=0;            /* bankselect/SCC   */
   RTCReg=RTCMode=0;                     /* Clock registers  */
+  FmsxRTCReadCount = 0;
+  FmsxRTCWriteCount = 0;
+  FmsxRTCLastReg = 0;
+  FmsxRTCLastMode = 0;
+  FmsxP1Select31Count = 0;
+  FmsxP1Select03Count = 0;
+  FmsxP1LastPS = 0xFF;
+  FmsxP1LastSS = 0xFF;
+  FmsxIE1EventCount = 0;
+  FmsxIE1AckCount = 0;
+  FmsxKanjiReadCount = 0;
+  FmsxKanjiAddrWriteCount = 0;
+  FmsxKanjiNullReadCount = 0;
   KanCount=0;KanLetter=0;               /* Kanji extension  */
   ChrTab=ColTab=ChrGen=VRAM;            /* VDP tables       */
   SprTab=SprGen=VRAM;
@@ -1195,7 +1296,12 @@ uint8_t RdZ80(uint16_t A)
   uint8_t J,PS,SS,I;
 
   /* Secondary slot selector */
-  if(A==0xFFFF /*&& ((PSL[3]==0 && !MODEL(MSX_MSX1)) || PSL[3]==3)*/) return(~SSLReg[PSL[3]]); // might be wrong - should only read back inverse when the primary slot is expanded. Commented code would fix that.
+  if(A==0xFFFF)
+  {
+    /* Non-expanded primaries read back as all 1s on this register. */
+    PS=PSL[3];
+    return IsExpandedPrimarySlot(PS)? (uint8_t)~SSLReg[PS]:0xFF;
+  }
 
   J  = A>>14;           /* 16kB page number 0-3  */
   PS = PSL[J];          /* Primary slot number   */
@@ -1206,7 +1312,7 @@ uint8_t RdZ80(uint16_t A)
   /* BFF8h..BFFFh MSX-DOS BDOS      */
   /* 7F80h..7F87h Arabic DiskROM    */
   /* 7FB8h..7FBFh SV738/TechnoAhead */
-  if(PS==3&&SS==1)
+  if(PS==3&&SS==DiskROMSubSlot())
     switch(A)
     {
       /* Standard      MSX-DOS       Arabic        SV738            */
@@ -1252,7 +1358,7 @@ void WrZ80(uint16_t A,uint8_t V)
   /* BFF8h..BFFFh MSX-DOS BDOS      */
   /* 7F80h..7F87h Arabic DiskROM    */
   /* 7FB8h..7FBFh SV738/TechnoAhead */
-  if(((A&0x3F88)==0x3F88)&&(PSL[A>>14]==3)&&(SSL[A>>14]==1))
+  if(((A&0x3F88)==0x3F88)&&(PSL[A>>14]==3)&&(SSL[A>>14]==DiskROMSubSlot()))
     switch(A)
     {
       /* Standard      MSX-DOS       Arabic        SV738             */
@@ -1310,7 +1416,14 @@ uint8_t InZ80(uint16_t Port)
   {
 
 case 0x90: return(0xFD);                   /* Printer READY signal */
-case 0xB5: return(RTCIn(RTCReg));          /* RTC registers        */
+case 0xF4:
+  /* Reset status register exists on S1985-based machines (MSX2+ profile here). */
+  return MODEL(MSX_MSX2P)? FmsxResetStatus:NORAM;
+case 0xB5:
+  FmsxRTCReadCount++;
+  FmsxRTCLastReg=RTCReg;
+  FmsxRTCLastMode=RTCMode;
+  return(RTCIn(RTCReg));                   /* RTC registers        */
 
 case 0xA8: /* Primary slot state   */
 case 0xA9: /* Keyboard port        */
@@ -1326,6 +1439,8 @@ case 0xFF: /* Mapper page at C000h */
   return(RAMMapper[Port-0xFC]|~RAMMask);
 
 case 0xD9: /* Kanji support */
+  FmsxKanjiReadCount++;
+  if(!Kanji) FmsxKanjiNullReadCount++;
   Port=Kanji? Kanji[KanLetter+KanCount]:NORAM;
   KanCount=(KanCount+1)&0x1F;
   return(Port);
@@ -1361,14 +1476,13 @@ case 0x98: /* VRAM read port */
 case 0x99: /* VDP status registers */
   /* Read an appropriate status register */
   Port=VDPStatus[VDP[15]];
-  /* Reset VAddr latch sequencer */
-// @@@ This breaks Sir Lancelot on ColecoVision, so it must be wrong!
-//  VKey=1;
+  /* Reading status resets VDP latch pair (matches V99x8 behavior). */
+  VKey=1;
   /* Update status register's contents */
   switch(VDP[15])
   {
     case 0: VDPStatus[0]&=0x5F;SetIRQ(~INT_IE0);break;
-    case 1: VDPStatus[1]&=0xFE;SetIRQ(~INT_IE1);break;
+    case 1: FmsxIE1AckCount++;VDPStatus[1]&=0xFE;SetIRQ(~INT_IE1);break;
     case 7: VDPStatus[7]=VDP[44]=VDPRead();break;
   }
   /* Return the status register value */
@@ -1487,14 +1601,27 @@ case 0xA0:
   WrCtrl8910(&PSG,Value);
   return;
 #endif
-case 0xB4: RTCReg=Value&0x0F;return;              /* RTC Register#  */
+case 0xB4:
+  RTCReg=Value&0x0F;
+  FmsxRTCLastReg=RTCReg;
+  FmsxRTCLastMode=RTCMode;
+  return;                                          /* RTC Register#  */
+case 0xF4:
+  if(MODEL(MSX_MSX2P))
+  {
+    /* openMSX ResetStatusRegister (non-inverted): keep bit5, accept bits7/5 from writes. */
+    FmsxResetStatus = (FmsxResetStatus&0x20)|(Value&0xA0);
+  }
+  return;
 
 case 0xD8: /* Upper bits of Kanji ROM address */
+  FmsxKanjiAddrWriteCount++;
   KanLetter=(KanLetter&0x1F800)|((int)(Value&0x3F)<<5);
   KanCount=0;
   return;
 
 case 0xD9: /* Lower bits of Kanji ROM address */
+  FmsxKanjiAddrWriteCount++;
   KanLetter=(KanLetter&0x007E0)|((int)(Value&0x3F)<<11);
   KanCount=0;
   return;
@@ -1619,6 +1746,8 @@ case 0xAB: /* PPI control register */
   return;
 
 case 0xB5: /* RTC Data */
+  FmsxRTCWriteCount++;
+  FmsxRTCLastReg=RTCReg;
   if(RTCReg<13)
   {
     /* J = register bank# now */
@@ -1631,6 +1760,7 @@ case 0xB5: /* RTC Data */
   }
   /* RTC[13] is a register bank# */
   if(RTCReg==13) RTCMode=Value;
+  FmsxRTCLastMode=RTCMode;
   return;
 
 case 0xD0: /* FDC command */
@@ -1659,13 +1789,13 @@ case 0xFF: /* Mapper page at C000h */
   {
     I=J<<1;
     RAMMapper[J]      = Value;
-    MemMap[3][2][I]   = RAMData+((int)Value<<14);
-    MemMap[3][2][I+1] = MemMap[3][2][I]+0x2000;
-    if((PSL[J]==3)&&(SSL[J]==2))
+    MemMap[3][RAMMapperSubSlot()][I]   = RAMData+((int)Value<<14);
+    MemMap[3][RAMMapperSubSlot()][I+1] = MemMap[3][RAMMapperSubSlot()][I]+0x2000;
+    if((PSL[J]==3)&&(SSL[J]==RAMMapperSubSlot()))
     {
       EnWrite[J] = 1;
-      RAM[I]     = MemMap[3][2][I];
-      RAM[I+1]   = MemMap[3][2][I+1];
+      RAM[I]     = MemMap[3][RAMMapperSubSlot()][I];
+      RAM[I+1]   = MemMap[3][RAMMapperSubSlot()][I+1];
     }
   }
   return;
@@ -2000,6 +2130,48 @@ void MapROM(uint16_t A,uint8_t V)
   /* No MegaROM mapper or there is an incorrect write */
 }
 
+static int IsExpandedPrimarySlot(uint8_t PS)
+{
+  switch(Mode&MSX_MODEL)
+  {
+    case MSX_MSX1:
+      return(0);
+    case MSX_MSX2P:
+      return((PS==0)||(PS==3));
+    default:
+      return(PS==3);
+  }
+}
+
+static uint8_t RAMMapperSubSlot(void)
+{
+  /*
+   * openMSX Sony_HB-F1XDJ: RAM mapper in 3-0.
+   * Keep legacy fMSX derived layout (3-2) for MSX1/MSX2.
+   */
+  return ((Mode&MSX_MODEL)==MSX_MSX2P)? 0:2;
+}
+
+static uint8_t DiskROMSubSlot(void)
+{
+  /*
+   * openMSX Sony_HB-F1XDJ: WD2793/Disk ROM in 3-2.
+   * Keep legacy fMSX derived layout (3-1) for MSX1/MSX2.
+   */
+  return ((Mode&MSX_MODEL)==MSX_MSX2P)? 2:1;
+}
+
+static void TrackP1SlotSelection(void)
+{
+  if((FmsxP1LastPS!=PSL[1])||(FmsxP1LastSS!=SSL[1]))
+  {
+    FmsxP1LastPS=PSL[1];
+    FmsxP1LastSS=SSL[1];
+    if((PSL[1]==3)&&(SSL[1]==1)) ++FmsxP1Select31Count;
+    if((PSL[1]==0)&&(SSL[1]==3)) ++FmsxP1Select03Count;
+  }
+}
+
 /** PSlot() **************************************************/
 /** Switch primary memory slots. This function is called    **/
 /** when value in port A8h changes.                         **/
@@ -2013,11 +2185,13 @@ void PSlot(uint8_t V)
     {
       I          = J<<1;
       PSL[J]     = V&3;
-      SSL[J]     = (SSLReg[PSL[J]]>>I)&3;
+      SSL[J]     = IsExpandedPrimarySlot(PSL[J])? (uint8_t)((SSLReg[PSL[J]]>>I)&3):0;
       RAM[I]     = MemMap[PSL[J]][SSL[J]][I];
       RAM[I+1]   = MemMap[PSL[J]][SSL[J]][I+1];
-      EnWrite[J] = (PSL[J]==3)&&(SSL[J]==2)&&(MemMap[3][2][I]!=EmptyRAM);
+      EnWrite[J] = (PSL[J]==3)&&(SSL[J]==RAMMapperSubSlot())&&(MemMap[3][RAMMapperSubSlot()][I]!=EmptyRAM);
     }
+
+  TrackP1SlotSelection();
 }
 
 /** SSlot() **************************************************/
@@ -2028,10 +2202,12 @@ void SSlot(uint8_t V)
 {
   uint8_t J,I;
 
-  /* Cartridge slots do not have subslots, fix them at 0:0:0:0 */
-  if((PSL[3]==1)||(PSL[3]==2)) V=0x00;
-  /* In MSX1, slot 0 does not have subslots either */
-  if(!PSL[3]&&((Mode&MSX_MODEL)==MSX_MSX1)) V=0x00;
+  /* If current primary slot is not expanded, writes are ignored. */
+  if(!IsExpandedPrimarySlot(PSL[3]))
+  {
+    TrackP1SlotSelection();
+    return;
+  }
 
   if(SSLReg[PSL[3]]!=V)
     for(SSLReg[PSL[3]]=V,J=0;J<4;++J,V>>=2)
@@ -2042,9 +2218,11 @@ void SSlot(uint8_t V)
         SSL[J]     = V&3;
         RAM[I]     = MemMap[PSL[J]][SSL[J]][I];
         RAM[I+1]   = MemMap[PSL[J]][SSL[J]][I+1];
-        EnWrite[J] = (PSL[J]==3)&&(SSL[J]==2)&&(MemMap[3][2][I]!=EmptyRAM);
+        EnWrite[J] = (PSL[J]==3)&&(SSL[J]==RAMMapperSubSlot())&&(MemMap[3][RAMMapperSubSlot()][I]!=EmptyRAM);
       }
     }
+
+  TrackP1SlotSelection();
 }
 
 /** SetIRQ() *************************************************/
@@ -2063,7 +2241,7 @@ uint16_t SetIRQ(uint8_t IRQ)
 /*************************************************************/
 uint8_t SetScreen(void)
 {
-  uint8_t I,J;
+  uint8_t I,J,R2Base;
 
   switch(((VDP[0]&0x0E)>>1)|(VDP[1]&0x18))
   {
@@ -2082,7 +2260,14 @@ uint8_t SetScreen(void)
 
   /* Recompute table addresses */
   I=(J>6)&&(J!=MAXSCREEN+1)? 11:10;
-  ChrTab  = VRAM+((int)(VDP[2]&MSK[J].R2)<<I);
+  R2Base=VDP[2]&MSK[J].R2;
+  /* V9958 two-page horizontal scroll: in bitmap modes, R2 bit5 selects
+   * display page and must not offset the table base address itself.
+   */
+  if(MODEL(MSX_MSX2P) && (VDP[25]&0x01) && (VDP[2]&0x20)
+  && (((J>=5)&&(J<=8)) || ((J>=10)&&(J<=12))))
+    R2Base&=~0x20;
+  ChrTab  = VRAM+((int)R2Base<<I);
   ChrGen  = VRAM+((int)(VDP[4]&MSK[J].R4)<<11);
   ColTab  = VRAM+((int)(VDP[3]&MSK[J].R3)<<6)+((int)VDP[10]<<14);
   SprTab  = VRAM+((int)(VDP[5]&MSK[J].R5)<<7)+((int)VDP[11]<<15);
@@ -2141,7 +2326,7 @@ void SetMegaROM(int Slot,uint8_t P0,uint8_t P1,uint8_t P2,uint8_t P3)
 /*************************************************************/
 void VDPOut(uint8_t R,uint8_t V)
 {
-  uint8_t J;
+  uint8_t J,R2Base;
 
   switch(R)
   {
@@ -2160,7 +2345,11 @@ void VDPOut(uint8_t R,uint8_t V)
              if(VDP[1]!=V) { VDP[1]=V;SetScreen(); }
              break;
     case  2: J=(ScrMode>6)&&(ScrMode!=MAXSCREEN+1)? 11:10;
-             ChrTab  = VRAM+((int)(V&MSK[ScrMode].R2)<<J);
+             R2Base=V&MSK[ScrMode].R2;
+             if(MODEL(MSX_MSX2P) && (VDP[25]&0x01) && (V&0x20)
+             && (((ScrMode>=5)&&(ScrMode<=8)) || ((ScrMode>=10)&&(ScrMode<=12))))
+               R2Base&=~0x20;
+             ChrTab  = VRAM+((int)R2Base<<J);
              ChrTabM = ((int)(V|~MSK[ScrMode].M2)<<J)|((1<<J)-1);
              break;
     case  3: ColTab  = VRAM+((int)(V&MSK[ScrMode].R3)<<6)+((int)VDP[10]<<14);
@@ -2185,6 +2374,7 @@ void VDPOut(uint8_t R,uint8_t V)
     case 15: V&=0x0F;break;
     case 16: V&=0x0F;PKey=1;break;
     case 17: V&=0xBF;break;
+    case 19: VDPStatus[1]&=0xFE;SetIRQ(~INT_IE1);break;
     case 25: VDP[25]=V;
              SetScreen();
              break;
@@ -2362,6 +2552,7 @@ uint16_t LoopZ80(Z80 *R)
       if(J==2)
       {
         /* Set HBlank flag on line coincidence */
+        FmsxIE1EventCount++;
         VDPStatus[1]|=0x01;
         /* Generate IE1 interrupt */
         if(VDP[0]&0x10) SetIRQ(INT_IE1);
@@ -3881,8 +4072,8 @@ unsigned int LoadState(unsigned char *Buf,unsigned int MaxSize)
     for(I=0;I<4;++I)
     {
       RAMMapper[I]       &= RAMMask;
-      MemMap[3][2][I*2]   = RAMData+RAMMapper[I]*0x4000;
-      MemMap[3][2][I*2+1] = MemMap[3][2][I*2]+0x2000;
+      MemMap[3][RAMMapperSubSlot()][I*2]   = RAMData+RAMMapper[I]*0x4000;
+      MemMap[3][RAMMapperSubSlot()][I*2+1] = MemMap[3][RAMMapperSubSlot()][I*2]+0x2000;
     }
 
   /* Set ROM mapper pages */

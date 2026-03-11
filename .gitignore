@@ -4,6 +4,8 @@ artifacts/
 third_party/fmsx*
 third_party/circle
 third_party/openMSX
+third_party/blueberrymsx
+third_party/bluemsx
 third_party/V9958-Super
 third_party/ocm-pld-dev
 
