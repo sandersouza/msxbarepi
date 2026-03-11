@@ -1,23 +1,15 @@
 # .gitignore for MSX-BarePi Circle project
 build/
 artifacts/
-third_party/fmsx*
-third_party/circle
-third_party/openMSX
-third_party/blueberrymsx
-third_party/bluemsx
-third_party/V9958-Super
-third_party/ocm-pld-dev
+third_party/*/
 
 # Ignore ROM files and SD card contents, which are not part of the source code and may contain large binary files.
 roms/*.rom
-roms/machines/*
-roms/games/*
+roms/machines/*/
+roms/games/*/*
 
 # Ignore SD card contents, which may contain large binary files and are not part of the source code.
-sdcard/disks/*
-sdcard/roms/*
-sdcard/msx.cpio
+sdcard/*/*
 
 # Ignore macOS metadata files, which are not relevant to the project and can clutter the repository.
 .DS_Store

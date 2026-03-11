@@ -245,7 +245,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     static char scale_label[32];
     static char widescreen_label[32];
     static char scanline_label[32];
-    static char refresh_label[32];
     static char disk_rom_label[32];
     static char boot_label[32];
     static char machine_label[32];
@@ -271,7 +270,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     if (scale_percent > max_scale_percent) scale_percent = max_scale_percent;
     if (resolution_mode > 3u) resolution_mode = 0u;
     if (scanline_mode > 2u) scanline_mode = 2u;
-    if (refresh_rate_hz != 50u) refresh_rate_hz = 60u;
+    (void) refresh_rate_hz;
     if (machine_profile > 2u) machine_profile = 0u;
     if (rammapper_kb != 256u && rammapper_kb != 512u && rammapper_kb != 1024u) rammapper_kb = 256u;
     if (megaram_kb != 0u && megaram_kb != 256u && megaram_kb != 512u && megaram_kb != 1024u) megaram_kb = 0u;
@@ -298,7 +297,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     BuildLabelFlag(widescreen_label, sizeof(widescreen_label), locale->settings_widescreen, widescreen_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(scanline_label, sizeof(scanline_label), locale->settings_scanlines,
                    scanline_mode == 0u ? locale->scan_des : (scanline_mode == 1u ? locale->scan_lcd : locale->scan_crt));
-    BuildLabelFlag(refresh_label, sizeof(refresh_label), locale->settings_refresh, refresh_rate_hz == 50u ? locale->refresh_pal : locale->refresh_ntsc);
     BuildLabelFlag(disk_rom_label, sizeof(disk_rom_label), locale->settings_disk_rom, disk_rom_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(boot_label, sizeof(boot_label), locale->settings_boot_mode,
                    boot_mode == 0u ? "NORM" : (boot_mode == 1u ? "FAST" : "GAME"));
@@ -360,10 +358,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     settings_items[item_count].label = scanline_label;
     settings_items[item_count].action = ComboMenuActionCycleScanlines;
     settings_items[item_count].redraw_policy = ComboMenuRedrawMenuAndViewport;
-    settings_items[item_count++].selectable = TRUE;
-    settings_items[item_count].label = refresh_label;
-    settings_items[item_count].action = ComboMenuActionCycleRefreshRate;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
     settings_items[item_count++].selectable = TRUE;
     settings_items[item_count].label = "";
     settings_items[item_count].action = ComboMenuActionSeparator;

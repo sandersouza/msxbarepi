@@ -6,7 +6,13 @@ Para o projeto `msx1`, o initramfs contém as ROMs do MSX, incluindo a BIOS (ess
 No runtime atual do `src`, esses nomes são detectados automaticamente no `msx.cpio` e aplicados nos slots/drives padrão do fMSX.
 
 ```
-MSX.ROM   - BIOS do MSX ( Slot 0 )
+MSX.ROM   - BIOS do MSX 1
+MSX2.ROM  - BIOS do MSX 2
+MSX2EXT.ROM - Extensão de BIOS para MSX2
+MSX2P.ROM - BIOS do MSX 2+
+MSX2PEXT.ROM - Extensão de BIOS para MSX2+
+KANJI.ROM - ROM de Kanji
+KANJIBASIC.ROM - ROM de Kanji BASIC
 CARTA.ROM - Cartucho porta A ( Slot 1-1 )
 CARTB.ROM - Cartucho porta B ( Slot 1-2 )
 DRIVEA.DSK - Drive de disquete virtual A
@@ -19,9 +25,8 @@ nos nomes canônicos já usados pelo runtime:
 ```bash
 cp roms/machines/sony/hb-f1xdj_basic-bios2p.rom roms/initramfs/MSX2P.ROM
 cp roms/machines/sony/hb-f1xdj_msx2psub.rom roms/initramfs/MSX2PEXT.ROM
+cp roms/machines/sony/hb-f1xdj_kanjibasic.rom roms/initramfs/KANJI.ROM
 cp roms/machines/sony/hb-f1xdj_kanjibasic.rom roms/initramfs/KANJIBASIC.ROM
-cp roms/machines/sony/hb-f1xdj.rom roms/initramfs/HB-F1XDJ.ROM
-cp roms/machines/sony/hb-f1xdj_disk.rom roms/initramfs/DISK.ROM
 ```
 
 Opcional (variantes alternativas de DiskROM do HB-F1XDJ, escolhendo uma para `DISK.ROM`):

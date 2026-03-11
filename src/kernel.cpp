@@ -15,6 +15,11 @@
 #include <circle/util.h>
 #include <assert.h>
 
+extern "C" unsigned long long msxbare_monotonic_time_us(void)
+{
+	return CTimer::GetClockTicks64();
+}
+
 static const char FromKernel[] = "combo";
 static const unsigned kSampleRate = 48000;
 static const unsigned kChunkSize = 384 * 10;
@@ -2447,7 +2452,8 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			}
 			else if (SettingsKeyEquals(line, key_len, "refresh"))
 			{
-				m_RefreshRateHz = (value == 50u) ? 50u : 60u;
+				/* Legacy key kept for backward compatibility; refresh is fixed at 60Hz. */
+				m_RefreshRateHz = 60u;
 				m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
 			}
 			else if (SettingsKeyEquals(line, key_len, "disk_rom"))
@@ -2631,7 +2637,6 @@ void CComboKernel::SaveSettingsToStorage(void)
 		APPEND_LINE_FMT("resolution=%u\n", m_ResolutionMode);
 		APPEND_LINE_FMT("widescreen=%u\n", m_WidescreenEnabled ? 1u : 0u);
 		APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
-		APPEND_LINE_FMT("refresh=%u\n", m_RefreshRateHz);
 	APPEND_LINE_FMT("disk_rom=%u\n", m_DiskRomEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("boot_mode=%u\n", m_BootMode);
 	APPEND_LINE_FMT("machine=%u\n", m_MachineProfile);
@@ -3526,7 +3531,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		break;
 
 	case ComboMenuActionCycleRefreshRate:
-		m_RefreshRateHz = (m_RefreshRateHz == 50u) ? 60u : 50u;
+		m_RefreshRateHz = 60u;
 		m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
 		m_FramePacingResetPending = TRUE;
 		m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
@@ -3534,15 +3539,11 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 	#if MSXBARE_ENABLE_FMSX
 		fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
 	#endif
-		{
-			CString line;
-			line.Format("Settings: Refresh %uHz", m_RefreshRateHz);
-			m_Logger.Write(FromKernel, LogNotice, line);
-		}
+		m_Logger.Write(FromKernel, LogNotice, "Settings: Refresh fixed at 60Hz");
 		break;
 
 	case ComboMenuActionCycleRefreshRatePrev:
-		m_RefreshRateHz = (m_RefreshRateHz == 50u) ? 60u : 50u;
+		m_RefreshRateHz = 60u;
 		m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
 		m_FramePacingResetPending = TRUE;
 		m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
@@ -3550,11 +3551,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 	#if MSXBARE_ENABLE_FMSX
 		fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
 	#endif
-		{
-			CString line;
-			line.Format("Settings: Refresh %uHz", m_RefreshRateHz);
-			m_Logger.Write(FromKernel, LogNotice, line);
-		}
+		m_Logger.Write(FromKernel, LogNotice, "Settings: Refresh fixed at 60Hz");
 		break;
 
 	case ComboMenuActionToggleDiskRom:

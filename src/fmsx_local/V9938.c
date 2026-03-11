@@ -173,7 +173,12 @@ static void (*VdpEngine)(void)=0;
  */
 INLINE int VdpOpsQuantum(void)
 {
-  return MODEL(MSX_MSX2P) ? 50000 : 12500;
+  /*
+   * MSX2+ BIOS logo and some command-heavy transitions rely on sustained
+   * VDP copy throughput. Keep command progression higher on V9958 profiles
+   * without altering frame cadence.
+   */
+  return MODEL(MSX_MSX2P) ? 250000 : 12500;
 }
 
                       /*  SprOn SprOn SprOf SprOf */

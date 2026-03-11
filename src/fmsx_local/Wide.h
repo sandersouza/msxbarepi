@@ -206,7 +206,7 @@ void RefreshLine6(uint8_t Y)
       if(I>=(int)LeftMask)
       {
         Src=I-(int)Fine+(int)Coarse;
-        if(Src>=0) Bg=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
+        Bg=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
       }
       C=R0[I>>1];
       P0[I]=C? XPal[C]:Bg;
@@ -286,7 +286,7 @@ void RefreshLine7(uint8_t Y)
       if(I>=(int)LeftMask)
       {
         Src=I-(int)Fine+(int)Coarse;
-        if(Src>=0) Bg=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
+        Bg=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
       }
       C=R0[I>>1];
       P0[I]=C? XPal[C]:Bg;

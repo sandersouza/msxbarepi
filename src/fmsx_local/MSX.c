@@ -633,9 +633,20 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
      {
        /* MSX2+ machines may skip startup logo when CMOS bank-2 defaults stay zeroed. */
        static const uint8_t RTCInitMSX2P[13] =
-       { 0x0A,0x00,0x00,0x01,0x0D,0x01,0x0F,0x04,0x07,0x03,0x00,0x00,0x00 };
+       {
+         /*
+          * Keep JP defaults but prefer 60Hz startup profile.
+          * This avoids defaulting diagnostics to 50Hz on first boot.
+          */
+         0x0A,0x00,0x00,0x00,0x0D,0x01,0x0F,0x04,0x07,0x03,0x00,0x00,0x00
+       };
        memcpy(RTC[2],RTCInitMSX2P,sizeof(RTCInitMSX2P));
      }
+  }
+  if(MODEL(MSX_MSX2P))
+  {
+    /* Keep RTC startup frequency policy aligned with selected machine video mode. */
+    RTC[2][3] = VIDEO(MSX_PAL) ? 0x01 : 0x00;
   }
   if(log_cb) log_cb(1,"StartMSX: CMOS done\n");
 
@@ -1220,6 +1231,8 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   if(log_cb) log_cb(1,"ResetMSX: VDP memcpy begin\n");
   memcpy(VDP,VDPInit,sizeof(VDP));
   memcpy(VDPStatus,VDPSInit,sizeof(VDPStatus));
+  if(VIDEO(MSX_PAL)) VDP[9]|=0x02;
+  else               VDP[9]&=~0x02;
   if(log_cb) log_cb(1,"ResetMSX: VDP reset\n");
 
   /* Reset keyboard */

@@ -442,10 +442,8 @@ void CComboPauseMenu::SetScanlineMode(unsigned mode)
 
 void CComboPauseMenu::SetRefreshRateHz(unsigned hz)
 {
-    if (hz != 50u)
-    {
-        hz = 60u;
-    }
+    (void) hz;
+    hz = 60u;
 
     if (m_RefreshRateHz != hz)
     {

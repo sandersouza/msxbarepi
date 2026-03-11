@@ -102,7 +102,6 @@ static const unsigned kFmsxAudioRate = 48000u;
 static unsigned g_boot_warmup_frames_remaining = 0u;
 static boolean g_boot_forced_turbo = FALSE;
 static unsigned g_boot_video_gate_frames_remaining = 0u;
-static unsigned g_refresh_hz = 60u;
 static boolean g_disk_rom_enabled = TRUE;
 static unsigned g_boot_mode = 0u;
 static unsigned g_active_boot_mode = 0u;
@@ -328,7 +327,7 @@ static unsigned fmsx_runtime_boot_forced_turbo_percent(void)
 
 static unsigned fmsx_runtime_effective_refresh_hz(void)
 {
-    return (g_refresh_hz == 50u) ? 50u : 60u;
+    return 60u;
 }
 
 static unsigned fmsx_runtime_z80_turbo_percent(void)
@@ -807,7 +806,8 @@ void fmsx_runtime_set_overscan(boolean enabled)
 
 void fmsx_runtime_set_refresh_hz(unsigned hz)
 {
-    g_refresh_hz = (hz == 50u) ? 50u : 60u;
+    (void) hz;
+    /* Fixed video cadence policy: always NTSC 60Hz. */
 }
 
 void fmsx_runtime_set_disk_rom_enabled(boolean enabled)
