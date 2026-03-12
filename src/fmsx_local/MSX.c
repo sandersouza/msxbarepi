@@ -253,6 +253,31 @@ uint8_t VDPData;                      /* VDP data buffer        */
 uint8_t PLatch;                       /* Palette buffer         */
 uint8_t ALatch;                       /* Address buffer         */
 int  Palette[16];                  /* Current palette        */
+/* Approximate VDP I/O wait-state cost (in Z80 cycles per access). */
+static const int kVDPIOWaitCyclesData = 2;
+static const int kVDPIOWaitCyclesStatusBase = 2;
+static const int kVDPIOWaitCyclesStatusPollingExtra = 8;
+
+static void fmsx_apply_vdp_io_wait(int cycles)
+{
+  if(cycles < 0) cycles = 0;
+  if(CPU.ICount > cycles) CPU.ICount -= cycles;
+  else CPU.ICount = 0;
+}
+
+static int fmsx_vdp_status_wait_cycles(void)
+{
+  int cycles = kVDPIOWaitCyclesStatusBase;
+  /*
+   * Apply extra delay only for tight polling loops with interrupts disabled,
+   * which is the pattern used by diagnostics to estimate refresh frequency.
+   * Keep this extra calibration limited to MSX1, so MSX2/2+ boot logo
+   * timing is not penalized.
+   */
+  if(MODEL(MSX_MSX1) && !(CPU.IFF&IFF_1) && ((VDP[15]&0x0Fu)==0u))
+    cycles += kVDPIOWaitCyclesStatusPollingExtra;
+  return cycles;
+}
 
 static void fmsx_force_ntsc_60_policy(void)
 {
@@ -1578,6 +1603,7 @@ case 0x87:
   /*return(Rd8251(&SIO,Port&0x07));*/
 
 case 0x98: /* VRAM read port */
+  fmsx_apply_vdp_io_wait(kVDPIOWaitCyclesData);
   /* Read from VRAM data buffer */
   Port=VDPData;
   /* Reset VAddr latch sequencer */
@@ -1595,6 +1621,7 @@ case 0x98: /* VRAM read port */
   return(Port);
 
 case 0x99: /* VDP status registers */
+  fmsx_apply_vdp_io_wait(fmsx_vdp_status_wait_cycles());
   /* MSX1/TMS9918 exposes only status register #0. */
   Port=MODEL(MSX_MSX1)? VDPStatus[0]:VDPStatus[VDP[15]];
   /*
@@ -1784,6 +1811,7 @@ case 0x87:
   return;*/
 
 case 0x98: /* VDP Data */
+  fmsx_apply_vdp_io_wait(kVDPIOWaitCyclesData);
   VKey=1;
   VDPData=VPAGE[VAddr]=Value;
   VAddr=(VAddr+1)&0x3FFF;
@@ -1796,6 +1824,7 @@ case 0x98: /* VDP Data */
   return;
 
 case 0x99: /* VDP Address Latch */
+  fmsx_apply_vdp_io_wait(kVDPIOWaitCyclesData);
   if(VKey) { ALatch=Value;VKey=0; }
   else
   {
@@ -1832,6 +1861,7 @@ case 0x99: /* VDP Address Latch */
   return;
 
 case 0x9A: /* VDP Palette Latch */
+  fmsx_apply_vdp_io_wait(kVDPIOWaitCyclesData);
   if(MODEL(MSX_MSX1)) return;
   if(PKey) { PLatch=Value;PKey=0; }
   else
@@ -1853,6 +1883,7 @@ case 0x9A: /* VDP Palette Latch */
   return;
 
 case 0x9B: /* VDP Register Access */
+  fmsx_apply_vdp_io_wait(kVDPIOWaitCyclesData);
   if(MODEL(MSX_MSX1)) return;
   J=VDP[17]&0x3F;
   if(J!=17) VDPOut(J,Value);
@@ -2648,6 +2679,11 @@ uint16_t LoopZ80(Z80 *R)
   static int  UCount=0;
   static uint8_t ACount=0;
   static uint8_t Drawing=0;
+  /*
+   * Keep timing source aligned with machine mode policy.
+   * Do not derive frame cadence from VDP R#9 PAL bit at runtime.
+   */
+  const int pal_timing = VIDEO(MSX_PAL);
   int J;
 
   if(!LoggedLoop)
@@ -2666,7 +2702,7 @@ uint16_t LoopZ80(Z80 *R)
     R->IPeriod=fmsx_scale_cycles(!ScrMode||(ScrMode==MAXSCREEN+1)? CPU_H240:CPU_H256);
 
     /* New scanline */
-    ScanLine=ScanLine<(PALVideo? 312:261)? ScanLine+1:0;
+    ScanLine=ScanLine<(pal_timing? 312:261)? ScanLine+1:0;
 
     /* If first scanline of the screen... */
     if(!ScanLine)
@@ -2710,7 +2746,7 @@ uint16_t LoopZ80(Z80 *R)
 
     /* Line coincidence is active at 0..255 */
     /* in PAL and 0..234/244 in NTSC        */
-    J=PALVideo? 256:ScanLines212? 245:235;
+    J=pal_timing? 256:ScanLines212? 245:235;
 
     /* When reaching end of screen, reset line coincidence */
     if(ScanLine==J)
@@ -2753,7 +2789,7 @@ uint16_t LoopZ80(Z80 *R)
   R->IPeriod=HPeriod-R->IPeriod;
 
   /* If last scanline of VBlank, see if we need to wait more */
-  J=PALVideo? 313:262;
+  J=pal_timing? 313:262;
   if(ScanLine>=J-1)
   {
     J*=HPeriod;
@@ -2764,7 +2800,7 @@ uint16_t LoopZ80(Z80 *R)
   if(ScanLine==(ScanLines212? 212:192)) Drawing=0;
 
   /* If first scanline of VBlank... */
-  J=PALVideo? (ScanLines212? 212+42:192+52):(ScanLines212? 212+18:192+28);
+  J=pal_timing? (ScanLines212? 212+42:192+52):(ScanLines212? 212+18:192+28);
   if(!Drawing&&(ScanLine==J))
   {
     /* Set VBlank bit, set VRefresh bit */
@@ -2966,7 +3002,7 @@ uint16_t LoopZ80(Z80 *R)
   /* Exit emulation frame-step only after VBlank window */
   if(ExitNow)
   {
-    const int QuitLineVBlank = PALVideo ? (ScanLines212 ? (212+43) : (192+53))
+    const int QuitLineVBlank = pal_timing ? (ScanLines212 ? (212+43) : (192+53))
                                      : (ScanLines212 ? (212+19) : (192+29));
     const int QuitLine = g_fmsx_quit_after_vblank ? QuitLineVBlank : 192;
     if(ScanLine==QuitLine)

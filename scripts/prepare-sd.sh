@@ -337,7 +337,7 @@ safe_eject_disk() {
   if [ "$DRY_RUN" = "1" ]; then
     run_or_echo sync
     run_or_echo sleep 1
-    run_or_echo diskutil unmountDisk "$disk"
+    run_or_echo diskutil unmountDisk "$disk" --force
     run_or_echo diskutil eject "$disk"
     return 0
   fi

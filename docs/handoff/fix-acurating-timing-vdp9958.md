@@ -201,3 +201,52 @@ KERNEL_IMG=artifacts/kernel8-default.img FIRMWARE_DIR=./rpi-firmware ./scripts/p
   - arquivo(s)/funcao(oes) alterados
   - resultado do build
   - BUILD_HASH novo
+
+## Estado desta iteracao (12/03/2026 00:12 BRT)
+
+- Correcao pontual para MSX1 (pedido: TMS9918 + NTSC 60Hz):
+  - ajuste de timing em `LoopZ80()` para tratar MSX1 sem depender do bit PAL de `VDP[9]` (registrador inexistente no TMS9918).
+  - novo criterio local `pal_timing = MODEL(MSX_MSX1) ? VIDEO(MSX_PAL) : PALVideo;` aplicado aos pontos de contagem vertical/VBlank e `QuitLine`.
+  - arquivo alterado: `src/fmsx_local/MSX.c`.
+- Build local validado com `DEBUG=1`:
+  - `make clean && make DEBUG=1` (OK)
+  - artefato: `artifacts/kernel8-default.img`
+- BUILD_HASH: `8e25964-0cf3a96873473848f31f4c13dd17cfdd960cd768`
+- INT_BUILD: `72A2`
+
+## Estado desta iteracao (12/03/2026 00:16 BRT)
+
+- Extensao da mesma correcao de timing para MSX2/MSX2+:
+  - `LoopZ80()` deixou de usar o bit PAL de `VDP[9]` como fonte de cadencia.
+  - o criterio `pal_timing` passa a usar somente `VIDEO(MSX_PAL)` (modo do modelo), garantindo consistencia de NTSC/60Hz tambem em MSX2/2+ quando o perfil estiver em NTSC.
+  - arquivo alterado: `src/fmsx_local/MSX.c`.
+- Build local validado com `DEBUG=1`:
+  - `make clean && make DEBUG=1` (OK)
+  - artefato: `artifacts/kernel8-default.img`
+- BUILD_HASH: `8e25964-a484b214676638cc7283e750b3bb1c534cf5c3fe`
+- INT_BUILD: `EA4C`
+
+## Estado desta iteracao (12/03/2026 00:30 BRT)
+
+- Ajuste adicional para compatibilidade com heuristica de Hz do MSXDIAG:
+  - adicionado wait-state leve de I/O da VDP (`kVDPIOWaitCycles=2`) em `InZ80/OutZ80` para portas `0x98/0x99/0x9A/0x9B`.
+  - objetivo: aproximar custo de polling de status VDP no teste de frequencia, evitando classificacao falsa de 50Hz com BIOS em 60Hz.
+  - arquivo alterado: `src/fmsx_local/MSX.c`.
+- Build local validado com `DEBUG=1`:
+  - `make clean && make DEBUG=1` (OK)
+  - artefato: `artifacts/kernel8-default.img`
+- BUILD_HASH: `8e25964-1b5637684b4e72fa8f25590ef0b9677406f88285`
+- INT_BUILD: `04F6`
+
+## Estado desta iteracao (12/03/2026 00:44 BRT)
+
+- Refinamento da calibracao de I/O VDP para reduzir regressao de performance no boot MSX2+:
+  - status VDP (`0x99`) deixou de usar atraso fixo alto.
+  - novo atraso dinamico: base baixa + extra apenas quando `IFF1=0` (DI ativo) e leitura de `S#0`, padrao do polling de diagnostico de Hz.
+  - objetivo: manter MSXDIAG em 60Hz sem penalizar rotinas normais de BIOS/logo.
+  - arquivo alterado: `src/fmsx_local/MSX.c`.
+- Build local validado com `DEBUG=1`:
+  - `make clean && make DEBUG=1` (OK)
+  - artefato: `artifacts/kernel8-default.img`
+- BUILD_HASH: `8e25964-654f5142ae8ec086052142cd6b0c2e40a4536a88`
+- INT_BUILD: `604D`

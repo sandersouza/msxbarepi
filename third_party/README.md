@@ -49,6 +49,7 @@ git clone --depth 1 https://github.com/matheusjgsantos/blueMSX.git third_party/b
 git clone --depth 1 https://github.com/openMSX/openMSX.git third_party/openMSX
 git clone --depth 1 https://github.com/pazos/ocm-pld-dev.git third_party/ocm-pld-dev
 git clone --depth 1 https://github.com/suzukiplan/v9958-super.git third_party/V9958-Super
+git clone --depth 1 https://github.com/knightfox75/msx_diagnostics.git third_party/MSXDIAG
 ```
 
 Se quiser manter o mesmo padrão de metadata protegido usado no `bluemsx` (`.gitbak`), faça:
@@ -66,12 +67,7 @@ git -C third_party/bluemsx pull --ff-only
 git -C third_party/openMSX pull --ff-only
 git -C third_party/ocm-pld-dev pull --ff-only
 git -C third_party/V9958-Super pull --ff-only
-```
-
-Para ambientes onde `third_party/bluemsx/.gitbak` nao existe (clone tradicional), use:
-
-```bash
-git -C third_party/bluemsx pull --ff-only
+git -C third_party/MSXDIAG pull --ff-only
 ```
 
 ## Observações

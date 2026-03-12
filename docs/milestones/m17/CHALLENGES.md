@@ -44,3 +44,9 @@ Registro de desafios enfrentados por issue, decisão adotada e status da soluç�
 - Solução adotada: separar captura e processamento de input; callback RAW passa a apenas capturar snapshot do relatório HID, com processamento integral no loop principal para remover corrida de contexto.
 - Status: Parcial
 - Referência: [173-bug-teclado-usb-hid-press-release-latencia.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/173-bug-teclado-usb-hid-press-release-latencia.md)
+
+### #176 — boot screen MSX2+ extremamente lento
+- Desafio: Animação de logo no boot do MSX2+ progride muito devagar (diferença de centenas/milhares de frames), apesar de boot funcional.
+- Solução adotada: Em andamento; criar branch dedicada para instrumentar cadência de page flip/comandos VDP e remover gargalo sem regressão de 60Hz no MSXDIAG.
+- Status: Parcial
+- Referência: [176-boot-screen-msx2plus-extremamente-lento-logo-scroll-paginas-alternadas.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/176-boot-screen-msx2plus-extremamente-lento-logo-scroll-paginas-alternadas.md)
