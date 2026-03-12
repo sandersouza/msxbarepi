@@ -54,6 +54,12 @@ Build com debug compilado (recomendado em desenvolvimento):
 make DEBUG=1
 ```
 
+Configurar features de build (estilo menuconfig):
+
+```bash
+make menuconfig
+```
+
 Help de targets/flags:
 
 ```bash
@@ -67,6 +73,8 @@ Targets atualmente suportados pelo `Makefile`:
 - `sdcard-update`
 - `initramfs`
 - `package`
+- `menuconfig`
+- `syncconfig`
 - `clean`
 - `help`
 
@@ -74,6 +82,7 @@ Flags publicas principais:
 
 - `DEBUG=0|1`
 - `OWNER="<nome>"` (nomeia pacote em `make package`)
+- `MSXBARE_PATREON_TAG="<nome>"` (fallback para owner quando `OWNER` nao for informado)
 - `FIRMWARE_DIR=<dir>`
 - `EMULATOR_BACKEND=fmsx|bluemsx`
 - `CROSS=<prefixo>`
@@ -131,6 +140,18 @@ Com identificacao de owner:
 ```bash
 DEBUG=1 OWNER="BetaUser" FIRMWARE_DIR=./rpi-firmware make package
 ```
+
+Configurar e aplicar `.config` sem abrir UI:
+
+```bash
+make syncconfig
+```
+
+Arquivos gerados de configuracao:
+
+- `.config`
+- `.config.mk`
+- `build/config.mk`
 
 ## Benchmark e regressao
 

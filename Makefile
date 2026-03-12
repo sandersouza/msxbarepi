@@ -5,19 +5,49 @@ BUILD_DIR := build
 
 FB_WIDTH ?= 1024
 FB_HEIGHT ?= 768
-DEBUG ?= 0
+DEBUG := 1
 EMULATOR_BACKEND ?= fmsx
-DEBUG_BOOL := 0
-ifeq ($(strip $(DEBUG)),1)
-DEBUG_BOOL := 1
-endif
 MSXBARE_CARTA_ONLY ?= 0
 MSXBARE_SIZE_OPT ?= 1
 OWNER ?=
+MSXBARE_PATREON_TAG ?=
+MSXBARE_FEAT_SCC ?= 1
+MSXBARE_FEAT_FMPAC ?= 1
+MSXBARE_FEAT_DISK_ROM ?= 1
+MSXBARE_FEAT_MEGARAM ?= 1
+MSXBARE_FEAT_MSX2 ?= 1
+MSXBARE_FEAT_MSX2P ?= 1
+MSXBARE_FEAT_LOAD_ROM ?= 1
+MSXBARE_FEAT_LOAD_DISK ?= 1
+MSXBARE_ONE_ROM_MODE ?= 0
+MSXBARE_ONE_ROM_PATH ?=
+MSXBARE_BOOT_MODE_DEFAULT ?= NORM
 FIRMWARE_DIR ?= ./rpi-firmware
 BUILD_BID ?= $(shell date +%Y%m%d%H%M)-$(shell git rev-parse --short HEAD 2>/dev/null || echo nogit)
 CIRCLE_KERNEL_MAX_SIZE ?= 0x400000
 CIRCLE_EXTRAINCLUDE ?= -DKERNEL_MAX_SIZE=$(CIRCLE_KERNEL_MAX_SIZE)
+
+-include .config.mk
+-include $(BUILD_DIR)/config.mk
+
+DEBUG_BOOL := 0
+ifeq ($(strip $(DEBUG)),1)
+DEBUG_BOOL := 1
+endif
+
+EFFECTIVE_OWNER := $(strip $(OWNER))
+ifeq ($(EFFECTIVE_OWNER),)
+EFFECTIVE_OWNER := $(strip $(MSXBARE_PATREON_TAG))
+endif
+
+MSXBARE_BOOT_MODE_DEFAULT_ENUM := 0
+ifeq ($(MSXBARE_BOOT_MODE_DEFAULT),FAST)
+MSXBARE_BOOT_MODE_DEFAULT_ENUM := 1
+else ifeq ($(MSXBARE_BOOT_MODE_DEFAULT),GAME)
+MSXBARE_BOOT_MODE_DEFAULT_ENUM := 2
+else ifneq ($(MSXBARE_BOOT_MODE_DEFAULT),NORM)
+$(error MSXBARE_BOOT_MODE_DEFAULT invalido: $(MSXBARE_BOOT_MODE_DEFAULT). Use NORM, FAST ou GAME)
+endif
 
 CROSS ?= $(shell \
 	if command -v aarch64-none-elf-gcc >/dev/null 2>&1; then \
@@ -33,11 +63,11 @@ INITRAMFS_IN ?= roms/initramfs
 INITRAMFS_OUT ?= sdcard/msx.cpio
 THIRD_PARTY_GUARD := ./scripts/check-third-party-pristine.sh
 
-.PHONY: all default clean help guard-third-party circle-configure sdcard sdcard-update initramfs package
+.PHONY: all default clean help guard-third-party circle-configure sdcard sdcard-update initramfs package menuconfig syncconfig config-header
 
 all: default
 
-default: circle-configure
+default: config-header circle-configure
 	@mkdir -p artifacts
 	@mkdir -p artifacts build/src
 	$(MAKE) -C third_party/circle/lib clean >/dev/null
@@ -50,7 +80,19 @@ default: circle-configure
 		MSXBARE_CARTA_ONLY=$(MSXBARE_CARTA_ONLY) \
 		MSXBARE_SIZE_OPT=$(MSXBARE_SIZE_OPT) \
 		MSXBARE_BUILD_BID="$(BUILD_BID)" \
-		MSXBARE_BUILD_OWNER="$(OWNER)"
+		MSXBARE_BUILD_OWNER="$(EFFECTIVE_OWNER)" \
+		MSXBARE_FEAT_SCC=$(MSXBARE_FEAT_SCC) \
+		MSXBARE_FEAT_FMPAC=$(MSXBARE_FEAT_FMPAC) \
+		MSXBARE_FEAT_DISK_ROM=$(MSXBARE_FEAT_DISK_ROM) \
+		MSXBARE_FEAT_MEGARAM=$(MSXBARE_FEAT_MEGARAM) \
+		MSXBARE_FEAT_MSX2=$(MSXBARE_FEAT_MSX2) \
+		MSXBARE_FEAT_MSX2P=$(MSXBARE_FEAT_MSX2P) \
+		MSXBARE_FEAT_LOAD_ROM=$(MSXBARE_FEAT_LOAD_ROM) \
+		MSXBARE_FEAT_LOAD_DISK=$(MSXBARE_FEAT_LOAD_DISK) \
+		MSXBARE_ONE_ROM_MODE=$(MSXBARE_ONE_ROM_MODE) \
+		MSXBARE_ONE_ROM_PATH="$(MSXBARE_ONE_ROM_PATH)" \
+		MSXBARE_PATREON_TAG="$(MSXBARE_PATREON_TAG)" \
+		MSXBARE_BOOT_MODE_DEFAULT_ENUM=$(MSXBARE_BOOT_MODE_DEFAULT_ENUM)
 	@img=$$(ls src/kernel8*.img 2>/dev/null | head -n1); \
 	if [ -z "$$img" ]; then \
 		echo "Erro: imagem de bootstrap nao encontrada"; \
@@ -75,6 +117,29 @@ guard-third-party:
 circle-configure: guard-third-party
 	cd third_party/circle && ./configure -r 3 -p $(CROSS) -f
 
+menuconfig:
+	./scripts/menuconfig.sh
+
+syncconfig:
+	./scripts/menuconfig.sh --sync-only
+
+config-header:
+	@mkdir -p $(BUILD_DIR)
+	MSXBARE_FEAT_SCC="$(MSXBARE_FEAT_SCC)" \
+	MSXBARE_FEAT_FMPAC="$(MSXBARE_FEAT_FMPAC)" \
+	MSXBARE_FEAT_DISK_ROM="$(MSXBARE_FEAT_DISK_ROM)" \
+	MSXBARE_FEAT_MEGARAM="$(MSXBARE_FEAT_MEGARAM)" \
+	MSXBARE_FEAT_MSX2="$(MSXBARE_FEAT_MSX2)" \
+	MSXBARE_FEAT_MSX2P="$(MSXBARE_FEAT_MSX2P)" \
+	MSXBARE_FEAT_LOAD_ROM="$(MSXBARE_FEAT_LOAD_ROM)" \
+	MSXBARE_FEAT_LOAD_DISK="$(MSXBARE_FEAT_LOAD_DISK)" \
+	MSXBARE_ONE_ROM_MODE="$(MSXBARE_ONE_ROM_MODE)" \
+	MSXBARE_ONE_ROM_PATH="$(MSXBARE_ONE_ROM_PATH)" \
+	MSXBARE_BOOT_MODE_DEFAULT="$(MSXBARE_BOOT_MODE_DEFAULT)" \
+	MSXBARE_BOOT_MODE_DEFAULT_ENUM="$(MSXBARE_BOOT_MODE_DEFAULT_ENUM)" \
+	MSXBARE_PATREON_TAG="$(MSXBARE_PATREON_TAG)" \
+	./scripts/gen-build-header.sh $(BUILD_DIR)/config_build.h
+
 clean:
 	rm -rf $(BUILD_DIR)
 
@@ -90,7 +155,7 @@ initramfs:
 package: default initramfs
 	@issue_branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true); \
 	issue_id=$$(printf "%s" "$$issue_branch" | sed -n 's/^\([0-9][0-9]*\)-.*/\1/p'); \
-	owner_slug=$$(printf "%s" "$(OWNER)" | tr '[:space:]' '_' | tr -cd '[:alnum:]_.-'); \
+	owner_slug=$$(printf "%s" "$(EFFECTIVE_OWNER)" | tr '[:space:]' '_' | tr -cd '[:alnum:]_.-'); \
 	package_zip=""; \
 	if [ -n "$$owner_slug" ]; then \
 		package_zip="artifacts/sdcard-package-$${owner_slug}.zip"; \
@@ -115,6 +180,8 @@ package: default initramfs
 
 help:
 	@echo "Targets: all (default), clean, sdcard, sdcard-update, initramfs, package, help"
+	@echo "Configuracao: make menuconfig (gera .config + build/config.mk)"
+	@echo "Aplicar .config sem UI: make syncconfig"
 	@echo "Default (make): perfil estavel -> artifacts/kernel8-default.img + artifacts/kernel8-issue<id>.img (quando em branch de issue)"
 	@echo "SD card prep: make sdcard"
 	@echo "SD incremental update (sem formatar): make sdcard-update"
@@ -124,6 +191,7 @@ help:
 	@echo "Cross prefix auto: aarch64-none-elf- | aarch64-elf-"
 	@echo "Override: make CROSS=aarch64-elf-"
 	@echo "Use flags principais: DEBUG=0|1 OWNER=<nome> FIRMWARE_DIR=<dir>"
+	@echo "Owner automatico: se OWNER vazio, usa MSXBARE_PATREON_TAG (menuconfig)"
 	@echo "Backend do emulador: EMULATOR_BACKEND=fmsx|bluemsx (default: fmsx)"
 	@echo "Boot mode selecionavel em runtime: Settings -> Boot Mode [NORM/FAST/GAME]"
 	@echo "Bypass temporario (nao recomendado): ALLOW_DIRTY_THIRD_PARTY=1 make"

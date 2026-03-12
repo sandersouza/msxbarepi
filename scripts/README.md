@@ -5,6 +5,8 @@ Este diretorio concentra utilitarios operacionais de build, validacao de ambient
 ## Resumo rapido
 
 - Faz um build assistido: `build-config.sh`
+- Configura features de build (menuconfig): `menuconfig.sh`
+- Gera header de configuracao para o kernel: `gen-build-header.sh`
 - Instala/sugere toolchains por SO: `install-toolchains.sh`
 - Guardrail de `third_party`: `check-third-party-pristine.sh`
 - Checa Toolchain necessárias: `check-toolchain.sh`
@@ -43,6 +45,57 @@ NON_INTERACTIVE=1 ./scripts/build-config.sh
 
 - Executa `make default DEBUG=<0|1>`.
 - Mostra aviso se o `PWD` nao for o caminho esperado configurado no script.
+
+## 1.1) menuconfig.sh
+
+### Funcao
+
+Fluxo de configuracao estilo menuconfig para gerar:
+
+- `.config` (fonte de verdade)
+- `.config.mk` (consumido pelo `Makefile` mesmo apos `make clean`)
+- `build/config.mk` (consumido automaticamente pelo `Makefile`)
+
+### Como usar
+
+Interativo:
+
+```bash
+./scripts/menuconfig.sh
+```
+
+Nao interativo:
+
+```bash
+NON_INTERACTIVE=1 ./scripts/menuconfig.sh
+```
+
+Sincronizar `build/config.mk` a partir de `.config` sem abrir menu:
+
+```bash
+./scripts/menuconfig.sh --sync-only
+```
+
+### Observacoes
+
+- Opcoes atuais: SCC, FM-PAC, DISK ROM, MegaRAM, MSX2, MSX2+, LOAD ROM, LOAD DISK, Boot Mode, DEBUG, One ROM Mode e Patreon/Owner tag.
+- Em One ROM Mode o script aplica presets de seguranca (MSX2+, boot GAME e desativa load dinamico).
+
+## 1.2) gen-build-header.sh
+
+### Funcao
+
+Gera `build/config_build.h` com macros estaticas de build para o kernel.
+
+### Como usar
+
+```bash
+MSXBARE_FEAT_SCC=1 MSXBARE_BOOT_MODE_DEFAULT=FAST ./scripts/gen-build-header.sh build/config_build.h
+```
+
+### Observacoes
+
+- O `Makefile` executa esse script automaticamente no target `config-header` antes de compilar.
 
 ## 2) check-third-party-pristine.sh
 
