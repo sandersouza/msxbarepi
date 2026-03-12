@@ -54,13 +54,13 @@ Build com debug compilado (recomendado em desenvolvimento):
 make DEBUG=1
 ```
 
-Configurar features de build (estilo menuconfig):
+Configurar features de build (frontend real do Linux Kconfig/mconf):
 
 ```bash
 make menuconfig
 ```
 
-Atalhos no menuconfig (interativo): setas, `Enter`, `Space`, `Y/N`, `S`, `L`, `?`, `Esc`.
+Atalhos no menuconfig (interativo): os mesmos do menuconfig classico do Linux.
 
 Help de targets/flags:
 

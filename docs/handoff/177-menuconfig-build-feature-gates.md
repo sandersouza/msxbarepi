@@ -49,13 +49,16 @@ Data: 2026-03-12
 - `src/Makefile`
   - macros de feature estaticas adicionadas em `CPPFLAGS`;
   - include forcado de `../build/config_build.h`.
-- `scripts/menuconfig.sh` (novo wrapper)
-  - chama `scripts/menuconfig_tui.py`.
-- `scripts/menuconfig_tui.py` (novo)
-  - TUI em `curses` com estilo Linux menuconfig;
-  - submenus, `[ ]/[∗]`, toggles com `Y/N`/`Space`, `S` salvar, `L` carregar, `?` ajuda, `Esc` voltar;
-  - modo `--sync-only`/`--non-interactive`;
-  - gera `.config`, `.config.mk`, `build/config.mk`.
+- `scripts/menuconfig.sh`
+  - integra com frontend real do Kconfig (`mconf`) do Linux;
+  - executa `build/tools/kconfig-linux/mconf` com `config/Kconfig.msxbarepi`;
+  - converte `.config` (formato Kconfig) para `.config.mk` e `build/config.mk`;
+  - modo `--sync-only`/`NON_INTERACTIVE=1` mantido.
+- `scripts/build-kconfig-mconf.sh` (novo)
+  - compila `mconf` localmente a partir de `tools/kconfig-linux/` (upstream Linux `scripts/kconfig`);
+  - gera parser/lexer com `bison` + `flex`.
+- `tools/kconfig-linux/` (novo)
+  - snapshot local do Kconfig frontend do Linux + licenca GPL-2.0.
 - `scripts/gen-build-header.sh` (novo)
   - gera `build/config_build.h` a partir das variaveis efetivas.
 - Documentacao atualizada:

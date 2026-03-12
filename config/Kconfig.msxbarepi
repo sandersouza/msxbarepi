@@ -1,0 +1,74 @@
+mainmenu "MSX BarePI Build Configuration"
+
+menu "General setup"
+config MSXBARE_DEBUG
+    bool "Ativar DEBUG"
+    default y
+
+choice
+    prompt "Boot Mode default"
+    default MSXBARE_BOOT_MODE_NORM
+
+config MSXBARE_BOOT_MODE_NORM
+    bool "NORM"
+
+config MSXBARE_BOOT_MODE_FAST
+    bool "FAST"
+
+config MSXBARE_BOOT_MODE_GAME
+    bool "GAME"
+endchoice
+endmenu
+
+menu "Machine profile"
+config MSXBARE_FEAT_MSX2
+    bool "Suporte a MSX2"
+    default y
+
+config MSXBARE_FEAT_MSX2P
+    bool "Suporte a MSX2+"
+    default y
+
+config MSXBARE_ONE_ROM_MODE
+    bool "One ROM Mode"
+    default n
+
+config MSXBARE_ONE_ROM_PATH
+    string "One ROM path"
+    depends on MSXBARE_ONE_ROM_MODE
+    default ""
+endmenu
+
+menu "Expansion support"
+config MSXBARE_FEAT_SCC
+    bool "Suporte a SCC"
+    default y
+
+config MSXBARE_FEAT_FMPAC
+    bool "Suporte a FM-PAC"
+    default y
+
+config MSXBARE_FEAT_DISK_ROM
+    bool "Suporte a DISK ROM"
+    default y
+
+config MSXBARE_FEAT_MEGARAM
+    bool "Suporte a MegaRAM"
+    default y
+endmenu
+
+menu "Media loaders"
+config MSXBARE_FEAT_LOAD_ROM
+    bool "Suporte a LOAD ROM"
+    default y
+
+config MSXBARE_FEAT_LOAD_DISK
+    bool "Suporte a LOAD DISK"
+    default y
+endmenu
+
+menu "Build identification"
+config MSXBARE_PATREON_TAG
+    string "Patreon / Owner tag"
+    default ""
+endmenu
