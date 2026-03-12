@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch fix-acurating-timing-vdp9958
 
-Ultima atualizacao: 11/03/2026 (ciclo 21:17 BRT)
+Ultima atualizacao: 11/03/2026 (ciclo 22:12 BRT)
 
 ## Objetivo desta memoria
 
@@ -42,7 +42,7 @@ Impacto esperado:
 - Comando de build usado: make -j4 DEBUG=1
 - Build mais recente validado localmente: OK
 - Artefato principal: artifacts/kernel8-default.img
-- BUILD_HASH registrado: f61adf2-96406538b633cc118ed6ae4c3b0e57999b0c9d4b
+- BUILD_HASH registrado: 0e72854-a74c4078cc5415b3b4805545c3d6f98e014e62a9
 
 ## Estado desta iteracao (11/03/2026 19:20 BRT)
 
@@ -95,6 +95,67 @@ Impacto esperado:
   - revertido reset forcado de `VKey` em leitura de status para o comportamento upstream do fMSX.
   - motivacao: manter sequenciamento de latch VDP original; algumas rotinas de BIOS/software dependem disso.
 - Build local validado: `make -j4 DEBUG=1` (OK), artefato `artifacts/kernel8-default.img`.
+
+## Estado desta iteracao (11/03/2026 21:35 BRT)
+
+- Validado o estado da branch em `0e72854` com build limpo e guardrail de `third_party` OK.
+- Confirmado que o arquivo de referencia citado pelo usuario e `.github/instructions/code-reference.instructions.md` (nao existe `core-reference.instructions.md` no repositorio).
+- Auditoria de ROMs refeita:
+  - `MSX.ROM`, `MSX2*.ROM`, `DISK.ROM` inalteradas desde `b74ea07`.
+  - unica alteracao de ROM relevante na branch recente permanece `KANJI.ROM` (nao afeta caminho MSX1).
+- Telemetria do overlay estendida para diagnostico MSX1 em `TM4`:
+  - adicionado `R7` junto de `R1/SO/I0/S0` para verificar rapidamente se BIOS programou cores e habilitou tela.
+  - documentacao sincronizada em `docs/debug-layer.md`.
+- Build local validado: `make -j4 DEBUG=1` (OK), artefato `artifacts/kernel8-default.img`.
+
+## Estado desta iteracao (11/03/2026 21:46 BRT)
+
+- Novo screenshot de hardware MSX1 confirmou:
+  - `TM4 ... R1:10 R7:00 SO:0 I0:0` persistente (BIOS nao chega a habilitar display).
+- Hipotese convertida em correcao:
+  - em `src/fmsx_local/MSX.c`, `IsExpandedPrimarySlot()` estava retornando `0` para MSX1, bloqueando expansao do slot 3.
+  - isso quebrava o caminho esperado de RAM mapper em `3-2` no fluxo MSX1 (comportamento divergente do upstream fMSX).
+- Correcao aplicada:
+  - MSX1 agora trata slot 3 como expandido (`return (PS==3)`), preservando mapeamento de RAM compatível com upstream.
+- Build local validado: `make -j4 DEBUG=1` (OK), artefato `artifacts/kernel8-default.img`.
+
+## Estado desta iteracao (11/03/2026 21:55 BRT)
+
+- Ajuste solicitado no overlay `TXTDBG` implementado:
+  - prefixo `BUILD:%04X` (hash de 16 bits calculado em runtime a partir de `MSXBARE_BUILD_BID`).
+  - `OS` fixado em largura estavel `000..999` com `%03u` sobre `tick % 1000`.
+- Mudancas aplicadas em:
+  - `src/kernel.cpp` (overlay principal em uso).
+  - `src/combo_debug_overlay.cpp` (renderer desacoplado, mantido consistente).
+  - `docs/debug-layer.md` (documentacao da nova semantica de `TXTDBG`).
+- Build local validado: `make -j4 DEBUG=1` (OK), artefato `artifacts/kernel8-default.img`.
+
+## Estado desta iteracao (11/03/2026 22:01 BRT)
+
+- Feedback de hardware MSX1 recebido:
+  - `DISK.ROM` aparentemente ausente (`FILES` => `Illegal function`, `Load Disk` sem efeito).
+  - `MSXDIAG.ROM` relatando VDP9938/50Hz no perfil MSX1.
+- Correcao aplicada em `src/fmsx_runtime.c`:
+  - `DISK.ROM` voltou a ser efetivo tambem no perfil MSX1 (segue toggle global `disk_rom`).
+  - frame-step voltou a sair apos janela de VBlank para todos os modelos (`g_fmsx_quit_after_vblank=1`) para preservar cadencia de IRQ/jiffies.
+- Correcao aplicada em `src/fmsx_local/MSX.c` para compatibilidade MSX1/TMS9918:
+  - leitura de status VDP (`0x99`) forca `S#0` no MSX1.
+  - escrita de registradores VDP acima de `R#7` ignorada no MSX1.
+  - portas de palette/register access (`0x9A/0x9B`) ignoradas no MSX1.
+  - `VDPOut()` ignora `R>7` no MSX1.
+- Build local validado: `make -j4 DEBUG=1` (OK), artefato `artifacts/kernel8-default.img`.
+
+## Estado desta iteracao (11/03/2026 22:12 BRT)
+
+- Telemetria de diagnostico reforcada para o caso `DISK.ROM` no MSX1:
+  - `TFmsxTimingDebug` ganhou `disk_rom_enabled`.
+  - linha `TM3` no overlay passou de `D:<loaded>` para `D:<enabled>/<loaded>` para separar claramente configuracao vs carga real.
+  - documentacao sincronizada em `docs/debug-layer.md`.
+- Ajuste de consistencia em comentario de runtime:
+  - removida referencia obsoleta a "MSX1 sem DiskROM" em `src/fmsx_runtime.c` (politica atual segue toggle global `disk_rom` para todos os perfis).
+- Build local validado: `make -j4 DEBUG=1` (OK), artefato `artifacts/kernel8-default.img`.
+- BUILD_HASH atualizado: `0e72854-f98a9f831f21ea4a49e05d7a50c1266db4ab5ca1`.
+- Observacao operacional: `roms/initramfs/MSX.ROM` segue alterada no working tree (diff binario local); manter esse ponto sob controle em testes A/B de diagnostico de modelo/frequencia no MSX1.
 
 ## Comando oficial para preparar SD
 

@@ -172,3 +172,4 @@ Referencias tecnicas prioritarias para implementacao/correcao:
 - Instrucoes canonicass por area: `.github/instructions/*.instructions.md`
 - Documentacao dos scripts: `scripts/README.md`
 - Gestao de projeto: `docs/github-project-management.md`
+- Perfis desacoplados por modelo (MSX1/MSX2/MSX2+): `docs/machine-profiles/README.md`

@@ -1,5 +1,6 @@
 #include "combo_menu_items.h"
 #include "combo_locale.h"
+#include "machine_profile_catalog.h"
 
 static void BuildLabelFlag(char *dst, unsigned dst_size, const char *label, const char *flag)
 {
@@ -271,7 +272,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     if (resolution_mode > 3u) resolution_mode = 0u;
     if (scanline_mode > 2u) scanline_mode = 2u;
     (void) refresh_rate_hz;
-    if (machine_profile > 2u) machine_profile = 0u;
+    machine_profile = machine_profile_clamp(machine_profile);
     if (rammapper_kb != 256u && rammapper_kb != 512u && rammapper_kb != 1024u) rammapper_kb = 256u;
     if (megaram_kb != 0u && megaram_kb != 256u && megaram_kb != 512u && megaram_kb != 1024u) megaram_kb = 0u;
     if (z80_turbo_mode > 2u) z80_turbo_mode = 0u;
@@ -301,7 +302,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     BuildLabelFlag(boot_label, sizeof(boot_label), locale->settings_boot_mode,
                    boot_mode == 0u ? "NORM" : (boot_mode == 1u ? "FAST" : "GAME"));
     BuildLabelFlag(machine_label, sizeof(machine_label), locale->settings_machine,
-                   machine_profile == 0u ? "MSX1" : (machine_profile == 1u ? "MSX2" : "MSX2+"));
+                   machine_profile_label(machine_profile));
     {
         const char *mapper_flag = locale->flag_na;
         if (machine_profile != 0u)

@@ -124,7 +124,8 @@ static unsigned g_vdp_copy_starts = 0u;
 
 static boolean fmsx_runtime_disk_rom_effective(unsigned model_profile)
 {
-    return (g_disk_rom_enabled && (model_profile != FMSX_MODEL_PROFILE_MSX1)) ? TRUE : FALSE;
+    (void) model_profile;
+    return g_disk_rom_enabled ? TRUE : FALSE;
 }
 
 static void fmsx_runtime_reset_vdp_diag_counters(void)
@@ -402,12 +403,8 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     g_fmsx_status.last_error = 0;
     const boolean game_mode = (g_boot_mode == 2u) ? TRUE : FALSE;
     const unsigned requested_model_profile = g_model_profile;
-    /*
-     * Frame-step quit policy:
-     * - MSX1: legacy line-192 boundary avoids deterministic slicing in BIOS ISR.
-     * - MSX2/MSX2+: keep post-VBlank boundary.
-     */
-    g_fmsx_quit_after_vblank = (requested_model_profile == FMSX_MODEL_PROFILE_MSX1) ? 0 : 1;
+    /* Keep frame-step cadence aligned to full VBlank window for all models. */
+    g_fmsx_quit_after_vblank = 1;
     const boolean disk_rom_effective = fmsx_runtime_disk_rom_effective(requested_model_profile);
     const int base_mode = (fmsx_runtime_effective_refresh_hz() == 50u ? MSX_PAL : MSX_NTSC) | MSX_JOY1;
     int startup_mode = fmsx_runtime_machine_mode_bits() | base_mode;
@@ -424,8 +421,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     else
     {
         /*
-         * Keep PATCHBDOS cleared to avoid unintended DISK.ROM transition/load
-         * when running profiles that must boot without DiskROM (MSX1 path).
+         * Keep PATCHBDOS cleared when DiskROM policy is OFF.
          */
         Mode &= ~MSX_PATCHBDOS;
     }
@@ -527,7 +523,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     }
     Mode &= ~(MSX_AUTOSPACE | MSX_AUTOFIREA | MSX_AUTOFIREB);
     g_active_model_profile = started_model_profile;
-    g_fmsx_quit_after_vblank = (started_model_profile == FMSX_MODEL_PROFILE_MSX1) ? 0 : 1;
+    g_fmsx_quit_after_vblank = 1;
 
     if (!fmsx_runtime_disk_rom_effective(started_model_profile))
     {
@@ -1310,6 +1306,7 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
     stats->msx2p_kanji_basic_seen_p1 = (FmsxP1Select31Count > 0u) ? 1u : 0u;
     stats->p1_ps = (unsigned) PSL[1];
     stats->p1_ss = (unsigned) SSL[1];
+    stats->disk_rom_enabled = g_disk_rom_enabled ? 1u : 0u;
     stats->disk_rom_loaded = DiskROMLoaded ? 1u : 0u;
     stats->msx2p_msxje_loaded = FmsxMSX2PMSXJELoaded ? 1u : 0u;
     stats->msx2p_msxje_selected_p1 = (PSL[1] == 0u && SSL[1] == 3u) ? 1u : 0u;

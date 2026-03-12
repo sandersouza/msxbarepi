@@ -1,5 +1,35 @@
 #include "combo_debug_overlay.h"
 
+#ifndef MSXBARE_BUILD_BID
+#define MSXBARE_BUILD_BID ""
+#endif
+
+static unsigned BuildHash16FromString(const char *text)
+{
+    unsigned hash = 2166136261u; /* FNV-1a 32-bit basis */
+    if (text == 0)
+    {
+        return 0u;
+    }
+    while (*text != '\0')
+    {
+        hash ^= (unsigned) (u8) *text++;
+        hash *= 16777619u; /* FNV prime */
+    }
+    hash ^= (hash >> 16);
+    return hash & 0xFFFFu;
+}
+
+static unsigned BuildHash16(void)
+{
+    static unsigned cached = 0xFFFFFFFFu;
+    if (cached == 0xFFFFFFFFu)
+    {
+        cached = BuildHash16FromString(MSXBARE_BUILD_BID);
+    }
+    return cached;
+}
+
 CComboDebugOverlay::CComboDebugOverlay(void)
 : m_WriteFn(0)
 , m_Context(0)
@@ -38,9 +68,11 @@ void CComboDebugOverlay::Clear(void)
 void CComboDebugOverlay::Render(const TComboDebugOverlayData &d)
 {
     CString line;
+    const unsigned os_tick = d.tick % 1000u;
+    const unsigned build_hash16 = BuildHash16();
 
-    line.Format("\x1b[97m\x1b[49m\x1b[1;1HTXTDBG OS:%02u M:%u C:%u I:%u PAU:%u      ",
-        d.tick & 0xFFu, d.mmu_enabled, d.dcache_enabled, d.icache_enabled, d.paused);
+    line.Format("\x1b[97m\x1b[49m\x1b[1;1HTXTDBG BUILD:%04X OS:%03u M:%u C:%u I:%u PAU:%u      ",
+        build_hash16 & 0xFFFFu, os_tick, d.mmu_enabled, d.dcache_enabled, d.icache_enabled, d.paused);
     Write(line);
 
     line.Format("\x1b[97m\x1b[49m\x1b[2;1HCI R:%u F:%u K:%u S:%u H:%u/%u P:%05u ",
