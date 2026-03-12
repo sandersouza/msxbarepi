@@ -71,3 +71,19 @@ Data: 2026-03-12
 - `make clean && make`
 
 Resultado: build concluido com sucesso e artefato de issue gerado.
+
+## Iteracao adicional - ESC como Exit no menuconfig
+
+### Mudanca implementada
+- `tools/kconfig-linux/lxdialog/util.c`
+  - ajuste no `on_key_esc()` para aceitar `ESC` unico como `KEY_ESC` imediato;
+  - comportamento antigo `ESC ESC` preservado;
+  - com isso, no menu principal do `mconf`, `ESC` passa a cair no fluxo padrao de `handle_exit()`, exibindo o prompt para salvar `.config`.
+
+### Validacao executada
+- `make menuconfig NON_INTERACTIVE=1`
+- `make clean && make`
+
+### Build de referencia desta iteracao
+- `BUILD_HASH:b9eae66-67bfd4ab535f06202b98120a18a31525268776be`
+- `INT_BUILD:D868`
