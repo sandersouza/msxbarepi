@@ -20,7 +20,7 @@ Este diretorio concentra utilitarios operacionais de build, validacao de ambient
 
 - Shell Bash.
 - Ambiente macOS para scripts que usam `diskutil`.
-- Toolchain AArch64 instalada para build (`aarch64-none-elf-*` ou equivalente).
+- Toolchain AArch64 instalada para build (`aarch64-none-elf-*`, `aarch64-elf-*` ou `aarch64-linux-gnu-*`).
 - Repositorios em `third_party` presentes e integro quando aplicavel.
 
 ## 1) build-config.sh
@@ -164,7 +164,7 @@ Prefixo default (`aarch64-none-elf-`):
 ./scripts/check-toolchain.sh
 ```
 
-Auto-detect de prefixo da toolchain (`aarch64-none-elf-` e fallback `aarch64-elf-`):
+Auto-detect de prefixo da toolchain (`aarch64-none-elf-`, fallback `aarch64-elf-` e `aarch64-linux-gnu-`):
 
 ```bash
 CROSS=auto ./scripts/check-toolchain.sh

@@ -13,7 +13,7 @@ Projeto de emulacao de MSX em baremetal no Raspberry Pi 3B.
 
 ## Requisitos
 
-- Toolchain AArch64 no PATH (`aarch64-none-elf-*` ou `aarch64-elf-*`).
+- Toolchain AArch64 no PATH (`aarch64-none-elf-*`, `aarch64-elf-*` ou `aarch64-linux-gnu-*`).
 - Dependencias de scripts validadas por `scripts/check-toolchain.sh`.
 - Repositorios em `third_party/` presentes e integros.
 

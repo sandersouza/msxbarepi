@@ -20,11 +20,29 @@ COMMON_TOOLS=(
   shasum
 )
 
-TOOLCHAIN_TOOLS=(
-  aarch64-none-elf-gcc
-  aarch64-none-elf-ld
-  aarch64-none-elf-objcopy
+TOOLCHAIN_PREFIXES=(
+  aarch64-none-elf-
+  aarch64-elf-
+  aarch64-linux-gnu-
 )
+
+toolchain_prefix_found() {
+  local prefix tool
+  for prefix in "${TOOLCHAIN_PREFIXES[@]}"; do
+    local missing=0
+    for tool in gcc ld objcopy; do
+      if ! command -v "${prefix}${tool}" >/dev/null 2>&1; then
+        missing=1
+        break
+      fi
+    done
+    if [ "$missing" -eq 0 ]; then
+      printf '%s\n' "$prefix"
+      return 0
+    fi
+  done
+  return 1
+}
 
 run_toolchain_check() {
   if [ -x "$ROOT_DIR/scripts/check-toolchain.sh" ]; then
@@ -81,6 +99,22 @@ print_tools_status() {
   fi
 }
 
+print_toolchain_status() {
+  local active_prefix=""
+  echo
+  echo "[Toolchain AArch64]"
+  if active_prefix="$(toolchain_prefix_found)"; then
+    echo "  OK: toolchain detectada no PATH (${active_prefix}*)"
+  else
+    echo "  Faltando:"
+    echo "  - gcc/ld/objcopy para um dos prefixos:"
+    local p
+    for p in "${TOOLCHAIN_PREFIXES[@]}"; do
+      echo "    * ${p}"
+    done
+  fi
+}
+
 linux_install_with_apt() {
   if ! command -v apt-get >/dev/null 2>&1; then
     echo "[ERRO] Linux sem APT detectado. Este script instala apenas com APT."
@@ -88,7 +122,7 @@ linux_install_with_apt() {
     exit 2
   fi
 
-  local packages=(
+  local common_packages=(
     make
     git
     zip
@@ -96,8 +130,12 @@ linux_install_with_apt() {
     rsync
     fzf
     perl
-    binutils-aarch64-none-elf
-    gcc-aarch64-none-elf
+  )
+
+  local toolchain_pkg_sets=(
+    "binutils-aarch64-none-elf gcc-aarch64-none-elf"
+    "binutils-aarch64-elf gcc-aarch64-elf"
+    "binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu"
   )
 
   local runner=()
@@ -113,7 +151,8 @@ linux_install_with_apt() {
 
   if [ "$DRY_RUN" = "1" ]; then
     echo "[DRY-RUN] ${runner[*]} apt-get update"
-    echo "[DRY-RUN] ${runner[*]} apt-get install -y ${packages[*]}"
+    echo "[DRY-RUN] ${runner[*]} apt-get install -y ${common_packages[*]}"
+    echo "[DRY-RUN] Tentativa de instalacao da toolchain por conjuntos de fallback APT"
     return 0
   fi
 
@@ -121,7 +160,31 @@ linux_install_with_apt() {
   "${runner[@]}" apt-get update
 
   echo "[INFO] Instalando ferramentas necessarias..."
-  "${runner[@]}" apt-get install -y "${packages[@]}"
+  "${runner[@]}" apt-get install -y "${common_packages[@]}"
+
+  if toolchain_prefix_found >/dev/null 2>&1; then
+    echo "[INFO] Toolchain ja presente no PATH, sem instalacao adicional via APT."
+    return 0
+  fi
+
+  local set pair pkg all_available
+  for set in "${toolchain_pkg_sets[@]}"; do
+    all_available=1
+    for pkg in $set; do
+      if ! apt-cache show "$pkg" 2>/dev/null | grep -q '^Package:'; then
+        all_available=0
+        break
+      fi
+    done
+    if [ "$all_available" -eq 1 ]; then
+      echo "[INFO] Instalando toolchain via APT: $set"
+      "${runner[@]}" apt-get install -y $set
+      return 0
+    fi
+  done
+
+  echo "[WARN] Nenhum conjunto de pacotes AArch64 suportado encontrado no APT desta distro."
+  echo "[INFO] Instale manualmente uma toolchain com prefixo aarch64-none-elf-, aarch64-elf- ou aarch64-linux-gnu-."
 }
 
 macos_install_with_brew() {
@@ -200,7 +263,7 @@ main() {
 
   echo "[$SCRIPT_NAME] Verificando ambiente..."
   print_tools_status "Ferramentas gerais" "${COMMON_TOOLS[@]}"
-  print_tools_status "Toolchain AArch64" "${TOOLCHAIN_TOOLS[@]}"
+  print_toolchain_status
 
   echo
   echo "[$SCRIPT_NAME] Checando toolchain via script oficial..."
@@ -232,7 +295,7 @@ main() {
   echo
   echo "[$SCRIPT_NAME] Revalidando ambiente..."
   print_tools_status "Ferramentas gerais" "${COMMON_TOOLS[@]}"
-  print_tools_status "Toolchain AArch64" "${TOOLCHAIN_TOOLS[@]}"
+  print_toolchain_status
 
   echo
   echo "[$SCRIPT_NAME] Rechecando toolchain via script oficial..."
@@ -241,8 +304,13 @@ main() {
   fi
 
   local missing_after=()
-  collect_missing_tools missing_after "${COMMON_TOOLS[@]}" "${TOOLCHAIN_TOOLS[@]}"
-  if [ "${#missing_after[@]}" -gt 0 ]; then
+  collect_missing_tools missing_after "${COMMON_TOOLS[@]}"
+  local toolchain_ok=1
+  if ! toolchain_prefix_found >/dev/null 2>&1; then
+    toolchain_ok=0
+  fi
+
+  if [ "${#missing_after[@]}" -gt 0 ] || [ "$toolchain_ok" -ne 1 ]; then
     echo
     echo "[WARN] Ainda existem ferramentas faltando."
     exit 1

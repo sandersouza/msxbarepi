@@ -54,6 +54,8 @@ CROSS ?= $(shell \
 		echo aarch64-none-elf-; \
 	elif command -v aarch64-elf-gcc >/dev/null 2>&1; then \
 		echo aarch64-elf-; \
+	elif command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then \
+		echo aarch64-linux-gnu-; \
 	else \
 		echo aarch64-none-elf-; \
 	fi)
@@ -188,7 +190,7 @@ help:
 	@echo "Initramfs: make initramfs INITRAMFS_IN=roms/initramfs INITRAMFS_OUT=sdcard/msx.cpio"
 	@echo "SD package zip (via prepare-sd dry-run offline): make package -> artifacts/sdcard-package-YYYYMMDDHHMM.zip"
 	@echo "Flags uteis: make package DEBUG=0|1 OWNER=<nome> FIRMWARE_DIR=./rpi-firmware"
-	@echo "Cross prefix auto: aarch64-none-elf- | aarch64-elf-"
+	@echo "Cross prefix auto: aarch64-none-elf- | aarch64-elf- | aarch64-linux-gnu-"
 	@echo "Override: make CROSS=aarch64-elf-"
 	@echo "Use flags principais: DEBUG=0|1 OWNER=<nome> FIRMWARE_DIR=<dir>"
 	@echo "Owner automatico: se OWNER vazio, usa MSXBARE_PATREON_TAG (menuconfig)"

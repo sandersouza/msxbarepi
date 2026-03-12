@@ -103,6 +103,8 @@ if [ "$CROSS" = "auto" ]; then
     :
   elif check_toolchain_prefix "aarch64-elf-"; then
     :
+  elif check_toolchain_prefix "aarch64-linux-gnu-"; then
+    :
   else
     MISSING=1
   fi
