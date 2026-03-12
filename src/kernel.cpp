@@ -802,6 +802,10 @@ CComboKernel::CComboKernel(void)
 	m_RenshaPhase(0u),
 	m_RenshaFireAHeld(FALSE),
 	m_RenshaSpaceHeld(FALSE),
+	m_PendingKeyboardSeq(0u),
+	m_PendingKeyboardModifiers(0u),
+	m_PendingKeyboardRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
+	m_PendingKeyboardReport(FALSE),
 	m_LastKeyboardModifiers(0u),
 	m_LastKeyboardRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
 	m_FmMusicEnabled(TRUE),
@@ -1162,12 +1166,40 @@ TComboShutdownMode CComboKernel::Run(void)
 			}
 		}
 
-		if (m_Keyboard != 0)
-		{
-			m_Keyboard->UpdateLEDs();
-			/* Keep menu navigation responsive while a key is held (auto-repeat driven by frame loop). */
-			UpdateJoystickFromRaw(m_LastKeyboardModifiers, m_LastKeyboardRawKeys);
-		}
+			if (m_Keyboard != 0)
+			{
+				if (m_PendingKeyboardReport)
+				{
+					unsigned char pending_modifiers = m_LastKeyboardModifiers;
+					unsigned char pending_raw[6];
+					for (unsigned i = 0u; i < 6u; ++i)
+					{
+						pending_raw[i] = m_LastKeyboardRawKeys[i];
+					}
+
+					/* Lockless snapshot (seqlock-style) to avoid torn HID reports from callback context. */
+					unsigned seq_a = 0u;
+					unsigned seq_b = 0u;
+					do
+					{
+						seq_a = m_PendingKeyboardSeq;
+						if (seq_a & 1u) continue;
+						pending_modifiers = m_PendingKeyboardModifiers;
+						for (unsigned i = 0u; i < 6u; ++i)
+						{
+							pending_raw[i] = m_PendingKeyboardRawKeys[i];
+						}
+						seq_b = m_PendingKeyboardSeq;
+					}
+					while (seq_a != seq_b || (seq_b & 1u));
+
+					m_PendingKeyboardReport = FALSE;
+					UpdateJoystickFromRaw(pending_modifiers, pending_raw);
+				}
+				m_Keyboard->UpdateLEDs();
+				/* Keep menu navigation responsive while a key is held (auto-repeat driven by frame loop). */
+				UpdateJoystickFromRaw(m_LastKeyboardModifiers, m_LastKeyboardRawKeys);
+			}
 
 		if (m_SettingsSavePending)
 		{
@@ -1734,7 +1766,10 @@ void CComboKernel::KeyboardRemovedHandler(CDevice *device, void *context)
 		for (unsigned i = 0u; i < 6u; ++i)
 		{
 			self->m_LastKeyboardRawKeys[i] = 0u;
+			self->m_PendingKeyboardRawKeys[i] = 0u;
 		}
+		self->m_PendingKeyboardModifiers = 0u;
+		self->m_PendingKeyboardReport = FALSE;
 		self->m_LastPausePressed = FALSE;
 		self->m_LastMenuBackPressed = FALSE;
 		self->m_LastF6Pressed = FALSE;
@@ -4394,5 +4429,13 @@ void CComboKernel::KeyStatusRawHandler(unsigned char modifiers, const unsigned c
 	}
 
 	CComboKernel *self = (CComboKernel *) context;
-	self->UpdateJoystickFromRaw(modifiers, raw_keys);
+	/* Callback path must stay lightweight: capture raw snapshot and defer full processing to main loop. */
+	self->m_PendingKeyboardSeq++;
+	self->m_PendingKeyboardModifiers = modifiers;
+	for (unsigned i = 0u; i < 6u; ++i)
+	{
+		self->m_PendingKeyboardRawKeys[i] = raw_keys[i];
+	}
+	self->m_PendingKeyboardReport = TRUE;
+	self->m_PendingKeyboardSeq++;
 }

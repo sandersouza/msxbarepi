@@ -188,6 +188,10 @@ private:
     unsigned m_RenshaPhase;
     boolean m_RenshaFireAHeld;
     boolean m_RenshaSpaceHeld;
+    volatile unsigned m_PendingKeyboardSeq;
+    volatile unsigned char m_PendingKeyboardModifiers;
+    volatile unsigned char m_PendingKeyboardRawKeys[6];
+    volatile boolean m_PendingKeyboardReport;
     unsigned char m_LastKeyboardModifiers;
     unsigned char m_LastKeyboardRawKeys[6];
     boolean m_FmMusicEnabled;

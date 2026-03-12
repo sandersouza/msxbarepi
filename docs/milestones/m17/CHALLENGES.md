@@ -38,3 +38,9 @@ Registro de desafios enfrentados por issue, decisão adotada e status da soluç�
 - Solução adotada: leitura do browser migrada para varredura do diretório corrente via FatFS (sem cache global truncado), com recarga por `current_dir` em cada entrada/retorno de subdiretório; estabilizou listagem e eliminou sumiços intermitentes.
 - Status: Resolvido
 - Referência: [138-bug-leitura-listagem-diretorios-sd-inconsistente-navegador.md](/Users/sandersouza/Developer/msxbarepi-circle/docs/milestones/m17/138-bug-leitura-listagem-diretorios-sd-inconsistente-navegador.md)
+
+### #173 — teclado USB-HID com perda de press/release e latência
+- Desafio: Eventos de teclado inconsistentes no hardware (press/release perdidos e atraso variável), afetando jogo e menu.
+- Solução adotada: separar captura e processamento de input; callback RAW passa a apenas capturar snapshot do relatório HID, com processamento integral no loop principal para remover corrida de contexto.
+- Status: Parcial
+- Referência: [173-bug-teclado-usb-hid-press-release-latencia.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/173-bug-teclado-usb-hid-press-release-latencia.md)
