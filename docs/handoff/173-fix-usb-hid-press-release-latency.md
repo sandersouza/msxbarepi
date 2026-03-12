@@ -49,3 +49,37 @@ Issue remota associada: `#173` (milestone m17).
 1. Teste em hardware (MSX1/MSX2/MSX2+) focando press/release contínuo e atalhos de menu.
 2. Se estável, abrir PR para `fix-acurating-timing-vdp9958`.
 3. Merge, sync, retorno para branch base e fechamento da issue `#173`.
+
+---
+
+Ultima atualizacao: 11/03/2026 (ciclo 23:06 BRT)
+
+## Ajuste adicional após teste em hardware
+
+Sintoma reportado após a primeira correção:
+- ainda havia teclas "presas" (repeat constante) até novo evento de teclado.
+
+Causa identificada:
+- corrida no handoff de eventos entre callback USB e loop principal;
+- `m_PendingKeyboardReport` podia ser limpo no loop exatamente quando um novo evento chegava, perdendo transições (`release`).
+
+Correção aplicada:
+- removido o flag booleano `m_PendingKeyboardReport`;
+- consumo de evento passou a ser guiado por sequência (`m_PendingKeyboardSeq` -> `m_ProcessedKeyboardSeq`);
+- callback continua mínimo (snapshot raw), loop principal consome snapshot estável e marca `m_ProcessedKeyboardSeq = seq_b`;
+- no `KeyboardRemovedHandler()`, `m_ProcessedKeyboardSeq` é alinhado ao `m_PendingKeyboardSeq`.
+
+Arquivos:
+- `src/kernel.h`
+- `src/kernel.cpp`
+
+Commit:
+- `1fcd8c9` - Fix keyboard event loss by switching pending HID handoff to seq tracking
+
+Build desta iteração:
+- Comando: `make -j4 DEBUG=1`
+- Artefatos:
+  - `artifacts/kernel8-issue173.img`
+  - `artifacts/kernel8-default.img`
+- BUILD_HASH: `1fcd8c9-ebef7d0215d56363f8aa13b746dbd409ed1108a3`
+- INT_BUILD: `64AF`
