@@ -191,7 +191,7 @@ private:
     volatile unsigned m_PendingKeyboardSeq;
     volatile unsigned char m_PendingKeyboardModifiers;
     volatile unsigned char m_PendingKeyboardRawKeys[6];
-    volatile boolean m_PendingKeyboardReport;
+    unsigned m_ProcessedKeyboardSeq;
     unsigned char m_LastKeyboardModifiers;
     unsigned char m_LastKeyboardRawKeys[6];
     boolean m_FmMusicEnabled;

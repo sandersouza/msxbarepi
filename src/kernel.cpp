@@ -805,7 +805,7 @@ CComboKernel::CComboKernel(void)
 	m_PendingKeyboardSeq(0u),
 	m_PendingKeyboardModifiers(0u),
 	m_PendingKeyboardRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
-	m_PendingKeyboardReport(FALSE),
+	m_ProcessedKeyboardSeq(0u),
 	m_LastKeyboardModifiers(0u),
 	m_LastKeyboardRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
 	m_FmMusicEnabled(TRUE),
@@ -1168,7 +1168,8 @@ TComboShutdownMode CComboKernel::Run(void)
 
 			if (m_Keyboard != 0)
 			{
-				if (m_PendingKeyboardReport)
+				const unsigned pending_seq = m_PendingKeyboardSeq;
+				if (pending_seq != m_ProcessedKeyboardSeq && !(pending_seq & 1u))
 				{
 					unsigned char pending_modifiers = m_LastKeyboardModifiers;
 					unsigned char pending_raw[6];
@@ -1193,7 +1194,7 @@ TComboShutdownMode CComboKernel::Run(void)
 					}
 					while (seq_a != seq_b || (seq_b & 1u));
 
-					m_PendingKeyboardReport = FALSE;
+					m_ProcessedKeyboardSeq = seq_b;
 					UpdateJoystickFromRaw(pending_modifiers, pending_raw);
 				}
 				m_Keyboard->UpdateLEDs();
@@ -1769,7 +1770,7 @@ void CComboKernel::KeyboardRemovedHandler(CDevice *device, void *context)
 			self->m_PendingKeyboardRawKeys[i] = 0u;
 		}
 		self->m_PendingKeyboardModifiers = 0u;
-		self->m_PendingKeyboardReport = FALSE;
+		self->m_ProcessedKeyboardSeq = self->m_PendingKeyboardSeq;
 		self->m_LastPausePressed = FALSE;
 		self->m_LastMenuBackPressed = FALSE;
 		self->m_LastF6Pressed = FALSE;
@@ -4436,6 +4437,5 @@ void CComboKernel::KeyStatusRawHandler(unsigned char modifiers, const unsigned c
 	{
 		self->m_PendingKeyboardRawKeys[i] = raw_keys[i];
 	}
-	self->m_PendingKeyboardReport = TRUE;
 	self->m_PendingKeyboardSeq++;
 }
