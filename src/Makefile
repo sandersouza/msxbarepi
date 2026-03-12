@@ -43,7 +43,7 @@ CXXFLAGS += -Os -ffunction-sections -fdata-sections
 LDFLAGS += --gc-sections
 endif
 
-OBJS = main.o kernel.o keyboard_input.o gfx_textbox.o viewport_screenshot.o combo_menu.o combo_menu_items.o media_catalog.o combo_file_browser.o combo_debug_overlay.o
+OBJS = main.o kernel.o keyboard_input.o tools/usb_hid_keyboard.o gfx_textbox.o viewport_screenshot.o combo_menu.o combo_menu_items.o media_catalog.o combo_file_browser.o combo_debug_overlay.o
 OBJS += combo_locale.o combo_locale_pt.o combo_locale_en.o combo_locale_es.o
 OBJS += machine_profile_catalog.o
 OBJS += emulator_backend.o fmsx_backend_shim.o bluemsx_backend.o

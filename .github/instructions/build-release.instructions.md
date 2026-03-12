@@ -34,6 +34,7 @@ applyTo:
 ## SD e empacotamento
 
 - Usar apenas `scripts/prepare-sd.sh` para preparo de SD em docs/comandos.
+- Antes de executar `scripts/prepare-sd.sh` sem `DRY_RUN=1`, pedir confirmacao explicita do usuario no chat.
 - Ao finalizar build de teste, sempre incluir comando de preparo de SD sem `DRY_RUN=1`.
 - Em `make package`, usar `DEBUG=0|1` e `OWNER=\"<nome>\"`; nome esperado do zip: `artifacts/sdcard-package-<OWNER>.zip`.
 

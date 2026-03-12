@@ -1,8 +1,5 @@
 #include "keyboard_input.h"
 
-static const u8 kHidKeyX = 0x1B;
-static const u8 kHidKeyZ = 0x1D;
-static const u8 kHidKeySpace = 0x2C;
 static const u8 kHidKeyRight = 0x4F;
 static const u8 kHidKeyLeft = 0x50;
 static const u8 kHidKeyDown = 0x51;
@@ -24,23 +21,17 @@ static const u8 kHidKeyEqual = 0x2E;
 static const u8 kHidKeyKeypadMinus = 0x56;
 static const u8 kHidKeyKeypadPlus = 0x57;
 
-static const u8 kJoyRight = (1u << 0);
-static const u8 kJoyLeft = (1u << 1);
-static const u8 kJoyDown = (1u << 2);
-static const u8 kJoyUp = (1u << 3);
-static const u8 kJoyButton1 = (1u << 4);
-static const u8 kJoyButton2 = (1u << 5);
-static const u8 kJoyMask = (kJoyRight | kJoyLeft | kJoyDown | kJoyUp | kJoyButton1 | kJoyButton2);
-
 u8 ComboKeyboardJoyMask(void)
 {
-	return kJoyMask;
+	return 0u;
 }
 
 void ComboDecodeKeyboardRaw(unsigned char modifiers,
 				      const unsigned char raw_keys[6],
 				      TComboKeyboardInputState *out_state)
 {
+	(void) modifiers;
+
 	if (out_state == 0)
 	{
 		return;
@@ -70,12 +61,6 @@ void ComboDecodeKeyboardRaw(unsigned char modifiers,
 	if (raw_keys == 0)
 	{
 		return;
-	}
-
-	/* Map physical Shift to FIREA in joystick bridge. */
-	if (modifiers & 0x22u)
-	{
-		out_state->bridge_bits |= kJoyButton1;
 	}
 
 	for (unsigned i = 0; i < 6; ++i)
@@ -158,28 +143,5 @@ void ComboDecodeKeyboardRaw(unsigned char modifiers,
 			out_state->menu_jump_letter = (char) ('A' + (key - 0x04u));
 		}
 
-		switch (key)
-		{
-		case kHidKeyRight:
-			out_state->bridge_bits |= kJoyRight;
-			break;
-		case kHidKeyLeft:
-			out_state->bridge_bits |= kJoyLeft;
-			break;
-		case kHidKeyDown:
-			out_state->bridge_bits |= kJoyDown;
-			break;
-		case kHidKeyUp:
-			out_state->bridge_bits |= kJoyUp;
-			break;
-		case kHidKeySpace:
-			out_state->bridge_bits |= kJoyButton1;
-			break;
-		case kHidKeyZ:
-			out_state->bridge_bits |= kJoyButton2;
-			break;
-		default:
-			break;
-		}
 	}
 }

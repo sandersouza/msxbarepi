@@ -42,6 +42,7 @@ applyTo: "**"
 ## Fluxo de SD e assets de runtime
 
 - Usar apenas `scripts/prepare-sd.sh` como caminho oficial de preparacao de SD em docs/comandos.
+- Antes de executar `scripts/prepare-sd.sh` sem `DRY_RUN=1`, pedir confirmacao explicita do usuario no chat.
 - Sempre que o fluxo de boot exigir novos arquivos no SD, atualizar `scripts/prepare-sd.sh` na mesma mudanca.
 - Nesta fase, assets de BIOS/ROM para runtime devem ser fornecidos externamente via initramfs CPIO (sem versionar assets protegidos).
 
