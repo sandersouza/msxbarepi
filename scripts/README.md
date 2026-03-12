@@ -50,7 +50,7 @@ NON_INTERACTIVE=1 ./scripts/build-config.sh
 
 ### Funcao
 
-Fluxo de configuracao estilo menuconfig para gerar:
+Fluxo de configuracao estilo Linux `menuconfig` (TUI em `curses`) para gerar:
 
 - `.config` (fonte de verdade)
 - `.config.mk` (consumido pelo `Makefile` mesmo apos `make clean`)
@@ -78,6 +78,11 @@ Sincronizar `build/config.mk` a partir de `.config` sem abrir menu:
 
 ### Observacoes
 
+- Navegacao no modo interativo:
+  - setas para navegar
+  - `Enter` para abrir submenu/editar item
+  - `Space`/`Y`/`N` para toggles
+  - `S` salvar, `L` carregar, `?` ajuda, `Esc` voltar
 - Opcoes atuais: SCC, FM-PAC, DISK ROM, MegaRAM, MSX2, MSX2+, LOAD ROM, LOAD DISK, Boot Mode, DEBUG, One ROM Mode e Patreon/Owner tag.
 - Em One ROM Mode o script aplica presets de seguranca (MSX2+, boot GAME e desativa load dinamico).
 

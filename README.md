@@ -60,6 +60,8 @@ Configurar features de build (estilo menuconfig):
 make menuconfig
 ```
 
+Atalhos no menuconfig (interativo): setas, `Enter`, `Space`, `Y/N`, `S`, `L`, `?`, `Esc`.
+
 Help de targets/flags:
 
 ```bash

@@ -49,9 +49,12 @@ Data: 2026-03-12
 - `src/Makefile`
   - macros de feature estaticas adicionadas em `CPPFLAGS`;
   - include forcado de `../build/config_build.h`.
-- `scripts/menuconfig.sh` (novo)
-  - UI simples com `fzf` (fallback numerico);
-  - modo `--sync-only`;
+- `scripts/menuconfig.sh` (novo wrapper)
+  - chama `scripts/menuconfig_tui.py`.
+- `scripts/menuconfig_tui.py` (novo)
+  - TUI em `curses` com estilo Linux menuconfig;
+  - submenus, `[ ]/[∗]`, toggles com `Y/N`/`Space`, `S` salvar, `L` carregar, `?` ajuda, `Esc` voltar;
+  - modo `--sync-only`/`--non-interactive`;
   - gera `.config`, `.config.mk`, `build/config.mk`.
 - `scripts/gen-build-header.sh` (novo)
   - gera `build/config_build.h` a partir das variaveis efetivas.
