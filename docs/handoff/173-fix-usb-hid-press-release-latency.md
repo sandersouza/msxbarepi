@@ -83,3 +83,39 @@ Build desta iteração:
   - `artifacts/kernel8-default.img`
 - BUILD_HASH: `1fcd8c9-ebef7d0215d56363f8aa13b746dbd409ed1108a3`
 - INT_BUILD: `64AF`
+
+---
+
+Ultima atualizacao: 11/03/2026 (ciclo 23:14 BRT)
+
+## Refatoracao estrutural: bloco USB-HID desacoplado do kernel
+
+Objetivo desta iteracao:
+- reduzir acoplamento do `kernel.cpp`;
+- migrar gerenciamento USB-HID/teclado para modulo importavel em subdiretorio dedicado.
+
+Arquitetura aplicada:
+- novo subdiretorio: `src/tools/`
+- novo modulo: `src/tools/usb_hid_keyboard.h/.cpp`
+  - attach/detach do teclado USB (`ukbd1`)
+  - callback RAW minimalista
+  - snapshot lockless por sequencia (seqlock-style)
+  - consumo de evento no loop principal
+  - sinalizacao de evento de remocao
+
+Mudancas no kernel:
+- `kernel.h/.cpp` agora usam `CUsbHidKeyboard` como dependencia/import;
+- removidos do kernel os campos internos de callback/pending HID (`m_Pending*`, `m_ProcessedKeyboardSeq`, ponteiros de teclado/removal handle);
+- removidos handlers estaticos de HID do kernel (`KeyStatusRawHandler`, `KeyboardRemovedHandler`);
+- `kernel.cpp` ficou com papel de orquestracao:
+  - chama `AttachIfAvailable()` apos `UpdatePlugAndPlay()`;
+  - consome `ConsumeRemovedEvent()` para limpar estado de input/menu;
+  - consome `ConsumeLatest()` para aplicar no pipeline existente (`UpdateJoystickFromRaw`).
+
+Build desta iteracao:
+- Comando: `make clean && make -j4 DEBUG=1`
+- Artefatos:
+  - `artifacts/kernel8-issue173.img`
+  - `artifacts/kernel8-default.img`
+- BUILD_HASH: `8ba837a-463e84253aa5e5ca3b486e5510fb42c8f58f8343`
+- INT_BUILD: `1496`

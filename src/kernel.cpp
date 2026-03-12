@@ -715,8 +715,7 @@ CComboKernel::CComboKernel(void)
 	m_USBHCI(&m_Interrupt, &m_Timer, TRUE),
 	m_EMMC(&m_Interrupt, &m_Timer, &m_ActLED),
 	m_Sound(0),
-	m_Keyboard(0),
-	m_KeyboardRemovedHandle(0),
+	m_UsbKeyboard(),
 	m_AudioPhase(0),
 	m_AudioStep((u32)(((u64)440u << 32) / (u64)kSampleRate)),
 	m_PlugAndPlayCount(0),
@@ -802,10 +801,6 @@ CComboKernel::CComboKernel(void)
 	m_RenshaPhase(0u),
 	m_RenshaFireAHeld(FALSE),
 	m_RenshaSpaceHeld(FALSE),
-	m_PendingKeyboardSeq(0u),
-	m_PendingKeyboardModifiers(0u),
-	m_PendingKeyboardRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
-	m_ProcessedKeyboardSeq(0u),
 	m_LastKeyboardModifiers(0u),
 	m_LastKeyboardRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
 	m_FmMusicEnabled(TRUE),
@@ -1154,53 +1149,45 @@ TComboShutdownMode CComboKernel::Run(void)
 			m_PlugAndPlayCount++;
 		}
 
-		if (updated && m_Keyboard == 0)
+		if (updated)
 		{
-			m_Keyboard = (CUSBKeyboardDevice *) m_DeviceNameService.GetDevice("ukbd1", FALSE);
-			if (m_Keyboard != 0)
-			{
-				m_KeyboardRemovedHandle = m_Keyboard->RegisterRemovedHandler(KeyboardRemovedHandler, this);
-				m_Keyboard->RegisterKeyStatusHandlerRaw(KeyStatusRawHandler, TRUE, this);
-				m_Keyboard->RegisterKeyPressedHandler(KeyPressedHandler);
-				m_Logger.Write(FromKernel, LogNotice, "USB keyboard attached");
-			}
+			(void) m_UsbKeyboard.AttachIfAvailable(m_DeviceNameService, m_Logger, KeyPressedHandler);
 		}
 
-			if (m_Keyboard != 0)
+		if (m_UsbKeyboard.ConsumeRemovedEvent())
+		{
+			m_LastKeyboardModifiers = 0u;
+			for (unsigned i = 0u; i < 6u; ++i)
 			{
-				const unsigned pending_seq = m_PendingKeyboardSeq;
-				if (pending_seq != m_ProcessedKeyboardSeq && !(pending_seq & 1u))
-				{
-					unsigned char pending_modifiers = m_LastKeyboardModifiers;
-					unsigned char pending_raw[6];
-					for (unsigned i = 0u; i < 6u; ++i)
-					{
-						pending_raw[i] = m_LastKeyboardRawKeys[i];
-					}
-
-					/* Lockless snapshot (seqlock-style) to avoid torn HID reports from callback context. */
-					unsigned seq_a = 0u;
-					unsigned seq_b = 0u;
-					do
-					{
-						seq_a = m_PendingKeyboardSeq;
-						if (seq_a & 1u) continue;
-						pending_modifiers = m_PendingKeyboardModifiers;
-						for (unsigned i = 0u; i < 6u; ++i)
-						{
-							pending_raw[i] = m_PendingKeyboardRawKeys[i];
-						}
-						seq_b = m_PendingKeyboardSeq;
-					}
-					while (seq_a != seq_b || (seq_b & 1u));
-
-					m_ProcessedKeyboardSeq = seq_b;
-					UpdateJoystickFromRaw(pending_modifiers, pending_raw);
-				}
-				m_Keyboard->UpdateLEDs();
-				/* Keep menu navigation responsive while a key is held (auto-repeat driven by frame loop). */
-				UpdateJoystickFromRaw(m_LastKeyboardModifiers, m_LastKeyboardRawKeys);
+				m_LastKeyboardRawKeys[i] = 0u;
 			}
+			m_LastPausePressed = FALSE;
+			m_LastMenuBackPressed = FALSE;
+			m_LastF6Pressed = FALSE;
+			m_LastF7Pressed = FALSE;
+			m_LastF8Pressed = FALSE;
+			m_LastF9Pressed = FALSE;
+			m_LastF10Pressed = FALSE;
+			m_LastFmGainUpPressed = FALSE;
+			m_LastFmGainDownPressed = FALSE;
+			m_TelemetryViewMode = kTelemetryViewOff;
+			m_PendingTelemetryToggle = kTelemetryRequestNone;
+			m_PendingViewportScreenshot = FALSE;
+			m_Logger.Write(FromKernel, LogNotice, "USB keyboard removed");
+		}
+
+		if (m_UsbKeyboard.IsAttached())
+		{
+			unsigned char pending_modifiers = 0u;
+			unsigned char pending_raw[6] = {0u, 0u, 0u, 0u, 0u, 0u};
+			if (m_UsbKeyboard.ConsumeLatest(&pending_modifiers, pending_raw))
+			{
+				UpdateJoystickFromRaw(pending_modifiers, pending_raw);
+			}
+			m_UsbKeyboard.UpdateLEDs();
+			/* Keep menu navigation responsive while a key is held (auto-repeat driven by frame loop). */
+			UpdateJoystickFromRaw(m_LastKeyboardModifiers, m_LastKeyboardRawKeys);
+		}
 
 		if (m_SettingsSavePending)
 		{
@@ -1755,38 +1742,6 @@ void CComboKernel::KeyPressedHandler(const char *text)
 	}
 }
 
-void CComboKernel::KeyboardRemovedHandler(CDevice *device, void *context)
-{
-	(void) device;
-	CComboKernel *self = (CComboKernel *) context;
-	if (self != 0)
-	{
-		self->m_Keyboard = 0;
-		self->m_KeyboardRemovedHandle = 0;
-		self->m_LastKeyboardModifiers = 0u;
-		for (unsigned i = 0u; i < 6u; ++i)
-		{
-			self->m_LastKeyboardRawKeys[i] = 0u;
-			self->m_PendingKeyboardRawKeys[i] = 0u;
-		}
-		self->m_PendingKeyboardModifiers = 0u;
-		self->m_ProcessedKeyboardSeq = self->m_PendingKeyboardSeq;
-		self->m_LastPausePressed = FALSE;
-		self->m_LastMenuBackPressed = FALSE;
-		self->m_LastF6Pressed = FALSE;
-		self->m_LastF7Pressed = FALSE;
-		self->m_LastF8Pressed = FALSE;
-		self->m_LastF9Pressed = FALSE;
-		self->m_LastF10Pressed = FALSE;
-		self->m_LastFmGainUpPressed = FALSE;
-		self->m_LastFmGainDownPressed = FALSE;
-		self->m_TelemetryViewMode = kTelemetryViewOff;
-		self->m_PendingTelemetryToggle = kTelemetryRequestNone;
-		self->m_PendingViewportScreenshot = FALSE;
-		self->m_Logger.Write(FromKernel, LogNotice, "USB keyboard removed");
-	}
-}
-
 void CComboKernel::DrawDebugOverlay(unsigned tick)
 {
 	CString line;
@@ -1815,7 +1770,7 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 	line.Format("\x1b[97m\x1b[49m\x1b[2;1HCI R:%u F:%u K:%u S:%u H:%u/%u P:%05u ",
 		m_LastQueueAvail,
 		m_LastQueueFree,
-		m_Keyboard != 0 ? 1u : 0u,
+		m_UsbKeyboard.IsAttached() ? 1u : 0u,
 		m_Sound != 0 && m_Sound->IsActive() ? 1u : 0u,
 		m_SoundStartAttempts > 99u ? 99u : m_SoundStartAttempts,
 		m_SoundStartFailures > 99u ? 99u : m_SoundStartFailures,
@@ -4420,22 +4375,4 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	m_LastF10Pressed = key_state.f10_pressed;
 	m_LastFmGainUpPressed = key_state.debug_fm_gain_up_pressed;
 	m_LastFmGainDownPressed = key_state.debug_fm_gain_down_pressed;
-}
-
-void CComboKernel::KeyStatusRawHandler(unsigned char modifiers, const unsigned char raw_keys[6], void *context)
-{
-	if (context == 0 || raw_keys == 0)
-	{
-		return;
-	}
-
-	CComboKernel *self = (CComboKernel *) context;
-	/* Callback path must stay lightweight: capture raw snapshot and defer full processing to main loop. */
-	self->m_PendingKeyboardSeq++;
-	self->m_PendingKeyboardModifiers = modifiers;
-	for (unsigned i = 0u; i < 6u; ++i)
-	{
-		self->m_PendingKeyboardRawKeys[i] = raw_keys[i];
-	}
-	self->m_PendingKeyboardSeq++;
 }

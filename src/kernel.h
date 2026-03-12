@@ -4,6 +4,7 @@
 #include "gfx_textbox.h"
 #include "combo_menu.h"
 #include "media_catalog.h"
+#include "tools/usb_hid_keyboard.h"
 
 #include <circle/actled.h>
 #include <circle/devicenameservice.h>
@@ -18,7 +19,6 @@
 #include <circle/timer.h>
 #include <circle/types.h>
 #include <circle/usb/usbhcidevice.h>
-#include <circle/usb/usbkeyboard.h>
 #include <SDCard/emmc.h>
 extern "C" {
 #include <fatfs/ff.h>
@@ -74,8 +74,6 @@ private:
     void ProcessPendingViewportScreenshot(void);
 
     static void KeyPressedHandler(const char *text);
-    static void KeyStatusRawHandler(unsigned char modifiers, const unsigned char raw_keys[6], void *context);
-    static void KeyboardRemovedHandler(CDevice *device, void *context);
 
 private:
 	static const unsigned kBlitMapMaxAxis = 2048u;
@@ -96,8 +94,7 @@ private:
     FATFS m_SettingsFileSystem;
 
     CSoundBaseDevice *m_Sound;
-    CUSBKeyboardDevice *m_Keyboard;
-    void *m_KeyboardRemovedHandle;
+    CUsbHidKeyboard m_UsbKeyboard;
 
     u32 m_AudioPhase;
     u32 m_AudioStep;
@@ -188,10 +185,6 @@ private:
     unsigned m_RenshaPhase;
     boolean m_RenshaFireAHeld;
     boolean m_RenshaSpaceHeld;
-    volatile unsigned m_PendingKeyboardSeq;
-    volatile unsigned char m_PendingKeyboardModifiers;
-    volatile unsigned char m_PendingKeyboardRawKeys[6];
-    unsigned m_ProcessedKeyboardSeq;
     unsigned char m_LastKeyboardModifiers;
     unsigned char m_LastKeyboardRawKeys[6];
     boolean m_FmMusicEnabled;
