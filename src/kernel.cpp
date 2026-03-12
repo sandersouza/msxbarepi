@@ -4026,28 +4026,6 @@ void CComboKernel::PushKeyboardStateToRuntime(boolean rensha_fire_on)
 	{
 		raw_keys[i] = m_LastKeyboardRawKeys[i];
 	}
-	const boolean has_cart_loaded =
-		(fmsx_runtime_get_cartridge_name(0u) != 0) || (fmsx_runtime_get_cartridge_name(1u) != 0);
-	if (has_cart_loaded)
-	{
-		/* In cartridge gameplay route action keys through joystick bridge only.
-		   This avoids keyboard+joystick double-trigger paths that break Rensha gating. */
-		modifiers &= (u8) ~0x22u; /* clear left/right SHIFT modifier */
-		for (unsigned i = 0u; i < 6u; ++i)
-		{
-			/* Rensha must gate SPACE only (auto-fire pulse), without affecting SHIFT/Z/X semantics. */
-			if (raw_keys[i] == 0x2Cu /* SPACE */ && !rensha_fire_on)
-			{
-				raw_keys[i] = 0u;
-				continue;
-			}
-			if (raw_keys[i] == 0x1Du /* Z */
-			 || raw_keys[i] == 0x1Bu /* X */)
-			{
-				raw_keys[i] = 0u;
-			}
-		}
-	}
 	(void) rensha_fire_on;
 	emulator_backend_input_push_keyboard(modifiers, raw_keys);
 #else

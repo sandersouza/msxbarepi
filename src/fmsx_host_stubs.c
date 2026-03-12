@@ -65,6 +65,21 @@ static volatile unsigned g_audio_source_peak = 0;
 static volatile unsigned g_audio_source_nonzero = 0;
 static volatile unsigned g_kbd_last_hid = 0;
 static volatile unsigned g_kbd_last_msx = 0;
+static uint8_t g_kbd_stable_state[16] =
+{
+    0xFFu, 0xFFu, 0xFFu, 0xFFu,
+    0xFFu, 0xFFu, 0xFFu, 0xFFu,
+    0xFFu, 0xFFu, 0xFFu, 0xFFu,
+    0xFFu, 0xFFu, 0xFFu, 0xFFu
+};
+static uint8_t g_kbd_candidate_state[16] =
+{
+    0xFFu, 0xFFu, 0xFFu, 0xFFu,
+    0xFFu, 0xFFu, 0xFFu, 0xFFu,
+    0xFFu, 0xFFu, 0xFFu, 0xFFu,
+    0xFFu, 0xFFu, 0xFFu, 0xFFu
+};
+static uint8_t g_kbd_candidate_seen = 0u;
 
 static void fmsx_keyboard_clear_all(void)
 {
@@ -74,11 +89,11 @@ static void fmsx_keyboard_clear_all(void)
     }
 }
 
-static void fmsx_keyboard_press_code(unsigned code)
+static void fmsx_keyboard_press_code(uint8_t matrix[16], unsigned code)
 {
     if (code <= 0x88u)
     {
-        KBD_SET(code);
+        matrix[Keys[code][0]] &= (uint8_t) ~Keys[code][1];
     }
 }
 
@@ -220,42 +235,70 @@ void fmsx_video_set_overscan(boolean enabled)
 
 void fmsx_runtime_set_keyboard_raw(u8 modifiers, const unsigned char raw_keys[6])
 {
-    fmsx_keyboard_clear_all();
+    uint8_t desired_state[16];
+    for (unsigned i = 0; i < 16u; ++i)
+    {
+        desired_state[i] = 0xFFu;
+    }
 
     if (modifiers & 0x22u)
     {
-        fmsx_keyboard_press_code(KBD_SHIFT);
+        fmsx_keyboard_press_code(desired_state, KBD_SHIFT);
     }
     if (modifiers & 0x11u)
     {
-        fmsx_keyboard_press_code(KBD_CONTROL);
+        fmsx_keyboard_press_code(desired_state, KBD_CONTROL);
     }
     if (modifiers & 0x44u)
     {
-        fmsx_keyboard_press_code(KBD_GRAPH);
+        fmsx_keyboard_press_code(desired_state, KBD_GRAPH);
     }
 
-    if (!raw_keys)
+    if (raw_keys)
     {
-        return;
-    }
-
-    for (unsigned i = 0; i < 6u; ++i)
-    {
-        const u8 hid = raw_keys[i];
-        if (hid == 0u)
+        for (unsigned i = 0; i < 6u; ++i)
         {
-            continue;
-        }
+            const u8 hid = raw_keys[i];
+            if (hid == 0u)
+            {
+                continue;
+            }
 
-        const unsigned code = fmsx_code_from_hid(hid);
-        if (code != 0u)
-        {
-            fmsx_keyboard_press_code(code);
-            g_kbd_last_hid = hid;
-            g_kbd_last_msx = code;
+            const unsigned code = fmsx_code_from_hid(hid);
+            if (code != 0u)
+            {
+                fmsx_keyboard_press_code(desired_state, code);
+                g_kbd_last_hid = hid;
+                g_kbd_last_msx = code;
+            }
         }
     }
+
+    /* Filter one-frame keyboard glitches that manifest as double press/release
+       in software polling matrix transitions (e.g. diagnostics tools). */
+    if (memcmp(desired_state, g_kbd_stable_state, sizeof desired_state) == 0)
+    {
+        g_kbd_candidate_seen = 0u;
+    }
+    else if (memcmp(desired_state, g_kbd_candidate_state, sizeof desired_state) == 0)
+    {
+        if (g_kbd_candidate_seen != 0u)
+        {
+            memcpy(g_kbd_stable_state, desired_state, sizeof desired_state);
+            g_kbd_candidate_seen = 0u;
+        }
+        else
+        {
+            g_kbd_candidate_seen = 1u;
+        }
+    }
+    else
+    {
+        memcpy(g_kbd_candidate_state, desired_state, sizeof desired_state);
+        g_kbd_candidate_seen = 0u;
+    }
+
+    memcpy((void *) KeyState, g_kbd_stable_state, sizeof g_kbd_stable_state);
 }
 
 unsigned int Joystick(void)

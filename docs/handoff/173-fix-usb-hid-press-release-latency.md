@@ -124,3 +124,32 @@ Rebuild apos commit final da refatoracao:
 - Comando: `make -j4 DEBUG=1`
 - BUILD_HASH: `c6ffc1b-23c14080fc2ffbaa2bd376ef49bf56f7761f72f7`
 - INT_BUILD: `37FD`
+
+---
+
+Ultima atualizacao: 11/03/2026 (ciclo 23:40 BRT)
+
+## Estabilizacao apos diagnostico com MSXDIAG
+
+Sintoma observado em hardware:
+- no teste de teclado do MSXDIAG, algumas teclas exibiam comportamento de "duplo pressionar".
+
+Analise:
+- MSXDIAG trabalha com transicoes `PRESS/UP` por frame (matriz de teclado), sensivel a glitches de 1 frame.
+- nosso pipeline podia propagar variacao transitoria de snapshot HID para `KeyState[]`, gerando sequencia espuria de transicao.
+
+Correcoes aplicadas no nosso core (sem alterar MSXDIAG):
+- `src/fmsx_host_stubs.c`
+  - aplicado filtro de estabilidade de matriz (`desired` -> `candidate` -> `stable`) antes de publicar em `KeyState[]`.
+  - objetivo: bloquear toggles espurios de 1 frame que aparecem como press/release duplo.
+- `src/keyboard_input.cpp`
+  - removido bridge de teclado para joystick (`bridge_bits` agora nao recebe mapeamento de teclas).
+  - `ComboKeyboardJoyMask()` passa a retornar `0`.
+- `src/kernel.cpp`
+  - removido bloco de mascaramento de `SHIFT/Z/X/SPACE` no `PushKeyboardStateToRuntime()`.
+  - teclado USB-HID fica exclusivamente como teclado (sem papel de joystick).
+
+Build desta iteracao:
+- Comando: `make -j4 DEBUG=1`
+- BUILD_HASH: `ddb62eb-5590a79569880bd9b5300c3c5d5230a0ccc8c6a0`
+- INT_BUILD: `2B43`
