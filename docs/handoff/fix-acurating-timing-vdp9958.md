@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch fix-acurating-timing-vdp9958
 
-Ultima atualizacao: 11/03/2026 (ciclo 22:12 BRT)
+Ultima atualizacao: 11/03/2026 (ciclo 22:34 BRT)
 
 ## Objetivo desta memoria
 
@@ -156,6 +156,20 @@ Impacto esperado:
 - Build local validado: `make -j4 DEBUG=1` (OK), artefato `artifacts/kernel8-default.img`.
 - BUILD_HASH atualizado: `0e72854-f98a9f831f21ea4a49e05d7a50c1266db4ab5ca1`.
 - Observacao operacional: `roms/initramfs/MSX.ROM` segue alterada no working tree (diff binario local); manter esse ponto sob controle em testes A/B de diagnostico de modelo/frequencia no MSX1.
+
+## Estado desta iteracao (11/03/2026 22:34 BRT)
+
+- Novo sintoma de hardware reportado no MSX1:
+  - `DISK.ROM` monta/lista (`FILES`) mas leitura de arquivo retorna `Disk I/O error`.
+- Ajuste aplicado para reduzir risco de estado inconsistente do FDC:
+  - removido `-DFMSX_BAREMETAL_SKIP_FDC_RESET` do build em `src/Makefile`, reativando os caminhos normais de `Reset1793()` no startup/reset.
+- Telemetria de diagnostico de disco adicionada:
+  - `TFmsxTimingDebug` ganhou campos de FDC (`status/track/sector/drive/side/irq/wait`).
+  - overlay ganhou linha `TM5` com estado em tempo real do WD1793 para capturar causa exata durante o erro (`LOSTDATA`, `NOTFOUND`, etc.).
+  - documentacao atualizada em `docs/debug-layer.md`.
+- Build local validado: `make -j4 DEBUG=1` (OK), artefato `artifacts/kernel8-default.img`.
+- BUILD_HASH: `0062c54-bcec7c5bcd8862d525964d460060f3aa344abe1c`.
+- INT_BUILD: `5FD8` (`TXTDBG BUILD:%04X`).
 
 ## Comando oficial para preparar SD
 

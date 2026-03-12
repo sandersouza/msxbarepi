@@ -1916,6 +1916,16 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 			timing_stats.vblank_flag ? 1u : 0u);
 		WriteScreenText(line);
 
+		line.Format("\x1b[97m\x1b[49m\x1b[15;1HTM5 FD ST:%02X TR:%02X SC:%02X DR:%u SD:%u IQ:%02X WT:%03u",
+			timing_stats.fdc_status & 0xFFu,
+			timing_stats.fdc_track_reg & 0xFFu,
+			timing_stats.fdc_sector_reg & 0xFFu,
+			timing_stats.fdc_drive > 9u ? 9u : timing_stats.fdc_drive,
+			timing_stats.fdc_side > 9u ? 9u : timing_stats.fdc_side,
+			timing_stats.fdc_irq & 0xFFu,
+			timing_stats.fdc_wait > 999u ? 999u : timing_stats.fdc_wait);
+		WriteScreenText(line);
+
 	WriteScreenText("\x1b[0m");
 }
 

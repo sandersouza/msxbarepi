@@ -87,6 +87,7 @@ extern uint8_t *EmptyRAM;
 extern uint8_t *Kanji;
 extern const char *DSKName[];
 extern FDIDisk FDD[];
+extern WD1793 FDC;
 extern void fmsx_video_set_overscan(boolean enabled);
 extern void fmsx_local_ym2413_set_layer_gain_pct(unsigned pct);
 extern unsigned fmsx_local_ym2413_get_layer_gain_pct(void);
@@ -1344,6 +1345,13 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
     stats->kanji_reads = (unsigned) FmsxKanjiReadCount;
     stats->kanji_addr_writes = (unsigned) FmsxKanjiAddrWriteCount;
     stats->kanji_null_reads = (unsigned) FmsxKanjiNullReadCount;
+    stats->fdc_status = (unsigned) FDC.R[0];
+    stats->fdc_track_reg = (unsigned) FDC.R[1];
+    stats->fdc_sector_reg = (unsigned) FDC.R[2];
+    stats->fdc_drive = (unsigned) FDC.Drive;
+    stats->fdc_side = (unsigned) FDC.Side;
+    stats->fdc_irq = (unsigned) FDC.IRQ;
+    stats->fdc_wait = (unsigned) FDC.Wait;
 }
 
 unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsigned *height)

@@ -143,6 +143,13 @@ Diretriz visual (overlay e menu):
   - `SO`: estado de `ScreenON` (`R#1 bit6`).
   - `I0`: habilitacao de interrupcao de VBlank (`R#1 bit5`).
   - `S0`: flag de VBlank em `S#0 bit7`.
+- `TM5`: diagnostico de FDC/WD1793 (especialmente para `Disk I/O error`):
+  - `ST`: `FDC.R[0]` (status WD1793).
+  - `TR`: `FDC.R[1]` (track register).
+  - `SC`: `FDC.R[2]` (sector register).
+  - `DR/SD`: drive e side ativos.
+  - `IQ`: latch de `IRQ/DRQ` (`FDC.IRQ`).
+  - `WT`: watchdog interno (`FDC.Wait`).
 
 ## Arquitetura (modular)
 - Renderer da debug layer desacoplado em objeto plugavel:

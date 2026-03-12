@@ -84,6 +84,13 @@ typedef struct {
     unsigned kanji_reads;
     unsigned kanji_addr_writes;
     unsigned kanji_null_reads;
+    unsigned fdc_status;
+    unsigned fdc_track_reg;
+    unsigned fdc_sector_reg;
+    unsigned fdc_drive;
+    unsigned fdc_side;
+    unsigned fdc_irq;
+    unsigned fdc_wait;
 } TFmsxTimingDebug;
 
 #define FMSX_MODEL_PROFILE_MSX1  0u
