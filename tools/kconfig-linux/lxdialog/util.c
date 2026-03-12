@@ -531,7 +531,14 @@ int on_key_esc(WINDOW *win)
 	} while (key3 != ERR);
 	nodelay(win, FALSE);
 	keypad(win, TRUE);
-	if (key == KEY_ESC && key2 == ERR)
+	/*
+	 * Accept a single ESC as immediate exit.
+	 *
+	 * For a lone ESC there are no pending bytes after the first ESC was
+	 * consumed by the caller, so both reads below typically return ERR.
+	 * Keep the legacy ESC ESC behavior too.
+	 */
+	if ((key == KEY_ESC && key2 == ERR) || (key == ERR && key2 == ERR))
 		return KEY_ESC;
 	else if (key != ERR && key != KEY_ESC && key2 == ERR)
 		ungetch(key);

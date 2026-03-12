@@ -206,3 +206,25 @@
   - artefato: `artifacts/kernel8-issue176.img`
 - BUILD_HASH: `cd3b047-01341f70af6d9d011d9ecc4ef6e37dab5ac177ef`
 - INT_BUILD: `C944`
+
+## Iteracao atual (12/03/2026 13:56 BRT)
+- Solicitacao do usuario: parar tentativa/erro e fechar analise de causa raiz antes de novos patches comportamentais.
+- Analise profunda concluida (sem nova mudanca funcional em codigo nesta iteracao), cruzando:
+  - disassembly local: `docs/rom-disassembly/msx2plus/MSX2PEXT.ROM.dis`
+  - renderer/command engine atual: `src/fmsx_local/Wide.h`, `src/fmsx_local/V9938.c`, `src/fmsx_local/MSX.c`
+  - referencias: `third_party/bluemsx/...` e `third_party/openmsx/...`
+- Documento tecnico consolidado criado/substituido:
+  - `docs/workflow_boot_msx2plus.md`
+- Pontos fechados na analise:
+  - rotina de espera de comando VDP no boot (`0x2BE4`) confirmada via disassembly;
+  - workflow de referencia (BlueMSX/openMSX) documentado com foco em:
+    - sincronizacao temporal do command engine,
+    - multipage/hscroll/even-odd no render de `SCREEN6/7`;
+  - gaps atuais no nosso core mapeados em matriz objetiva.
+- Estrategia definida para execucao sem looping:
+  1. instrumentacao baseline;
+  2. correcao de renderer multipage/odd-even;
+  3. correcao de cadencia temporal do command engine;
+  4. regressao completa (MSX1/MSX2/MSX2+).
+- Build/teste:
+  - nao houve novo build nesta iteracao (foco exclusivo em analise e documentacao).

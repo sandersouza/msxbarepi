@@ -17,9 +17,20 @@ Restaurar velocidade normal da animacao de boot no MSX2+ sem regressao em:
 - deteccao de 60Hz no MSXDIAG;
 - estabilidade do pipeline de video durante boot.
 
+## Analise tecnica consolidada (12/03/2026)
+- Documento de referencia criado para guiar a correcao definitiva:
+  - `docs/workflow_boot_msx2plus.md`
+- Conteudo consolidado no documento:
+  - fluxo real da SUBROM por disassembly (`0x2BE4` e chamadas do startup em `0x2E3E`, `0x2EBF`, `0x3040`, `0x3299`);
+  - workflow dos emuladores de referencia (BlueMSX/openMSX) para:
+    - render multipagina/odd-even em `SCREEN6/7`,
+    - progressao temporal do command engine;
+  - matriz de gaps do core atual e estrategia faseada sem tentativa/erro.
+
 ## Checklist
 - [x] Abrir issue e vincular a milestone m17
 - [x] Criar branch vinculada da issue
+- [x] Consolidar analise de causa raiz + workflow de referencia (ROM/BlueMSX/openMSX)
 - [ ] Instrumentar telemetria focada no boot logo MSX2+
 - [ ] Corrigir gargalo de cadencia de pagina/comando VDP no boot
 - [ ] Build local com `DEBUG=1`
