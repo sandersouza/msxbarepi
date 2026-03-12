@@ -43,6 +43,10 @@ make DEBUG=0
 ## Tag de build na tela
 - No preset atual de diagnostico MSX2+, a `linha 14` foi reservada para `TM4` (telemetria adicional de boot/VDP/KANJI).
 - Com isso, a tag `@Beta: <OWNER>` nao e exibida nesse preset.
+- Regra operacional de reporte em cada artefato entregue para teste:
+  - Sempre informar no chat `BUILD_HASH` e `INT_BUILD`.
+  - `INT_BUILD` e o inteiro de 16 bits exibido em `TXTDBG` no campo `BUILD:%04X`.
+  - Esse valor e derivado de `MSXBARE_BUILD_BID` via hash FNV-1a (com fold para 16 bits).
 
 ## Baseline de layout e runtime (HDMI)
 
@@ -93,6 +97,8 @@ Diretriz visual (overlay e menu):
 
 ## Overlay: linhas e labels
 - `TXTDBG`: estado geral (MMU/cache/pause).
+  - `BUILD`: hash de 16 bits calculado a partir de `MSXBARE_BUILD_BID` para rastreio visual da build em teste.
+  - `OS`: contador com largura fixa `000..999` (modulo 1000) para evitar jitter visual na linha.
 - `CI`: contadores de fila/audio/teclado e tentativas de init.
 - `EV1`: estatistica de escrita de audio e pico de origem.
 - `EV2`: pico/clip/gain/fps e ultimo HID/MSX keycode.
@@ -126,13 +132,14 @@ Diretriz visual (overlay e menu):
   - `CS/CP`: contadores desde o reset: inícios de comando total (`CS`) e cópia VRAM->VRAM (`CP`, comandos `LMMM/HMMM/YMMM`).
   - `KB:a/b/c/d`: `a`=KANJIBASIC carregado, `b`=mapa em `MemMap[3][1][2..3]` íntegro, `c`=slot ativo da página `4000h` em `3-1`, `d`=já selecionou `3-1` ao menos uma vez desde o reset.
   - `P1:x-y`: seleção ativa da página `4000h` (`PSL[1]-SSL[1]`).
-  - `D`: estado de `DISK.ROM` (`DiskROMLoaded`).
+  - `D:e/l`: `e`=setting efetiva (`disk_rom` ligado/desligado), `l`=estado de carga da `DISK.ROM` (`DiskROMLoaded`).
   - `S`: `HScroll512` bruto (bit `R25 bit0`).
 - `TM4`: diagnostico de progresso de boot MSX2+:
   - `I1:a/b`: `a`=eventos de coincidencia de linha (`IE1`) gerados, `b`=ack por leitura de `S#1`.
   - `KJ`: `1` quando `KANJI.ROM` esta carregada (`Kanji != NULL`).
   - `KR/KW`: leituras de `D9h` e escritas de endereco em `D8h/D9h`.
   - `R1`: valor atual do registrador VDP `R#1`.
+  - `R7`: valor atual do registrador VDP `R#7` (cores FG/BG em modos texto/tile).
   - `SO`: estado de `ScreenON` (`R#1 bit6`).
   - `I0`: habilitacao de interrupcao de VBlank (`R#1 bit5`).
   - `S0`: flag de VBlank em `S#0 bit7`.

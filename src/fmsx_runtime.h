@@ -58,6 +58,7 @@ typedef struct {
     unsigned msx2p_kanji_basic_seen_p1;
     unsigned p1_ps;
     unsigned p1_ss;
+    unsigned disk_rom_enabled;
     unsigned disk_rom_loaded;
     unsigned msx2p_msxje_loaded;
     unsigned msx2p_msxje_selected_p1;

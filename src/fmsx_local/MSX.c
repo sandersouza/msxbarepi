@@ -1595,8 +1595,8 @@ case 0x98: /* VRAM read port */
   return(Port);
 
 case 0x99: /* VDP status registers */
-  /* Read an appropriate status register */
-  Port=VDPStatus[VDP[15]];
+  /* MSX1/TMS9918 exposes only status register #0. */
+  Port=MODEL(MSX_MSX1)? VDPStatus[0]:VDPStatus[VDP[15]];
   /*
    * Keep upstream fMSX behavior here: do not force-reset VKey on status reads.
    * Some BIOS/software paths depend on the original latch sequencing.
@@ -1803,9 +1803,14 @@ case 0x99: /* VDP Address Latch */
     switch(Value&0xC0)
     {
       case 0x80:
+      {
         /* Writing into VDP registers */
-        VDPOut(Value&0x3F,ALatch);
+        const uint8_t reg = Value&0x3F;
+        /* MSX1/TMS9918 has only R#0..R#7. Ignore higher registers. */
+        if(!MODEL(MSX_MSX1) || (reg<=7))
+          VDPOut(reg,ALatch);
         break;
+      }
       case 0x00:
       case 0x40:
         /* Set the VRAM access address */
@@ -1827,6 +1832,7 @@ case 0x99: /* VDP Address Latch */
   return;
 
 case 0x9A: /* VDP Palette Latch */
+  if(MODEL(MSX_MSX1)) return;
   if(PKey) { PLatch=Value;PKey=0; }
   else
   {
@@ -1847,6 +1853,7 @@ case 0x9A: /* VDP Palette Latch */
   return;
 
 case 0x9B: /* VDP Register Access */
+  if(MODEL(MSX_MSX1)) return;
   J=VDP[17]&0x3F;
   if(J!=17) VDPOut(J,Value);
   if(!(VDP[17]&0x80)) VDP[17]=(J+1)&0x3F;
@@ -2281,7 +2288,11 @@ static int IsExpandedPrimarySlot(uint8_t PS)
   switch(Mode&MSX_MODEL)
   {
     case MSX_MSX1:
-      return(0);
+      /*
+       * Keep upstream fMSX behavior for MSX1 memory map:
+       * slot 3 remains expanded so RAM mapper in 3-2 is reachable.
+       */
+      return(PS==3);
     case MSX_MSX2P:
       return((PS==0)||(PS==3));
     default:
@@ -2473,6 +2484,11 @@ void SetMegaROM(int Slot,uint8_t P0,uint8_t P1,uint8_t P2,uint8_t P3)
 void VDPOut(uint8_t R,uint8_t V)
 {
   uint8_t J,R2Base;
+
+  if(MODEL(MSX_MSX1) && (R>7))
+  {
+    return;
+  }
 
   switch(R)
   {

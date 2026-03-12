@@ -3,6 +3,7 @@
 #include "combo_locale.h"
 #include "viewport_screenshot.h"
 #include "emulator_backend.h"
+#include "machine_profile_catalog.h"
 #if MSXBARE_ENABLE_FMSX
 #include "fmsx_runtime.h"
 #include "fmsx_initramfs.h"
@@ -42,9 +43,6 @@ static const unsigned kScanlineModeCrt = 2u;
 static const unsigned kBootModeNorm = 0u;
 static const unsigned kBootModeFast = 1u;
 static const unsigned kBootModeGame = 2u;
-static const unsigned kMachineProfileMsx1 = 0u;
-static const unsigned kMachineProfileMsx2 = 1u;
-static const unsigned kMachineProfileMsx2p = 2u;
 static const unsigned kRamMapperKbDefault = 256u;
 static const unsigned kMegaRamKbDefault = 0u;
 static const unsigned kResolutionModeAuto = 0u;
@@ -72,6 +70,36 @@ static const unsigned kRgb565LutSize = 65536u;
 #ifndef MSXBARE_BUILD_OWNER
 #define MSXBARE_BUILD_OWNER ""
 #endif
+
+#ifndef MSXBARE_BUILD_BID
+#define MSXBARE_BUILD_BID ""
+#endif
+
+static unsigned BuildHash16FromString(const char *text)
+{
+	unsigned hash = 2166136261u; /* FNV-1a 32-bit basis */
+	if (text == 0)
+	{
+		return 0u;
+	}
+	while (*text != '\0')
+	{
+		hash ^= (unsigned) (u8) *text++;
+		hash *= 16777619u; /* FNV prime */
+	}
+	hash ^= (hash >> 16);
+	return hash & 0xFFFFu;
+}
+
+static unsigned BuildHash16(void)
+{
+	static unsigned cached = 0xFFFFFFFFu;
+	if (cached == 0xFFFFFFFFu)
+	{
+		cached = BuildHash16FromString(MSXBARE_BUILD_BID);
+	}
+	return cached;
+}
 
 static unsigned UMax(unsigned a, unsigned b)
 {
@@ -159,18 +187,12 @@ static const char *BootModeLabelFromMode(unsigned mode)
 
 static const char *MachineLabelFromProfile(unsigned profile)
 {
-	switch (profile)
-	{
-	case kMachineProfileMsx2: return "MSX2";
-	case kMachineProfileMsx2p: return "MSX2+";
-	case kMachineProfileMsx1:
-	default: return "MSX1";
-	}
+	return machine_profile_label(profile);
 }
 
 static boolean IsMsx2FamilyProfile(unsigned profile)
 {
-	return (profile == kMachineProfileMsx2 || profile == kMachineProfileMsx2p) ? TRUE : FALSE;
+	return machine_profile_is_msx2_family(profile);
 }
 
 static unsigned ClampRamMapperKb(unsigned kb)
@@ -772,7 +794,7 @@ CComboKernel::CComboKernel(void)
 	m_RefreshRateHz(60u),
 	m_DiskRomEnabled(TRUE),
 	m_BootMode(kBootModeNorm),
-	m_MachineProfile(kMachineProfileMsx1),
+	m_MachineProfile(machine_profile_default()->id),
 	m_RamMapperKb(kRamMapperKbDefault),
 	m_MegaRamKb(kMegaRamKbDefault),
 	m_Z80TurboMode(kZ80TurboModeDes),
@@ -1748,7 +1770,10 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 	active_model_profile = fmsx_runtime_get_active_model_profile();
 #endif
 
-	line.Format("\x1b[97m\x1b[49m\x1b[1;1HTXTDBG OS:%02u M:%u C:%u I:%u PAU:%u      ", tick & 0xFFu, m_MmuEnabled ? 1u : 0u, m_DCacheEnabled ? 1u : 0u, m_ICacheEnabled ? 1u : 0u, m_EmulationPaused ? 1u : 0u);
+	const unsigned os_tick = tick % 1000u;
+	const unsigned build_hash16 = BuildHash16();
+	line.Format("\x1b[97m\x1b[49m\x1b[1;1HTXTDBG BUILD:%04X OS:%03u M:%u C:%u I:%u PAU:%u      ",
+		build_hash16 & 0xFFFFu, os_tick, m_MmuEnabled ? 1u : 0u, m_DCacheEnabled ? 1u : 0u, m_ICacheEnabled ? 1u : 0u, m_EmulationPaused ? 1u : 0u);
 	WriteScreenText(line);
 
 	line.Format("\x1b[97m\x1b[49m\x1b[2;1HCI R:%u F:%u K:%u S:%u H:%u/%u P:%05u ",
@@ -1861,7 +1886,7 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 			timing_stats.ie1_flag ? 1u : 0u);
 		WriteScreenText(line);
 
-		line.Format("\x1b[97m\x1b[49m\x1b[13;1HTM3 C:%X CE:%u TR:%u CS:%03u CP:%03u KB:%u/%u/%u/%u P1:%u-%u D:%u S:%u",
+		line.Format("\x1b[97m\x1b[49m\x1b[13;1HTM3 C:%X CE:%u TR:%u CS:%03u CP:%03u KB:%u/%u/%u/%u P1:%u-%u D:%u/%u S:%u",
 			timing_stats.vdp_cmd & 0x0Fu,
 			timing_stats.vdp_ce ? 1u : 0u,
 			timing_stats.vdp_tr ? 1u : 0u,
@@ -1873,17 +1898,19 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 			timing_stats.msx2p_kanji_basic_seen_p1 ? 1u : 0u,
 			timing_stats.p1_ps > 9u ? 9u : timing_stats.p1_ps,
 			timing_stats.p1_ss > 9u ? 9u : timing_stats.p1_ss,
+			timing_stats.disk_rom_enabled ? 1u : 0u,
 			timing_stats.disk_rom_loaded ? 1u : 0u,
 			timing_stats.hscroll512 ? 1u : 0u);
 		WriteScreenText(line);
 
-		line.Format("\x1b[97m\x1b[49m\x1b[14;1HTM4 I1:%03u/%03u KJ:%u KR:%03u KW:%03u R1:%02X SO:%u I0:%u S0:%u ",
+		line.Format("\x1b[97m\x1b[49m\x1b[14;1HTM4 I1:%03u/%03u KJ:%u KR:%03u KW:%03u R1:%02X R7:%02X SO:%u I0:%u S0:%u",
 			timing_stats.ie1_events > 999u ? 999u : timing_stats.ie1_events,
 			timing_stats.ie1_acks > 999u ? 999u : timing_stats.ie1_acks,
 			timing_stats.kanji_available ? 1u : 0u,
 			timing_stats.kanji_reads > 999u ? 999u : timing_stats.kanji_reads,
 			timing_stats.kanji_addr_writes > 999u ? 999u : timing_stats.kanji_addr_writes,
 			timing_stats.reg1 & 0xFFu,
+			timing_stats.reg7 & 0xFFu,
 			timing_stats.screen_on ? 1u : 0u,
 			timing_stats.ie0_enabled ? 1u : 0u,
 			timing_stats.vblank_flag ? 1u : 0u);
@@ -2469,7 +2496,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 				}
 				else if (SettingsKeyEquals(line, key_len, "machine"))
 				{
-					m_MachineProfile = (value > 2u) ? kMachineProfileMsx1 : value;
+					m_MachineProfile = machine_profile_clamp(value);
 				}
 				else if (SettingsKeyEquals(line, key_len, "rammapper_kb"))
 				{
@@ -3596,7 +3623,10 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		break;
 
 	case ComboMenuActionCycleMachine:
-		m_MachineProfile = (m_MachineProfile + 1u) % 3u;
+		{
+			const unsigned profile_count = machine_profile_count();
+			m_MachineProfile = profile_count > 0u ? ((m_MachineProfile + 1u) % profile_count) : 0u;
+		}
 		m_PauseMenu.SetMachineProfile(m_MachineProfile);
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX
@@ -3610,7 +3640,12 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		break;
 
 	case ComboMenuActionCycleMachinePrev:
-		m_MachineProfile = (m_MachineProfile == 0u) ? 2u : (m_MachineProfile - 1u);
+		{
+			const unsigned profile_count = machine_profile_count();
+			m_MachineProfile = (profile_count > 0u)
+				? ((m_MachineProfile + profile_count - 1u) % profile_count)
+				: 0u;
+		}
 		m_PauseMenu.SetMachineProfile(m_MachineProfile);
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX
