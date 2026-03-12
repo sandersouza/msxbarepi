@@ -153,3 +153,9 @@ Build desta iteracao:
 - Comando: `make -j4 DEBUG=1`
 - BUILD_HASH: `ddb62eb-5590a79569880bd9b5300c3c5d5230a0ccc8c6a0`
 - INT_BUILD: `2B43`
+
+Build final apos commit de estabilizacao:
+- Commit: `03471c9`
+- Comando: `make -j4 DEBUG=1`
+- BUILD_HASH: `03471c9-1e98a298844aefa0b76064f903ff364e7a98c208`
+- INT_BUILD: `A64F`
