@@ -72,6 +72,7 @@ private:
     void RenderTelemetryBufferView(void);
     void ProcessPendingTelemetryToggle(void);
     void ProcessPendingViewportScreenshot(void);
+    void NormalizeSettingsForBuild(void);
 
     static void KeyPressedHandler(const char *text);
 

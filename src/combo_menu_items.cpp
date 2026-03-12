@@ -2,6 +2,61 @@
 #include "combo_locale.h"
 #include "machine_profile_catalog.h"
 
+#ifndef MSXBARE_FEAT_SCC
+#define MSXBARE_FEAT_SCC 1
+#endif
+#ifndef MSXBARE_FEAT_FMPAC
+#define MSXBARE_FEAT_FMPAC 1
+#endif
+#ifndef MSXBARE_FEAT_DISK_ROM
+#define MSXBARE_FEAT_DISK_ROM 1
+#endif
+#ifndef MSXBARE_FEAT_MEGARAM
+#define MSXBARE_FEAT_MEGARAM 1
+#endif
+#ifndef MSXBARE_FEAT_MSX2
+#define MSXBARE_FEAT_MSX2 1
+#endif
+#ifndef MSXBARE_FEAT_MSX2P
+#define MSXBARE_FEAT_MSX2P 1
+#endif
+#ifndef MSXBARE_FEAT_LOAD_ROM
+#define MSXBARE_FEAT_LOAD_ROM 1
+#endif
+#ifndef MSXBARE_FEAT_LOAD_DISK
+#define MSXBARE_FEAT_LOAD_DISK 1
+#endif
+#ifndef MSXBARE_ONE_ROM_MODE
+#define MSXBARE_ONE_ROM_MODE 0
+#endif
+
+static boolean MenuProfileSupported(unsigned profile)
+{
+    if (profile == 1u)
+    {
+        return MSXBARE_FEAT_MSX2 ? TRUE : FALSE;
+    }
+    if (profile == 2u)
+    {
+        return MSXBARE_FEAT_MSX2P ? TRUE : FALSE;
+    }
+    return TRUE;
+}
+
+static unsigned MenuSupportedProfileCount(void)
+{
+    const unsigned count = machine_profile_count();
+    unsigned supported = 0u;
+    for (unsigned i = 0u; i < count; ++i)
+    {
+        if (MenuProfileSupported(i))
+        {
+            ++supported;
+        }
+    }
+    return supported;
+}
+
 static void BuildLabelFlag(char *dst, unsigned dst_size, const char *label, const char *flag)
 {
     if (dst == 0 || dst_size == 0u)
@@ -43,46 +98,34 @@ const TComboMenuItem *combo_menu_root_items_get(unsigned language, unsigned *cou
     }
 
     unsigned item_count = 0u;
-    root_items[item_count].label = locale->root_load_cart;
-    root_items[item_count].action = ComboMenuActionCartridgeA;
-    root_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    root_items[item_count++].selectable = TRUE;
-    root_items[item_count].label = locale->root_load_disk;
-    root_items[item_count].action = ComboMenuActionDiskDriveA;
-    root_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    root_items[item_count++].selectable = TRUE;
-    root_items[item_count].label = "";
-    root_items[item_count].action = ComboMenuActionSeparator;
-    root_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    root_items[item_count++].selectable = FALSE;
-    root_items[item_count].label = locale->root_save_state;
-    root_items[item_count].action = ComboMenuActionSaveState;
-    root_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    root_items[item_count++].selectable = TRUE;
-    root_items[item_count].label = locale->root_load_state;
-    root_items[item_count].action = ComboMenuActionLoadState;
-    root_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    root_items[item_count++].selectable = TRUE;
-    root_items[item_count].label = "";
-    root_items[item_count].action = ComboMenuActionSeparator;
-    root_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    root_items[item_count++].selectable = FALSE;
-    root_items[item_count].label = locale->root_settings;
-    root_items[item_count].action = ComboMenuActionSettings;
-    root_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    root_items[item_count++].selectable = TRUE;
-    root_items[item_count].label = "";
-    root_items[item_count].action = ComboMenuActionSeparator;
-    root_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    root_items[item_count++].selectable = FALSE;
-    root_items[item_count].label = locale->root_msx_basic;
-    root_items[item_count].action = ComboMenuActionMsxBasic;
-    root_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    root_items[item_count++].selectable = TRUE;
-    root_items[item_count].label = locale->root_reset;
-    root_items[item_count].action = ComboMenuActionReset;
-    root_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    root_items[item_count++].selectable = TRUE;
+#define ADD_ROOT_ITEM(lbl, act, sel) \
+    do { \
+        root_items[item_count].label = (lbl); \
+        root_items[item_count].action = (act); \
+        root_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly; \
+        root_items[item_count++].selectable = (sel); \
+    } while (0)
+
+    if (MSXBARE_FEAT_LOAD_ROM)
+    {
+        ADD_ROOT_ITEM(locale->root_load_cart, ComboMenuActionCartridgeA, TRUE);
+    }
+    if (MSXBARE_FEAT_LOAD_DISK)
+    {
+        ADD_ROOT_ITEM(locale->root_load_disk, ComboMenuActionDiskDriveA, TRUE);
+    }
+    if (MSXBARE_FEAT_LOAD_ROM || MSXBARE_FEAT_LOAD_DISK)
+    {
+        ADD_ROOT_ITEM("", ComboMenuActionSeparator, FALSE);
+    }
+    ADD_ROOT_ITEM(locale->root_save_state, ComboMenuActionSaveState, TRUE);
+    ADD_ROOT_ITEM(locale->root_load_state, ComboMenuActionLoadState, TRUE);
+    ADD_ROOT_ITEM("", ComboMenuActionSeparator, FALSE);
+    ADD_ROOT_ITEM(locale->root_settings, ComboMenuActionSettings, TRUE);
+    ADD_ROOT_ITEM("", ComboMenuActionSeparator, FALSE);
+    ADD_ROOT_ITEM(locale->root_msx_basic, ComboMenuActionMsxBasic, TRUE);
+    ADD_ROOT_ITEM(locale->root_reset, ComboMenuActionReset, TRUE);
+#undef ADD_ROOT_ITEM
 
     if (count != 0)
     {
@@ -336,103 +379,83 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     }
 
     unsigned item_count = 0u;
-    settings_items[item_count].label = language_label;
-    settings_items[item_count].action = ComboMenuActionCycleLanguage;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    settings_items[item_count++].selectable = TRUE;
-    settings_items[item_count].label = "";
-    settings_items[item_count].action = ComboMenuActionSeparator;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    settings_items[item_count++].selectable = FALSE;
-    settings_items[item_count].label = resolution_label;
-    settings_items[item_count].action = ComboMenuActionCycleResolution;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    settings_items[item_count++].selectable = TRUE;
-    settings_items[item_count].label = scale_label;
-    settings_items[item_count].action = ComboMenuActionOverscanChanged;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuAndViewport;
-    settings_items[item_count++].selectable = TRUE;
-    settings_items[item_count].label = widescreen_label;
-    settings_items[item_count].action = ComboMenuActionToggleWidescreen;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuAndViewport;
-    settings_items[item_count++].selectable = TRUE;
-    settings_items[item_count].label = scanline_label;
-    settings_items[item_count].action = ComboMenuActionCycleScanlines;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuAndViewport;
-    settings_items[item_count++].selectable = TRUE;
-    settings_items[item_count].label = "";
-    settings_items[item_count].action = ComboMenuActionSeparator;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    settings_items[item_count++].selectable = FALSE;
-    settings_items[item_count].label = fm_music_label;
-    settings_items[item_count].action = ComboMenuActionToggleFmMusic;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    settings_items[item_count++].selectable = TRUE;
-    settings_items[item_count].label = scc_label;
-    settings_items[item_count].action = ComboMenuActionToggleSccCart;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    settings_items[item_count++].selectable = TRUE;
-    settings_items[item_count].label = audio_gain_label;
-    settings_items[item_count].action = ComboMenuActionAudioGainChanged;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    settings_items[item_count++].selectable = TRUE;
-    settings_items[item_count].label = "";
-    settings_items[item_count].action = ComboMenuActionSeparator;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    settings_items[item_count++].selectable = FALSE;
-    settings_items[item_count].label = mapper_label;
-    settings_items[item_count].action = ComboMenuActionCycleRamMapper;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    settings_items[item_count++].selectable = TRUE;
-    settings_items[item_count].label = megaram_label;
-    settings_items[item_count].action = ComboMenuActionCycleMegaRam;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    settings_items[item_count++].selectable = TRUE;
-    settings_items[item_count].label = "";
-    settings_items[item_count].action = ComboMenuActionSeparator;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    settings_items[item_count++].selectable = FALSE;
-    settings_items[item_count].label = machine_label;
-    settings_items[item_count].action = ComboMenuActionCycleMachine;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    settings_items[item_count++].selectable = TRUE;
-    settings_items[item_count].label = boot_label;
-    settings_items[item_count].action = ComboMenuActionCycleBootMode;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    settings_items[item_count++].selectable = TRUE;
-    settings_items[item_count].label = turbo_label;
-    settings_items[item_count].action = ComboMenuActionCycleZ80Turbo;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    settings_items[item_count++].selectable = TRUE;
-    settings_items[item_count].label = rensha_label;
-    settings_items[item_count].action = ComboMenuActionCycleRensha;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    settings_items[item_count++].selectable = TRUE;
-    if (overlay_available)
+#define ADD_SETTING_ITEM(lbl, act, policy, sel) \
+    do { \
+        settings_items[item_count].label = (lbl); \
+        settings_items[item_count].action = (act); \
+        settings_items[item_count].redraw_policy = (policy); \
+        settings_items[item_count++].selectable = (sel); \
+    } while (0)
+
+    const boolean show_machine = (MenuSupportedProfileCount() > 1u) ? TRUE : FALSE;
+    const boolean show_mapper = (MenuProfileSupported(machine_profile) && machine_profile != 0u) ? TRUE : FALSE;
+    const boolean show_boot_mode = (MSXBARE_ONE_ROM_MODE == 0) ? TRUE : FALSE;
+
+    ADD_SETTING_ITEM(language_label, ComboMenuActionCycleLanguage, ComboMenuRedrawMenuOnly, TRUE);
+    ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
+    ADD_SETTING_ITEM(resolution_label, ComboMenuActionCycleResolution, ComboMenuRedrawMenuOnly, TRUE);
+    ADD_SETTING_ITEM(scale_label, ComboMenuActionOverscanChanged, ComboMenuRedrawMenuAndViewport, TRUE);
+    ADD_SETTING_ITEM(widescreen_label, ComboMenuActionToggleWidescreen, ComboMenuRedrawMenuAndViewport, TRUE);
+    ADD_SETTING_ITEM(scanline_label, ComboMenuActionCycleScanlines, ComboMenuRedrawMenuAndViewport, TRUE);
+
+    if (MSXBARE_FEAT_FMPAC || MSXBARE_FEAT_SCC)
     {
-        settings_items[item_count].label = "";
-        settings_items[item_count].action = ComboMenuActionSeparator;
-        settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-        settings_items[item_count++].selectable = FALSE;
+        ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
+        if (MSXBARE_FEAT_FMPAC)
+        {
+            ADD_SETTING_ITEM(fm_music_label, ComboMenuActionToggleFmMusic, ComboMenuRedrawMenuOnly, TRUE);
+        }
+        if (MSXBARE_FEAT_SCC)
+        {
+            ADD_SETTING_ITEM(scc_label, ComboMenuActionToggleSccCart, ComboMenuRedrawMenuOnly, TRUE);
+        }
+    }
 
-        settings_items[item_count].label = overlay_label;
-        settings_items[item_count].action = ComboMenuActionToggleOverlay;
-        settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-        settings_items[item_count++].selectable = TRUE;
+    ADD_SETTING_ITEM(audio_gain_label, ComboMenuActionAudioGainChanged, ComboMenuRedrawMenuOnly, TRUE);
 
-        settings_items[item_count].label = disk_rom_label;
-        settings_items[item_count].action = ComboMenuActionToggleDiskRom;
-        settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-        settings_items[item_count++].selectable = TRUE;
+    if (show_mapper || MSXBARE_FEAT_MEGARAM)
+    {
+        ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
+        if (show_mapper)
+        {
+            ADD_SETTING_ITEM(mapper_label, ComboMenuActionCycleRamMapper, ComboMenuRedrawMenuOnly, TRUE);
+        }
+        if (MSXBARE_FEAT_MEGARAM)
+        {
+            ADD_SETTING_ITEM(megaram_label, ComboMenuActionCycleMegaRam, ComboMenuRedrawMenuOnly, TRUE);
+        }
+    }
+
+    ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
+    if (show_machine)
+    {
+        ADD_SETTING_ITEM(machine_label, ComboMenuActionCycleMachine, ComboMenuRedrawMenuOnly, TRUE);
+    }
+    if (show_boot_mode)
+    {
+        ADD_SETTING_ITEM(boot_label, ComboMenuActionCycleBootMode, ComboMenuRedrawMenuOnly, TRUE);
+    }
+    ADD_SETTING_ITEM(turbo_label, ComboMenuActionCycleZ80Turbo, ComboMenuRedrawMenuOnly, TRUE);
+    ADD_SETTING_ITEM(rensha_label, ComboMenuActionCycleRensha, ComboMenuRedrawMenuOnly, TRUE);
+
+    if (overlay_available || MSXBARE_FEAT_DISK_ROM)
+    {
+        ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
+        if (overlay_available)
+        {
+            ADD_SETTING_ITEM(overlay_label, ComboMenuActionToggleOverlay, ComboMenuRedrawMenuOnly, TRUE);
+        }
+        if (MSXBARE_FEAT_DISK_ROM)
+        {
+            ADD_SETTING_ITEM(disk_rom_label, ComboMenuActionToggleDiskRom, ComboMenuRedrawMenuOnly, TRUE);
+        }
     }
     settings_items[item_count].label = "";
     settings_items[item_count].action = ComboMenuActionNone;
     settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
     settings_items[item_count++].selectable = FALSE;
-    settings_items[item_count].label = locale->settings_save;
-    settings_items[item_count].action = ComboMenuActionSaveSettings;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    settings_items[item_count++].selectable = TRUE;
+    ADD_SETTING_ITEM(locale->settings_save, ComboMenuActionSaveSettings, ComboMenuRedrawMenuOnly, TRUE);
+#undef ADD_SETTING_ITEM
 
     if (count != 0)
     {

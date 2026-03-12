@@ -87,3 +87,30 @@ Resultado: build concluido com sucesso e artefato de issue gerado.
 ### Build de referencia desta iteracao
 - `BUILD_HASH:b9eae66-67bfd4ab535f06202b98120a18a31525268776be`
 - `INT_BUILD:D868`
+
+## Iteracao adicional - Menus refletem `menuconfig`
+
+### Mudancas implementadas
+- `src/combo_menu_items.cpp`
+  - menu raiz agora oculta dinamicamente itens `Load ROM`/`Load Disk` conforme:
+    - `MSXBARE_FEAT_LOAD_ROM`
+    - `MSXBARE_FEAT_LOAD_DISK`
+  - menu `Settings` passa a mostrar/ocultar opcoes por feature:
+    - `FM-PAC` (`MSXBARE_FEAT_FMPAC`)
+    - `SCC` (`MSXBARE_FEAT_SCC`)
+    - `MegaRAM` (`MSXBARE_FEAT_MEGARAM`)
+    - `Disk ROM` (`MSXBARE_FEAT_DISK_ROM`)
+    - `Boot Mode` ocultado em `MSXBARE_ONE_ROM_MODE=1`
+    - `Machine` ocultado quando so existe 1 perfil suportado pelo build
+- `src/kernel.cpp` / `src/kernel.h`
+  - adicionada rotina `NormalizeSettingsForBuild()` para travar defaults e valores persistidos ao que o build permite;
+  - bloqueio de acoes em runtime quando a feature foi desativada no build (ex.: toggle SCC/FM, load ROM/DSK, MegaRAM, Disk ROM);
+  - ciclo de `Machine` agora ignora perfis nao suportados pelo build;
+  - em `One ROM Mode`, `Boot Mode` fica fixo em `GAME`.
+
+### Validacao executada
+- `make clean && make`
+
+### Build de referencia desta iteracao
+- `BUILD_HASH:388c112-908276f10cfe7171ccaa4d3dd68530db7fbdb865`
+- `INT_BUILD:56DE`
