@@ -1,5 +1,5 @@
 ---
-description: "Use quando trabalhar no msxbarepi-circle em tarefas de C/C++/ASM/Make/shell/docs, incluindo alteracoes baremetal no Raspberry Pi 3B, fluxo de build/teste, preparacao de SD, guardrails de third_party e atualizacoes de documentacao do projeto."
+description: "Use quando trabalhar no msxbarepi em tarefas de C/C++/ASM/Make/shell/docs, incluindo alteracoes baremetal no Raspberry Pi 3B, fluxo de build/teste, preparacao de SD, guardrails de third_party e atualizacoes de documentacao do projeto."
 name: "MSXBarePi Guardrails de Workflow"
 applyTo: "**"
 ---
@@ -33,7 +33,7 @@ applyTo: "**"
 
 ## Workflow de build e validacao
 
-- Confirmar que o diretorio de trabalho e `/Users/sandersouza/Developer/msxbarepi-circle` antes de comandos de build/debug.
+- Confirmar que o diretorio de trabalho e `/Users/sandersouza/Developer/msxbarepi` antes de comandos de build/debug.
 - Executar localmente as iteracoes de build/teste necessarias e inspecionar erros/warnings antes de propor proximos passos.
 - Em gates de milestone ou antes de avancos maiores, preferir build limpo (`make clean && make`) e validacao em hardware.
 - Manter expectativa de artefatos alinhada: `artifacts/kernel8-default.img` e imagem especifica da issue em branches de issue (`artifacts/kernel8-issue<numero>.img`).
@@ -54,7 +54,7 @@ applyTo: "**"
 ## Documentacao e gestao de projeto
 
 - Toda mudanca relevante de codigo deve incluir atualizacao minima em `docs/` quando aplicavel.
-- Manter contexto de handoff atualizado em `docs/ai-handoff-context.md` e consistencia do ponteiro em `CONTEXT.md`.
+- Manter contexto de handoff atualizado em `docs/handoff/<nome-da-branch>.md` e consistencia do ponteiro em `CONTEXT.md`.
 - Refletir regras de gestao de milestone/issue de `docs/github-project-management.md` e manter espelho local em `docs/milestones/` sincronizado.
 - Usar commits pequenos e focados, sem reescrever historico da `main`.
 

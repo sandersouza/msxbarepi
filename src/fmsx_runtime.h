@@ -45,6 +45,11 @@ typedef struct {
     unsigned reg26;
     unsigned reg27;
     unsigned reg19;
+    unsigned reg1;
+    unsigned reg7;
+    unsigned screen_on;
+    unsigned ie0_enabled;
+    unsigned vblank_flag;
     unsigned ie1_enabled;
     unsigned ie1_flag;
     unsigned msx2p_kanji_basic;

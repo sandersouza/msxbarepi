@@ -132,7 +132,10 @@ Diretriz visual (overlay e menu):
   - `I1:a/b`: `a`=eventos de coincidencia de linha (`IE1`) gerados, `b`=ack por leitura de `S#1`.
   - `KJ`: `1` quando `KANJI.ROM` esta carregada (`Kanji != NULL`).
   - `KR/KW`: leituras de `D9h` e escritas de endereco em `D8h/D9h`.
-  - `KN`: leituras em `D9h` com KANJI ausente (deve ficar `0` quando ROM correta estiver montada).
+  - `R1`: valor atual do registrador VDP `R#1`.
+  - `SO`: estado de `ScreenON` (`R#1 bit6`).
+  - `I0`: habilitacao de interrupcao de VBlank (`R#1 bit5`).
+  - `S0`: flag de VBlank em `S#0 bit7`.
 
 ## Arquitetura (modular)
 - Renderer da debug layer desacoplado em objeto plugavel:

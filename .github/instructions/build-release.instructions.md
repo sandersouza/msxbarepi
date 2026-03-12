@@ -1,5 +1,5 @@
 ---
-description: "Use quando trabalhar em build, validacao, empacotamento e entrega de artefatos no msxbarepi-circle (make, scripts/, Makefile, README)."
+description: "Use quando trabalhar em build, validacao, empacotamento e entrega de artefatos no msxbarepi (make, scripts/, Makefile, README)."
 name: "MSXBarePi Build and Release"
 applyTo:
   - "Makefile"
@@ -15,7 +15,7 @@ applyTo:
 
 ## Workflow de build
 
-- Confirmar `PWD` em `/Users/sandersouza/Developer/msxbarepi-circle` antes de build/debug.
+- Confirmar `PWD` em `/Users/sandersouza/Developer/msxbarepi` antes de build/debug.
 - Executar iteracoes locais necessarias e analisar erros/warnings antes de orientar proximo passo.
 - Em gates de milestone ou antes de avancos maiores, preferir `make clean && make` e validacao em hardware.
 

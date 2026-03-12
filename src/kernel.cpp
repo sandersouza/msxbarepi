@@ -1877,13 +1877,16 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 			timing_stats.hscroll512 ? 1u : 0u);
 		WriteScreenText(line);
 
-		line.Format("\x1b[97m\x1b[49m\x1b[14;1HTM4 I1:%03u/%03u KJ:%u KR:%03u KW:%03u KN:%03u           ",
+		line.Format("\x1b[97m\x1b[49m\x1b[14;1HTM4 I1:%03u/%03u KJ:%u KR:%03u KW:%03u R1:%02X SO:%u I0:%u S0:%u ",
 			timing_stats.ie1_events > 999u ? 999u : timing_stats.ie1_events,
 			timing_stats.ie1_acks > 999u ? 999u : timing_stats.ie1_acks,
 			timing_stats.kanji_available ? 1u : 0u,
 			timing_stats.kanji_reads > 999u ? 999u : timing_stats.kanji_reads,
 			timing_stats.kanji_addr_writes > 999u ? 999u : timing_stats.kanji_addr_writes,
-			timing_stats.kanji_null_reads > 999u ? 999u : timing_stats.kanji_null_reads);
+			timing_stats.reg1 & 0xFFu,
+			timing_stats.screen_on ? 1u : 0u,
+			timing_stats.ie0_enabled ? 1u : 0u,
+			timing_stats.vblank_flag ? 1u : 0u);
 		WriteScreenText(line);
 
 	WriteScreenText("\x1b[0m");

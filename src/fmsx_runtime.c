@@ -34,6 +34,10 @@
 #define MSXBARE_FMSX_GAME_FAST_FORWARD_STEPS_MSX2P 6u
 #endif
 
+#ifndef MSXBARE_FMSX_Z80_SLICES_PER_FRAME_MAX
+#define MSXBARE_FMSX_Z80_SLICES_PER_FRAME_MAX 4096u
+#endif
+
 #ifndef MSXBARE_FMSX_GAME_VIDEO_SKIP_FRAMES_MSX2
 #define MSXBARE_FMSX_GAME_VIDEO_SKIP_FRAMES_MSX2 192u
 #endif
@@ -117,6 +121,11 @@ int g_fmsx_fmpac_enabled = 1;
 static unsigned g_vdp_prev_ce = 0u;
 static unsigned g_vdp_cmd_starts = 0u;
 static unsigned g_vdp_copy_starts = 0u;
+
+static boolean fmsx_runtime_disk_rom_effective(unsigned model_profile)
+{
+    return (g_disk_rom_enabled && (model_profile != FMSX_MODEL_PROFILE_MSX1)) ? TRUE : FALSE;
+}
 
 static void fmsx_runtime_reset_vdp_diag_counters(void)
 {
@@ -391,30 +400,34 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     g_fmsx_status.frames = 0u;
     g_fmsx_status.last_pc = 0;
     g_fmsx_status.last_error = 0;
+    const boolean game_mode = (g_boot_mode == 2u) ? TRUE : FALSE;
+    const unsigned requested_model_profile = g_model_profile;
     /*
-     * Stable cadence: quit after VBlank window.
+     * Frame-step quit policy:
+     * - MSX1: legacy line-192 boundary avoids deterministic slicing in BIOS ISR.
+     * - MSX2/MSX2+: keep post-VBlank boundary.
      */
-    g_fmsx_quit_after_vblank = 1;
-
+    g_fmsx_quit_after_vblank = (requested_model_profile == FMSX_MODEL_PROFILE_MSX1) ? 0 : 1;
+    const boolean disk_rom_effective = fmsx_runtime_disk_rom_effective(requested_model_profile);
     const int base_mode = (fmsx_runtime_effective_refresh_hz() == 50u ? MSX_PAL : MSX_NTSC) | MSX_JOY1;
     int startup_mode = fmsx_runtime_machine_mode_bits() | base_mode;
-    if (g_disk_rom_enabled)
+    startup_mode &= ~MSX_PATCHBDOS;
+    if (disk_rom_effective)
     {
         /*
          * Keep DISK.ROM loaded but without BDOS patch hooks.
          * We still force a PATCHBDOS transition so ResetMSX() reloads DISK.ROM
          * deterministically, then leaves hooks disabled (WD1793 path).
          */
-        startup_mode &= ~MSX_PATCHBDOS;
         Mode |= MSX_PATCHBDOS;
     }
     else
     {
         /*
-         * Force opposite transition when Disk ROM is OFF as well, so the
-         * disable path is applied deterministically.
+         * Keep PATCHBDOS cleared to avoid unintended DISK.ROM transition/load
+         * when running profiles that must boot without DiskROM (MSX1 path).
          */
-        Mode |= MSX_PATCHBDOS;
+        Mode &= ~MSX_PATCHBDOS;
     }
     if (g_fmsx_megaram_kb == 0u)
     {
@@ -424,8 +437,6 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     /* Keep internal fMSX autofire disabled. Project handles input explicitly. */
     startup_mode &= ~(MSX_AUTOSPACE | MSX_AUTOFIREA | MSX_AUTOFIREB);
 
-    const boolean game_mode = (g_boot_mode == 2u) ? TRUE : FALSE;
-    const unsigned requested_model_profile = g_model_profile;
     unsigned started_model_profile = requested_model_profile;
     const char *saved_carta = 0;
     const char *saved_cartb = 0;
@@ -516,8 +527,9 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     }
     Mode &= ~(MSX_AUTOSPACE | MSX_AUTOFIREA | MSX_AUTOFIREB);
     g_active_model_profile = started_model_profile;
+    g_fmsx_quit_after_vblank = (started_model_profile == FMSX_MODEL_PROFILE_MSX1) ? 0 : 1;
 
-    if (!g_disk_rom_enabled)
+    if (!fmsx_runtime_disk_rom_effective(started_model_profile))
     {
         fmsx_runtime_force_disk_rom_off_mapping();
     }
@@ -574,16 +586,22 @@ boolean fmsx_runtime_menu_reset(void)
         return FALSE;
     }
 
-    int new_mode = Mode;
-    if (g_disk_rom_enabled)
+    const boolean disk_rom_effective = fmsx_runtime_disk_rom_effective(g_active_model_profile);
+    int new_mode = Mode & ~MSX_PATCHBDOS;
+    if (disk_rom_effective)
     {
         /* Keep behavior aligned with disk-ROM toggle path. */
         Mode |= MSX_PATCHBDOS;
         new_mode = Mode & ~MSX_PATCHBDOS;
     }
+    else
+    {
+        Mode &= ~MSX_PATCHBDOS;
+        new_mode = Mode & ~MSX_PATCHBDOS;
+    }
 
     (void) ResetMSX(new_mode, RAMPages, VRAMPages);
-    if (!g_disk_rom_enabled)
+    if (!disk_rom_effective)
     {
         fmsx_runtime_force_disk_rom_off_mapping();
     }
@@ -687,18 +705,37 @@ boolean fmsx_runtime_step_frame(void)
     unsigned frames_done = 0u;
     for (unsigned i = 0; i < steps; ++i)
     {
+        const unsigned seq_before = fmsx_video_get_latest(0, 0, 0);
+        unsigned slices = 0u;
+        boolean frame_done = FALSE;
+
         if (g_boot_warmup_frames_remaining > 0u)
         {
             /* During FAST/GAME warmup, keep deterministic frame-step entry. */
             ScanLine = 261;
         }
 
-        /*
-         * Run one emulated frame boundary. fMSX exits RunZ80() on INT_QUIT,
-         * which in our local core is aligned to post-VBlank when
-         * g_fmsx_quit_after_vblank=1.
-         */
-        g_fmsx_status.last_pc = (int) RunZ80(&CPU);
+        while (slices < MSXBARE_FMSX_Z80_SLICES_PER_FRAME_MAX)
+        {
+            g_fmsx_status.last_pc = (int) RunZ80(&CPU);
+            ++slices;
+
+            if (fmsx_video_get_latest(0, 0, 0) != seq_before)
+            {
+                frame_done = TRUE;
+                break;
+            }
+        }
+
+        if (!frame_done)
+        {
+            /*
+             * Avoid a hard spin if a frame is not produced. Keep runtime alive
+             * and surface the anomaly through last_error.
+             */
+            g_fmsx_status.last_error = 2;
+            break;
+        }
 
         ++frames_done;
         ++g_fmsx_status.frames;
@@ -807,15 +844,21 @@ void fmsx_runtime_set_disk_rom_enabled(boolean enabled)
         return;
     }
 
+    const boolean disk_rom_effective = fmsx_runtime_disk_rom_effective(g_active_model_profile);
     int new_mode = Mode & ~MSX_PATCHBDOS;
-    if (g_disk_rom_enabled)
+    if (disk_rom_effective)
     {
         /* Force transition so ResetMSX() reloads DISK.ROM with hooks disabled. */
         Mode |= MSX_PATCHBDOS;
         new_mode = Mode & ~MSX_PATCHBDOS;
     }
+    else
+    {
+        Mode &= ~MSX_PATCHBDOS;
+        new_mode = Mode & ~MSX_PATCHBDOS;
+    }
     (void) ResetMSX(new_mode, RAMPages, VRAMPages);
-    if (!g_disk_rom_enabled)
+    if (!disk_rom_effective)
     {
         fmsx_runtime_force_disk_rom_off_mapping();
     }
@@ -1251,6 +1294,11 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
     stats->reg26 = (unsigned) VDP[26];
     stats->reg27 = (unsigned) VDP[27];
     stats->reg19 = (unsigned) VDP[19];
+    stats->reg1 = (unsigned) VDP[1];
+    stats->reg7 = (unsigned) VDP[7];
+    stats->screen_on = (VDP[1] & 0x40u) ? 1u : 0u;
+    stats->ie0_enabled = (VDP[1] & 0x20u) ? 1u : 0u;
+    stats->vblank_flag = (VDPStatus[0] & 0x80u) ? 1u : 0u;
     stats->ie1_enabled = (VDP[0] & 0x10u) ? 1u : 0u;
     stats->ie1_flag = (VDPStatus[1] & 0x01u) ? 1u : 0u;
     stats->msx2p_kanji_basic = FmsxMSX2PKanjiBasicLoaded ? 1u : 0u;

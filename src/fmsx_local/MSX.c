@@ -1597,8 +1597,10 @@ case 0x98: /* VRAM read port */
 case 0x99: /* VDP status registers */
   /* Read an appropriate status register */
   Port=VDPStatus[VDP[15]];
-  /* Reading status resets VDP latch pair (matches V99x8 behavior). */
-  VKey=1;
+  /*
+   * Keep upstream fMSX behavior here: do not force-reset VKey on status reads.
+   * Some BIOS/software paths depend on the original latch sequencing.
+   */
   /* Update status register's contents */
   switch(VDP[15])
   {

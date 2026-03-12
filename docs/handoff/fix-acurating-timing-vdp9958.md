@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch fix-acurating-timing-vdp9958
 
-Ultima atualizacao: 11/03/2026 (ciclo 19:20 BRT)
+Ultima atualizacao: 11/03/2026 (ciclo 21:17 BRT)
 
 ## Objetivo desta memoria
 
@@ -42,13 +42,59 @@ Impacto esperado:
 - Comando de build usado: make -j4 DEBUG=1
 - Build mais recente validado localmente: OK
 - Artefato principal: artifacts/kernel8-default.img
-- BUILD_HASH registrado: a9fcf0e-c7182027280a192642e4b921d338792ddfec8d53
+- BUILD_HASH registrado: f61adf2-96406538b633cc118ed6ae4c3b0e57999b0c9d4b
 
 ## Estado desta iteracao (11/03/2026 19:20 BRT)
 
 - Validacao de contexto concluida via AGENTS.md + CONTEXT.md + este handoff.
 - Confirmado em diff que a correcao do ponteiro de sprites em SCREEN1/SCREEN3 permanece aplicada em src/fmsx_local/Common.h (`Sprites(Y,P)`).
 - Nao houve novo commit neste ciclo; alteracoes seguem locais no working tree.
+
+## Estado desta iteracao (11/03/2026 20:07 BRT)
+
+- Reestruturacao documental alinhada ao novo modelo canonico de regras em `.github/instructions/*.instructions.md`.
+- `README.md` foi consolidado para refletir apenas fluxo/targets reais do `Makefile` atual (`make`, `sdcard`, `sdcard-update`, `initramfs`, `package`).
+- Referencias quebradas removidas/substituidas (ex.: comandos antigos de presets nao mais suportados).
+- Template opcional de benchmark restaurado em `docs/templates/perf-report-template.md` para integrar com `scripts/perf-regression.sh`.
+- Validacao de caminhos citados em `AGENTS.md`, `CONTEXT.md`, `README.md` e `scripts/README.md`: sem referencias locais quebradas.
+
+## Estado desta iteracao (11/03/2026 20:22 BRT)
+
+- Investigacao retomada no eixo de boot travando (MSX2/MSX2+) e viewport azul sem progresso (MSX1).
+- Correcao aplicada em `src/fmsx_runtime.c`:
+  - restaurado stepping robusto por frame em `fmsx_runtime_step_frame()` (loop de `RunZ80()` ate detectar frame novo via `fmsx_video_get_latest()` com limite `MSXBARE_FMSX_Z80_SLICES_PER_FRAME_MAX=4096`).
+  - quando nao produz frame, runtime nao trava em spin; registra `last_error=2` e sai do passo.
+- Correcao aplicada em `src/fmsx_local/Common.h`:
+  - removida supressao artificial de sprites em `RefreshLine5()` (`suppress_boot_logo_mask_sprites`), que podia ocultar elementos da logo/boot em MSX2+.
+- Build local validado: `make -j4 DEBUG=1` (OK), artefato `artifacts/kernel8-default.img`.
+- Auditoria de ROMs:
+  - `MSX.ROM`, `MSX2.ROM`, `MSX2EXT.ROM`, `MSX2P.ROM`, `MSX2PEXT.ROM` em `roms/initramfs` estao estaveis no historico (sem alteracao recente nesta branch).
+  - no historico de `roms/initramfs`, alteracao recente ligada ao commit `f61adf2` afetou `KANJI.ROM`; os demais MSX*.ROM permaneceram.
+
+## Estado desta iteracao (11/03/2026 21:01 BRT)
+
+- Novo foco: recuperar video/boot do MSX1 (CPU segue rodando, tela preta com debug ativo).
+- Correcao aplicada em `src/fmsx_local/Common.h` para modos de texto/tile do MSX1:
+  - `RefreshLine0()`, `RefreshLine1()`, `RefreshLine3()` retornaram ao caminho estavel pre-refactor (sem pipeline `BgRaw + V9958ComposeScrolledLine256` nesses modos).
+  - Objetivo: eliminar regressao de render em MSX1 introduzida no refactor de scroll horizontal.
+- Build local validado: `make -j4 DEBUG=1` (OK), artefato `artifacts/kernel8-default.img`.
+
+## Estado desta iteracao (11/03/2026 21:09 BRT)
+
+- Persistencia de tela preta no MSX1 observada em novo teste de hardware (debug segue atualizado, sem freeze).
+- Correcao incremental aplicada em `src/fmsx_runtime.c`:
+  - introduzido criterio de efetividade de DiskROM por perfil (`MSX1` => DiskROM desativado no startup/reset/toggle).
+  - removida transicao forcada de `MSX_PATCHBDOS` no caminho MSX1 para evitar carga incidental de `DISK.ROM` durante boot.
+  - quando perfil ativo e MSX1, runtime agora faz `fmsx_runtime_force_disk_rom_off_mapping()` de forma deterministica.
+- Build local validado: `make -j4 DEBUG=1` (OK), artefato `artifacts/kernel8-default.img`.
+
+## Estado desta iteracao (11/03/2026 21:17 BRT)
+
+- Persistencia de tela preta no MSX1 confirmada em novo teste de hardware.
+- Correcao aplicada em `src/fmsx_local/MSX.c` (porta VDP status `0x99`):
+  - revertido reset forcado de `VKey` em leitura de status para o comportamento upstream do fMSX.
+  - motivacao: manter sequenciamento de latch VDP original; algumas rotinas de BIOS/software dependem disso.
+- Build local validado: `make -j4 DEBUG=1` (OK), artefato `artifacts/kernel8-default.img`.
 
 ## Comando oficial para preparar SD
 
