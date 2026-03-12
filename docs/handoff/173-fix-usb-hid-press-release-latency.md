@@ -119,3 +119,8 @@ Build desta iteracao:
   - `artifacts/kernel8-default.img`
 - BUILD_HASH: `8ba837a-463e84253aa5e5ca3b486e5510fb42c8f58f8343`
 - INT_BUILD: `1496`
+
+Rebuild apos commit final da refatoracao:
+- Comando: `make -j4 DEBUG=1`
+- BUILD_HASH: `c6ffc1b-23c14080fc2ffbaa2bd376ef49bf56f7761f72f7`
+- INT_BUILD: `37FD`
