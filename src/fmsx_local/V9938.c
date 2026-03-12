@@ -184,10 +184,13 @@ INLINE int VdpOpsQuantum(void)
 INLINE int VdpCommandScreenMode(void)
 {
   /*
-   * V9958 command-enable (R#25 bit6) allows commands outside SCR5..8.
-   * Mirror BlueMSX behavior by mapping those cases to the SCR7 command map.
+   * BlueMSX-compatible V9958 mapping:
+   * - SCR5..SCR8   -> 0..3
+   * - SCR9..SCR12  -> 3 (SCREEN8 command map)
+   * - other modes  -> 2 only when command-enable (R#25 bit6) is set
    */
   if((ScrMode>=5)&&(ScrMode<=8)) return ScrMode-5;
+  if((ScrMode>=9)&&(ScrMode<=12)) return 3;
   if(MODEL(MSX_MSX2P) && (VDP[25]&0x40u)) return 2;
   return -1;
 }

@@ -35,3 +35,174 @@
   - artefatos: `artifacts/kernel8-issue176.img` e `artifacts/kernel8-default.img`
 - BUILD_HASH: `8e25964-80b65d962704c268aeac9037a6782206ce694e3d`
 - INT_BUILD: `6D3B`
+
+## Iteracao atual (12/03/2026 01:21 BRT)
+- Reversao aplicada conforme validacao de hardware:
+  - removida a restricao da calibracao extra de `0x99` apenas para MSX1.
+  - calibracao de deteccao 60Hz volta a ficar global (MSX1/MSX2/MSX2+), como estava no estado funcional.
+  - arquivo: `src/fmsx_local/MSX.c`.
+- Build local validado:
+  - `make clean && make DEBUG=1` (OK)
+  - artefato principal da issue: `artifacts/kernel8-issue176.img`
+- BUILD_HASH: `cd3b047-204f01bef49f4af3d561b85c394257bc772a8d3e`
+- INT_BUILD: `C46A`
+
+## Iteracao atual (12/03/2026 01:55 BRT)
+- Analise dos prints de hardware (intervalos ~1000 frames):
+  - `R26/HS` evoluem, indicando que a animacao do logo esta ativa;
+  - a cadencia visual continua lenta (gargalo de throughput, nao travamento logico).
+- Ajuste aplicado sem alterar a calibracao extra de 60Hz:
+  - custo de I/O de dados VDP foi zerado (`kVDPIOWaitCyclesData=0`);
+  - calibracao extra de status (`0x99`) foi preservada integralmente.
+  - arquivo: `src/fmsx_local/MSX.c`.
+- Build local validado:
+  - `make clean && make DEBUG=1` (OK)
+  - artefato: `artifacts/kernel8-issue176.img`
+- BUILD_HASH: `cd3b047-90e87e4a145cd04b40246fcd086c5aa5089dd20d`
+- INT_BUILD: `2240`
+
+## Iteracao atual (12/03/2026 02:08 BRT)
+- Analise de ROM via `z80dasm`:
+  - `MSX2PEXT.ROM` contem loops de sincronizacao VDP com `DI + IN (99h)` em trechos como `0x2BE4..0x2C03`, consistentes com o comportamento do logo/boot.
+- Ajuste aplicado sem tocar no caminho `0x99`:
+  - adicionado boost temporario de turbo no boot `NORM` para MSX2/MSX2+:
+    - `MSXBARE_FMSX_NORM_BOOT_BOOST_FRAMES_MSX2=1200`
+    - `MSXBARE_FMSX_NORM_BOOT_BOOST_FRAMES_MSX2P=1200`
+  - objetivo: compensar overhead da rotina de boot/logo sem alterar calibracao de 60Hz.
+  - arquivo: `src/fmsx_runtime.c`.
+- Build local validado:
+  - `make clean && make DEBUG=1` (OK)
+  - artefato: `artifacts/kernel8-issue176.img`
+- BUILD_HASH: `cd3b047-08e32ce237c0af9e61f7cc22c6e3770f40b1c6f0`
+- INT_BUILD: `DC9E`
+
+## Iteracao atual (12/03/2026 02:16 BRT)
+- Disassembly persistido fora de `src/` para consultas futuras:
+  - `docs/rom-disassembly/msx2plus/MSX2P.ROM.dis`
+  - `docs/rom-disassembly/msx2plus/MSX2PEXT.ROM.dis`
+  - `docs/rom-disassembly/msx2plus/README.md` com comandos de regeneracao.
+
+## Iteracao atual (12/03/2026 02:24 BRT)
+- Estudo da implementacao BlueMSX (`third_party/bluemsx/blueMSX/Src/VideoChips/V9938.c`) para alinhar regra de mapeamento de modo de comandos do V9958.
+- Correcao aplicada no nosso engine local:
+  - `src/fmsx_local/V9938.c` -> `VdpCommandScreenMode()` agora segue a logica do BlueMSX:
+    - `SCR10..12 -> indice 3` (mapa de comando estilo SCR8)
+    - `SCR5..8 -> 0..3`
+    - demais modos: `R#25 bit6` habilita fallback em indice `2`; sem isso, comandos desabilitados.
+- Importante:
+  - nenhum ajuste foi feito na calibracao de leitura de status `0x99` (mantida intacta).
+- Build local validado:
+  - `make DEBUG=1` (OK)
+  - artefato da issue: `artifacts/kernel8-issue176.img`
+- BUILD_HASH: `cd3b047-7c3bc072350e41645a8445f8fd3171a33d65b1b2`
+- INT_BUILD: `1CD9`
+
+## Iteracao atual (12/03/2026 02:29 BRT)
+- Hipotese atacada: engine de comando VDP em `SCR7/SCR8` usando mapeamento linear no nosso fork, enquanto BlueMSX usa mapeamento VRAM intercalado (odd/even plane).
+- Correcao aplicada:
+  - arquivo: `src/fmsx_local/V9938.c`
+  - macros de acesso de comando para `SCR7/SCR8` alteradas para layout intercalado estilo BlueMSX:
+    - `VDP_VRMP7(X,Y) -> ((Y<<7) + ((X>>2) + ((X&2)<<15)))`
+    - `VDP_VRMP8(X,Y) -> ((Y<<7) + ((X>>1) + ((X&1)<<16)))`
+- Objetivo: restaurar comportamento de copias/efeitos por paridade de linhas no boot logo MSX2+.
+- Nenhuma alteracao no caminho de calibracao `0x99`.
+- Build local validado:
+  - `make DEBUG=1` (OK)
+  - artefato: `artifacts/kernel8-issue176.img`
+- BUILD_HASH: `cd3b047-1f1b61535e4546d9d1e37be9bcd55994b2474e0c`
+- INT_BUILD: `FEB8`
+
+## Iteracao atual (12/03/2026 02:39 BRT)
+- Feedback de hardware: sem melhora visual no logo e regressao de 60Hz reportada no MSX2 apos as ultimas 2 builds.
+- Acao imediata:
+  - rollback das 2 mudancas recentes em `src/fmsx_local/V9938.c` que nao trouxeram ganho:
+    - mapeamento intercalado experimental em `VDP_VRMP7/VDP_VRMP8`
+    - regra experimental de `VdpCommandScreenMode()` para `SCR10..12`
+- Novo ajuste focal para atacar lentidao do logo sem afetar MSX2:
+  - `GetVdpTimingValue()` agora escala apenas no perfil `MSX2+` (`MODEL(MSX_MSX2P)`) com divisor de 8 no `delta` dos comandos VDP.
+  - objetivo: aumentar cadencia do command-engine V9958 no boot logo.
+- Build local validado:
+  - `make DEBUG=1` (OK)
+  - artefato: `artifacts/kernel8-issue176.img`
+- BUILD_HASH: `cd3b047-e8a3b96d8593a3a8c7497f00b9e500ac4ee7ad3e`
+- INT_BUILD: `964C`
+
+## Iteracao atual (12/03/2026 02:53 BRT)
+- Analise comparativa aprofundada com referencias (`third_party/fmsx/fMSX/Common.h`, `third_party/fmsx/fMSX/Wide.h`, `third_party/bluemsx/blueMSX/Src/VideoChips/VDP.c`) indicou alto desvio local nas rotinas de render `SCREEN5..12` (scroll/paginacao).
+- Acao aplicada:
+  - restaurado `src/fmsx_local/Common.h` para upstream fMSX.
+  - restaurado `src/fmsx_local/Wide.h` para upstream fMSX.
+- Ajuste temporario de `delta` no `V9938.c` foi removido para isolar mudanca (sem efeito visual observado antes).
+- Resultado: build isolada com renderer upstream puro para validar efeito de odd/even/interlace do boot logo.
+- Build local validado:
+  - `make DEBUG=1` (OK)
+  - artefato: `artifacts/kernel8-issue176.img`
+- BUILD_HASH: `cd3b047-09b5413bb0dd171b42f43a5c042d2a1bebb896ab`
+- INT_BUILD: `C1EE`
+
+## Iteracao atual (12/03/2026 02:59 BRT)
+- Feedback de hardware: logo passou a aparecer montada (ganho significativo) apos restaurar renderer upstream, mas tempo total de boot ainda ~4500 frames.
+- Ajuste aplicado focado em reduzir frames de boot no MSX2+ sem mexer no renderer:
+  - `src/fmsx_runtime.c`
+  - janela de boost `NORM` para MSX2+ ampliada: `MSXBARE_FMSX_NORM_BOOT_BOOST_FRAMES_MSX2P` de `1200` -> `5000`.
+  - turbo forçado de boot por perfil:
+    - MSX1: `224%` (inalterado)
+    - MSX2+: `224%` (novo)
+    - MSX2: `150%` (inalterado)
+- Objetivo: manter o boost ativo por todo o periodo real de boot/logo no MSX2+.
+- Build local validado:
+  - `make DEBUG=1` (OK)
+  - artefato: `artifacts/kernel8-issue176.img`
+- BUILD_HASH: `cd3b047-6a8ae2b3894b97fa78533d6ba1aeeb808c366d76`
+- INT_BUILD: `8A7C`
+
+## Iteracao atual (12/03/2026 03:12 BRT)
+- Novos prints de hardware (~1000 frames) mostram `HS` variando (`R26/R27`) com `SM:06`, mas imagem do logo praticamente estatica.
+- Analise: caminho de render ativo em 512px (`Wide.h`) nao aplicava scroll horizontal em `SCREEN6/7`.
+- Correcao aplicada:
+  - arquivo: `src/fmsx_local/Wide.h`
+  - adicionada funcao `WideScrollPagePtr()` para troca de pagina horizontal com wrap em VRAM.
+  - `RefreshLine6()` e `RefreshLine7()` agora aplicam `HScroll` + `HScroll512` na amostragem de pixels, com selecao de pagina secundaria (`+0x8000` para SCR6, `+0x10000` para SCR7).
+- Mantido:
+  - renderer base upstream (Common/Wide restaurados).
+  - politica 60Hz e calibracao de `0x99` inalteradas.
+- Build local validado:
+  - `make DEBUG=1` (OK)
+  - artefato: `artifacts/kernel8-issue176.img`
+- BUILD_HASH: `cd3b047-a9c8061e13dc9e11dc8cbb5e6de2c0e628d2c7b3`
+- INT_BUILD: `B39A`
+
+## Iteracao atual (12/03/2026 10:11 BRT)
+- Novos prints com build `B39A` confirmam `HS` variando enquanto o logo alterna entre quadro visivel/limpo, com baixo deslocamento efetivo.
+- Hipotese aplicada: customizacao local de `R2 bit5` em `MSX.c` conflitando com multipage/hscroll no logo.
+- Correcao aplicada:
+  - `src/fmsx_local/MSX.c`
+  - `SetScreen()` voltou ao calculo upstream de `ChrTab` com `VDP[2]&MSK` sem limpeza condicional de bit5.
+  - `VDPOut()` caso `R#2` idem (remove `R2Base` custom e usa caminho upstream).
+- Objetivo: restaurar selecao de pagina por R#2 conforme rotina BIOS durante animacao do logo.
+- Build local validado:
+  - `make DEBUG=1` (OK)
+  - artefato: `artifacts/kernel8-issue176.img`
+- BUILD_HASH: `cd3b047-965f7b6300a311b9bc282baa6cf823d77ca85fe5`
+- INT_BUILD: `AF9A`
+
+## Iteracao atual (12/03/2026 11:40 BRT)
+- Feedback mais recente: animacao continua lenta (~4500 frames), logo aparece no fim com blocos/tarjas e sem padrao odd/even esperado.
+- Analise comparativa com BlueMSX:
+  - `third_party/bluemsx/blueMSX/Src/VideoChips/V9938.c::vdpSetScreenMode()` mapeia comandos V9958 assim:
+    - `SCR5..8 -> 0..3`
+    - `SCR9..12 -> 3` (mapa de SCREEN8)
+    - outros modos: `2` apenas com `commandEnable` (`R#25 bit6`), senao `-1`.
+- Correcao aplicada:
+  - `src/fmsx_local/V9938.c`
+    - `VdpCommandScreenMode()` atualizado para refletir o mapeamento acima (principalmente `SCR9..12 -> 3`).
+  - `src/fmsx_local/Wide.h`
+    - revertido para upstream fMSX (removendo patch experimental de scroll em `RefreshLine6/7` que introduzia artefatos visuais).
+- Mantido sem alteracao:
+  - calibracao/politica de 60Hz.
+  - rotina de `0x99` (sem novos ajustes).
+- Build local validado:
+  - `make clean && make -j4 DEBUG=1` (OK)
+  - artefato: `artifacts/kernel8-issue176.img`
+- BUILD_HASH: `cd3b047-01341f70af6d9d011d9ecc4ef6e37dab5ac177ef`
+- INT_BUILD: `C944`

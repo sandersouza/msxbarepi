@@ -254,7 +254,7 @@ uint8_t PLatch;                       /* Palette buffer         */
 uint8_t ALatch;                       /* Address buffer         */
 int  Palette[16];                  /* Current palette        */
 /* Approximate VDP I/O wait-state cost (in Z80 cycles per access). */
-static const int kVDPIOWaitCyclesData = 2;
+static const int kVDPIOWaitCyclesData = 0;
 static const int kVDPIOWaitCyclesStatusBase = 2;
 static const int kVDPIOWaitCyclesStatusPollingExtra = 8;
 
@@ -271,10 +271,8 @@ static int fmsx_vdp_status_wait_cycles(void)
   /*
    * Apply extra delay only for tight polling loops with interrupts disabled,
    * which is the pattern used by diagnostics to estimate refresh frequency.
-   * Keep this extra calibration limited to MSX1, so MSX2/2+ boot logo
-   * timing is not penalized.
    */
-  if(MODEL(MSX_MSX1) && !(CPU.IFF&IFF_1) && ((VDP[15]&0x0Fu)==0u))
+  if(!(CPU.IFF&IFF_1) && ((VDP[15]&0x0Fu)==0u))
     cycles += kVDPIOWaitCyclesStatusPollingExtra;
   return cycles;
 }
@@ -2429,7 +2427,7 @@ uint16_t SetIRQ(uint8_t IRQ)
 /*************************************************************/
 uint8_t SetScreen(void)
 {
-  uint8_t I,J,R2Base;
+  uint8_t I,J;
 
   switch(((VDP[0]&0x0E)>>1)|(VDP[1]&0x18))
   {
@@ -2448,14 +2446,7 @@ uint8_t SetScreen(void)
 
   /* Recompute table addresses */
   I=(J>6)&&(J!=MAXSCREEN+1)? 11:10;
-  R2Base=VDP[2]&MSK[J].R2;
-  /* V9958 two-page horizontal scroll: in bitmap modes, R2 bit5 selects
-   * display page and must not offset the table base address itself.
-   */
-  if(MODEL(MSX_MSX2P) && (VDP[25]&0x01) && (VDP[2]&0x20)
-  && (((J>=5)&&(J<=8)) || ((J>=10)&&(J<=12))))
-    R2Base&=~0x20;
-  ChrTab  = VRAM+((int)R2Base<<I);
+  ChrTab  = VRAM+((int)(VDP[2]&MSK[J].R2)<<I);
   ChrGen  = VRAM+((int)(VDP[4]&MSK[J].R4)<<11);
   ColTab  = VRAM+((int)(VDP[3]&MSK[J].R3)<<6)+((int)VDP[10]<<14);
   SprTab  = VRAM+((int)(VDP[5]&MSK[J].R5)<<7)+((int)VDP[11]<<15);
@@ -2514,7 +2505,7 @@ void SetMegaROM(int Slot,uint8_t P0,uint8_t P1,uint8_t P2,uint8_t P3)
 /*************************************************************/
 void VDPOut(uint8_t R,uint8_t V)
 {
-  uint8_t J,R2Base;
+  uint8_t J;
 
   if(MODEL(MSX_MSX1) && (R>7))
   {
@@ -2538,11 +2529,7 @@ void VDPOut(uint8_t R,uint8_t V)
              if(VDP[1]!=V) { VDP[1]=V;SetScreen(); }
              break;
     case  2: J=(ScrMode>6)&&(ScrMode!=MAXSCREEN+1)? 11:10;
-             R2Base=V&MSK[ScrMode].R2;
-             if(MODEL(MSX_MSX2P) && (VDP[25]&0x01) && (V&0x20)
-             && (((ScrMode>=5)&&(ScrMode<=8)) || ((ScrMode>=10)&&(ScrMode<=12))))
-               R2Base&=~0x20;
-             ChrTab  = VRAM+((int)R2Base<<J);
+             ChrTab  = VRAM+((int)(V&MSK[ScrMode].R2)<<J);
              ChrTabM = ((int)(V|~MSK[ScrMode].M2)<<J)|((1<<J)-1);
              break;
     case  3: ColTab  = VRAM+((int)(V&MSK[ScrMode].R3)<<6)+((int)VDP[10]<<14);
