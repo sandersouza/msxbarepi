@@ -29,6 +29,51 @@
 #ifndef MSXBARE_ONE_ROM_MODE
 #define MSXBARE_ONE_ROM_MODE 0
 #endif
+#ifndef MSXBARE_BOOT_MODE_LOCKED
+#define MSXBARE_BOOT_MODE_LOCKED 0
+#endif
+#ifndef MSXBARE_ENABLE_DEBUG_OVERLAY
+#define MSXBARE_ENABLE_DEBUG_OVERLAY 0
+#endif
+#ifndef MSXBARE_PATREON_TAG
+#define MSXBARE_PATREON_TAG ""
+#endif
+
+static void BuildPatreonLabel(char *dst, unsigned dst_size, const char *prefix, const char *tag)
+{
+    if (dst == 0 || dst_size == 0u)
+    {
+        return;
+    }
+    dst[0] = '\0';
+
+    if (prefix == 0)
+    {
+        prefix = "-- Patreon --";
+    }
+    if (tag == 0 || tag[0] == '\0')
+    {
+        return;
+    }
+
+    unsigned i = 0u;
+    while (prefix[i] != '\0' && i + 1u < dst_size)
+    {
+        dst[i] = prefix[i];
+        ++i;
+    }
+    if (i > 0u && i + 1u < dst_size)
+    {
+        dst[i++] = ' ';
+    }
+
+    unsigned copied = 0u;
+    while (tag[copied] != '\0' && copied < 20u && i + 1u < dst_size)
+    {
+        dst[i++] = tag[copied++];
+    }
+    dst[i] = '\0';
+}
 
 static boolean MenuProfileSupported(unsigned profile)
 {
@@ -88,9 +133,11 @@ static void BuildLabelFlag(char *dst, unsigned dst_size, const char *label, cons
     dst[i] = '\0';
 }
 
-const TComboMenuItem *combo_menu_root_items_get(unsigned language, unsigned *count)
+const TComboMenuItem *combo_menu_root_items_get(unsigned language, unsigned boot_mode, unsigned *count)
 {
-    static TComboMenuItem root_items[10];
+    static TComboMenuItem root_items[14];
+    static char patreon_label[48];
+    static char patreon_tag_line[32];
     const TComboLocaleStrings *locale = combo_locale_get(language);
     if (locale == 0)
     {
@@ -123,8 +170,19 @@ const TComboMenuItem *combo_menu_root_items_get(unsigned language, unsigned *cou
     ADD_ROOT_ITEM("", ComboMenuActionSeparator, FALSE);
     ADD_ROOT_ITEM(locale->root_settings, ComboMenuActionSettings, TRUE);
     ADD_ROOT_ITEM("", ComboMenuActionSeparator, FALSE);
-    ADD_ROOT_ITEM(locale->root_msx_basic, ComboMenuActionMsxBasic, TRUE);
+    if (boot_mode != 2u)
+    {
+        ADD_ROOT_ITEM(locale->root_msx_basic, ComboMenuActionMsxBasic, TRUE);
+    }
     ADD_ROOT_ITEM(locale->root_reset, ComboMenuActionReset, TRUE);
+    BuildPatreonLabel(patreon_label, sizeof(patreon_label), locale->root_patreon_prefix, MSXBARE_PATREON_TAG);
+    if (patreon_label[0] != '\0')
+    {
+        BuildPatreonLabel(patreon_tag_line, sizeof(patreon_tag_line), "", MSXBARE_PATREON_TAG);
+        ADD_ROOT_ITEM("", ComboMenuActionNone, FALSE);
+        ADD_ROOT_ITEM(locale->root_patreon_prefix, ComboMenuActionNone, FALSE);
+        ADD_ROOT_ITEM(patreon_tag_line, ComboMenuActionNone, FALSE);
+    }
 #undef ADD_ROOT_ITEM
 
     if (count != 0)
@@ -388,8 +446,10 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     } while (0)
 
     const boolean show_machine = (MenuSupportedProfileCount() > 1u) ? TRUE : FALSE;
-    const boolean show_mapper = (MenuProfileSupported(machine_profile) && machine_profile != 0u) ? TRUE : FALSE;
-    const boolean show_boot_mode = (MSXBARE_ONE_ROM_MODE == 0) ? TRUE : FALSE;
+    const boolean show_mapper = TRUE;
+    const boolean mapper_selectable = (MenuProfileSupported(machine_profile) && machine_profile != 0u) ? TRUE : FALSE;
+    const boolean show_boot_mode = (MSXBARE_ONE_ROM_MODE == 0 && MSXBARE_BOOT_MODE_LOCKED == 0) ? TRUE : FALSE;
+    const boolean show_disk_rom_setting = (MSXBARE_FEAT_DISK_ROM && MSXBARE_ENABLE_DEBUG_OVERLAY) ? TRUE : FALSE;
 
     ADD_SETTING_ITEM(language_label, ComboMenuActionCycleLanguage, ComboMenuRedrawMenuOnly, TRUE);
     ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
@@ -418,7 +478,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
         ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
         if (show_mapper)
         {
-            ADD_SETTING_ITEM(mapper_label, ComboMenuActionCycleRamMapper, ComboMenuRedrawMenuOnly, TRUE);
+            ADD_SETTING_ITEM(mapper_label, ComboMenuActionCycleRamMapper, ComboMenuRedrawMenuOnly, mapper_selectable);
         }
         if (MSXBARE_FEAT_MEGARAM)
         {
@@ -438,14 +498,14 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     ADD_SETTING_ITEM(turbo_label, ComboMenuActionCycleZ80Turbo, ComboMenuRedrawMenuOnly, TRUE);
     ADD_SETTING_ITEM(rensha_label, ComboMenuActionCycleRensha, ComboMenuRedrawMenuOnly, TRUE);
 
-    if (overlay_available || MSXBARE_FEAT_DISK_ROM)
+    if (overlay_available || show_disk_rom_setting)
     {
         ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
         if (overlay_available)
         {
             ADD_SETTING_ITEM(overlay_label, ComboMenuActionToggleOverlay, ComboMenuRedrawMenuOnly, TRUE);
         }
-        if (MSXBARE_FEAT_DISK_ROM)
+        if (show_disk_rom_setting)
         {
             ADD_SETTING_ITEM(disk_rom_label, ComboMenuActionToggleDiskRom, ComboMenuRedrawMenuOnly, TRUE);
         }

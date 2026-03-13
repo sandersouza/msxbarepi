@@ -69,7 +69,7 @@ static const char mconf_readme[] =
 "             there is a delayed response which you may find annoying.\n"
 "\n"
 "   Also, the <TAB> and cursor keys will cycle between <Select>,\n"
-"   <Exit>, <Help>, <Save>, and <Load>.\n"
+"   <Save>, <Load>, <Help>, and <Exit>.\n"
 "\n"
 "o  To get help with an item, use the cursor keys to highlight <Help>\n"
 "   and press <ENTER>.\n"
@@ -790,7 +790,7 @@ static void conf(struct menu *menu, struct menu *active_menu)
 		res = dialog_menu(prompt ? prompt : "Main Menu",
 				  menu_instructions,
 				  active_menu, &s_scroll);
-		if (res == 1 || res == KEY_ESC || res == -ERRDISPLAYTOOSMALL)
+		if (res == 4 || res == KEY_ESC || res == -ERRDISPLAYTOOSMALL)
 			break;
 		if (item_count() != 0) {
 			if (!item_activate_selected())
@@ -825,21 +825,21 @@ static void conf(struct menu *menu, struct menu *active_menu)
 				break;
 			}
 			break;
+		case 1:
+			reset_subtitle();
+			conf_save();
+			break;
 		case 2:
+			reset_subtitle();
+			conf_load();
+			break;
+		case 3:
 			if (sym)
 				show_help(submenu);
 			else {
 				reset_subtitle();
 				show_helptext("README", mconf_readme);
 			}
-			break;
-		case 3:
-			reset_subtitle();
-			conf_save();
-			break;
-		case 4:
-			reset_subtitle();
-			conf_load();
 			break;
 		case 5:
 			if (item_is_tag('t')) {

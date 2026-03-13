@@ -80,8 +80,10 @@ Sincronizar `build/config.mk` a partir de `.config` sem abrir menu:
 
 - O script compila `build/tools/kconfig-linux/mconf` localmente a partir de `tools/kconfig-linux/` quando necessario.
 - Interface e atalhos sao os mesmos do menuconfig classico do Linux (setas, `Enter`, `Y/N`, `Space`, `Esc Esc`, `<Save>`, `<Load>`, `<Help>`).
-- Opcoes atuais: SCC, FM-PAC, DISK ROM, MegaRAM, MSX2, MSX2+, LOAD ROM, LOAD DISK, Boot Mode, DEBUG, One ROM Mode e Patreon/Owner tag.
+- Opcoes atuais: SCC, FM-PAC, DISK ROM, MegaRAM, MSX2, Boot Screen, MSX2+, LOAD ROM, LOAD DISK, Boot Mode, DEBUG, One ROM Mode e Patreon/Owner tag.
 - Em One ROM Mode o script aplica presets de seguranca (MSX2+, boot GAME e desativa load dinamico).
+- Em `One ROM Mode`, o caminho de `CARTA.ROM` e definido diretamente no campo `MSXBARE_ONE_ROM_PATH` do proprio `menuconfig` (entrada digitada).
+- `Boot Screen` (visivel quando `Suporte a MSX2+` estiver ativo) gera initramfs sem payload de Kanji (`KANJI*.ROM` e `KANJIBASIC*.ROM`).
 
 ## 1.2) gen-build-header.sh
 
@@ -210,6 +212,9 @@ Exemplo:
 
 - Requer ao menos uma ROM (`*.ROM` ou `*.rom`) no diretorio de entrada.
 - Ordena arquivos para gerar CPIO reproduzivel.
+- Se `CONFIG_MSXBARE_ONE_ROM_MODE=y` em `.config`:
+  - com `CONFIG_MSXBARE_ONE_ROM_PATH` valido, injeta essa ROM como `CARTA.ROM` no CPIO;
+  - sem caminho selecionado, garante que `CARTA.ROM` nao exista no CPIO.
 
 ## 6) make-sdcard-package.sh
 
@@ -369,3 +374,4 @@ VIDEO_MODE_PRESET=720 COPY_GAMES_TO_ROOT=1 ./scripts/update-sd-incremental.sh
 - Nao formata o cartao.
 - Quando `SD_DEVICE` e informado (via `prepare-sd.sh` ou manualmente), o script tenta detectar/montar a particao e resolver `TARGET_VOLUME` automaticamente.
 - Se `make-initramfs.sh` estiver disponivel e `INITRAMFS_SRC_DIR` existir, regenera `msx.cpio` antes da copia.
+  - quando `CONFIG_MSXBARE_BOOT_SCREEN=y`, remove `KANJI*.ROM`/`KANJIBASIC*.ROM` do pacote gerado.

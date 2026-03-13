@@ -789,6 +789,9 @@ static void FillRectScreen(CScreenDevice *screen,
 #ifndef MSXBARE_BOOT_MODE_DEFAULT_ENUM
 #define MSXBARE_BOOT_MODE_DEFAULT_ENUM 0
 #endif
+#ifndef MSXBARE_BOOT_MODE_LOCKED
+#define MSXBARE_BOOT_MODE_LOCKED 0
+#endif
 
 CComboKernel *CComboKernel::s_Instance = 0;
 
@@ -927,7 +930,16 @@ CComboKernel::CComboKernel(void)
 
 void CComboKernel::NormalizeSettingsForBuild(void)
 {
-	m_MachineProfile = ClampMachineProfileForBuild(m_MachineProfile);
+	/*
+	 * Default policy: if build does not define an explicit machine profile,
+	 * always boot as MSX1 and ignore persisted machine profile from SD config.
+	 * When a build-time profile is provided, still clamp to supported set.
+	 */
+#ifdef MSXBARE_MACHINE_BOOT_PROFILE
+	m_MachineProfile = ClampMachineProfileForBuild((unsigned) MSXBARE_MACHINE_BOOT_PROFILE);
+#else
+	m_MachineProfile = ClampMachineProfileForBuild(FMSX_MODEL_PROFILE_MSX1);
+#endif
 
 #if MSXBARE_ONE_ROM_MODE
 	if (IsMachineProfileSupportedByBuild(2u))
@@ -935,12 +947,20 @@ void CComboKernel::NormalizeSettingsForBuild(void)
 		m_MachineProfile = 2u;
 	}
 	m_BootMode = kBootModeGame;
+#elif MSXBARE_BOOT_MODE_LOCKED
+	m_BootMode = (MSXBARE_BOOT_MODE_DEFAULT_ENUM <= kBootModeGame) ? MSXBARE_BOOT_MODE_DEFAULT_ENUM : kBootModeNorm;
 #else
 	m_BootMode = (m_BootMode > kBootModeGame) ? kBootModeNorm : m_BootMode;
 #endif
 
 #if !MSXBARE_FEAT_DISK_ROM
 	m_DiskRomEnabled = FALSE;
+#elif !MSXBARE_ENABLE_DEBUG_OVERLAY
+	/*
+	 * In non-debug builds Disk ROM must stay enabled regardless of persisted
+	 * boot config. Disabling is only allowed when DEBUG is compiled in.
+	 */
+	m_DiskRomEnabled = TRUE;
 #endif
 #if !MSXBARE_FEAT_MEGARAM
 	m_MegaRamKb = 0u;
@@ -3747,11 +3767,22 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 #endif
 
 	case ComboMenuActionCycleBootMode:
-#if MSXBARE_ONE_ROM_MODE
+#if MSXBARE_ONE_ROM_MODE || MSXBARE_BOOT_MODE_LOCKED
 		m_BootMode = kBootModeGame;
+#if MSXBARE_BOOT_MODE_LOCKED && !MSXBARE_ONE_ROM_MODE
+		m_BootMode = (MSXBARE_BOOT_MODE_DEFAULT_ENUM <= kBootModeGame) ? MSXBARE_BOOT_MODE_DEFAULT_ENUM : kBootModeNorm;
+#endif
 		m_PauseMenu.SetBootMode(m_BootMode);
 		RefreshSettingsUiAfterAction();
+#if MSXBARE_ONE_ROM_MODE
 		m_Logger.Write(FromKernel, LogNotice, "Settings: Boot Mode fixo em GAME (One ROM Mode)");
+#else
+		{
+			CString line;
+			line.Format("Settings: Boot Mode fixo em %s (build)", BootModeLabelFromMode(m_BootMode));
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
+#endif
 		break;
 #else
 		m_BootMode = (m_BootMode + 1u) % 3u;
@@ -3769,11 +3800,22 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 #endif
 
 	case ComboMenuActionCycleBootModePrev:
-#if MSXBARE_ONE_ROM_MODE
+#if MSXBARE_ONE_ROM_MODE || MSXBARE_BOOT_MODE_LOCKED
 		m_BootMode = kBootModeGame;
+#if MSXBARE_BOOT_MODE_LOCKED && !MSXBARE_ONE_ROM_MODE
+		m_BootMode = (MSXBARE_BOOT_MODE_DEFAULT_ENUM <= kBootModeGame) ? MSXBARE_BOOT_MODE_DEFAULT_ENUM : kBootModeNorm;
+#endif
 		m_PauseMenu.SetBootMode(m_BootMode);
 		RefreshSettingsUiAfterAction();
+#if MSXBARE_ONE_ROM_MODE
 		m_Logger.Write(FromKernel, LogNotice, "Settings: Boot Mode fixo em GAME (One ROM Mode)");
+#else
+		{
+			CString line;
+			line.Format("Settings: Boot Mode fixo em %s (build)", BootModeLabelFromMode(m_BootMode));
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
+#endif
 		break;
 #else
 		m_BootMode = (m_BootMode == 0u) ? 2u : (m_BootMode - 1u);

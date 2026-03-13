@@ -7,7 +7,10 @@ config MSXBARE_DEBUG
 
 choice
     prompt "Boot Mode default"
-    default MSXBARE_BOOT_MODE_NORM
+    default MSXBARE_BOOT_MODE_NONE
+
+config MSXBARE_BOOT_MODE_NONE
+    bool "NONE"
 
 config MSXBARE_BOOT_MODE_NORM
     bool "NORM"
@@ -24,6 +27,11 @@ menu "Machine profile"
 config MSXBARE_FEAT_MSX2
     bool "Suporte a MSX2"
     default y
+
+config MSXBARE_BOOT_SCREEN
+    bool "Boot Screen (sem KANJI/KANJIBASIC no initramfs)"
+    depends on MSXBARE_FEAT_MSX2P
+    default n
 
 config MSXBARE_FEAT_MSX2P
     bool "Suporte a MSX2+"

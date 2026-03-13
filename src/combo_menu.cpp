@@ -930,7 +930,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
         return m_RomBrowserItems;
     }
 
-    return combo_menu_root_items_get(m_Language, count);
+    return combo_menu_root_items_get(m_Language, m_BootMode, count);
 }
 
 unsigned CComboPauseMenu::FindFirstSelectable(void) const

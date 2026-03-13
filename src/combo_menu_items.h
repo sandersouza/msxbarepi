@@ -58,7 +58,7 @@ typedef struct {
     TComboMenuRedrawPolicy redraw_policy;
 } TComboMenuItem;
 
-const TComboMenuItem *combo_menu_root_items_get(unsigned language, unsigned *count);
+const TComboMenuItem *combo_menu_root_items_get(unsigned language, unsigned boot_mode, unsigned *count);
 const TComboMenuItem *combo_menu_load_rom_items_get(unsigned language,
                                                      const char *slot1_name,
                                                      const char *slot2_name,

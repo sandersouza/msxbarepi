@@ -21,6 +21,7 @@ typedef struct {
     const char *root_settings;
     const char *root_msx_basic;
     const char *root_reset;
+    const char *root_patreon_prefix;
     const char *load_rom_slot1;
     const char *load_rom_slot2;
     const char *load_rom_empty;
