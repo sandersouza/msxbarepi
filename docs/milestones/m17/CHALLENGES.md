@@ -50,3 +50,27 @@ Registro de desafios enfrentados por issue, decisão adotada e status da soluç�
 - Solução adotada: Em andamento; criar branch dedicada para instrumentar cadência de page flip/comandos VDP e remover gargalo sem regressão de 60Hz no MSXDIAG.
 - Status: Parcial
 - Referência: [176-boot-screen-msx2plus-extremamente-lento-logo-scroll-paginas-alternadas.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/176-boot-screen-msx2plus-extremamente-lento-logo-scroll-paginas-alternadas.md)
+
+### #186 — Rensha Turbo (auto-fire SPACE) parou de funcionar
+- Desafio: Regressão no auto-fire da barra de espaço, com perda do comportamento esperado no runtime atual de input.
+- Solução adotada: Em backlog; revisar pipeline USB HID -> decode -> bridge com foco em edge/hold da tecla SPACE.
+- Status: Futuro
+- Referência: [186-p1-bug-rensha-turbo-auto-fire-space-parou-de-funcionar.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/186-p1-bug-rensha-turbo-auto-fire-space-parou-de-funcionar.md)
+
+### #187 — Reduzir latência do teclado
+- Desafio: Latência de input ainda perceptível em jogo/menu e potencial subamostragem de leitura por ciclo.
+- Solução adotada: Em backlog; instrumentar polling/processamento de teclado por ciclo e reduzir latência sem regressão de press/release.
+- Status: Futuro
+- Referência: [187-p1-reduzir-latencia-do-teclado-polling-processamento-por-ciclo.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/187-p1-reduzir-latencia-do-teclado-polling-processamento-por-ciclo.md)
+
+### #188 — GRADIUS2E: glitch na 1ª linha do placar (scroll fino V9958)
+- Desafio: Primeira linha do placar apresenta deslocamento indevido em MSX2+, sugerindo falha na lógica de R25/R26/R27.
+- Solução adotada: Em backlog; exigir disassembly da `ROMS/games/roms/GRADIUS2E.ROM` e comparação com referências em `third_party` (incluindo VHDL do V9958) antes de corrigir.
+- Status: Futuro
+- Referência: [188-p1-bug-gradius2e-glitch-na-1a-linha-do-placar-scroll-fino-v9958-r25-r26-r27.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/188-p1-bug-gradius2e-glitch-na-1a-linha-do-placar-scroll-fino-v9958-r25-r26-r27.md)
+
+### #189 — regressão 60Hz no MSX2/MSX2+ (MSXDIAG detecta 50Hz)
+- Desafio: Regressão de frequência detectada no MSXDIAG em MSX2/MSX2+, com risco de novas regressões por ajustes pontuais de timing.
+- Solução adotada: Em backlog; corrigir com abordagem definitiva e proteção anti-regressão validando MSX1/MSX2/MSX2+.
+- Status: Futuro
+- Referência: [189-p0-bug-regressao-60hz-no-msx2-msx2plus-msxdiag-detecta-50hz.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/189-p0-bug-regressao-60hz-no-msx2-msx2plus-msxdiag-detecta-50hz.md)
