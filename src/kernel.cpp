@@ -1429,9 +1429,8 @@ TComboShutdownMode CComboKernel::Run(void)
 				boolean rensha_fire_on = TRUE;
 				u8 joy_bits_runtime = m_JoyBridgeBits;
 				const unsigned rate_num = (m_RenshaMode > 3u) ? 0u : m_RenshaMode;
-				const boolean firea_pressed = (joy_bits_runtime & kJoyBridgeFireA) ? TRUE : FALSE;
 				const boolean rensha_pressed = m_RenshaSpaceHeld ? TRUE : FALSE;
-				if (rate_num > 0u && rensha_pressed && firea_pressed)
+				if (rate_num > 0u && rensha_pressed)
 				{
 					if (!m_RenshaFireAHeld)
 					{
@@ -1453,6 +1452,7 @@ TComboShutdownMode CComboKernel::Run(void)
 					if (!fire_on_phase)
 					{
 						rensha_fire_on = FALSE;
+						/* Keep joystick autofire behavior aligned when FIREA is also mapped/pressed. */
 						joy_bits_runtime &= (u8) ~kJoyBridgeFireA;
 					}
 				}
@@ -4258,7 +4258,18 @@ void CComboKernel::PushKeyboardStateToRuntime(boolean rensha_fire_on)
 	{
 		raw_keys[i] = m_LastKeyboardRawKeys[i];
 	}
-	(void) rensha_fire_on;
+
+	/* Rensha toggles SPACE key state directly for software that reads keyboard matrix fire. */
+	if (!rensha_fire_on)
+	{
+		for (unsigned i = 0u; i < 6u; ++i)
+		{
+			if (raw_keys[i] == 0x2Cu) /* HID SPACE */
+			{
+				raw_keys[i] = 0u;
+			}
+		}
+	}
 	emulator_backend_input_push_keyboard(modifiers, raw_keys);
 #else
 	(void) rensha_fire_on;
