@@ -52,16 +52,22 @@ void CComboDebugOverlay::Write(const char *text)
 
 void CComboDebugOverlay::Clear(void)
 {
-    Write("\x1b[1;1H                                                                                ");
-    Write("\x1b[2;1H                                                                                ");
-    Write("\x1b[3;1H                                                                                ");
-    Write("\x1b[4;1H                                                                                ");
-    Write("\x1b[5;1H                                                                                ");
-    Write("\x1b[6;1H                                                                                ");
-    Write("\x1b[7;1H                                                                                ");
-    Write("\x1b[8;1H                                                                                ");
-    Write("\x1b[9;1H                                                                                ");
-    Write("\x1b[10;1H                                                                               ");
+    Write("\x1b[1;1H                                                                                                                                ");
+    Write("\x1b[2;1H                                                                                                                                ");
+    Write("\x1b[3;1H                                                                                                                                ");
+    Write("\x1b[4;1H                                                                                                                                ");
+    Write("\x1b[5;1H                                                                                                                                ");
+    Write("\x1b[6;1H                                                                                                                                ");
+    Write("\x1b[7;1H                                                                                                                                ");
+    Write("\x1b[8;1H                                                                                                                                ");
+    Write("\x1b[9;1H                                                                                                                                ");
+    Write("\x1b[10;1H                                                                                                                               ");
+    Write("\x1b[11;1H                                                                                                                               ");
+    Write("\x1b[12;1H                                                                                                                               ");
+    Write("\x1b[13;1H                                                                                                                               ");
+    Write("\x1b[14;1H                                                                                                                               ");
+    Write("\x1b[15;1H                                                                                                                               ");
+    Write("\x1b[16;1H                                                                                                                               ");
     Write("\x1b[0m");
 }
 

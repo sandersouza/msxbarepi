@@ -81,6 +81,32 @@ static uint8_t g_kbd_candidate_state[16] =
 };
 static uint8_t g_kbd_candidate_seen = 0u;
 
+static int fmsx_keyboard_change_has_new_press(const uint8_t desired_state[16], const uint8_t stable_state[16])
+{
+    for (unsigned i = 0u; i < 16u; ++i)
+    {
+        const uint8_t press_mask = (uint8_t) (stable_state[i] & (uint8_t) ~desired_state[i]); /* 1->0 */
+        if (press_mask != 0u)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int fmsx_keyboard_change_has_release(const uint8_t desired_state[16], const uint8_t stable_state[16])
+{
+    for (unsigned i = 0u; i < 16u; ++i)
+    {
+        const uint8_t release_mask = (uint8_t) (desired_state[i] & (uint8_t) ~stable_state[i]); /* 0->1 */
+        if (release_mask != 0u)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void fmsx_keyboard_clear_all(void)
 {
     for (unsigned i = 0; i < 16u; ++i)
@@ -274,28 +300,37 @@ void fmsx_runtime_set_keyboard_raw(u8 modifiers, const unsigned char raw_keys[6]
         }
     }
 
-    /* Filter one-frame keyboard glitches that manifest as double press/release
-       in software polling matrix transitions (e.g. diagnostics tools). */
+    /*
+     * Keyboard stabilization policy:
+     * - Release transitions are applied immediately (avoid stuck keys/repeat).
+     * - Pure press-only transitions require one confirmation report to suppress
+     *   occasional one-report USB glitches.
+     */
     if (memcmp(desired_state, g_kbd_stable_state, sizeof desired_state) == 0)
     {
         g_kbd_candidate_seen = 0u;
     }
-    else if (memcmp(desired_state, g_kbd_candidate_state, sizeof desired_state) == 0)
+    else
     {
-        if (g_kbd_candidate_seen != 0u)
+        const int has_press = fmsx_keyboard_change_has_new_press(desired_state, g_kbd_stable_state);
+        const int has_release = fmsx_keyboard_change_has_release(desired_state, g_kbd_stable_state);
+        const int press_only = has_press && !has_release;
+
+        if (!press_only)
+        {
+            memcpy(g_kbd_stable_state, desired_state, sizeof desired_state);
+            g_kbd_candidate_seen = 0u;
+        }
+        else if (memcmp(desired_state, g_kbd_candidate_state, sizeof desired_state) == 0 && g_kbd_candidate_seen != 0u)
         {
             memcpy(g_kbd_stable_state, desired_state, sizeof desired_state);
             g_kbd_candidate_seen = 0u;
         }
         else
         {
+            memcpy(g_kbd_candidate_state, desired_state, sizeof desired_state);
             g_kbd_candidate_seen = 1u;
         }
-    }
-    else
-    {
-        memcpy(g_kbd_candidate_state, desired_state, sizeof desired_state);
-        g_kbd_candidate_seen = 0u;
     }
 
     memcpy((void *) KeyState, g_kbd_stable_state, sizeof g_kbd_stable_state);
