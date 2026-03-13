@@ -269,15 +269,18 @@ static int fmsx_vdp_status_wait_cycles(void)
 {
   int cycles = kVDPIOWaitCyclesStatusBase;
   /*
-   * Apply extra delay only for tight polling loops with interrupts disabled,
-   * which is the pattern used by diagnostics to estimate refresh frequency.
-   * Keep this extra calibration limited to MSX1, so MSX2/2+ boot logo
-   * timing is not penalized.
+   * Apply extra delay for tight polling loops with interrupts disabled.
+   * MSXDIAG refresh detection (50/60Hz) uses this exact pattern on all models.
+   * Keep this calibration model-agnostic to avoid regressions where MSX2/MSX2+
+   * get reported as 50Hz despite fixed NTSC runtime cadence.
    */
-  if(MODEL(MSX_MSX1) && !(CPU.IFF&IFF_1) && ((VDP[15]&0x0Fu)==0u))
+  if(!(CPU.IFF&IFF_1) && ((VDP[15]&0x0Fu)==0u))
     cycles += kVDPIOWaitCyclesStatusPollingExtra;
   return cycles;
 }
+
+/* Forward declaration: used by BIOS shadow sync helpers before prototype block. */
+static uint8_t RAMMapperSubSlot(void);
 
 static void fmsx_force_ntsc_60_policy(void)
 {
@@ -290,8 +293,19 @@ static void fmsx_sync_bios_vdp_r9_shadow(void)
 {
   /* BIOS VDP mirror starts at F3DF; R#9 shadow is F3E8. */
   const uint16_t Addr = 0xF3E8u;
-  const uint8_t ram_ss = ((Mode&MSX_MODEL)==MSX_MSX2P)? 0:2;
-  if((PSL[3]==3) && (SSL[3]==ram_ss) && EnWrite[3] && RAM[Addr>>13])
+  const uint8_t ram_ss = RAMMapperSubSlot();
+  uint8_t *const page_canonical = MemMap[3][ram_ss][Addr>>13];
+
+  /*
+   * Keep BIOS mirror coherent regardless of current slot mapping:
+   * diagnostics often read F3E8 directly and may run while page-3 is not
+   * temporarily mapped to canonical work RAM.
+   */
+  if(page_canonical && (page_canonical != EmptyRAM))
+    page_canonical[Addr&0x1FFF] = VDP[9];
+
+  /* Also mirror into the currently mapped page when writable. */
+  if(EnWrite[3] && RAM[Addr>>13] && (RAM[Addr>>13] != EmptyRAM))
     RAM[Addr>>13][Addr&0x1FFF] = VDP[9];
 }
 
