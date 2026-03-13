@@ -28,13 +28,20 @@ private:
 	static void KeyboardRemovedHandler(CDevice *device, void *context);
 
 private:
+	struct THidRawReport
+	{
+		unsigned char modifiers;
+		unsigned char raw_keys[6];
+	};
+
+	static const unsigned kReportQueueSize = 16u;
+
 	CUSBKeyboardDevice *m_Keyboard;
 	void *m_KeyboardRemovedHandle;
 
-	volatile unsigned m_PendingSeq;
-	volatile unsigned char m_PendingModifiers;
-	volatile unsigned char m_PendingRawKeys[6];
-	unsigned m_ProcessedSeq;
+	volatile unsigned m_ReportWritePos;
+	volatile unsigned m_ReportReadPos;
+	volatile THidRawReport m_ReportQueue[kReportQueueSize];
 	volatile boolean m_RemovedEvent;
 };
 

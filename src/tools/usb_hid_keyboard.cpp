@@ -5,10 +5,9 @@ static const char FromUsbHidKeyboard[] = "usb-hid-kbd";
 CUsbHidKeyboard::CUsbHidKeyboard(void)
 :	m_Keyboard(0),
 	m_KeyboardRemovedHandle(0),
-	m_PendingSeq(0u),
-	m_PendingModifiers(0u),
-	m_PendingRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
-	m_ProcessedSeq(0u),
+	m_ReportWritePos(0u),
+	m_ReportReadPos(0u),
+	m_ReportQueue{},
 	m_RemovedEvent(FALSE)
 {
 }
@@ -61,44 +60,21 @@ boolean CUsbHidKeyboard::ConsumeLatest(unsigned char *modifiers, unsigned char r
 		return FALSE;
 	}
 
-	const unsigned pending_seq = m_PendingSeq;
-	if (pending_seq == m_ProcessedSeq || (pending_seq & 1u))
+	const unsigned read_pos = m_ReportReadPos;
+	const unsigned write_pos = m_ReportWritePos;
+	if (read_pos == write_pos)
 	{
 		return FALSE;
 	}
 
-	unsigned char pending_modifiers = m_PendingModifiers;
-	unsigned char pending_raw[6];
+	*modifiers = m_ReportQueue[read_pos].modifiers;
 	for (unsigned i = 0u; i < 6u; ++i)
 	{
-		pending_raw[i] = m_PendingRawKeys[i];
+		raw_keys[i] = m_ReportQueue[read_pos].raw_keys[i];
 	}
 
-	unsigned seq_a = 0u;
-	unsigned seq_b = 0u;
-	do
-	{
-		seq_a = m_PendingSeq;
-		if (seq_a & 1u)
-		{
-			continue;
-		}
-
-		pending_modifiers = m_PendingModifiers;
-		for (unsigned i = 0u; i < 6u; ++i)
-		{
-			pending_raw[i] = m_PendingRawKeys[i];
-		}
-		seq_b = m_PendingSeq;
-	}
-	while (seq_a != seq_b || (seq_b & 1u));
-
-	m_ProcessedSeq = seq_b;
-	*modifiers = pending_modifiers;
-	for (unsigned i = 0u; i < 6u; ++i)
-	{
-		raw_keys[i] = pending_raw[i];
-	}
+	const unsigned next_read = (read_pos + 1u) % kReportQueueSize;
+	m_ReportReadPos = next_read;
 	return TRUE;
 }
 
@@ -124,12 +100,8 @@ void CUsbHidKeyboard::KeyboardRemovedHandler(CDevice *device, void *context)
 
 	self->m_Keyboard = 0;
 	self->m_KeyboardRemovedHandle = 0;
-	self->m_PendingModifiers = 0u;
-	for (unsigned i = 0u; i < 6u; ++i)
-	{
-		self->m_PendingRawKeys[i] = 0u;
-	}
-	self->m_ProcessedSeq = self->m_PendingSeq;
+	self->m_ReportReadPos = 0u;
+	self->m_ReportWritePos = 0u;
 	self->m_RemovedEvent = TRUE;
 }
 
@@ -143,11 +115,19 @@ void CUsbHidKeyboard::KeyStatusRawHandler(unsigned char modifiers,
 	}
 
 	CUsbHidKeyboard *self = (CUsbHidKeyboard *) context;
-	self->m_PendingSeq++;
-	self->m_PendingModifiers = modifiers;
+	const unsigned write_pos = self->m_ReportWritePos;
+	const unsigned next_write = (write_pos + 1u) % kReportQueueSize;
+
+	/* Full queue: drop the oldest report to keep latest transitions flowing. */
+	if (next_write == self->m_ReportReadPos)
+	{
+		self->m_ReportReadPos = (self->m_ReportReadPos + 1u) % kReportQueueSize;
+	}
+
+	self->m_ReportQueue[write_pos].modifiers = modifiers;
 	for (unsigned i = 0u; i < 6u; ++i)
 	{
-		self->m_PendingRawKeys[i] = raw_keys[i];
+		self->m_ReportQueue[write_pos].raw_keys[i] = raw_keys[i];
 	}
-	self->m_PendingSeq++;
+	self->m_ReportWritePos = next_write;
 }
