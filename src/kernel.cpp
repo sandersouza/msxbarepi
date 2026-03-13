@@ -1324,13 +1324,18 @@ TComboShutdownMode CComboKernel::Run(void)
 		{
 			unsigned char pending_modifiers = 0u;
 			unsigned char pending_raw[6] = {0u, 0u, 0u, 0u, 0u, 0u};
-			if (m_UsbKeyboard.ConsumeLatest(&pending_modifiers, pending_raw))
+			boolean consumed_report = FALSE;
+			while (m_UsbKeyboard.ConsumeLatest(&pending_modifiers, pending_raw))
 			{
 				UpdateJoystickFromRaw(pending_modifiers, pending_raw);
+				consumed_report = TRUE;
 			}
 			m_UsbKeyboard.UpdateLEDs();
 			/* Keep menu navigation responsive while a key is held (auto-repeat driven by frame loop). */
-			UpdateJoystickFromRaw(m_LastKeyboardModifiers, m_LastKeyboardRawKeys);
+			if (!consumed_report)
+			{
+				UpdateJoystickFromRaw(m_LastKeyboardModifiers, m_LastKeyboardRawKeys);
+			}
 		}
 
 		if (m_SettingsSavePending)
@@ -4078,20 +4083,22 @@ void CComboKernel::SetDebugOverlayEnabled(boolean enabled)
 
 void CComboKernel::ClearDebugOverlay(void)
 {
-	WriteScreenText("\x1b[1;1H                                                                                ");
-	WriteScreenText("\x1b[2;1H                                                                                ");
-	WriteScreenText("\x1b[3;1H                                                                                ");
-	WriteScreenText("\x1b[4;1H                                                                                ");
-	WriteScreenText("\x1b[5;1H                                                                                ");
-	WriteScreenText("\x1b[6;1H                                                                                ");
-	WriteScreenText("\x1b[7;1H                                                                                ");
-	WriteScreenText("\x1b[8;1H                                                                                ");
-	WriteScreenText("\x1b[9;1H                                                                                ");
-	WriteScreenText("\x1b[10;1H                                                                                ");
-	WriteScreenText("\x1b[11;1H                                                                                ");
-	WriteScreenText("\x1b[12;1H                                                                                ");
-	WriteScreenText("\x1b[13;1H                                                                                ");
-	WriteScreenText("\x1b[14;1H                                                                                ");
+	WriteScreenText("\x1b[1;1H                                                                                                                                ");
+	WriteScreenText("\x1b[2;1H                                                                                                                                ");
+	WriteScreenText("\x1b[3;1H                                                                                                                                ");
+	WriteScreenText("\x1b[4;1H                                                                                                                                ");
+	WriteScreenText("\x1b[5;1H                                                                                                                                ");
+	WriteScreenText("\x1b[6;1H                                                                                                                                ");
+	WriteScreenText("\x1b[7;1H                                                                                                                                ");
+	WriteScreenText("\x1b[8;1H                                                                                                                                ");
+	WriteScreenText("\x1b[9;1H                                                                                                                                ");
+	WriteScreenText("\x1b[10;1H                                                                                                                               ");
+	WriteScreenText("\x1b[11;1H                                                                                                                               ");
+	WriteScreenText("\x1b[12;1H                                                                                                                               ");
+	WriteScreenText("\x1b[13;1H                                                                                                                               ");
+	WriteScreenText("\x1b[14;1H                                                                                                                               ");
+	WriteScreenText("\x1b[15;1H                                                                                                                               ");
+	WriteScreenText("\x1b[16;1H                                                                                                                               ");
 	WriteScreenText("\x1b[0m");
 }
 
