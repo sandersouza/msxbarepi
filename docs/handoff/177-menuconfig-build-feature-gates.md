@@ -457,3 +457,26 @@ Resultado: build concluido com sucesso e artefato de issue gerado.
 ### Build de referencia desta iteracao
 - `BUILD_HASH:c0fd815-022ff76fa8b5334aac44a3641f8e6b7ab9805f01`
 - `INT_BUILD:311E`
+
+## Iteracao adicional - DISK ROM obrigatoriamente ON sem DEBUG
+
+### Requisito aplicado
+- Em build sem DEBUG:
+  - `DISK ROM` deve ficar ON por padrao/efetivo no `menuconfig` sync;
+  - configuracao persistida no SD nao pode desligar `DISK ROM`;
+  - desligamento de `DISK ROM` so e permitido quando DEBUG estiver compilado.
+
+### Mudancas implementadas
+- `scripts/menuconfig.sh`
+  - em `emit_make_config()`, quando `DEBUG=0`, forca `MSXBARE_FEAT_DISK_ROM=1`.
+- `src/kernel.cpp`
+  - em `NormalizeSettingsForBuild()`, com `MSXBARE_ENABLE_DEBUG_OVERLAY=0` e `MSXBARE_FEAT_DISK_ROM=1`, forca `m_DiskRomEnabled=TRUE`, ignorando `disk_rom` carregado do `MSXBARE.CFG`.
+
+### Validacao executada
+- Forcado `CONFIG_MSXBARE_DEBUG` para OFF e rodado `NON_INTERACTIVE=1 ./scripts/menuconfig.sh --sync-only`.
+- Confirmado em `.config.mk`/`build/config.mk`: `DEBUG=0` e `MSXBARE_FEAT_DISK_ROM=1`.
+- `make -j4` concluido com sucesso.
+
+### Build de referencia desta iteracao
+- `BUILD_HASH:d29ded2-d46958e09af5e776d46db617da4bee4c576a24c5`
+- `INT_BUILD:2BD8`
