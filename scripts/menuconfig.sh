@@ -9,6 +9,7 @@ CONFIG_ROOT_MK_FILE="$ROOT_DIR/.config.mk"
 CONFIG_BUILD_MK_FILE="$ROOT_DIR/build/config.mk"
 KCONFIG_SPEC_FILE="$ROOT_DIR/config/Kconfig.msxbarepi"
 MCONF_BIN="$ROOT_DIR/build/tools/kconfig-linux/mconf"
+MCONF_SAVED_MARKER="$ROOT_DIR/build/tools/kconfig-linux/.menuconfig.saved"
 SYNC_ONLY=0
 
 if [ "${1:-}" = "--sync-only" ]; then
@@ -121,6 +122,9 @@ write_kconfig_from_legacy() {
 
 prepare_kconfig_file() {
   if [ ! -f "$CONFIG_KCONFIG_FILE" ]; then
+    if [ "${INTERACTIVE_MODE:-0}" = "1" ]; then
+      return 0
+    fi
     ensure_default_kconfig
     return 0
   fi
@@ -201,20 +205,37 @@ emit_make_config() {
 
   cp "$CONFIG_ROOT_MK_FILE" "$CONFIG_BUILD_MK_FILE"
 
-  echo "Gerado: .config"
+  echo "Gerado/atualizado: .config"
   echo "Gerado: .config.mk"
   echo "Gerado: build/config.mk"
 }
 
+INTERACTIVE_MODE=0
+if [ "$SYNC_ONLY" = "0" ] && [ "${NON_INTERACTIVE:-0}" != "1" ] && [ -t 0 ] && [ -t 1 ]; then
+  INTERACTIVE_MODE=1
+fi
+
 prepare_kconfig_file
 
-if [ "$SYNC_ONLY" = "0" ] && [ "${NON_INTERACTIVE:-0}" != "1" ] && [ -t 0 ] && [ -t 1 ]; then
-  if [ ! -x "$MCONF_BIN" ]; then
+if [ "$INTERACTIVE_MODE" = "1" ]; then
+  if [ ! -x "$MCONF_BIN" ] \
+    || [ "$ROOT_DIR/tools/kconfig-linux/mconf.c" -nt "$MCONF_BIN" ] \
+    || [ "$ROOT_DIR/tools/kconfig-linux/lxdialog/util.c" -nt "$MCONF_BIN" ]; then
     ./scripts/build-kconfig-mconf.sh
   fi
 
+  rm -f "$MCONF_SAVED_MARKER"
   export KCONFIG_CONFIG="$CONFIG_KCONFIG_FILE"
+  export MCONF_SAVED_MARKER
   "$MCONF_BIN" "$KCONFIG_SPEC_FILE"
 fi
 
-emit_make_config
+if [ "$INTERACTIVE_MODE" = "1" ]; then
+  if [ -f "$MCONF_SAVED_MARKER" ]; then
+    emit_make_config
+  else
+    echo "Saida sem salvar: mantendo .config/.config.mk/build/config.mk inalterados"
+  fi
+else
+  emit_make_config
+fi

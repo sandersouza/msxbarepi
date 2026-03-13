@@ -294,6 +294,17 @@ static int silent;
 static void conf(struct menu *menu, struct menu *active_menu);
 
 static char filename[PATH_MAX+1];
+static void mark_saved_session(void)
+{
+	const char *marker = getenv("MCONF_SAVED_MARKER");
+	if (!marker || !*marker)
+		return;
+
+	int fd = open(marker, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd >= 0)
+		close(fd);
+}
+
 static void set_config_filename(const char *config_filename)
 {
 	static char menu_backtitle[PATH_MAX+128];
@@ -733,14 +744,16 @@ static void conf_save(void)
 		res = dialog_inputbox(NULL, save_config_text,
 				      11, 55, filename);
 		switch(res) {
-		case 0:
-			if (!dialog_input_result[0])
-				return;
-			if (!conf_write(dialog_input_result)) {
-				set_config_filename(dialog_input_result);
-				return;
-			}
-			show_textbox(NULL, "Can't create file!", 5, 60);
+			case 0:
+				if (!dialog_input_result[0])
+					return;
+				if (!conf_write(dialog_input_result)) {
+					set_config_filename(dialog_input_result);
+					conf_write_autoconf(0);
+					mark_saved_session();
+					return;
+				}
+				show_textbox(NULL, "Can't create file!", 5, 60);
 			break;
 		case 1:
 			show_helptext("Save Alternate Configuration", save_config_help);
@@ -881,40 +894,31 @@ static int handle_exit(void)
 	dialog_clear();
 	if (conf_get_changed())
 		res = dialog_yesno(NULL,
-				   "Do you wish to save your new configuration?\n"
-				     "(Press <ESC><ESC> to continue kernel configuration.)",
+				   "Exit menuconfig without saving changes?\n"
+				     "(Press <Esc> to continue configuration.)",
 				   6, 60);
 	else
-		res = -1;
+		res = dialog_yesno(NULL, "Exit menuconfig now?", 5, 40);
 
 	end_dialog(saved_x, saved_y);
 
 	switch (res) {
 	case 0:
-		if (conf_write(filename)) {
-			fprintf(stderr, "\n\n"
-					  "Error while writing of the configuration.\n"
-					  "Your configuration changes were NOT saved."
-					  "\n\n");
-			return 1;
-		}
-		conf_write_autoconf(0);
-		/* fall through */
-	case -1:
 		if (!silent)
 			printf("\n\n"
-				 "*** End of the configuration.\n"
-				 "*** Execute 'make' to start the build or try 'make help'."
-				 "\n\n");
+					 "*** End of the configuration.\n"
+					 "*** Execute 'make' to start the build or try 'make help'."
+					 "\n\n");
 		res = 0;
 		break;
+	case 1:
+	case KEY_ESC:
 	default:
 		if (!silent)
 			fprintf(stderr, "\n\n"
-					  "Your configuration changes were NOT saved."
+					  "Continuing configuration."
 					  "\n\n");
-		if (res != KEY_ESC)
-			res = 0;
+		res = KEY_ESC;
 	}
 
 	return res;
@@ -962,5 +966,5 @@ int main(int ac, char **av)
 		res = handle_exit();
 	} while (res == KEY_ESC);
 
-	return res;
+	return 0;
 }

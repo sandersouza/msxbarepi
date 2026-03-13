@@ -114,3 +114,24 @@ Resultado: build concluido com sucesso e artefato de issue gerado.
 ### Build de referencia desta iteracao
 - `BUILD_HASH:388c112-908276f10cfe7171ccaa4d3dd68530db7fbdb865`
 - `INT_BUILD:56DE`
+
+## Iteracao adicional - ESC no menu principal sem auto-save
+
+### Mudancas implementadas
+- `tools/kconfig-linux/mconf.c`
+  - `ESC` no menu principal agora abre confirmacao para sair sem salvar;
+  - se confirmar saida, o `menuconfig` encerra sem gravar `.config`;
+  - `<Save>` continua sendo o unico fluxo que grava configuracao em disco.
+- `scripts/menuconfig.sh`
+  - no modo interativo, `.config.mk` e `build/config.mk` so sao regenerados quando houve `<Save>` na sessao;
+  - sem `<Save>`, o script nao atualiza os arquivos de config e informa que manteve inalterado;
+  - recompila `mconf` automaticamente quando os fontes locais do frontend foram alterados.
+
+### Validacao executada
+- `./scripts/build-kconfig-mconf.sh`
+- `make menuconfig NON_INTERACTIVE=1`
+- `make clean && make`
+
+### Build de referencia desta iteracao
+- `BUILD_HASH:2759965-6d1851130d1091c8e6ee47d0c1ebc3895a72be45`
+- `INT_BUILD:CF1B`
