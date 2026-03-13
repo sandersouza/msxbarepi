@@ -73,6 +73,9 @@ OBJS += combo_locale.o combo_locale_pt.o combo_locale_en.o combo_locale_es.o
 OBJS += machine_profile_catalog.o
 OBJS += emulator_backend.o fmsx_backend_shim.o bluemsx_backend.o
 
+# Rules.mk clean handles current dir globs; include nested tool objects/deps.
+EXTRACLEAN += tools/*.o tools/*.d
+
 OBJS += fmsx_runtime.o fmsx_host_stubs.o fmsx_compat_stubs.o fmsx_libc_shim.o
 OBJS += fmsx_virtual_fs.o fmsx_initramfs.o
 OBJS += fmsx_carts_sha_fallback.o

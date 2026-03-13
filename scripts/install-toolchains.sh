@@ -30,7 +30,7 @@ toolchain_prefix_found() {
   local prefix tool
   for prefix in "${TOOLCHAIN_PREFIXES[@]}"; do
     local missing=0
-    for tool in gcc ld objcopy; do
+    for tool in gcc g++ ld objcopy; do
       if ! command -v "${prefix}${tool}" >/dev/null 2>&1; then
         missing=1
         break
@@ -107,7 +107,7 @@ print_toolchain_status() {
     echo "  OK: toolchain detectada no PATH (${active_prefix}*)"
   else
     echo "  Faltando:"
-    echo "  - gcc/ld/objcopy para um dos prefixos:"
+    echo "  - gcc/g++/ld/objcopy para um dos prefixos:"
     local p
     for p in "${TOOLCHAIN_PREFIXES[@]}"; do
       echo "    * ${p}"
@@ -135,7 +135,7 @@ linux_install_with_apt() {
   local toolchain_pkg_sets=(
     "binutils-aarch64-none-elf gcc-aarch64-none-elf"
     "binutils-aarch64-elf gcc-aarch64-elf"
-    "binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu"
+    "binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu g++-aarch64-linux-gnu"
   )
 
   local runner=()

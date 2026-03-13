@@ -66,7 +66,7 @@ check_toolchain_prefix() {
   local tool cmd
 
   echo "[INFO] Testando prefixo de toolchain: ${prefix}"
-  for tool in gcc ld objcopy; do
+  for tool in gcc g++ ld objcopy; do
     cmd="${prefix}${tool}"
     if [ "$DRY_RUN" = "1" ]; then
       if command -v "$cmd" >/dev/null 2>&1; then

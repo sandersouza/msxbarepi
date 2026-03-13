@@ -263,6 +263,16 @@ int sscanf(const char *str, const char *fmt, ...)
     return 0;
 }
 
+/*
+ * GCC libgcc for linux-gnu cross toolchains may reference __getauxval()
+ * from lse-init. In bare-metal there is no auxv, so return 0.
+ */
+unsigned long __getauxval(unsigned long type)
+{
+    (void) type;
+    return 0ul;
+}
+
 FILE *fopen(const char *path, const char *mode)
 {
     if (!path || !mode)

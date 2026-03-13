@@ -186,7 +186,7 @@ DRY_RUN=1 ./scripts/check-toolchain.sh
 
 - Verifica dependencias gerais (`make`, `git`, `zip`, `cpio`, `rsync`, `fzf`, `perl`).
 - Verifica dependencias por SO (`diskutil` e `brew` no macOS; `apt-get` no Linux).
-- Verifica toolchain para o prefixo escolhido (`gcc`, `ld`, `objcopy`).
+- Verifica toolchain para o prefixo escolhido (`gcc`, `g++`, `ld`, `objcopy`).
 
 ## 5) make-initramfs.sh
 

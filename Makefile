@@ -50,11 +50,11 @@ $(error MSXBARE_BOOT_MODE_DEFAULT invalido: $(MSXBARE_BOOT_MODE_DEFAULT). Use NO
 endif
 
 CROSS ?= $(shell \
-	if command -v aarch64-none-elf-gcc >/dev/null 2>&1; then \
+	if command -v aarch64-none-elf-gcc >/dev/null 2>&1 && command -v aarch64-none-elf-g++ >/dev/null 2>&1; then \
 		echo aarch64-none-elf-; \
-	elif command -v aarch64-elf-gcc >/dev/null 2>&1; then \
+	elif command -v aarch64-elf-gcc >/dev/null 2>&1 && command -v aarch64-elf-g++ >/dev/null 2>&1; then \
 		echo aarch64-elf-; \
-	elif command -v aarch64-linux-gnu-gcc >/dev/null 2>&1; then \
+	elif command -v aarch64-linux-gnu-gcc >/dev/null 2>&1 && command -v aarch64-linux-gnu-g++ >/dev/null 2>&1; then \
 		echo aarch64-linux-gnu-; \
 	else \
 		echo aarch64-none-elf-; \
@@ -74,6 +74,16 @@ default: config-header circle-configure
 	@mkdir -p artifacts build/src
 	$(MAKE) -C third_party/circle/lib clean >/dev/null
 	$(MAKE) -C third_party/circle/lib EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/lib/sound clean >/dev/null
+	$(MAKE) -C third_party/circle/lib/sound EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/lib/sched clean >/dev/null
+	$(MAKE) -C third_party/circle/lib/sched EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/lib/usb clean >/dev/null
+	$(MAKE) -C third_party/circle/lib/usb EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/lib/input clean >/dev/null
+	$(MAKE) -C third_party/circle/lib/input EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/lib/fs clean >/dev/null
+	$(MAKE) -C third_party/circle/lib/fs EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
 	$(MAKE) -C src clean >/dev/null
 	$(MAKE) -C src CHECK_DEPS=0 \
 		EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' \
@@ -143,7 +153,20 @@ config-header:
 	./scripts/gen-build-header.sh $(BUILD_DIR)/config_build.h
 
 clean:
+	@if [ -f third_party/circle/Config.mk ]; then \
+		$(MAKE) -C src clean >/dev/null || true; \
+		$(MAKE) -C third_party/circle/lib clean >/dev/null || true; \
+		$(MAKE) -C third_party/circle/lib/sound clean >/dev/null || true; \
+		$(MAKE) -C third_party/circle/lib/sched clean >/dev/null || true; \
+		$(MAKE) -C third_party/circle/lib/usb clean >/dev/null || true; \
+		$(MAKE) -C third_party/circle/lib/input clean >/dev/null || true; \
+		$(MAKE) -C third_party/circle/lib/fs clean >/dev/null || true; \
+		$(MAKE) -C third_party/circle/addon/SDCard clean >/dev/null || true; \
+		$(MAKE) -C third_party/circle/addon/fatfs clean >/dev/null || true; \
+	fi
 	rm -rf $(BUILD_DIR)
+	rm -f artifacts/kernel8-bootstrap.img artifacts/kernel8-default.img artifacts/kernel8-issue*.img
+	rm -f src/kernel8*.img src/kernel8.elf src/kernel8.lst
 
 sdcard:
 	./scripts/prepare-sd.sh
@@ -182,6 +205,7 @@ package: default initramfs
 
 help:
 	@echo "Targets: all (default), clean, sdcard, sdcard-update, initramfs, package, help"
+	@echo "clean: limpa build local, artifacts de kernel e objetos/libs em subdirs do Circle"
 	@echo "Configuracao: make menuconfig (gera .config + build/config.mk)"
 	@echo "Aplicar .config sem UI: make syncconfig"
 	@echo "Default (make): perfil estavel -> artifacts/kernel8-default.img + artifacts/kernel8-issue<id>.img (quando em branch de issue)"
