@@ -42,7 +42,7 @@ Atualmente, as referências usadas pelo projeto são:
 Execute a partir da raiz do projeto:
 
 ```bash
-git clone --depth 1 https://github.com/fmsx/fMSX.git third_party/fmsx
+git clone --depth 1 https://github.com/libretro/fmsx-libretro.git third_party/fmsx
 git clone --depth 1 https://github.com/rsta2/circle.git third_party/circle
 git clone --depth 1 https://github.com/matheusjgsantos/BlueberryMSX-2.0plus.git third_party/blueberrymsx
 git clone --depth 1 https://github.com/matheusjgsantos/blueMSX.git third_party/bluemsx

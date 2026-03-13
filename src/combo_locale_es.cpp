@@ -12,6 +12,7 @@ extern const TComboLocaleStrings g_ComboLocaleES = {
     "Configuraciones",
     "MSX Basic",
     "Reiniciar",
+    "-- Patreon --",
     "SLOT1",
     "SLOT2",
     "VACIO",

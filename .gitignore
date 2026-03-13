@@ -2,6 +2,8 @@
 build/
 artifacts/
 third_party/*/
+.config
+.config.mk
 
 # Ignore ROM files and SD card contents, which are not part of the source code and may contain large binary files.
 roms/*.rom
@@ -15,3 +17,4 @@ sdcard/msx.cpio
 
 # Ignore macOS metadata files, which are not relevant to the project and can clutter the repository.
 .DS_Store
+.config*

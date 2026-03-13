@@ -88,6 +88,66 @@ bytes_to_human() {
   }'
 }
 
+discover_mounted_volume_for_disk() {
+  local disk="$1"
+  local part=""
+  local mount_point=""
+
+  while IFS= read -r part; do
+    [ -z "$part" ] && continue
+    mount_point="$(diskutil info -plist "/dev/${part}" 2>/dev/null | /usr/bin/plutil -extract MountPoint raw -o - - 2>/dev/null || true)"
+    if [ -n "$mount_point" ] && [ -d "$mount_point" ]; then
+      printf '%s' "$mount_point"
+      return 0
+    fi
+  done < <(diskutil list "$disk" 2>/dev/null | awk '/^[[:space:]]*[0-9]+:/{print $NF}' | sed '/^$/d')
+
+  return 1
+}
+
+has_minimum_rpi_boot_payload() {
+  local volume="$1"
+  local required=(
+    "bootcode.bin"
+    "start.elf"
+    "fixup.dat"
+    "bcm2710-rpi-3-b.dtb"
+    "config.txt"
+    "kernel8.img"
+  )
+  local item=""
+
+  [ -d "$volume" ] || return 1
+
+  for item in "${required[@]}"; do
+    if [ ! -f "${volume}/${item}" ]; then
+      return 1
+    fi
+  done
+
+  return 0
+}
+
+select_sd_operation_mode() {
+  local default_mode="$1"
+  local selected=""
+
+  if [ "$NON_INTERACTIVE" = "1" ]; then
+    printf '%s' "$default_mode"
+    return 0
+  fi
+
+  selected="$(select_with_fzf "Acao SD > " \
+    "Cartao com estrutura de boot detectada. Escolha a acao." \
+    "UPDATE (manter dados e atualizar arquivos)" \
+    "FORMATAR (apagar e preparar do zero)")" || return 1
+
+  case "$selected" in
+    UPDATE*) printf '%s' "update" ;;
+    *) printf '%s' "format" ;;
+  esac
+}
+
 run_or_echo() {
   if [ "$DRY_RUN" = "1" ]; then
     echo "[DRY-RUN] $*"
@@ -360,6 +420,8 @@ safe_eject_disk() {
 
 skip_physical_disk=0
 target_disk=""
+selected_sd_mount=""
+sd_operation_mode="format"
 if [ "$DRY_RUN" = "1" ] && [ "$OFFLINE_DRY_PACKAGE" = "1" ]; then
   skip_physical_disk=1
   target_disk="DRY_RUN_OFFLINE"
@@ -453,6 +515,43 @@ else
     echo "[ERRO] Falha ao identificar disco selecionado."
     exit 1
   fi
+
+  selected_sd_mount="$(discover_mounted_volume_for_disk "$target_disk" || true)"
+  if [ -z "$selected_sd_mount" ] && [ "$DRY_RUN" != "1" ]; then
+    diskutil mountDisk "$target_disk" >/dev/null 2>&1 || true
+    sleep 1
+    selected_sd_mount="$(discover_mounted_volume_for_disk "$target_disk" || true)"
+  fi
+
+  if [ -n "$selected_sd_mount" ] && has_minimum_rpi_boot_payload "$selected_sd_mount"; then
+    echo "[INFO] Estrutura minima de boot detectada em ${selected_sd_mount}."
+    sd_operation_mode="$(select_sd_operation_mode "update")" || {
+      echo "[ABORTADO] Selecao de acao cancelada."
+      exit 1
+    }
+    echo "[INFO] Acao selecionada: ${sd_operation_mode}"
+  fi
+fi
+
+if [ "$sd_operation_mode" = "update" ]; then
+  echo "[INFO] Executando atualizacao incremental no SD selecionado..."
+  SD_DEVICE="$target_disk" \
+  TARGET_VOLUME="${selected_sd_mount:-}" \
+  KERNEL_IMG="$KERNEL_IMG" \
+  CONFIG_TXT="$CONFIG_TXT" \
+  CMDLINE_TXT="$CMDLINE_TXT" \
+  INITRAMFS_IMG="$INITRAMFS_IMG" \
+  INITRAMFS_SRC_DIR="$INITRAMFS_SRC_DIR" \
+  SETTINGS_CFG="$SETTINGS_CFG" \
+  FIRMWARE_DIR="$FIRMWARE_DIR" \
+  GAMES_SRC_DIR="$GAMES_SRC_DIR" \
+  COPY_GAMES_TO_ROOT="${COPY_GAMES_TO_ROOT:-0}" \
+  DEBUG="$DEBUG" \
+  VIDEO_MODE_PRESET="$VIDEO_MODE_PRESET" \
+  EJECT_AT_END=0 \
+  "${PROJECT_ROOT}/scripts/update-sd-incremental.sh"
+  echo "[OK] Atualizacao incremental concluida."
+  exit 0
 fi
 
 echo "[INFO] KERNEL_IMG padrao: ${KERNEL_IMG}"

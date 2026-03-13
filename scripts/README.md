@@ -5,6 +5,8 @@ Este diretorio concentra utilitarios operacionais de build, validacao de ambient
 ## Resumo rapido
 
 - Faz um build assistido: `build-config.sh`
+- Configura features de build (menuconfig): `menuconfig.sh`
+- Gera header de configuracao para o kernel: `gen-build-header.sh`
 - Instala/sugere toolchains por SO: `install-toolchains.sh`
 - Guardrail de `third_party`: `check-third-party-pristine.sh`
 - Checa Toolchain necessárias: `check-toolchain.sh`
@@ -18,7 +20,7 @@ Este diretorio concentra utilitarios operacionais de build, validacao de ambient
 
 - Shell Bash.
 - Ambiente macOS para scripts que usam `diskutil`.
-- Toolchain AArch64 instalada para build (`aarch64-none-elf-*` ou equivalente).
+- Toolchain AArch64 instalada para build (`aarch64-none-elf-*`, `aarch64-elf-*` ou `aarch64-linux-gnu-*`).
 - Repositorios em `third_party` presentes e integro quando aplicavel.
 
 ## 1) build-config.sh
@@ -43,6 +45,63 @@ NON_INTERACTIVE=1 ./scripts/build-config.sh
 
 - Executa `make default DEBUG=<0|1>`.
 - Mostra aviso se o `PWD` nao for o caminho esperado configurado no script.
+
+## 1.1) menuconfig.sh
+
+### Funcao
+
+Fluxo de configuracao no frontend real do Kconfig (`mconf`, mesmo usado no Linux) para gerar:
+
+- `.config` (fonte de verdade)
+- `.config.mk` (consumido pelo `Makefile` mesmo apos `make clean`)
+- `build/config.mk` (consumido automaticamente pelo `Makefile`)
+
+### Como usar
+
+Interativo:
+
+```bash
+./scripts/menuconfig.sh
+```
+
+Nao interativo:
+
+```bash
+NON_INTERACTIVE=1 ./scripts/menuconfig.sh
+```
+
+Sincronizar `build/config.mk` a partir de `.config` sem abrir menu:
+
+```bash
+./scripts/menuconfig.sh --sync-only
+```
+
+### Observacoes
+
+- O script compila `build/tools/kconfig-linux/mconf` localmente a partir de `tools/kconfig-linux/` quando necessario.
+- Interface e atalhos sao os mesmos do menuconfig classico do Linux (setas, `Enter`, `Y/N`, `Space`, `Esc Esc`, `<Save>`, `<Load>`, `<Help>`).
+- Opcoes atuais: SCC, FM-PAC, DISK ROM, MegaRAM, MSX2, Boot Screen, MSX2+, LOAD ROM, LOAD DISK, Boot Mode, DEBUG, One ROM Mode e Patreon/Owner tag.
+- Em One ROM Mode o script aplica presets de seguranca (MSX2+, boot GAME e desativa load dinamico).
+- Em `One ROM Mode`, o caminho de `CARTA.ROM` e definido diretamente no campo `MSXBARE_ONE_ROM_PATH` do proprio `menuconfig` (entrada digitada).
+- `Boot Screen` (visivel quando `Suporte a MSX2+` estiver ativo):
+  - `[*]` inclui `KANJI*.ROM` e `KANJIBASIC*.ROM` no initramfs;
+  - `[ ]` remove `KANJI*.ROM` e `KANJIBASIC*.ROM` do initramfs.
+
+## 1.2) gen-build-header.sh
+
+### Funcao
+
+Gera `build/config_build.h` com macros estaticas de build para o kernel.
+
+### Como usar
+
+```bash
+MSXBARE_FEAT_SCC=1 MSXBARE_BOOT_MODE_DEFAULT=FAST ./scripts/gen-build-header.sh build/config_build.h
+```
+
+### Observacoes
+
+- O `Makefile` executa esse script automaticamente no target `config-header` antes de compilar.
 
 ## 2) check-third-party-pristine.sh
 
@@ -73,6 +132,8 @@ ALLOW_DIRTY_THIRD_PARTY=1 ./scripts/check-third-party-pristine.sh
 
 Detecta o sistema operacional e prepara dependencias de build/toolchain, sempre checando a toolchain primeiro com `check-toolchain.sh`.
 
+Tambem valida e instala dependencias do `make menuconfig` (`bison`, `flex`, `pkg-config` e `ncurses`).
+
 - Linux: instala via APT.
 - macOS: instala via Homebrew.
 - Outros SOs: rejeita e orienta instalacao manual.
@@ -93,6 +154,7 @@ DRY_RUN=1 ./scripts/install-toolchains.sh
 
 - Em Linux, requer `apt-get` (e `sudo` quando nao for root).
 - Em macOS, requer `brew` no PATH.
+- Falha se o ambiente nao tiver as dependencias do `menuconfig` (incluindo `ncurses` via `pkg-config`).
 - Se faltar algo apos a validacao final, retorna erro.
 
 ## 4) check-toolchain.sh
@@ -109,7 +171,7 @@ Prefixo default (`aarch64-none-elf-`):
 ./scripts/check-toolchain.sh
 ```
 
-Auto-detect de prefixo da toolchain (`aarch64-none-elf-` e fallback `aarch64-elf-`):
+Auto-detect de prefixo da toolchain (`aarch64-none-elf-`, fallback `aarch64-elf-` e `aarch64-linux-gnu-`):
 
 ```bash
 CROSS=auto ./scripts/check-toolchain.sh
@@ -131,7 +193,7 @@ DRY_RUN=1 ./scripts/check-toolchain.sh
 
 - Verifica dependencias gerais (`make`, `git`, `zip`, `cpio`, `rsync`, `fzf`, `perl`).
 - Verifica dependencias por SO (`diskutil` e `brew` no macOS; `apt-get` no Linux).
-- Verifica toolchain para o prefixo escolhido (`gcc`, `ld`, `objcopy`).
+- Verifica toolchain para o prefixo escolhido (`gcc`, `g++`, `ld`, `objcopy`).
 
 ## 5) make-initramfs.sh
 
@@ -155,6 +217,9 @@ Exemplo:
 
 - Requer ao menos uma ROM (`*.ROM` ou `*.rom`) no diretorio de entrada.
 - Ordena arquivos para gerar CPIO reproduzivel.
+- Se `CONFIG_MSXBARE_ONE_ROM_MODE=y` em `.config`:
+  - com `CONFIG_MSXBARE_ONE_ROM_PATH` valido, injeta essa ROM como `CARTA.ROM` no CPIO;
+  - sem caminho selecionado, garante que `CARTA.ROM` nao exista no CPIO.
 
 ## 6) make-sdcard-package.sh
 
@@ -230,7 +295,7 @@ Comparar sessoes:
 
 ### Funcao
 
-Fluxo oficial para preparar o microSD: seleciona disco, formata FAT32 (MBR), copia kernel/config/cmdline/initramfs/firmware e ejeta com seguranca.
+Fluxo oficial para preparar o microSD: seleciona disco, verifica se ja existe payload minimo de boot no SD e pergunta se deve `UPDATE` (incremental) ou `FORMATAR` (ciclo completo). No modo formatacao, copia kernel/config/cmdline/initramfs/firmware e ejeta com seguranca.
 
 ### Como usar
 
@@ -272,6 +337,8 @@ DRY_RUN=1 OFFLINE_DRY_PACKAGE=1 NON_INTERACTIVE=1 AUTO_CONFIRM=1 ./scripts/prepa
 - Nao executar como root.
 - Requer `diskutil` e `fzf` no macOS.
 - Quando `DEBUG=1`, ajusta `disable_splash=0` no `config.txt` copiado.
+- Se o SD selecionado ja tiver estrutura minima de boot (`bootcode.bin`, `start.elf`, `fixup.dat`, `bcm2710-rpi-3-b.dtb`, `config.txt`, `kernel8.img`), o script oferece escolha entre `UPDATE` e `FORMATAR`.
+- Se `UPDATE` for escolhido, o script delega para `update-sd-incremental.sh` e encerra sem formatar.
 
 ## 9) update-sd-incremental.sh
 
@@ -300,6 +367,7 @@ VIDEO_MODE_PRESET=720 COPY_GAMES_TO_ROOT=1 ./scripts/update-sd-incremental.sh
 ### Variaveis principais
 
 - `TARGET_VOLUME` (default: `/Volumes/RPIBOOT`)
+- `SD_DEVICE` (ex.: `/dev/disk4`) para resolver automaticamente o volume montado a partir do disco selecionado
 - `KERNEL_IMG`, `CONFIG_TXT`, `CMDLINE_TXT`, `INITRAMFS_IMG`, `INITRAMFS_SRC_DIR`
 - `SETTINGS_CFG`, `FIRMWARE_DIR`
 - `DEBUG`, `VIDEO_MODE_PRESET`
@@ -309,4 +377,6 @@ VIDEO_MODE_PRESET=720 COPY_GAMES_TO_ROOT=1 ./scripts/update-sd-incremental.sh
 ### Observacoes
 
 - Nao formata o cartao.
+- Quando `SD_DEVICE` e informado (via `prepare-sd.sh` ou manualmente), o script tenta detectar/montar a particao e resolver `TARGET_VOLUME` automaticamente.
 - Se `make-initramfs.sh` estiver disponivel e `INITRAMFS_SRC_DIR` existir, regenera `msx.cpio` antes da copia.
+  - quando `CONFIG_MSXBARE_BOOT_SCREEN` estiver desligado (`[ ]`), remove `KANJI*.ROM`/`KANJIBASIC*.ROM` do pacote gerado.

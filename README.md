@@ -13,7 +13,7 @@ Projeto de emulacao de MSX em baremetal no Raspberry Pi 3B.
 
 ## Requisitos
 
-- Toolchain AArch64 no PATH (`aarch64-none-elf-*` ou `aarch64-elf-*`).
+- Toolchain AArch64 no PATH (`aarch64-none-elf-*`, `aarch64-elf-*` ou `aarch64-linux-gnu-*`).
 - Dependencias de scripts validadas por `scripts/check-toolchain.sh`.
 - Repositorios em `third_party/` presentes e integros.
 
@@ -54,6 +54,14 @@ Build com debug compilado (recomendado em desenvolvimento):
 make DEBUG=1
 ```
 
+Configurar features de build (frontend real do Linux Kconfig/mconf):
+
+```bash
+make menuconfig
+```
+
+Atalhos no menuconfig (interativo): os mesmos do menuconfig classico do Linux.
+
 Help de targets/flags:
 
 ```bash
@@ -67,6 +75,8 @@ Targets atualmente suportados pelo `Makefile`:
 - `sdcard-update`
 - `initramfs`
 - `package`
+- `menuconfig`
+- `syncconfig`
 - `clean`
 - `help`
 
@@ -74,6 +84,7 @@ Flags publicas principais:
 
 - `DEBUG=0|1`
 - `OWNER="<nome>"` (nomeia pacote em `make package`)
+- `MSXBARE_PATREON_TAG="<nome>"` (fallback para owner quando `OWNER` nao for informado)
 - `FIRMWARE_DIR=<dir>`
 - `EMULATOR_BACKEND=fmsx|bluemsx`
 - `CROSS=<prefixo>`
@@ -131,6 +142,18 @@ Com identificacao de owner:
 ```bash
 DEBUG=1 OWNER="BetaUser" FIRMWARE_DIR=./rpi-firmware make package
 ```
+
+Configurar e aplicar `.config` sem abrir UI:
+
+```bash
+make syncconfig
+```
+
+Arquivos gerados de configuracao:
+
+- `.config`
+- `.config.mk`
+- `build/config.mk`
 
 ## Benchmark e regressao
 

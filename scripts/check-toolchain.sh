@@ -66,7 +66,7 @@ check_toolchain_prefix() {
   local tool cmd
 
   echo "[INFO] Testando prefixo de toolchain: ${prefix}"
-  for tool in gcc ld objcopy; do
+  for tool in gcc g++ ld objcopy; do
     cmd="${prefix}${tool}"
     if [ "$DRY_RUN" = "1" ]; then
       if command -v "$cmd" >/dev/null 2>&1; then
@@ -102,6 +102,8 @@ if [ "$CROSS" = "auto" ]; then
   if check_toolchain_prefix "aarch64-none-elf-"; then
     :
   elif check_toolchain_prefix "aarch64-elf-"; then
+    :
+  elif check_toolchain_prefix "aarch64-linux-gnu-"; then
     :
   else
     MISSING=1
