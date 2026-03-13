@@ -1,1 +1,1 @@
--lncurses
+-lncursesw -ltinfo 

@@ -130,6 +130,8 @@ ALLOW_DIRTY_THIRD_PARTY=1 ./scripts/check-third-party-pristine.sh
 
 Detecta o sistema operacional e prepara dependencias de build/toolchain, sempre checando a toolchain primeiro com `check-toolchain.sh`.
 
+Tambem valida e instala dependencias do `make menuconfig` (`bison`, `flex`, `pkg-config` e `ncurses`).
+
 - Linux: instala via APT.
 - macOS: instala via Homebrew.
 - Outros SOs: rejeita e orienta instalacao manual.
@@ -150,6 +152,7 @@ DRY_RUN=1 ./scripts/install-toolchains.sh
 
 - Em Linux, requer `apt-get` (e `sudo` quando nao for root).
 - Em macOS, requer `brew` no PATH.
+- Falha se o ambiente nao tiver as dependencias do `menuconfig` (incluindo `ncurses` via `pkg-config`).
 - Se faltar algo apos a validacao final, retorna erro.
 
 ## 4) check-toolchain.sh
