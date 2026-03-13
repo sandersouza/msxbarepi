@@ -233,8 +233,6 @@ fi
 if [ "$INTERACTIVE_MODE" = "1" ]; then
   if [ -f "$MCONF_SAVED_MARKER" ]; then
     emit_make_config
-  else
-    echo "Saida sem salvar: mantendo .config/.config.mk/build/config.mk inalterados"
   fi
 else
   emit_make_config

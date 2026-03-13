@@ -285,7 +285,7 @@ Comparar sessoes:
 
 ### Funcao
 
-Fluxo oficial para preparar o microSD: seleciona disco, formata FAT32 (MBR), copia kernel/config/cmdline/initramfs/firmware e ejeta com seguranca.
+Fluxo oficial para preparar o microSD: seleciona disco, verifica se ja existe payload minimo de boot no SD e pergunta se deve `UPDATE` (incremental) ou `FORMATAR` (ciclo completo). No modo formatacao, copia kernel/config/cmdline/initramfs/firmware e ejeta com seguranca.
 
 ### Como usar
 
@@ -327,6 +327,8 @@ DRY_RUN=1 OFFLINE_DRY_PACKAGE=1 NON_INTERACTIVE=1 AUTO_CONFIRM=1 ./scripts/prepa
 - Nao executar como root.
 - Requer `diskutil` e `fzf` no macOS.
 - Quando `DEBUG=1`, ajusta `disable_splash=0` no `config.txt` copiado.
+- Se o SD selecionado ja tiver estrutura minima de boot (`bootcode.bin`, `start.elf`, `fixup.dat`, `bcm2710-rpi-3-b.dtb`, `config.txt`, `kernel8.img`), o script oferece escolha entre `UPDATE` e `FORMATAR`.
+- Se `UPDATE` for escolhido, o script delega para `update-sd-incremental.sh` e encerra sem formatar.
 
 ## 9) update-sd-incremental.sh
 
@@ -355,6 +357,7 @@ VIDEO_MODE_PRESET=720 COPY_GAMES_TO_ROOT=1 ./scripts/update-sd-incremental.sh
 ### Variaveis principais
 
 - `TARGET_VOLUME` (default: `/Volumes/RPIBOOT`)
+- `SD_DEVICE` (ex.: `/dev/disk4`) para resolver automaticamente o volume montado a partir do disco selecionado
 - `KERNEL_IMG`, `CONFIG_TXT`, `CMDLINE_TXT`, `INITRAMFS_IMG`, `INITRAMFS_SRC_DIR`
 - `SETTINGS_CFG`, `FIRMWARE_DIR`
 - `DEBUG`, `VIDEO_MODE_PRESET`
@@ -364,4 +367,5 @@ VIDEO_MODE_PRESET=720 COPY_GAMES_TO_ROOT=1 ./scripts/update-sd-incremental.sh
 ### Observacoes
 
 - Nao formata o cartao.
+- Quando `SD_DEVICE` e informado (via `prepare-sd.sh` ou manualmente), o script tenta detectar/montar a particao e resolver `TARGET_VOLUME` automaticamente.
 - Se `make-initramfs.sh` estiver disponivel e `INITRAMFS_SRC_DIR` existir, regenera `msx.cpio` antes da copia.

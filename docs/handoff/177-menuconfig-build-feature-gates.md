@@ -135,3 +135,49 @@ Resultado: build concluido com sucesso e artefato de issue gerado.
 ### Build de referencia desta iteracao
 - `BUILD_HASH:2759965-6d1851130d1091c8e6ee47d0c1ebc3895a72be45`
 - `INT_BUILD:CF1B`
+
+## Iteracao adicional - Circle incremental no `make`
+
+### Mudancas implementadas
+- `Makefile`
+  - `default` deixou de forcar rebuild/clean das libs do Circle a cada execucao;
+  - novo alvo `circle-libs` verifica se os artefatos essenciais do Circle existem e so compila quando faltar alguma lib;
+  - `circle-configure` agora so roda `./configure` quando `third_party/circle/Config.mk` ainda nao existe;
+  - novo alvo `circle` realiza rebuild forcado completo do Circle (configure + clean + build), ficando como caminho explicito para recompilar tudo.
+
+### Validacao executada
+- `make -n circle-libs`
+- `make -n default`
+- `make -n circle`
+- `make help`
+
+### Resultado
+- Fluxo confirmado: `make` usa Circle incremental (sem rebuild forcado quando libs estao presentes) e `make circle` faz rebuild completo sob demanda.
+
+## Iteracao adicional - `make sdcard` com escolha UPDATE/FORMAT
+
+### Mudancas implementadas
+- `scripts/prepare-sd.sh`
+  - apos selecionar o disco, agora inspeciona o conteudo atual do SD (particao montada) para detectar payload minimo de boot do RPi;
+  - criterio de payload minimo: `bootcode.bin`, `start.elf`, `fixup.dat`, `bcm2710-rpi-3-b.dtb`, `config.txt`, `kernel8.img`;
+  - quando payload minimo e detectado, exibe escolha:
+    - `UPDATE` (delegando para `scripts/update-sd-incremental.sh` e encerrando);
+    - `FORMATAR` (segue fluxo atual completo com formatacao, CAPTCHA e perguntas existentes);
+  - adicionadas funcoes auxiliares para descobrir volume montado a partir do disco selecionado.
+- `scripts/update-sd-incremental.sh`
+  - novo suporte a `SD_DEVICE` (ex.: `/dev/disk4`) para resolver automaticamente `TARGET_VOLUME` a partir do disco selecionado no fluxo pai;
+  - quando necessario, tenta `diskutil mountDisk` antes de resolver o volume.
+- `scripts/README.md`
+  - documentado o novo fluxo de decisao `UPDATE/FORMATAR` no `prepare-sd.sh`;
+  - documentado `SD_DEVICE` em `update-sd-incremental.sh`.
+
+### Validacao executada
+- `bash -n scripts/prepare-sd.sh scripts/update-sd-incremental.sh`
+- `DRY_RUN=1 OFFLINE_DRY_PACKAGE=1 NON_INTERACTIVE=1 AUTO_CONFIRM=1 ./scripts/prepare-sd.sh`
+- `TARGET_VOLUME="$(pwd)/artifacts/.dryrun-sdroot" ./scripts/update-sd-incremental.sh`
+
+### Resultado
+- Fluxo `make sdcard` pronto para:
+  - detectar SD ja bootavel e oferecer `UPDATE` vs `FORMATAR`;
+  - executar update incremental sem formatar quando selecionado;
+  - manter ciclo completo de formatacao inalterado quando selecionado.

@@ -9,6 +9,7 @@ fi
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VOLUME_NAME="${VOLUME_NAME:-RPIBOOT}"
 TARGET_VOLUME="${TARGET_VOLUME:-/Volumes/${VOLUME_NAME}}"
+SD_DEVICE="${SD_DEVICE:-}"
 KERNEL_IMG="${KERNEL_IMG:-${PROJECT_ROOT}/artifacts/kernel8-default.img}"
 CONFIG_TXT="${CONFIG_TXT:-${PROJECT_ROOT}/sdcard/config.txt}"
 CMDLINE_TXT="${CMDLINE_TXT:-${PROJECT_ROOT}/sdcard/cmdline.txt}"
@@ -22,12 +23,49 @@ DEBUG="${DEBUG:-0}"
 VIDEO_MODE_PRESET="${VIDEO_MODE_PRESET:-auto}"
 EJECT_AT_END="${EJECT_AT_END:-0}"
 
-if [ ! -d "$TARGET_VOLUME" ]; then
-  echo "[ERRO] Volume nao montado: ${TARGET_VOLUME}"
-  exit 1
+export COPYFILE_DISABLE=1
+
+discover_mounted_volume_for_disk() {
+  local disk="$1"
+  local part=""
+  local mount_point=""
+
+  while IFS= read -r part; do
+    [ -z "$part" ] && continue
+    mount_point="$(diskutil info -plist "/dev/${part}" 2>/dev/null | /usr/bin/plutil -extract MountPoint raw -o - - 2>/dev/null || true)"
+    if [ -n "$mount_point" ] && [ -d "$mount_point" ]; then
+      printf '%s' "$mount_point"
+      return 0
+    fi
+  done < <(diskutil list "$disk" 2>/dev/null | awk '/^[[:space:]]*[0-9]+:/{print $NF}' | sed '/^$/d')
+
+  return 1
+}
+
+if [ -n "$SD_DEVICE" ] && [ "${SD_DEVICE#/dev/}" = "$SD_DEVICE" ]; then
+  SD_DEVICE="/dev/${SD_DEVICE}"
 fi
 
-export COPYFILE_DISABLE=1
+if [ -n "$SD_DEVICE" ]; then
+  detected_volume="$(discover_mounted_volume_for_disk "$SD_DEVICE" || true)"
+  if [ -z "$detected_volume" ]; then
+    diskutil mountDisk "$SD_DEVICE" >/dev/null 2>&1 || true
+    sleep 1
+    detected_volume="$(discover_mounted_volume_for_disk "$SD_DEVICE" || true)"
+  fi
+  if [ -n "$detected_volume" ]; then
+    TARGET_VOLUME="$detected_volume"
+    echo "[INFO] SD_DEVICE detectado: ${SD_DEVICE} -> ${TARGET_VOLUME}"
+  fi
+fi
+
+if [ ! -d "$TARGET_VOLUME" ]; then
+  echo "[ERRO] Volume nao montado: ${TARGET_VOLUME}"
+  if [ -n "$SD_DEVICE" ]; then
+    echo "[ERRO] Nao foi possivel resolver volume montado para SD_DEVICE=${SD_DEVICE}."
+  fi
+  exit 1
+fi
 
 is_yes() {
   case "${1:-}" in
