@@ -63,6 +63,7 @@ CFLAGS += -DFMSX_BAREMETAL_CARTA_ONLY
 endif
 CFLAGS += -DSKIP_STDIO_REDEFINES
 CFLAGS += -I ./fmsx_compat -I ../third_party/fmsx -I ../third_party/fmsx/fMSX -I ../third_party/fmsx/EMULib -I ../third_party/fmsx/Z80
+CPPFLAGS += -I. -I./tools/locale -I./tools/debug -I./tools/menu -I./tools/file_browser -I./tools/render -I./tools/input -I./tools/media -I./tools
 
 ifeq ($(MSXBARE_SIZE_OPT),1)
 CFLAGS += -Os -ffunction-sections -fdata-sections
@@ -70,13 +71,13 @@ CXXFLAGS += -Os -ffunction-sections -fdata-sections
 LDFLAGS += --gc-sections
 endif
 
-OBJS = main.o kernel.o keyboard_input.o tools/usb_hid_keyboard.o gfx_textbox.o viewport_screenshot.o combo_menu.o combo_menu_items.o media_catalog.o combo_file_browser.o combo_debug_overlay.o
-OBJS += combo_locale.o combo_locale_pt.o combo_locale_en.o combo_locale_es.o
+OBJS = main.o kernel.o tools/input/keyboard_input.o tools/usb_hid_keyboard.o tools/render/gfx_textbox.o tools/render/viewport_screenshot.o tools/menu/combo_menu.o tools/menu/combo_menu_items.o tools/media/media_catalog.o tools/file_browser/combo_file_browser.o tools/debug/combo_debug_overlay.o
+OBJS += tools/locale/combo_locale.o tools/locale/combo_locale_pt.o tools/locale/combo_locale_en.o tools/locale/combo_locale_es.o
 OBJS += machine_profile_catalog.o
 OBJS += emulator_backend.o fmsx_backend_shim.o bluemsx_backend.o
 
 # Rules.mk clean handles current dir globs; include nested tool objects/deps.
-EXTRACLEAN += tools/*.o tools/*.d
+EXTRACLEAN += tools/*.o tools/*.d tools/*/*.o tools/*/*.d
 
 OBJS += fmsx_runtime.o fmsx_host_stubs.o fmsx_compat_stubs.o fmsx_libc_shim.o
 OBJS += fmsx_virtual_fs.o fmsx_initramfs.o
