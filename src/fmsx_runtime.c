@@ -46,14 +46,6 @@
 #define MSXBARE_FMSX_GAME_VIDEO_SKIP_FRAMES_MSX2P 0u
 #endif
 
-#ifndef MSXBARE_FMSX_NORM_BOOT_BOOST_FRAMES_MSX2
-#define MSXBARE_FMSX_NORM_BOOT_BOOST_FRAMES_MSX2 1200u
-#endif
-
-#ifndef MSXBARE_FMSX_NORM_BOOT_BOOST_FRAMES_MSX2P
-#define MSXBARE_FMSX_NORM_BOOT_BOOST_FRAMES_MSX2P 5000u
-#endif
-
 extern Z80 CPU;
 extern int ScanLine;
 extern uint8_t UPeriod;
@@ -281,18 +273,7 @@ static unsigned fmsx_runtime_boot_warmup_frames(void)
         /* FAST/GAME share the same model-dependent cutoff. */
         return fmsx_runtime_fast_cutoff_frames();
     }
-
-    /* NORM: keep a temporary turbo window on MSX2/MSX2+ BIOS boot/logo. */
-    switch (g_model_profile)
-    {
-    case FMSX_MODEL_PROFILE_MSX2:
-        return MSXBARE_FMSX_NORM_BOOT_BOOST_FRAMES_MSX2;
-    case FMSX_MODEL_PROFILE_MSX2P:
-        return MSXBARE_FMSX_NORM_BOOT_BOOST_FRAMES_MSX2P;
-    case FMSX_MODEL_PROFILE_MSX1:
-    default:
-        return 0u;
-    }
+    return 0u; /* NORM */
 }
 
 static unsigned fmsx_runtime_boot_video_gate_frames(boolean game_mode)
@@ -348,11 +329,7 @@ static unsigned fmsx_runtime_boot_forced_turbo_percent(void)
     {
         return 224u; /* MAX */
     }
-    if (g_model_profile == FMSX_MODEL_PROFILE_MSX2P)
-    {
-        return 224u; /* MAX (MSX2+ boot logo path) */
-    }
-    return 150u; /* PAN-like (MSX2) */
+    return 150u; /* PAN-like */
 }
 
 static unsigned fmsx_runtime_effective_refresh_hz(void)
