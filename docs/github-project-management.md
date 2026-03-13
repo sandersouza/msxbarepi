@@ -7,6 +7,7 @@ Data de referência desta versão: 5 de março de 2026.
 
 ## Integração MCP (GitHub)
 - Guia de implementação/configuração do MCP no Codex: [`docs/github-mcp-setup.md`](./github-mcp-setup.md)
+- Política operacional: usar **GitHub MCP como padrão** para gestão de Issues/PRs/Projects/Milestones; usar `gh` CLI somente como fallback quando o MCP não estiver funcional ou não suportar a operação.
 
 ## Regras operacionais
 - Descrições de milestones e issues devem ser claras, objetivas, conter checklist de progresso (sub-tasks).

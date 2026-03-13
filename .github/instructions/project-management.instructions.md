@@ -19,6 +19,11 @@ applyTo:
 - Seguir `docs/github-project-management.md` como referencia principal de processo.
 - Este arquivo define guardrails compactos; comandos detalhados/checklists operacionais ficam no documento de gestao.
 
+## Ferramentas GitHub
+
+- Preferir **GitHub MCP** para operacoes de gestao (issues, PRs, projeto, milestones) sempre que estiver disponivel/funcional.
+- Usar **`gh` CLI apenas como fallback** quando MCP estiver indisponivel, com erro de autenticacao/permissao, ou sem suporte para a operacao desejada.
+
 ## Branches
 
 - Branch de issue deve ser vinculada a issue de origem.
