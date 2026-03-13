@@ -17,4 +17,4 @@ sdcard/msx.cpio
 
 # Ignore macOS metadata files, which are not relevant to the project and can clutter the repository.
 .DS_Store
-.config
+.config*

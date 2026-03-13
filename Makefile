@@ -64,26 +64,23 @@ DEFAULT_ARTIFACT := artifacts/kernel8-default.img
 INITRAMFS_IN ?= roms/initramfs
 INITRAMFS_OUT ?= sdcard/msx.cpio
 THIRD_PARTY_GUARD := ./scripts/check-third-party-pristine.sh
+CIRCLE_REQUIRED_LIBS := \
+	third_party/circle/lib/libcircle.a \
+	third_party/circle/lib/sound/libsound.a \
+	third_party/circle/lib/sched/libsched.a \
+	third_party/circle/lib/usb/libusb.a \
+	third_party/circle/lib/input/libinput.a \
+	third_party/circle/lib/fs/libfs.a \
+	third_party/circle/addon/SDCard/libsdcard.a \
+	third_party/circle/addon/fatfs/libfatfs.a
 
-.PHONY: all default clean help guard-third-party circle-configure sdcard sdcard-update initramfs package menuconfig syncconfig config-header
+.PHONY: all default clean help guard-third-party circle-configure circle-configure-force circle-libs circle sdcard sdcard-update initramfs package menuconfig syncconfig config-header
 
 all: default
 
-default: config-header circle-configure
+default: config-header circle-libs
 	@mkdir -p artifacts
 	@mkdir -p artifacts build/src
-	$(MAKE) -C third_party/circle/lib clean >/dev/null
-	$(MAKE) -C third_party/circle/lib EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
-	$(MAKE) -C third_party/circle/lib/sound clean >/dev/null
-	$(MAKE) -C third_party/circle/lib/sound EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
-	$(MAKE) -C third_party/circle/lib/sched clean >/dev/null
-	$(MAKE) -C third_party/circle/lib/sched EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
-	$(MAKE) -C third_party/circle/lib/usb clean >/dev/null
-	$(MAKE) -C third_party/circle/lib/usb EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
-	$(MAKE) -C third_party/circle/lib/input clean >/dev/null
-	$(MAKE) -C third_party/circle/lib/input EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
-	$(MAKE) -C third_party/circle/lib/fs clean >/dev/null
-	$(MAKE) -C third_party/circle/lib/fs EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
 	$(MAKE) -C src clean >/dev/null
 	$(MAKE) -C src CHECK_DEPS=0 \
 		EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' \
@@ -127,7 +124,56 @@ guard-third-party:
 	bash $(THIRD_PARTY_GUARD)
 
 circle-configure: guard-third-party
+	@if [ -f third_party/circle/Config.mk ]; then \
+		echo "Circle already configured (third_party/circle/Config.mk encontrado)"; \
+	else \
+		cd third_party/circle && ./configure -r 3 -p $(CROSS) -f; \
+	fi
+
+circle-configure-force: guard-third-party
 	cd third_party/circle && ./configure -r 3 -p $(CROSS) -f
+
+circle-libs: circle-configure
+	@missing=0; \
+	for lib in $(CIRCLE_REQUIRED_LIBS); do \
+		if [ ! -f "$$lib" ]; then \
+			echo "Circle faltando: $$lib"; \
+			missing=1; \
+		fi; \
+	done; \
+	if [ "$$missing" -eq 0 ]; then \
+		echo "Circle OK: libs presentes (use 'make circle' para rebuild forcado)"; \
+	else \
+		echo "Gerando Circle (libs ausentes)..."; \
+		$(MAKE) -C third_party/circle/lib EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
+		$(MAKE) -C third_party/circle/lib/sound EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
+		$(MAKE) -C third_party/circle/lib/sched EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
+		$(MAKE) -C third_party/circle/lib/usb EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
+		$(MAKE) -C third_party/circle/lib/input EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
+		$(MAKE) -C third_party/circle/lib/fs EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
+		$(MAKE) -C third_party/circle/addon/SDCard EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
+		$(MAKE) -C third_party/circle/addon/fatfs EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
+	fi
+
+circle: circle-configure-force
+	@echo "Rebuild forcado do Circle..."
+	$(MAKE) -C third_party/circle/lib clean >/dev/null
+	$(MAKE) -C third_party/circle/lib/sound clean >/dev/null
+	$(MAKE) -C third_party/circle/lib/sched clean >/dev/null
+	$(MAKE) -C third_party/circle/lib/usb clean >/dev/null
+	$(MAKE) -C third_party/circle/lib/input clean >/dev/null
+	$(MAKE) -C third_party/circle/lib/fs clean >/dev/null
+	$(MAKE) -C third_party/circle/addon/SDCard clean >/dev/null
+	$(MAKE) -C third_party/circle/addon/fatfs clean >/dev/null
+	$(MAKE) -C third_party/circle/lib EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/lib/sound EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/lib/sched EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/lib/usb EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/lib/input EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/lib/fs EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/addon/SDCard EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/addon/fatfs EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	@echo "Circle rebuild concluido."
 
 menuconfig:
 	./scripts/menuconfig.sh
@@ -205,6 +251,7 @@ package: default initramfs
 
 help:
 	@echo "Targets: all (default), clean, sdcard, sdcard-update, initramfs, package, help"
+	@echo "Circle: default so gera se faltar algo; rebuild forcado apenas com 'make circle'"
 	@echo "clean: limpa build local, artifacts de kernel e objetos/libs em subdirs do Circle"
 	@echo "Configuracao: make menuconfig (gera .config + build/config.mk)"
 	@echo "Aplicar .config sem UI: make syncconfig"
