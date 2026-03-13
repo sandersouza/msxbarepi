@@ -480,3 +480,164 @@ Resultado: build concluido com sucesso e artefato de issue gerado.
 ### Build de referencia desta iteracao
 - `BUILD_HASH:d29ded2-d46958e09af5e776d46db617da4bee4c576a24c5`
 - `INT_BUILD:2BD8`
+
+## Iteracao adicional - Correção de regressão de audio no MSX2/MSX2+
+
+### Sintoma reportado
+- Sem audio no MSX2/MSX2+ em parte dos testes, com retorno espontaneo apos ~2 minutos.
+
+### Causa provavel identificada
+- Em `fmsx_runtime_step_frame()` (`src/fmsx_runtime.c`), a logica introduzida na #176 exigia troca de sequencia de video (`fmsx_video_get_latest`) para considerar o frame como concluido.
+- Em fases pesadas do BIOS do MSX2/MSX2+ (boot/logo com comandos VDP), esse criterio pode nao mudar a sequencia no mesmo passo, levando a abortos de ciclo sem contabilizar `frames_done`.
+- Com `frames_done==0`, `RenderAndPlayAudio()` nao era chamado naquele ciclo, causando starvation intermitente do ring de audio.
+
+### Mudanca implementada
+- `src/fmsx_runtime.c`
+  - removido o `break` no bloco `if (!frame_done)` dentro do loop de `fmsx_runtime_step_frame()`.
+  - mantido `last_error=2` para telemetria, mas permitindo que o passo siga e continue contabilizando frame para audio.
+
+### Validacao executada
+- `make -j8` (build limpa, sem erros).
+
+### Build de referencia desta iteracao
+- `BUILD_HASH:a42b59d-19a12cab7e910d8dedf168ae997e3539e0bf3fbf`
+- `INT_BUILD:AE0D`
+
+## Iteracao adicional - Audio atrasado no MSX2/MSX2+ (retorno em ~F:1200)
+
+### Sintoma confirmado
+- MSX2/MSX2+ iniciavam sem audio e o som aparecia somente apos ~1200 frames.
+
+### Causa raiz
+- `fmsx_runtime_step_frame()` so chamava `RenderAndPlayAudio()` quando `g_boot_warmup_frames_remaining == 0`.
+- Como o warmup em NORM para MSX2 e MSX2+ estava em `1200/5000` frames, o audio ficava silenciado durante essa janela.
+
+### Correcao aplicada
+- `src/fmsx_runtime.c`
+  - liberada geracao de audio desde o inicio (`frames_done > 0`).
+  - adicionado controle para warmup com burst (`steps > 1`): durante warmup, renderiza apenas 1 frame de audio por ciclo para evitar audio acelerado.
+
+### Validacao executada
+- `make -j8` concluido sem erros.
+
+### Build de referencia desta iteracao
+- `BUILD_HASH:a42b59d-c221583da7b29fe544698e9d167c036c69973c43`
+- `INT_BUILD:7C02`
+
+## Iteracao adicional - `Load ROM` usando reset identico ao menu `Reset`
+
+### Requisito
+- `Load ROM` deve resetar o emulador exatamente pelo mesmo fluxo do `Reset` do menu inicial.
+
+### Mudancas implementadas
+- `src/kernel.h`
+  - adicionada declaracao `PerformMenuHardReset(unsigned requested_diag, unsigned success_diag, unsigned fail_diag)`.
+- `src/kernel.cpp`
+  - implementado helper `PerformMenuHardReset()` com o fluxo unico:
+    - `PrimeAudioSilenceBeforeReset()`
+    - set de `boot_mode` + `machine_profile`
+    - `emulator_backend_reset()`
+    - em sucesso: `ResetEmulationRuntimeState()` + `ApplyRuntimeSettingsToFmsx()`.
+  - `ComboMenuActionReset` passou a usar esse helper.
+  - `Load ROM` (slots A/B) passou a usar esse helper sempre (removido caminho hot-swap por `fmsx_runtime_load_cartridge()`).
+
+### Validacao executada
+- `make -j8` concluido sem erros.
+
+### Build de referencia desta iteracao
+- `BUILD_HASH:a42b59d-dc80f20e42d3c70430d07b5df9761ffaf0602420`
+- `INT_BUILD:2893`
+
+## Iteracao adicional - GAME MSX2+ com frameskip ate F:000200
+
+### Mudanca implementada
+- `src/fmsx_runtime.c`
+  - ajustado `MSXBARE_FMSX_GAME_FAST_FORWARD_FRAMES_MSX2P` de `279` para `200`.
+
+### Objetivo
+- No modo `GAME` para `MSX2+`, limitar janela de frameskip/fast-forward ate `F:000200`.
+
+### Validacao executada
+- `make -j8` concluido sem erros.
+
+### Build de referencia desta iteracao
+- `BUILD_HASH:a42b59d-61000b5eb61b8392f3309ab035f2d5a62cd6f12f`
+- `INT_BUILD:FA31`
+
+## Iteracao adicional - Regressao no scroll fino V9958 (R#25/R#26/R#27)
+
+### Diagnostico
+- Identificada regressao em `src/fmsx_local/MSX.c`: a logica de ajuste de `R#2 bit5` (page select) para o modo de two-page horizontal scroll do V9958 havia sido removida em dois pontos:
+  - `SetScreen()`
+  - `VDPOut()` no caso `R=2`
+- Sem esse ajuste, em `MSX2+` com `R#25 bit0` (multipage) e `R#2 bit5` ativo, a base de tabela era deslocada incorretamente, quebrando o comportamento esperado do scroll fino ligado a `R#25/#26/#27`.
+
+### Correcao aplicada
+- Restaurada a logica `R2Base` com mascaramento condicional de `bit5` em modos bitmap relevantes:
+  - em `SetScreen()`
+  - em `VDPOut(R#2)`
+- Arquivo alterado: `src/fmsx_local/MSX.c`.
+
+### Validacao executada
+- `make -j8` concluido sem erros.
+
+### Build de referencia desta iteracao
+- `BUILD_HASH:a42b59d-021e4bfb8e66b61acf9c61a23da09114a0595d99`
+- `INT_BUILD:7E74`
+
+## Iteracao adicional - Restauracao do renderer com scroll fino V9958 (rollback de regressao em Common.h)
+
+### Diagnostico
+- A regressao principal do scroll fino nao estava apenas em `MSX.c`.
+- Em `src/fmsx_local/Common.h`, um commit posterior (`e972617`) removeu a implementacao de scroll fino/multipage (helpers `V9958*` e composicao por linha), voltando o renderer para uma versao simplificada sem esses caminhos.
+- Isso afetou diretamente o comportamento de `R#25/R#26/R#27` em modos graficos usados pelos testes.
+
+### Correcao aplicada
+- `src/fmsx_local/Common.h` restaurado para o estado do commit estavel `f61adf2` (ultimo ponto com implementacao de scroll fino V9958 ativa no renderer).
+- Mantida a correcao anterior em `src/fmsx_local/MSX.c` para mascaramento condicional de `R#2 bit5` no contexto multipage.
+
+### Validacao executada
+- `make -j8` concluido sem erros.
+
+### Build de referencia desta iteracao
+- `BUILD_HASH:a42b59d-4b20fa6a1de68fd3b93954df4bdc8fe40dbadd43`
+- `INT_BUILD:2E59`
+
+## Iteracao adicional - rollback de seguranca apos travamento no boot
+
+### Contexto
+- A build com restauracao completa de `Common.h` (estado `f61adf2`) apresentou travamento em hardware durante boot.
+
+### Acao
+- Revertido `src/fmsx_local/Common.h` para o estado atual de `HEAD` (anterior ao rollback massivo), preservando as outras alteracoes da branch.
+- Objetivo: recuperar baseline estavel de boot para continuar a correcao do scroll fino de forma incremental.
+
+### Validacao executada
+- `make -j8` concluido sem erros.
+
+### Build de referencia desta iteracao
+- `BUILD_HASH:a42b59d-f266ce24eee386e65bdb7815c2d1756cc23dcb3c`
+- `INT_BUILD:2158`
+
+## Iteracao adicional - migracao seletiva do core VDP da `origin/176` para `177`
+
+### Contexto
+- Foi confirmada divergencia entre `177` e `origin/176` nos arquivos do core VDP, com regressao de scroll fino no caminho atual da `177`.
+- Em vez de redefinir a branch (o que perderia o trabalho de `177`), foi feita migracao pontual somente dos arquivos de VDP.
+
+### Arquivos migrados da `origin/176-fix-msx2p-boot-screen-slow`
+- `src/fmsx_local/Common.h`
+- `src/fmsx_local/MSX.c`
+- `src/fmsx_local/V9938.c`
+- `src/fmsx_runtime.c`
+
+### Resultado
+- Preservado o restante da `177` (menuconfig/feature gates e demais alteracoes de infraestrutura).
+- Core VDP alinhado ao baseline remoto da `176`, para continuar estabilizacao e posterior merge `177 -> 176`.
+
+### Validacao executada
+- `make -j8` concluido sem erros.
+
+### Build de referencia desta iteracao
+- `BUILD_HASH:a42b59d-0e5783021aebe0c4ca997acea4b6b1d512a4b201`
+- `INT_BUILD:305A`

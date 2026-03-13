@@ -28,14 +28,15 @@ config MSXBARE_FEAT_MSX2
     bool "Suporte a MSX2"
     default y
 
-config MSXBARE_BOOT_SCREEN
-    bool "Boot Screen (sem KANJI/KANJIBASIC no initramfs)"
-    depends on MSXBARE_FEAT_MSX2P
-    default n
-
 config MSXBARE_FEAT_MSX2P
     bool "Suporte a MSX2+"
     default y
+
+if MSXBARE_FEAT_MSX2P
+config MSXBARE_BOOT_SCREEN
+    bool "Boot Screen"
+    default y
+endif
 
 config MSXBARE_ONE_ROM_MODE
     bool "One ROM Mode"

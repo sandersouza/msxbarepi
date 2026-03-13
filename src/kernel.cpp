@@ -1858,6 +1858,34 @@ void CComboKernel::PrimeAudioSilenceBeforeReset(void)
 	}
 }
 
+boolean CComboKernel::PerformMenuHardReset(unsigned requested_diag, unsigned success_diag, unsigned fail_diag)
+{
+#if !MSXBARE_ENABLE_FMSX
+	(void) requested_diag;
+	(void) success_diag;
+	(void) fail_diag;
+	return FALSE;
+#else
+	UpdateLoadDiagTelemetry(requested_diag);
+	PrimeAudioSilenceBeforeReset();
+	UpdateLoadDiagTelemetry(3510u); /* shared hard reset path */
+	fmsx_runtime_set_boot_mode(m_BootMode);
+	fmsx_runtime_set_model_profile(m_MachineProfile);
+	const boolean reset_ok = emulator_backend_reset();
+	if (reset_ok)
+	{
+		UpdateLoadDiagTelemetry(success_diag);
+		ResetEmulationRuntimeState();
+		ApplyRuntimeSettingsToFmsx();
+	}
+	else
+	{
+		UpdateLoadDiagTelemetry(fail_diag);
+	}
+	return reset_ok;
+#endif
+}
+
 void CComboKernel::GenerateSamples(s16 *buffer, unsigned frames)
 {
 	const s16 amplitude = 6000;
@@ -3482,35 +3510,16 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 					break;
 				}
 
-					PrimeAudioSilenceBeforeReset();
-					const unsigned active_boot_mode = fmsx_runtime_get_active_boot_mode();
-					const unsigned active_model_profile = fmsx_runtime_get_active_model_profile();
-					const boolean use_boot_profile_reset =
-						(m_BootMode != active_boot_mode || m_MachineProfile != active_model_profile) ? TRUE : FALSE;
-					UpdateLoadDiagTelemetry(use_boot_profile_reset ? 2010u : 2003u);
-					if (use_boot_profile_reset)
-					{
-						fmsx_runtime_set_boot_mode(m_BootMode);
-						fmsx_runtime_set_model_profile(m_MachineProfile);
-					}
-					const boolean load_ok = use_boot_profile_reset
-						? emulator_backend_reset()
-						: fmsx_runtime_load_cartridge(slot_index, rom_path);
+					const boolean load_ok = PerformMenuHardReset(2003u, 2004u, 9004u);
 					if (load_ok)
 					{
-						UpdateLoadDiagTelemetry(2004u); /* load cart ok */
-						fmsx_runtime_set_boot_mode(m_BootMode);
-						fmsx_runtime_set_model_profile(m_MachineProfile);
-						ResetEmulationRuntimeState();
-						ApplyRuntimeSettingsToFmsx();
 					CString line;
 					line.Format("Load ROM: SLOT%u <= %s", slot_index + 1u, rom_path);
 					m_Logger.Write(FromKernel, LogNotice, line);
 				}
 					else
 					{
-						UpdateLoadDiagTelemetry(9004u); /* load cart fail */
-						m_Logger.Write(FromKernel, LogWarning, use_boot_profile_reset ? "Load ROM falhou: hard reset/profile apply" : "Load ROM falhou: LoadCart");
+						m_Logger.Write(FromKernel, LogWarning, "Load ROM falhou: hard reset");
 					}
 			}
 		}
@@ -3606,22 +3615,13 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 	#if MSXBARE_ENABLE_FMSX
 		if (m_FmsxReady)
 		{
-			UpdateLoadDiagTelemetry(3501u); /* menu reset requested */
-			PrimeAudioSilenceBeforeReset();
-			UpdateLoadDiagTelemetry(3510u); /* menu reset hard path */
-			fmsx_runtime_set_boot_mode(m_BootMode);
-			fmsx_runtime_set_model_profile(m_MachineProfile);
-			const boolean reset_ok = emulator_backend_reset();
+			const boolean reset_ok = PerformMenuHardReset(3501u, 3502u, 9502u);
 			if (reset_ok)
 			{
-				UpdateLoadDiagTelemetry(3502u); /* menu reset ok */
-				ResetEmulationRuntimeState();
-				ApplyRuntimeSettingsToFmsx();
 				m_Logger.Write(FromKernel, LogNotice, "Menu: hard reset emulator");
 			}
 			else
 			{
-				UpdateLoadDiagTelemetry(9502u); /* menu reset failed */
 				m_Logger.Write(FromKernel, LogWarning, "Menu: hard reset failed");
 			}
 		}
