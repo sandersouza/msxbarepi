@@ -67,6 +67,8 @@ extern uint8_t FmsxRTCLastReg;
 extern uint8_t FmsxRTCLastMode;
 extern uint32_t FmsxIE1EventCount;
 extern uint32_t FmsxIE1AckCount;
+extern uint32_t FmsxIE1ArmedCount;
+extern uint32_t FmsxIE1FiredHBlankCount;
 extern uint32_t FmsxKanjiReadCount;
 extern uint32_t FmsxKanjiAddrWriteCount;
 extern uint32_t FmsxKanjiNullReadCount;
@@ -1341,6 +1343,8 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
     stats->mode_yae = ModeYAE ? 1u : 0u;
     stats->ie1_events = (unsigned) FmsxIE1EventCount;
     stats->ie1_acks = (unsigned) FmsxIE1AckCount;
+    stats->ie1_armed = (unsigned) FmsxIE1ArmedCount;
+    stats->ie1_fired_hblank = (unsigned) FmsxIE1FiredHBlankCount;
     stats->kanji_available = (Kanji != 0) ? 1u : 0u;
     stats->kanji_reads = (unsigned) FmsxKanjiReadCount;
     stats->kanji_addr_writes = (unsigned) FmsxKanjiAddrWriteCount;

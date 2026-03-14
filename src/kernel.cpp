@@ -931,14 +931,14 @@ CComboKernel::CComboKernel(void)
 void CComboKernel::NormalizeSettingsForBuild(void)
 {
 	/*
-	 * Default policy: if build does not define an explicit machine profile,
-	 * always boot as MSX1 and ignore persisted machine profile from SD config.
-	 * When a build-time profile is provided, still clamp to supported set.
+	 * If build defines an explicit machine profile, lock boot to that profile.
+	 * Otherwise preserve persisted/user-selected machine profile and only clamp
+	 * to profiles supported by the current build.
 	 */
 #ifdef MSXBARE_MACHINE_BOOT_PROFILE
 	m_MachineProfile = ClampMachineProfileForBuild((unsigned) MSXBARE_MACHINE_BOOT_PROFILE);
 #else
-	m_MachineProfile = ClampMachineProfileForBuild(FMSX_MODEL_PROFILE_MSX1);
+	m_MachineProfile = ClampMachineProfileForBuild(m_MachineProfile);
 #endif
 
 #if MSXBARE_ONE_ROM_MODE
@@ -2071,9 +2071,11 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 			timing_stats.hscroll512 ? 1u : 0u);
 		WriteScreenText(line);
 
-		line.Format("\x1b[97m\x1b[49m\x1b[14;1HTM4 I1:%03u/%03u KJ:%u KR:%03u KW:%03u R1:%02X R7:%02X SO:%u I0:%u S0:%u",
+		line.Format("\x1b[97m\x1b[49m\x1b[14;1HTM4 I1:%03u/%03u IA:%03u IH:%03u KJ:%u KR:%03u KW:%03u R1:%02X R7:%02X SO:%u I0:%u S0:%u",
 			timing_stats.ie1_events > 999u ? 999u : timing_stats.ie1_events,
 			timing_stats.ie1_acks > 999u ? 999u : timing_stats.ie1_acks,
+			timing_stats.ie1_armed > 999u ? 999u : timing_stats.ie1_armed,
+			timing_stats.ie1_fired_hblank > 999u ? 999u : timing_stats.ie1_fired_hblank,
 			timing_stats.kanji_available ? 1u : 0u,
 			timing_stats.kanji_reads > 999u ? 999u : timing_stats.kanji_reads,
 			timing_stats.kanji_addr_writes > 999u ? 999u : timing_stats.kanji_addr_writes,
@@ -2674,7 +2676,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 				}
 				else if (SettingsKeyEquals(line, key_len, "machine"))
 				{
-					m_MachineProfile = machine_profile_clamp(value);
+					m_MachineProfile = ClampMachineProfileForBuild(value);
 				}
 				else if (SettingsKeyEquals(line, key_len, "rammapper_kb"))
 				{

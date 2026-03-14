@@ -136,6 +136,8 @@ Diretriz visual (overlay e menu):
   - `S`: `HScroll512` bruto (bit `R25 bit0`).
 - `TM4`: diagnostico de progresso de boot MSX2+:
   - `I1:a/b`: `a`=eventos de coincidencia de linha (`IE1`) gerados, `b`=ack por leitura de `S#1`.
+  - `IA`: quantidade de vezes que o evento IE1 foi armado na fase ativa da linha.
+  - `IH`: quantidade de vezes que o IE1 armado foi efetivamente disparado na entrada do HBlank.
   - `KJ`: `1` quando `KANJI.ROM` esta carregada (`Kanji != NULL`).
   - `KR/KW`: leituras de `D9h` e escritas de endereco em `D8h/D9h`.
   - `R1`: valor atual do registrador VDP `R#1`.
