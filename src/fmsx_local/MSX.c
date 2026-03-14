@@ -176,6 +176,9 @@ uint8_t FmsxP1LastPS = 0xFF;          /* Last observed primary slot on page 1 */
 uint8_t FmsxP1LastSS = 0xFF;          /* Last observed secondary slot on page 1 */
 uint32_t FmsxIE1EventCount = 0;       /* Number of VDP line-coincidence events */
 uint32_t FmsxIE1AckCount = 0;         /* Number of S#1 reads that clear IE1 flag */
+uint32_t FmsxIE1ArmedCount = 0;       /* Number of times IE1 was armed on active line */
+uint32_t FmsxIE1FiredHBlankCount = 0; /* Number of armed IE1 events fired on HBlank */
+static uint8_t FmsxIE1PendingHBlank = 0;
 uint32_t FmsxKanjiReadCount = 0;      /* Reads from Kanji data port D9h */
 uint32_t FmsxKanjiAddrWriteCount = 0; /* Writes to Kanji address ports D8h/D9h */
 uint32_t FmsxKanjiNullReadCount = 0;  /* D9h reads while Kanji ROM pointer is null */
@@ -253,10 +256,27 @@ uint8_t VDPData;                      /* VDP data buffer        */
 uint8_t PLatch;                       /* Palette buffer         */
 uint8_t ALatch;                       /* Address buffer         */
 int  Palette[16];                  /* Current palette        */
-/* Approximate VDP I/O wait-state cost (in Z80 cycles per access). */
-static const int kVDPIOWaitCyclesData = 2;
-static const int kVDPIOWaitCyclesStatusBase = 2;
-static const int kVDPIOWaitCyclesStatusPollingExtra = 8;
+/*
+ * VDP I/O wait-state tuning (in Z80 cycles per access).
+ *
+ * Keep regular VDP accesses fast to avoid delaying raster IRQ handlers
+ * (e.g. split-scroll HUD updates in MSX2/2+ games), while preserving an
+ * explicit extra delay only for tight S#0 polling loops used by diagnostics
+ * such as MSXDIAG refresh-rate detection.
+ */
+static const int kVDPIOWaitCyclesData = 0;
+static const int kVDPIOWaitCyclesStatusBase = 0;
+static const int kVDPIOWaitCyclesStatusPollingExtra = 10;
+/* Apply extra delay only for tight polling loops (e.g. MSXDIAG). */
+static const uint8_t kVDPStatusPollingStreakThreshold = 4;
+
+/*
+ * Track S#0 polling loops to avoid penalizing normal gameplay/status reads.
+ * Games that do occasional status reads with DI should not pay diagnostic-only
+ * delays, while tight "IN A,(99h)" loops still get calibrated.
+ */
+static uint16_t g_vdp_status_poll_last_pc = 0xFFFFu;
+static uint8_t g_vdp_status_poll_streak = 0;
 
 static void fmsx_apply_vdp_io_wait(int cycles)
 {
@@ -268,26 +288,39 @@ static void fmsx_apply_vdp_io_wait(int cycles)
 static int fmsx_vdp_status_wait_cycles(void)
 {
   int cycles = kVDPIOWaitCyclesStatusBase;
+  const uint8_t status_reg = (uint8_t)(VDP[15] & 0x0Fu);
+
   /*
    * Apply extra delay for tight polling loops with interrupts disabled.
    * MSXDIAG refresh detection (50/60Hz) uses this exact pattern on all models.
-   * Keep this calibration model-agnostic to avoid regressions where MSX2/MSX2+
-   * get reported as 50Hz despite fixed NTSC runtime cadence.
    */
-  if(!(CPU.IFF&IFF_1) && ((VDP[15]&0x0Fu)==0u))
-    cycles += kVDPIOWaitCyclesStatusPollingExtra;
+  if(!(CPU.IFF&IFF_1) && (status_reg==0u))
+  {
+    const uint16_t pc = CPU.PC.W;
+    if(pc==g_vdp_status_poll_last_pc)
+    {
+      if(g_vdp_status_poll_streak<0xFFu) ++g_vdp_status_poll_streak;
+    }
+    else
+    {
+      g_vdp_status_poll_streak = 0;
+      g_vdp_status_poll_last_pc = pc;
+    }
+
+    if(g_vdp_status_poll_streak>=kVDPStatusPollingStreakThreshold)
+      cycles += kVDPIOWaitCyclesStatusPollingExtra;
+  }
+  else
+  {
+    g_vdp_status_poll_streak = 0;
+    g_vdp_status_poll_last_pc = 0xFFFFu;
+  }
+
   return cycles;
 }
 
 /* Forward declaration: used by BIOS shadow sync helpers before prototype block. */
 static uint8_t RAMMapperSubSlot(void);
-
-static void fmsx_force_ntsc_60_policy(void)
-{
-  Mode &= ~MSX_PAL;
-  VDP[9] &= (uint8_t)~0x02u;
-  if((RTCMode&0x03u)==2u) RTC[2][3] &= (uint8_t)~0x01u;
-}
 
 static void fmsx_sync_bios_vdp_r9_shadow(void)
 {
@@ -1356,7 +1389,6 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   memcpy(VDPStatus,VDPSInit,sizeof(VDPStatus));
   if(VIDEO(MSX_PAL)) VDP[9]|=0x02;
   else               VDP[9]&=~0x02;
-  fmsx_force_ntsc_60_policy();
   fmsx_sync_bios_vdp_r9_shadow();
   if(log_cb) log_cb(1,"ResetMSX: VDP reset\n");
 
@@ -1382,6 +1414,8 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   if(log_cb) log_cb(1,"ResetMSX: mouse reset ok\n");
 
   IRQPending=0x00;                      /* No IRQs pending  */
+  g_vdp_status_poll_last_pc = 0xFFFFu;
+  g_vdp_status_poll_streak = 0;
   SCCOn[0]=SCCOn[1]=0;                  /* SCCs off for now */
   SCCIMode[0]=SCCIMode[1]=0;            /* bankselect/SCC   */
   RTCReg=RTCMode=0;                     /* Clock registers  */
@@ -1395,6 +1429,9 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   FmsxP1LastSS = 0xFF;
   FmsxIE1EventCount = 0;
   FmsxIE1AckCount = 0;
+  FmsxIE1ArmedCount = 0;
+  FmsxIE1FiredHBlankCount = 0;
+  FmsxIE1PendingHBlank = 0;
   FmsxKanjiReadCount = 0;
   FmsxKanjiAddrWriteCount = 0;
   FmsxKanjiNullReadCount = 0;
@@ -1646,7 +1683,7 @@ case 0x99: /* VDP status registers */
   switch(VDP[15])
   {
     case 0: VDPStatus[0]&=0x5F;SetIRQ(~INT_IE0);break;
-    case 1: FmsxIE1AckCount++;VDPStatus[1]&=0xFE;SetIRQ(~INT_IE1);break;
+    case 1: FmsxIE1AckCount++;FmsxIE1PendingHBlank=0;VDPStatus[1]&=0xFE;SetIRQ(~INT_IE1);break;
     case 7: VDPStatus[7]=VDP[44]=VDPRead();break;
   }
   /* Return the status register value */
@@ -2570,14 +2607,7 @@ void VDPOut(uint8_t R,uint8_t V)
              break;
     case  6: V&=0x3F;SprGen=VRAM+((int)V<<11);break;
     case  7: FGColor=V>>4;BGColor=V&0x0F;break;
-    case  9:
-             /*
-              * Project policy: fixed NTSC 60Hz.
-              * Keep only 212/192 scanline control (bit7), force PAL bit (bit1) to 0.
-              */
-             V&=~0x02;
-             Mode&=~MSX_PAL;
-             break;
+    case  9: break;
     case 10: V&=0x07;
              ColTab=VRAM+((int)(VDP[3]&MSK[ScrMode].R3)<<6)+((int)V<<14);
              break;
@@ -2589,7 +2619,7 @@ void VDPOut(uint8_t R,uint8_t V)
     case 15: V&=0x0F;break;
     case 16: V&=0x0F;PKey=1;break;
     case 17: V&=0xBF;break;
-    case 19: VDPStatus[1]&=0xFE;SetIRQ(~INT_IE1);break;
+    case 19: FmsxIE1PendingHBlank=0;VDPStatus[1]&=0xFE;SetIRQ(~INT_IE1);break;
     case 25: VDP[25]=V;
              SetScreen();
              break;
@@ -2693,11 +2723,8 @@ uint16_t LoopZ80(Z80 *R)
   static int  UCount=0;
   static uint8_t ACount=0;
   static uint8_t Drawing=0;
-  /*
-   * Keep timing source aligned with machine mode policy.
-   * Do not derive frame cadence from VDP R#9 PAL bit at runtime.
-   */
-  const int pal_timing = VIDEO(MSX_PAL);
+  /* VDP R#9 bit1 controls PAL/NTSC timing on V9938/V9958. */
+  const int pal_timing = PALVideo ? 1 : 0;
   int J;
 
   if(!LoggedLoop)
@@ -2762,30 +2789,22 @@ uint16_t LoopZ80(Z80 *R)
     /* in PAL and 0..234/244 in NTSC        */
     J=pal_timing? 256:ScanLines212? 245:235;
 
-    /* When reaching end of screen, reset line coincidence */
+    /* When reaching end of active line coincidence window, clear IE1 state */
     if(ScanLine==J)
     {
+      FmsxIE1PendingHBlank=0;
       VDPStatus[1]&=0xFE;
       SetIRQ(~INT_IE1);
     }
 
-    /* When line coincidence is active... */
+    /* Arm line interrupt when the logical target line is reached */
     if(ScanLine<J)
     {
-      /* Line coincidence processing */
-      J=(((ScanLine+VScroll)&0xFF)-VDP[19])&0xFF;
-      if(J==2)
+      const uint8_t IE1TargetLine = (uint8_t)((VDP[19]-VScroll)&0xFF);
+      if(((uint8_t)ScanLine==IE1TargetLine)&&!FmsxIE1PendingHBlank)
       {
-        /* Set HBlank flag on line coincidence */
-        FmsxIE1EventCount++;
-        VDPStatus[1]|=0x01;
-        /* Generate IE1 interrupt */
-        if(VDP[0]&0x10) SetIRQ(INT_IE1);
-      }
-      else
-      {
-        /* Reset flag immediately if IE1 interrupt disabled */
-        if(!(VDP[0]&0x10)) VDPStatus[1]&=0xFE;
+        FmsxIE1PendingHBlank=1;
+        FmsxIE1ArmedCount++;
       }
     }
 
@@ -2797,6 +2816,16 @@ uint16_t LoopZ80(Z80 *R)
   /*********************************/
   /* We come here for HBlanks only */
   /*********************************/
+
+  /* Fire IE1 at end-of-line (HBlank entry) once armed in active phase */
+  if(FmsxIE1PendingHBlank)
+  {
+    FmsxIE1PendingHBlank=0;
+    FmsxIE1EventCount++;
+    FmsxIE1FiredHBlankCount++;
+    VDPStatus[1]|=0x01;
+    if(VDP[0]&0x10) SetIRQ(INT_IE1);
+  }
 
   /* HBlank takes HPeriod-HRefresh */
   R->IPeriod=fmsx_scale_cycles(!ScrMode||(ScrMode==MAXSCREEN+1)? CPU_H240:CPU_H256);
@@ -4253,9 +4282,6 @@ unsigned int LoadState(unsigned char *Buf,unsigned int MaxSize)
   IOReg      = State[J++];
   PSLReg     = State[J++];
   FMPACKey   = State[J++];
-
-  /* Enforce fixed NTSC policy after loading raw hardware state. */
-  fmsx_force_ntsc_60_policy();
 
   /* Memory setup */
   for(I=0;I<4;++I)

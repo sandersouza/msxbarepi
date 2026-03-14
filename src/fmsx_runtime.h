@@ -80,6 +80,8 @@ typedef struct {
     unsigned mode_yae;
     unsigned ie1_events;
     unsigned ie1_acks;
+    unsigned ie1_armed;
+    unsigned ie1_fired_hblank;
     unsigned kanji_available;
     unsigned kanji_reads;
     unsigned kanji_addr_writes;
