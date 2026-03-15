@@ -138,7 +138,15 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
 /*************************************************************/
 void RefreshLine6(uint8_t Y)
 {
-  uint8_t X,*T,*R,C;
+  uint8_t C,*T,*R,*T0,*T1;
+  int PIdx,Src;
+  unsigned Coarse;
+  unsigned Fine;
+  unsigned LeftMask;
+  unsigned VirtualWidth;
+  uint8_t BgRaw[1024];
+  uint8_t BgIndex;
+  uint8_t MaskBg;
   uint8_t ZBuf[304];
   uint16_t *P=RefreshBorder512(Y,XPal[BGColor&0x03]);
   if(!P) return;
@@ -151,18 +159,45 @@ void RefreshLine6(uint8_t Y)
     R=ZBuf+32;
     T=ChrTab+(((int)(Y+VScroll)<<7)&ChrTabM&0x7FFF);
     if (FlipEvenOdd && OddPage && VRAM<=T-0x8000) T-=0x8000;
+    Coarse = V9958CoarseScroll512();
+    Fine = V9958FineScroll512();
+    LeftMask = V9958MaskLeft512();
+    VirtualWidth = V9958VirtualWidth512();
 
-    for(X=0;X<64;X++)
+    T0=T;
+    for(PIdx=0;PIdx<128;PIdx++)
     {
-      C=R[0];P[0]=XPal[C? C:T[0]>>6];
-      C=R[0];P[1]=XPal[C? C:(T[0]>>4)&0x03];
-      C=R[1];P[2]=XPal[C? C:(T[0]>>2)&0x03];
-      C=R[1];P[3]=XPal[C? C:T[0]&0x03];
-      C=R[2];P[4]=XPal[C? C:T[1]>>6];
-      C=R[2];P[5]=XPal[C? C:(T[1]>>4)&0x03];
-      C=R[3];P[6]=XPal[C? C:(T[1]>>2)&0x03];
-      C=R[3];P[7]=XPal[C? C:T[1]&0x03];
-      R+=4;P+=8;T+=2;
+      BgRaw[(PIdx<<2)+0]=T0[PIdx]>>6;
+      BgRaw[(PIdx<<2)+1]=(T0[PIdx]>>4)&0x03;
+      BgRaw[(PIdx<<2)+2]=(T0[PIdx]>>2)&0x03;
+      BgRaw[(PIdx<<2)+3]=T0[PIdx]&0x03;
+    }
+
+    if(VirtualWidth>512u)
+    {
+      /* SCR6 next horizontal page is +0x8000 in fMSX VRAM layout. */
+      T1=V9958ScrollPagePtr(T0,0x8000);
+      for(PIdx=0;PIdx<128;PIdx++)
+      {
+        BgRaw[512+(PIdx<<2)+0]=T1[PIdx]>>6;
+        BgRaw[512+(PIdx<<2)+1]=(T1[PIdx]>>4)&0x03;
+        BgRaw[512+(PIdx<<2)+2]=(T1[PIdx]>>2)&0x03;
+        BgRaw[512+(PIdx<<2)+3]=T1[PIdx]&0x03;
+      }
+    }
+
+    MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];
+    for(PIdx=0;PIdx<512;PIdx++)
+    {
+      BgIndex=MaskBg;
+      if(PIdx>=(int)LeftMask)
+      {
+        Src=PIdx-(int)Fine+(int)Coarse;
+        BgIndex=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
+      }
+
+      C=R[PIdx>>1];
+      P[PIdx]=XPal[C? C:BgIndex];
     }
   }
 }
@@ -172,7 +207,15 @@ void RefreshLine6(uint8_t Y)
 /*************************************************************/
 void RefreshLine7(uint8_t Y)
 {
-  uint8_t C,X,*T,*R;
+  uint8_t C,*T,*R,*T0,*T1;
+  int PIdx,Src;
+  unsigned Coarse;
+  unsigned Fine;
+  unsigned LeftMask;
+  unsigned VirtualWidth;
+  uint8_t BgRaw[1024];
+  uint8_t BgIndex;
+  uint8_t MaskBg;
   uint8_t ZBuf[304];
   uint16_t *P=RefreshBorder512(Y,XPal[BGColor]);
   if(!P) return;
@@ -185,18 +228,41 @@ void RefreshLine7(uint8_t Y)
     R=ZBuf+32;
     T=ChrTab+(((int)(Y+VScroll)<<8)&ChrTabM&0xFFFF);
     if (FlipEvenOdd && OddPage && VRAM<=T-0x10000) T-=0x10000;
+    Coarse = V9958CoarseScroll512();
+    Fine = V9958FineScroll512();
+    LeftMask = V9958MaskLeft512();
+    VirtualWidth = V9958VirtualWidth512();
 
-    for(X=0;X<64;X++)
+    T0=T;
+    for(PIdx=0;PIdx<256;PIdx++)
     {
-      C=R[0];P[0]=XPal[C? C:T[0]>>4];
-      C=R[0];P[1]=XPal[C? C:T[0]&0x0F];
-      C=R[1];P[2]=XPal[C? C:T[1]>>4];
-      C=R[1];P[3]=XPal[C? C:T[1]&0x0F];
-      C=R[2];P[4]=XPal[C? C:T[2]>>4];
-      C=R[2];P[5]=XPal[C? C:T[2]&0x0F];
-      C=R[3];P[6]=XPal[C? C:T[3]>>4];
-      C=R[3];P[7]=XPal[C? C:T[3]&0x0F];
-      R+=4;P+=8;T+=4;
+      BgRaw[(PIdx<<1)+0]=T0[PIdx]>>4;
+      BgRaw[(PIdx<<1)+1]=T0[PIdx]&0x0F;
+    }
+
+    if(VirtualWidth>512u)
+    {
+      /* SCR7 next horizontal page is +0x10000 in fMSX VRAM layout. */
+      T1=V9958ScrollPagePtr(T0,0x10000);
+      for(PIdx=0;PIdx<256;PIdx++)
+      {
+        BgRaw[512+(PIdx<<1)+0]=T1[PIdx]>>4;
+        BgRaw[512+(PIdx<<1)+1]=T1[PIdx]&0x0F;
+      }
+    }
+
+    MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];
+    for(PIdx=0;PIdx<512;PIdx++)
+    {
+      BgIndex=MaskBg;
+      if(PIdx>=(int)LeftMask)
+      {
+        Src=PIdx-(int)Fine+(int)Coarse;
+        BgIndex=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
+      }
+
+      C=R[PIdx>>1];
+      P[PIdx]=XPal[C? C:BgIndex];
     }
   }
 }

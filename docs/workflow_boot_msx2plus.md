@@ -16,7 +16,7 @@ Este documento consolida:
 - Visual esperado (BlueMSX): composição por blocos com alternância de linhas/páginas (efeito odd/even + multipage), com scroll perceptível por ambos os lados.
 
 ## Fluxo da ROM/SUBROM (disassembly)
-Fonte: `docs/rom-disassembly/msx2plus/MSX2PEXT.ROM.dis`.
+Fonte: `docs/reverse-engineering/msx2plus/MSX2PEXT.ROM.dis`.
 
 ### Rotina de espera de comando VDP
 - Endereço `0x2BE4`:
