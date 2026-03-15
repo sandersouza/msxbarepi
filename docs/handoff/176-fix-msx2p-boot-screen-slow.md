@@ -228,3 +228,53 @@
   4. regressao completa (MSX1/MSX2/MSX2+).
 - Build/teste:
   - nao houve novo build nesta iteracao (foco exclusivo em analise e documentacao).
+
+## Iteracao atual (14/03/2026 16:11 BRT)
+- Solicitacao do usuario: analisar `scripts/annotate_bios.py` e aplicar anotacoes no disassembly `roms/temp/BIOS.dis`.
+- Ajustes realizados na rotina:
+  - suporte a arquivo de entrada/saida por argumento de linha de comando;
+  - ativacao dos comentarios inline ja definidos no mapa `INLINE_COMMENTS`;
+  - filtro adicional para enderecos ambiguos da tabela inicial de `jp`, evitando rotulos enganosos;
+  - guarda contra reprocessar arquivo ja anotado, exigindo regenerar o disassembly bruto antes de nova passada.
+- Fluxo executado:
+  - `z80dasm roms/temp/EXPERT11.ROM > roms/temp/BIOS.dis`
+  - `python3 scripts/annotate_bios.py roms/temp/BIOS.dis -o roms/temp/BIOS.dis`
+- Resultado:
+  - `roms/temp/BIOS.dis` agora contem cabecalho contextual, secoes, comentarios inline em vetores RST e rotulos em rotinas consideradas seguras pelo mapa atual.
+  - `CONTEXT.md` foi realinhado para apontar ao handoff correto desta branch.
+
+## Iteracao atual (14/03/2026 16:22 BRT)
+- Solicitacao do usuario: investigar regressao em DSK onde discos `360K` leem normalmente, mas discos `720K` listam com `FILES` e falham ao ler arquivos.
+- Verificacao de causa:
+  - o caminho de selecao de face em `src/fmsx_local/MSX.c` foi comparado com o upstream e permaneceu equivalente;
+  - a hipotese de erro basico de `single/double side` ficou enfraquecida porque o `FILES` em discos `720K` ja exige acesso ao root directory atravessando setores na segunda face;
+  - o ponto mais provavel passou a ser o watchdog artificial do WD1793, que envelhecia transferencias apenas por polling de `READY`, produzindo falso `LOSTDATA` em baremetal.
+- Correcao aplicada:
+  - `src/fmsx_upstream_wd1793.c` passou a incluir uma copia local do controlador em vez do `.c` direto de `third_party`;
+  - novo arquivo `src/fmsx_local_wd1793.c` criado a partir do upstream para manter `third_party` pristino;
+  - em `Read1793(WD1793_READY)`, removido o timeout baseado em contagem de polls no porto `READY`; o latch `IRQ/DRQ` continua exposto normalmente.
+- Justificativa tecnica:
+  - BlueMSX sincroniza o WD2793 por tempo de sistema, nao por contagem de polls em porta;
+  - no host baremetal atual, o loop de polling do DiskROM pode ser mais apertado que a heuristica original do fMSX, causando `Disk I/O error` sem falha real de geometria.
+- Validacao local:
+  - `make guard-third-party` (OK)
+  - `make -j4 DEBUG=1` em `src/` (OK)
+- Build local:
+  - artefato validado: `src/kernel8.img`
+  - BUILD_HASH: `08a6413-4070906ff89f1fb02cb3249cfb5234a5351d2785`
+
+## Iteracao atual (14/03/2026 16:40 BRT)
+- Solicitacao do usuario: adicionar suporte Linux ao fluxo oficial `make sdcard` / `scripts/prepare-sd.sh`, antes restrito a `diskutil` no macOS.
+- Ajustes aplicados:
+  - novo helper compartilhado `scripts/sdcard-common.sh` com abstracoes por plataforma para detectar SO, descobrir volume montado, montar/desmontar, formatar e ejetar disco;
+  - `scripts/prepare-sd.sh` adaptado para:
+    - continuar usando `diskutil`/`plutil` no macOS;
+    - detectar discos elegiveis no Linux via `lsblk`;
+    - montar no Linux via `udisksctl` quando disponivel;
+    - formatar no Linux via `parted` + `mkfs.vfat`;
+    - preservar o fluxo `UPDATE` vs `FORMATAR` e o modo `DRY_RUN`;
+  - `scripts/update-sd-incremental.sh` adaptado para resolver `SD_DEVICE` e ejeção em macOS/Linux pelo mesmo helper;
+  - `README.md` e `scripts/README.md` atualizados com a nova matriz de dependencias.
+- Validacao local:
+  - pendente teste funcional com dispositivo real em Linux/macOS;
+  - validacao sintatica e dry-run executadas localmente nesta iteracao.

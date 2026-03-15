@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+. "${PROJECT_ROOT}/scripts/sdcard-common.sh"
+
 if [ "${EUID:-$(id -u)}" -eq 0 ]; then
   echo "[ERRO] Este script nao pode ser executado como root."
   exit 1
 fi
 
-PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VOLUME_NAME="${VOLUME_NAME:-RPIBOOT}"
-TARGET_VOLUME="${TARGET_VOLUME:-/Volumes/${VOLUME_NAME}}"
+TARGET_VOLUME="${TARGET_VOLUME:-$(sdcard_default_target_volume "$VOLUME_NAME")}"
 SD_DEVICE="${SD_DEVICE:-}"
 KERNEL_IMG="${KERNEL_IMG:-${PROJECT_ROOT}/artifacts/kernel8-default.img}"
 CONFIG_TXT="${CONFIG_TXT:-${PROJECT_ROOT}/sdcard/config.txt}"
@@ -24,34 +26,17 @@ VIDEO_MODE_PRESET="${VIDEO_MODE_PRESET:-auto}"
 EJECT_AT_END="${EJECT_AT_END:-0}"
 
 export COPYFILE_DISABLE=1
-
-discover_mounted_volume_for_disk() {
-  local disk="$1"
-  local part=""
-  local mount_point=""
-
-  while IFS= read -r part; do
-    [ -z "$part" ] && continue
-    mount_point="$(diskutil info -plist "/dev/${part}" 2>/dev/null | /usr/bin/plutil -extract MountPoint raw -o - - 2>/dev/null || true)"
-    if [ -n "$mount_point" ] && [ -d "$mount_point" ]; then
-      printf '%s' "$mount_point"
-      return 0
-    fi
-  done < <(diskutil list "$disk" 2>/dev/null | awk '/^[[:space:]]*[0-9]+:/{print $NF}' | sed '/^$/d')
-
-  return 1
-}
+sdcard_require_prepare_deps
 
 if [ -n "$SD_DEVICE" ] && [ "${SD_DEVICE#/dev/}" = "$SD_DEVICE" ]; then
   SD_DEVICE="/dev/${SD_DEVICE}"
 fi
 
 if [ -n "$SD_DEVICE" ]; then
-  detected_volume="$(discover_mounted_volume_for_disk "$SD_DEVICE" || true)"
+  detected_volume="$(sdcard_discover_mounted_volume_for_disk "$SD_DEVICE" || true)"
   if [ -z "$detected_volume" ]; then
-    diskutil mountDisk "$SD_DEVICE" >/dev/null 2>&1 || true
-    sleep 1
-    detected_volume="$(discover_mounted_volume_for_disk "$SD_DEVICE" || true)"
+    sdcard_mount_disk_if_needed "$SD_DEVICE"
+    detected_volume="$(sdcard_discover_mounted_volume_for_disk "$SD_DEVICE" || true)"
   fi
   if [ -n "$detected_volume" ]; then
     TARGET_VOLUME="$detected_volume"
@@ -249,15 +234,19 @@ sync
 sleep 1
 
 if is_yes "$EJECT_AT_END"; then
-  if command -v diskutil >/dev/null 2>&1; then
+  if [ -n "$SD_DEVICE" ]; then
+    sdcard_safe_eject_disk "$SD_DEVICE"
+    echo "[OK] SD atualizado e ejetado: ${SD_DEVICE}"
+  elif sdcard_is_macos && command -v diskutil >/dev/null 2>&1; then
     disk_id="$(diskutil info -plist "$TARGET_VOLUME" 2>/dev/null | plutil -extract ParentWholeDisk raw -o - - 2>/dev/null || true)"
     if [ -n "$disk_id" ]; then
-      diskutil unmountDisk "/dev/${disk_id}" >/dev/null 2>&1 || true
-      diskutil eject "/dev/${disk_id}" >/dev/null 2>&1 || true
+      sdcard_safe_eject_disk "/dev/${disk_id}"
       echo "[OK] SD atualizado e ejetado: /dev/${disk_id}"
     else
       echo "[WARN] Nao foi possivel determinar ParentWholeDisk para ejetar."
     fi
+  else
+    echo "[WARN] EJECT_AT_END=1 sem SD_DEVICE; ejecao automatica indisponivel."
   fi
 else
   echo "[OK] SD atualizado incrementalmente em ${TARGET_VOLUME}"

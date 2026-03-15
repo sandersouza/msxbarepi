@@ -107,6 +107,8 @@ Dry-run (sem persistencia em disco):
 
 ```bash
 DRY_RUN=1 ./scripts/prepare-sd.sh
+
+No macOS, o fluxo usa `diskutil`. No Linux, usa `lsblk` para deteccao e `parted` + `mkfs.vfat` + `udisksctl` para formatacao/montagem.
 ```
 
 Atualizacao incremental sem formatar SD:

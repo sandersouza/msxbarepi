@@ -19,7 +19,7 @@ Este diretorio concentra utilitarios operacionais de build, validacao de ambient
 ## Pre-requisitos gerais
 
 - Shell Bash.
-- Ambiente macOS para scripts que usam `diskutil`.
+- Para preparo de SD: macOS com `diskutil`/`plutil`, ou Linux com `lsblk` e, quando houver formatacao automatica, `parted` + `mkfs.vfat` + `udisksctl`.
 - Toolchain AArch64 instalada para build (`aarch64-none-elf-*`, `aarch64-elf-*` ou `aarch64-linux-gnu-*`).
 - Repositorios em `third_party` presentes e integro quando aplicavel.
 
@@ -335,7 +335,9 @@ DRY_RUN=1 OFFLINE_DRY_PACKAGE=1 NON_INTERACTIVE=1 AUTO_CONFIRM=1 ./scripts/prepa
 ### Observacoes
 
 - Nao executar como root.
-- Requer `diskutil` e `fzf` no macOS.
+- Requer `fzf` apenas no modo interativo.
+- No macOS, usa `diskutil` e `plutil`.
+- No Linux, usa `lsblk` para deteccao; para formatar, usa `parted` + `mkfs.vfat`; para montagem/ejecao automatica, prefere `udisksctl`.
 - Quando `DEBUG=1`, ajusta `disable_splash=0` no `config.txt` copiado.
 - Se o SD selecionado ja tiver estrutura minima de boot (`bootcode.bin`, `start.elf`, `fixup.dat`, `bcm2710-rpi-3-b.dtb`, `config.txt`, `kernel8.img`), o script oferece escolha entre `UPDATE` e `FORMATAR`.
 - Se `UPDATE` for escolhido, o script delega para `update-sd-incremental.sh` e encerra sem formatar.
@@ -356,6 +358,12 @@ Com volume custom e ejeção ao final:
 
 ```bash
 TARGET_VOLUME=/Volumes/RPIBOOT EJECT_AT_END=1 ./scripts/update-sd-incremental.sh
+```
+
+Com dispositivo explicito no Linux/macOS:
+
+```bash
+SD_DEVICE=/dev/sdb EJECT_AT_END=1 ./scripts/update-sd-incremental.sh
 ```
 
 Com ajuste de video e jogos:
