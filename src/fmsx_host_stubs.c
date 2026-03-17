@@ -28,7 +28,11 @@ static unsigned g_frame_number = 0;
 #define HiResMode           (InterlaceON && g_hires_mode != HIRES_OFF)
 #define InterlacedMode      (g_hires_mode == HIRES_INTERLACED)
 #define OverscanMode        (g_overscan)
-#define OddPage             (g_frame_number & 1u)
+/*
+ * V9958 odd/even page display follows S#2 bit1, not the host frame counter.
+ * BlueMSX/openMSX interpret EO as active when bit1=0 and R#9 bit2 is set.
+ */
+#define OddPage             (FlipEvenOdd ? ((VDPStatus[2] & 0x02u) ? 0u : 1u) : 0u)
 
 static uint16_t g_image_buffer[(WIDTH << 1) * (HEIGHT << 1)];
 static unsigned g_image_buffer_width = WIDTH;

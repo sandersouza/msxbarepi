@@ -22,6 +22,9 @@ static void  ClearLine(uint16_t *P,uint16_t C);
 static uint16_t YJKColor(int Y,int J,int K);
 
 extern void PutImage(void);
+extern uint8_t FmsxVDPScreenOnLatched;
+
+#define FMSX_SCREEN_ON (FmsxVDPScreenOnLatched)
 
 /* V9958 horizontal scroll helpers:
  * R26 = coarse scroll blocks
@@ -88,6 +91,61 @@ INLINE uint8_t *V9958ScrollPagePtr(uint8_t *Base,int Offset)
   Pos%=Size;
   if(Pos<0) Pos+=Size;
   return VRAM+Pos;
+}
+
+INLINE unsigned V9958InterleavedPlaneOffset(void)
+{
+  return (VRAMPages>=8) ? 0x10000u : 0u;
+}
+
+INLINE uint8_t *V9958BitmapLinePtr(uint8_t *Base,uint8_t Y)
+{
+  int Size;
+  int BasePos;
+  int LinePos;
+  int Pos;
+
+  BasePos=(int)(Base-VRAM);
+  LinePos=(((int)(Y+VScroll)<<7)&ChrTabM&0x7FFF);
+  Pos=(BasePos&~0x7FFF)|LinePos;
+
+  /* fMSX flips even/odd display pages by subtracting 0x8000 on bitmap pages. */
+  if(FlipEvenOdd && OddPage && (Pos&0x8000)) Pos-=0x8000;
+
+  Size=VRAMPages<<14;
+  if(Size>0)
+  {
+    Pos%=Size;
+    if(Pos<0) Pos+=Size;
+  }
+
+  return VRAM+Pos;
+}
+
+INLINE void V9958ExpandInterleaved256ToPalette(uint16_t *Dst,uint8_t *EvenBase)
+{
+  uint8_t *OddBase;
+  int I;
+
+  OddBase=V9958ScrollPagePtr(EvenBase,(int)V9958InterleavedPlaneOffset());
+  for(I=0;I<128;++I)
+  {
+    Dst[(I<<1)+0]=BPal[EvenBase[I]];
+    Dst[(I<<1)+1]=BPal[OddBase[I]];
+  }
+}
+
+INLINE void V9958ExpandInterleaved256ToBytes(uint8_t *Dst,uint8_t *EvenBase)
+{
+  uint8_t *OddBase;
+  int I;
+
+  OddBase=V9958ScrollPagePtr(EvenBase,(int)V9958InterleavedPlaneOffset());
+  for(I=0;I<128;++I)
+  {
+    Dst[(I<<1)+0]=EvenBase[I];
+    Dst[(I<<1)+1]=OddBase[I];
+  }
 }
 
 INLINE void V9958ComposeScrolledLine256(
@@ -601,7 +659,7 @@ void RefreshLine0(uint8_t Y)
   uint16_t *P=RefreshBorder(Y,BC);
   if(!P) return;
 
-  if(!ScreenON) ClearLine(P,BC);
+  if(!FMSX_SCREEN_ON) ClearLine(P,BC);
   else
   {
     LastScanline = Y + FirstLine;
@@ -636,7 +694,7 @@ void RefreshLine1(uint8_t Y)
   if(!P)
      return;
 
-  if(!ScreenON)
+  if(!FMSX_SCREEN_ON)
      ClearLine(P,XPal[BGColor]);
   else
   {
@@ -681,7 +739,7 @@ void RefreshLine2(uint8_t Y)
   uint16_t *P=RefreshBorder(Y,XPal[BGColor]);
   if(!P) return;
 
-  if(!ScreenON) ClearLine(P,XPal[BGColor]);
+  if(!FMSX_SCREEN_ON) ClearLine(P,XPal[BGColor]);
   else
   {
     LastScanline = Y + FirstLine;
@@ -760,7 +818,7 @@ void RefreshLine3(uint8_t Y)
   uint16_t *P=RefreshBorder(Y,XPal[BGColor]);
   if(!P) return;
 
-  if(!ScreenON) ClearLine(P,XPal[BGColor]);
+  if(!FMSX_SCREEN_ON) ClearLine(P,XPal[BGColor]);
   else
   {
     LastScanline = Y + FirstLine;
@@ -801,7 +859,7 @@ void RefreshLine4(uint8_t Y)
   uint16_t *P=RefreshBorder(Y,XPal[BGColor]);
   if(!P) return;
 
-  if(!ScreenON) ClearLine(P,XPal[BGColor]);
+  if(!FMSX_SCREEN_ON) ClearLine(P,XPal[BGColor]);
   else
   {
     LastScanline = Y + FirstLine;
@@ -896,7 +954,7 @@ void RefreshLine5(uint8_t Y)
   uint16_t *P=RefreshBorder(Y,XPal[BGColor]);
   if(!P) return;
 
-  if(!ScreenON) ClearLine(P,XPal[BGColor]);
+  if(!FMSX_SCREEN_ON) ClearLine(P,XPal[BGColor]);
   else
   {
     LastScanline = Y + FirstLine;
@@ -904,8 +962,7 @@ void RefreshLine5(uint8_t Y)
     R=ZBuf+32;
     R0=R;
     P0=P;
-    T=ChrTab+(((int)(Y+VScroll)<<7)&ChrTabM&0x7FFF);
-    if (FlipEvenOdd && OddPage && VRAM<=T-0x8000) T-=0x8000;
+    T=V9958BitmapLinePtr(ChrTab,Y);
     Coarse = V9958CoarseScroll256();
     Fine = V9958FineScroll256();
     LeftMask = V9958MaskLeft256();
@@ -999,7 +1056,7 @@ void RefreshLine8(uint8_t Y)
   uint16_t *P=RefreshBorder(Y,BPal[VDP[7]]);
   if(!P) return;
 
-  if(!ScreenON) ClearLine(P,BPal[VDP[7]]);
+  if(!FMSX_SCREEN_ON) ClearLine(P,BPal[VDP[7]]);
   else
   {
     LastScanline = Y + FirstLine;
@@ -1008,21 +1065,25 @@ void RefreshLine8(uint8_t Y)
     R0=R;
     S0=R;
     P0=P;
-    T=ChrTab+(((int)(Y+VScroll)<<8)&ChrTabM&0xFFFF);
-    if (FlipEvenOdd && OddPage && VRAM<=T-0x10000) T-=0x10000;
+    /*
+     * SCREEN 8 stores adjacent pixels in alternating 64KB planes on V9938/V9958.
+     * Follow BlueMSX/openMSX layout here: 128 bytes per line per plane, page bit in
+     * +0x8000, odd/even pixel plane in +0x10000.
+     */
+    T=V9958BitmapLinePtr(ChrTab,Y);
     Coarse = V9958CoarseScroll256();
     Fine = V9958FineScroll256();
     LeftMask = V9958MaskLeft256();
     VirtualWidth = V9958VirtualWidth256();
 
     T0=T;
-    for(PIdx=0;PIdx<256;PIdx++) BgRaw[PIdx]=BPal[T0[PIdx]];
+    V9958ExpandInterleaved256ToPalette(BgRaw,T0);
 
     if(VirtualWidth>256u)
     {
-      /* SCR8 (256x212x256) next horizontal page is +0x10000 in fMSX VRAM layout. */
-      T1=V9958ScrollPagePtr(T0,0x10000);
-      for(PIdx=0;PIdx<256;PIdx++) BgRaw[256+PIdx]=BPal[T1[PIdx]];
+      /* SCREEN 8 horizontal multipage toggles bit15 inside each interleaved plane. */
+      T1=V9958ScrollPagePtr(T0,0x8000);
+      V9958ExpandInterleaved256ToPalette(BgRaw+256,T1);
     }
 
     /* Match left mask color to current scrolled backdrop pixel. */
@@ -1064,7 +1125,7 @@ void RefreshLine10(uint8_t Y)
   uint16_t *P=RefreshBorder(Y,BPal[VDP[7]]);
   if(!P) return;
 
-  if(!ScreenON) ClearLine(P,BPal[VDP[7]]);
+  if(!FMSX_SCREEN_ON) ClearLine(P,BPal[VDP[7]]);
   else
   {
     LastScanline = Y + FirstLine;
@@ -1072,21 +1133,20 @@ void RefreshLine10(uint8_t Y)
     R=ZBuf+32;
     R0=R;
     P0=P;
-    T=ChrTab+(((int)(Y+VScroll)<<8)&ChrTabM&0xFFFF);
-    if (FlipEvenOdd && OddPage && VRAM<=T-0x10000) T-=0x10000;
+    T=V9958BitmapLinePtr(ChrTab,Y);
     Coarse = V9958CoarseScroll256();
     Fine = V9958FineScroll256();
     LeftMask = V9958MaskLeft256();
     VirtualWidth = V9958VirtualWidth256();
 
     T0=T;
-    for(PIdx=0;PIdx<256;PIdx++) BgRaw[PIdx]=T0[PIdx];
+    V9958ExpandInterleaved256ToBytes(BgRaw,T0);
 
     if(VirtualWidth>256u)
     {
-      /* SCR10/11 (256x212 YJK) next horizontal page is +0x10000. */
-      T1=V9958ScrollPagePtr(T0,0x10000);
-      for(PIdx=0;PIdx<256;PIdx++) BgRaw[256+PIdx]=T1[PIdx];
+      /* YJK/YAE 256px modes share the same interleaved VRAM layout as SCREEN 8. */
+      T1=V9958ScrollPagePtr(T0,0x8000);
+      V9958ExpandInterleaved256ToBytes(BgRaw+256,T1);
     }
 
     /* Match left mask color to current scrolled backdrop pixel. */
@@ -1144,7 +1204,7 @@ void RefreshLine12(uint8_t Y)
   uint16_t *P=RefreshBorder(Y,BPal[VDP[7]]);
   if(!P) return;
 
-  if(!ScreenON) ClearLine(P,BPal[VDP[7]]);
+  if(!FMSX_SCREEN_ON) ClearLine(P,BPal[VDP[7]]);
   else
   {
     LastScanline = Y + FirstLine;
@@ -1152,22 +1212,19 @@ void RefreshLine12(uint8_t Y)
     R = ZBuf+32;
     R0=R;
     P0=P;
-    T = ChrTab
-      + (((int)(Y+VScroll)<<8)&ChrTabM&0xFFFF);
-    if (FlipEvenOdd && OddPage && VRAM<=T-0x10000) T-=0x10000;
+    T=V9958BitmapLinePtr(ChrTab,Y);
     Coarse = V9958CoarseScroll256();
     Fine = V9958FineScroll256();
     LeftMask = V9958MaskLeft256();
     VirtualWidth = V9958VirtualWidth256();
 
     T0=T;
-    for(PIdx=0;PIdx<256;PIdx++) BgRaw[PIdx]=T0[PIdx];
+    V9958ExpandInterleaved256ToBytes(BgRaw,T0);
 
     if(VirtualWidth>256u)
     {
-      /* SCR12 (256x212 YJK) next horizontal page is +0x10000. */
-      T1=V9958ScrollPagePtr(T0,0x10000);
-      for(PIdx=0;PIdx<256;PIdx++) BgRaw[256+PIdx]=T1[PIdx];
+      T1=V9958ScrollPagePtr(T0,0x8000);
+      V9958ExpandInterleaved256ToBytes(BgRaw+256,T1);
     }
 
     /* Match left mask color to current scrolled backdrop pixel. */
@@ -1223,7 +1280,7 @@ void RefreshLine6(uint8_t Y)
   uint16_t *P=RefreshBorder(Y,XPal[BGColor&0x03]);
   if(!P) return;
 
-  if(!ScreenON) ClearLine(P,XPal[BGColor&0x03]);
+  if(!FMSX_SCREEN_ON) ClearLine(P,XPal[BGColor&0x03]);
   else
   {
     LastScanline = Y + FirstLine;
@@ -1231,8 +1288,7 @@ void RefreshLine6(uint8_t Y)
     R=ZBuf+32;
     R0=R;
     P0=P;
-    T=ChrTab+(((int)(Y+VScroll)<<7)&ChrTabM&0x7FFF);
-    if (FlipEvenOdd && OddPage && VRAM<=T-0x8000) T-=0x8000;
+    T=V9958BitmapLinePtr(ChrTab,Y);
     Coarse = V9958CoarseScroll512();
     Fine = V9958FineScroll512();
     LeftMask = V9958MaskLeft512();
@@ -1281,7 +1337,7 @@ void RefreshLine6(uint8_t Y)
 /*************************************************************/
 void RefreshLine7(uint8_t Y)
 {
-  uint8_t C,*T,*R,*T0,*T1;
+  uint8_t C,*T,*R,*T0,*T1,*Plane0,*Plane1;
   unsigned X;
   int I,Src;
   unsigned Coarse;
@@ -1297,7 +1353,7 @@ void RefreshLine7(uint8_t Y)
   uint16_t *P=RefreshBorder(Y,XPal[BGColor]);
   if(!P) return;
 
-  if(!ScreenON) ClearLine(P,XPal[BGColor]);
+  if(!FMSX_SCREEN_ON) ClearLine(P,XPal[BGColor]);
   else
   {
     LastScanline = Y + FirstLine;
@@ -1305,27 +1361,34 @@ void RefreshLine7(uint8_t Y)
     R=ZBuf+32;
     R0=R;
     P0=P;
-    T=ChrTab+(((int)(Y+VScroll)<<8)&ChrTabM&0xFFFF);
-    if (FlipEvenOdd && OddPage && VRAM<=T-0x10000) T-=0x10000;
+    T=V9958BitmapLinePtr(ChrTab,Y);
     Coarse = V9958CoarseScroll512();
     Fine = V9958FineScroll512();
     LeftMask = V9958MaskLeft512();
     VirtualWidth = V9958VirtualWidth512();
 
     T0=T;
-    for(X=0,T=T0;X<256;X++,T++)
+    Plane0=T0;
+    Plane1=V9958ScrollPagePtr(T0,(int)V9958InterleavedPlaneOffset());
+    for(X=0;X<128;X++)
     {
-      BgRaw[(X<<1)+0]=XPal[T[0]>>4];
-      BgRaw[(X<<1)+1]=XPal[T[0]&0x0F];
+      BgRaw[(X<<2)+0]=XPal[Plane0[X]>>4];
+      BgRaw[(X<<2)+1]=XPal[Plane0[X]&0x0F];
+      BgRaw[(X<<2)+2]=XPal[Plane1[X]>>4];
+      BgRaw[(X<<2)+3]=XPal[Plane1[X]&0x0F];
     }
 
     if(VirtualWidth>512u)
     {
-      T1=V9958ScrollPagePtr(T0,0x10000);
-      for(X=0,T=T1;X<256;X++,T++)
+      T1=V9958ScrollPagePtr(T0,0x8000);
+      Plane0=T1;
+      Plane1=V9958ScrollPagePtr(T1,(int)V9958InterleavedPlaneOffset());
+      for(X=0;X<128;X++)
       {
-        BgRaw[512+(X<<1)+0]=XPal[T[0]>>4];
-        BgRaw[512+(X<<1)+1]=XPal[T[0]&0x0F];
+        BgRaw[512+(X<<2)+0]=XPal[Plane0[X]>>4];
+        BgRaw[512+(X<<2)+1]=XPal[Plane0[X]&0x0F];
+        BgRaw[512+(X<<2)+2]=XPal[Plane1[X]>>4];
+        BgRaw[512+(X<<2)+3]=XPal[Plane1[X]&0x0F];
       }
     }
 
@@ -1356,7 +1419,7 @@ void RefreshLineTx80(uint8_t Y)
   uint16_t *P=RefreshBorder(Y,BC);
   if(!P) return;
 
-  if(!ScreenON) ClearLine(P,BC);
+  if(!FMSX_SCREEN_ON) ClearLine(P,BC);
   else
   {
     LastScanline = Y + FirstLine;

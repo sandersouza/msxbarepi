@@ -1,4 +1,5 @@
 #include "fmsx_carts_sha_fallback.h"
+#include "fmsx_mapper_ext.h"
 
 #include <string.h>
 
@@ -33,6 +34,7 @@ static int local_hex_sha1_equals_ignore_case(const char *a, const char *b)
 }
 
 static const TFmsxCartShaEntry kFmsxCartShaFallback[] = {
+    {"00a81872d548a7278b8901608bf12e8f79009bee", MAP_MANBOW2},
     {"7ba4725a6c0f11f009ed2a333f9951f22cc5b4c7", 3},
     {"0733cd627467a866846e15caf1770a5594eaf4cc", 4},
     {"da397e783d677d1a78fff222d9d6cb48b915dada", 4},

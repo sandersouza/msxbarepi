@@ -1925,6 +1925,45 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 	TFmsxAudioStats audio_stats = { 0, 0, 0, 0, 0 };
 	TFmsxKeyboardDebug kbd_stats = { 0, 0 };
 	TFmsxTimingDebug timing_stats = { 0 };
+	auto trace_event_tag = [](unsigned event_type) -> const char *
+	{
+		switch (event_type)
+		{
+		case FMSX_VDP_EVENT_IE0_FIRE:  return "I0";
+		case FMSX_VDP_EVENT_IE1_ARM:   return "I1A";
+		case FMSX_VDP_EVENT_IE1_FIRE:  return "I1F";
+		case FMSX_VDP_EVENT_R19_WRITE: return "R19";
+		case FMSX_VDP_EVENT_R23_WRITE: return "R23";
+		case FMSX_VDP_EVENT_S1_READ:   return "S1";
+		case FMSX_VDP_EVENT_S2_READ:   return "S2";
+		case FMSX_VDP_EVENT_CMD_START: return "CS";
+		case FMSX_VDP_EVENT_CMD_END:   return "CE";
+		default:                       return "--";
+		}
+	};
+	auto trace_window_tag = [](unsigned window) -> const char *
+	{
+		switch (window)
+		{
+		case FMSX_VDP_TRACE_TITLE:       return "TI";
+		case FMSX_VDP_TRACE_SAVE_SELECT: return "SV";
+		case FMSX_VDP_TRACE_STARDATE:    return "SD";
+		default:                         return "--";
+		}
+	};
+	auto flash_op_tag = [](unsigned op) -> const char *
+	{
+		switch (op)
+		{
+		case 1u: return "RD";
+		case 2u: return "RS";
+		case 3u: return "AS";
+		case 4u: return "PG";
+		case 5u: return "ER";
+		case 6u: return "CM";
+		default: return "--";
+		}
+	};
 	unsigned load_diag = 0u;
 	unsigned active_boot_mode = 0u;
 	unsigned active_model_profile = 0u;
@@ -2041,7 +2080,7 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		timing_stats.turbo_percent > 999u ? 999u : timing_stats.turbo_percent);
 	WriteScreenText(line);
 
-		line.Format("\x1b[97m\x1b[49m\x1b[12;1HTM2 SM:%02u R2:%02X R25:%02X R26:%02X R27:%02X HS:%03u MP:%u DP:%u I1:%u F1:%u",
+		line.Format("\x1b[97m\x1b[49m\x1b[12;1HTM2 SM:%02u R2:%02X R25:%02X R26:%02X R27:%02X HS:%03u MP:%u DP:%u EP:%u I1:%u F1:%u",
 			timing_stats.scr_mode > 99u ? 99u : timing_stats.scr_mode,
 			timing_stats.reg2 & 0xFFu,
 			timing_stats.reg25 & 0xFFu,
@@ -2050,6 +2089,7 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 			timing_stats.hscroll > 999u ? 999u : timing_stats.hscroll,
 			timing_stats.multipage_enabled ? 1u : 0u,
 			timing_stats.display_page > 3u ? 3u : timing_stats.display_page,
+			timing_stats.render_page > 3u ? 3u : timing_stats.render_page,
 			timing_stats.ie1_enabled ? 1u : 0u,
 			timing_stats.ie1_flag ? 1u : 0u);
 		WriteScreenText(line);
@@ -2071,7 +2111,7 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 			timing_stats.hscroll512 ? 1u : 0u);
 		WriteScreenText(line);
 
-		line.Format("\x1b[97m\x1b[49m\x1b[14;1HTM4 I1:%03u/%03u IA:%03u IH:%03u KJ:%u KR:%03u KW:%03u R1:%02X R7:%02X SO:%u I0:%u S0:%u",
+		line.Format("\x1b[97m\x1b[49m\x1b[14;1HTM4 I1:%03u/%03u IA:%03u IH:%03u KJ:%u KR:%03u KW:%03u R1:%02X R7:%02X SO:%u",
 			timing_stats.ie1_events > 999u ? 999u : timing_stats.ie1_events,
 			timing_stats.ie1_acks > 999u ? 999u : timing_stats.ie1_acks,
 			timing_stats.ie1_armed > 999u ? 999u : timing_stats.ie1_armed,
@@ -2081,12 +2121,22 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 			timing_stats.kanji_addr_writes > 999u ? 999u : timing_stats.kanji_addr_writes,
 			timing_stats.reg1 & 0xFFu,
 			timing_stats.reg7 & 0xFFu,
-			timing_stats.screen_on ? 1u : 0u,
-			timing_stats.ie0_enabled ? 1u : 0u,
-			timing_stats.vblank_flag ? 1u : 0u);
+			timing_stats.screen_on ? 1u : 0u);
 		WriteScreenText(line);
 
-		line.Format("\x1b[97m\x1b[49m\x1b[15;1HTM5 FD ST:%02X TR:%02X SC:%02X DR:%u SD:%u IQ:%02X WT:%03u",
+		line.Format("\x1b[97m\x1b[49m\x1b[15;1HTM4B I0:%u S0:%u HR:%u VR:%u LP:%u TL:%03u TD:%+04d EO:%u RP:%u",
+			timing_stats.ie0_enabled ? 1u : 0u,
+			timing_stats.vblank_flag ? 1u : 0u,
+			timing_stats.status2_hr ? 1u : 0u,
+			timing_stats.status2_vr ? 1u : 0u,
+			timing_stats.line_phase > 9u ? 9u : timing_stats.line_phase,
+			timing_stats.ie1_target_line > 999u ? 999u : timing_stats.ie1_target_line,
+			timing_stats.ie1_target_delta,
+			timing_stats.effective_odd_page ? 1u : 0u,
+			timing_stats.render_page > 9u ? 9u : timing_stats.render_page);
+		WriteScreenText(line);
+
+		line.Format("\x1b[97m\x1b[49m\x1b[16;1HTM5 FD ST:%02X TR:%02X SC:%02X DR:%u SD:%u IQ:%02X WT:%03u",
 			timing_stats.fdc_status & 0xFFu,
 			timing_stats.fdc_track_reg & 0xFFu,
 			timing_stats.fdc_sector_reg & 0xFFu,
@@ -2094,6 +2144,47 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 			timing_stats.fdc_side > 9u ? 9u : timing_stats.fdc_side,
 			timing_stats.fdc_irq & 0xFFu,
 			timing_stats.fdc_wait > 999u ? 999u : timing_stats.fdc_wait);
+		WriteScreenText(line);
+
+		line.Format("\x1b[97m\x1b[49m\x1b[17;1HTM6A W9:%04u W15:%04u W18:%04u W19:%04u W25:%04u W26:%04u W27:%04u",
+			timing_stats.vdp_r9_writes > 9999u ? 9999u : timing_stats.vdp_r9_writes,
+			timing_stats.vdp_r15_writes > 9999u ? 9999u : timing_stats.vdp_r15_writes,
+			timing_stats.vdp_r18_writes > 9999u ? 9999u : timing_stats.vdp_r18_writes,
+			timing_stats.vdp_r19_writes > 9999u ? 9999u : timing_stats.vdp_r19_writes,
+			timing_stats.vdp_r25_writes > 9999u ? 9999u : timing_stats.vdp_r25_writes,
+			timing_stats.vdp_r26_writes > 9999u ? 9999u : timing_stats.vdp_r26_writes,
+			timing_stats.vdp_r27_writes > 9999u ? 9999u : timing_stats.vdp_r27_writes);
+		WriteScreenText(line);
+
+		line.Format("\x1b[97m\x1b[49m\x1b[18;1HTM6B EV:%s W:%s PC:%04X SL:%03u LP:%u B:%03u/%03u R1:%02X R23:%02X S2:%02X",
+			trace_event_tag(timing_stats.trace_last_event_type),
+			trace_window_tag(timing_stats.trace_last_window),
+			timing_stats.trace_last_pc & 0xFFFFu,
+			timing_stats.trace_last_scanline > 999u ? 999u : timing_stats.trace_last_scanline,
+			timing_stats.trace_last_line_phase > 9u ? 9u : timing_stats.trace_last_line_phase,
+			timing_stats.trace_last_bank_p1_lo > 999u ? 999u : timing_stats.trace_last_bank_p1_lo,
+			timing_stats.trace_last_bank_p2_lo > 999u ? 999u : timing_stats.trace_last_bank_p2_lo,
+			timing_stats.trace_last_reg1 & 0xFFu,
+			timing_stats.trace_last_reg23 & 0xFFu,
+			timing_stats.trace_last_status2 & 0xFFu);
+		WriteScreenText(line);
+
+		line.Format("\x1b[97m\x1b[49m\x1b[19;1HTM6C A8:%02X EW:%u C:%u T:%02X B:%02X/%02X/%02X/%02X F:%s S:%u M:%u A:%04X O:%05X V:%02X/%02X",
+			timing_stats.slot_reg & 0xFFu,
+			timing_stats.p1_write_enabled ? 1u : 0u,
+			timing_stats.cart_slot_p1 & 0xFFu,
+			timing_stats.cart_type_p1 & 0xFFu,
+			timing_stats.cart_bank_p1_lo & 0xFFu,
+			timing_stats.cart_bank_p1_hi & 0xFFu,
+			timing_stats.cart_bank_p2_lo & 0xFFu,
+			timing_stats.cart_bank_p2_hi & 0xFFu,
+			flash_op_tag(timing_stats.flash_last_op),
+			timing_stats.flash_last_state > 9u ? 9u : timing_stats.flash_last_state,
+			timing_stats.flash_last_mode > 9u ? 9u : timing_stats.flash_last_mode,
+			timing_stats.flash_last_addr & 0xFFFFu,
+			timing_stats.flash_last_offset > 0xFFFFFu ? 0xFFFFFu : timing_stats.flash_last_offset,
+			timing_stats.flash_last_value & 0xFFu,
+			timing_stats.flash_last_read_value & 0xFFu);
 		WriteScreenText(line);
 
 	WriteScreenText("\x1b[0m");
@@ -4101,6 +4192,9 @@ void CComboKernel::ClearDebugOverlay(void)
 	WriteScreenText("\x1b[14;1H                                                                                                                               ");
 	WriteScreenText("\x1b[15;1H                                                                                                                               ");
 	WriteScreenText("\x1b[16;1H                                                                                                                               ");
+	WriteScreenText("\x1b[17;1H                                                                                                                               ");
+	WriteScreenText("\x1b[18;1H                                                                                                                               ");
+	WriteScreenText("\x1b[19;1H                                                                                                                               ");
 	WriteScreenText("\x1b[0m");
 }
 

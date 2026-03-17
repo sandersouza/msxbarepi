@@ -30,14 +30,15 @@
 #include <string.h>
 
 extern retro_log_printf_t log_cb;
+extern void fmsx_vdp_trace_command_transition(uint8_t active);
 
 /*************************************************************/
 /** Other useful defines                                    **/
 /*************************************************************/
 #define VDP_VRMP5(X, Y) (VRAM + ((Y&1023)<<7) + ((X&255)>>1))
 #define VDP_VRMP6(X, Y) (VRAM + ((Y&1023)<<7) + ((X&511)>>2))
-#define VDP_VRMP7(X, Y) (VRAM + ((Y&511)<<8) + ((X&511)>>1))
-#define VDP_VRMP8(X, Y) (VRAM + ((Y&511)<<8) + (X&255))
+#define VDP_VRMP7(X, Y) (VRAM + ((Y&511)<<7) + (((X&511)>>2) + ((X&2)<<15)))
+#define VDP_VRMP8(X, Y) (VRAM + ((Y&511)<<7) + (((X&255)>>1) + ((X&1)<<16)))
 
 #define VDP_VRMP(M, X, Y) VDPVRMP(M, X, Y)
 #define VDP_POINT(M, X, Y) VDPpoint(M, X, Y)
@@ -166,6 +167,17 @@ static int  PPB[4]  = { 2,4,2,1 };
 static int  PPL[4]  = { 256,512,512,256 };
 static int  VdpOpsCnt=1;
 static void (*VdpEngine)(void)=0;
+static uint8_t VdpTraceCE = 0;
+
+INLINE void VdpTraceSyncCE(void)
+{
+  const uint8_t ce = (VDPStatus[2]&0x01u)? 1u:0u;
+  if(ce!=VdpTraceCE)
+  {
+    VdpTraceCE = ce;
+    fmsx_vdp_trace_command_transition(ce);
+  }
+}
 
 /* Command budget per LoopVDP() call.
  * MSX2+ BIOS logo relies heavily on VDP block commands and stalls if the
@@ -185,9 +197,11 @@ INLINE int VdpCommandScreenMode(void)
 {
   /*
    * V9958 command-enable (R#25 bit6) allows commands outside SCR5..8.
-   * Mirror BlueMSX behavior by mapping those cases to the SCR7 command map.
+   * Mirror BlueMSX: SCR9..12 use the SCR8 command map, while modes outside
+   * SCR5..12 only keep commands enabled when R#25 bit6 is set.
    */
   if((ScrMode>=5)&&(ScrMode<=8)) return ScrMode-5;
+  if((ScrMode>8)&&(ScrMode<=12)) return 3;
   if(MODEL(MSX_MSX2P) && (VDP[25]&0x40u)) return 2;
   return -1;
 }
@@ -858,6 +872,7 @@ void VDPWrite(uint8_t V)
   VDPStatus[2]&=0x7F;
   VDPStatus[7]=VDP[44]=V;
   if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
+  VdpTraceSyncCE();
 }
 
 /** VDPRead() ************************************************/
@@ -867,6 +882,7 @@ uint8_t VDPRead(void)
 {
   VDPStatus[2]&=0x7F;
   if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
+  VdpTraceSyncCE();
   return(VDP[44]);
 }
 
@@ -889,6 +905,7 @@ uint8_t VDPDraw(uint8_t Op)
     case CM_ABRT:
       VDPStatus[2]&=0xFE;
       VdpEngine=0;  
+      VdpTraceSyncCE();
       return 1;
     case CM_POINT:
       VDPStatus[2]&=0xFE;
@@ -896,6 +913,7 @@ uint8_t VDPDraw(uint8_t Op)
       VDPStatus[7]=VDP[44]=
                    VDP_POINT(SM, VDP[32]+((int)VDP[33]<<8),
                                  VDP[34]+((int)VDP[35]<<8));
+      VdpTraceSyncCE();
       return 1;
     case CM_PSET:
       VDPStatus[2]&=0xFE;
@@ -905,6 +923,7 @@ uint8_t VDPDraw(uint8_t Op)
                VDP[38]+((int)VDP[39]<<8),
                VDP[44],
                Op&0x0F);
+      VdpTraceSyncCE();
       return 1;
     case CM_SRCH:
       VdpEngine=SrchEngine;
@@ -982,6 +1001,7 @@ uint8_t VDPDraw(uint8_t Op)
 
   /* Start execution if we still have time slices */
   if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
+  VdpTraceSyncCE();
 
   /* Operation successfull initiated */
   return(1);
@@ -1004,4 +1024,5 @@ void LoopVDP(void)
     VdpOpsCnt=quantum;
     if(VdpEngine) VdpEngine();
   }
+  VdpTraceSyncCE();
 }

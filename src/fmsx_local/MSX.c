@@ -14,11 +14,15 @@
 /*************************************************************/
 
 #include "MSX.h"
+#include "../fmsx_runtime.h"
 #include "Sound.h"
 #include "Floppy.h"
 #include "SHA1.h"
 #include "MCF.h"
 #include "../fmsx_carts_sha_fallback.h"
+#include "../fmsx_mapper_ext.h"
+
+#define FMSX_LOCAL_MAXMAPPERS (MAP_MANBOW2_2 + 1)
 
 #include <string.h>
 #include <stdlib.h>
@@ -39,6 +43,16 @@ extern int g_fmsx_fmpac_enabled;
 extern unsigned g_fmsx_megaram_kb;
 /* 0=line192 (legacy), 1=post-VBlank, 2=full-frame boundary */
 int g_fmsx_quit_after_vblank = 1;
+
+#ifndef MSXBARE_ENABLE_DEBUG_OVERLAY
+#define MSXBARE_ENABLE_DEBUG_OVERLAY 0
+#endif
+
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+#define FMSX_VDP_TRACE_ENABLED 1
+#else
+#define FMSX_VDP_TRACE_ENABLED 0
+#endif
 
 #define RGB2INT(R,G,B)    ((B)|((int)(G)<<8)|((int)(R)<<16))
 
@@ -158,6 +172,8 @@ const char *ROMName[MAXCARTS] = { "CARTA.ROM","CARTB.ROM" };
 char *SRAMName[MAXSLOTS] = {0,0,0,0,0,0};/* Filenames (gen-d)*/
 uint8_t SaveSRAM[MAXSLOTS] = {0,0,0,0,0,0}; /* Save SRAM on exit*/
 uint8_t *SRAMData[MAXSLOTS];          /* SRAM (battery backed)  */
+static char *Manbow2FlashName[MAXSLOTS] = {0,0,0,0,0,0};
+static uint8_t SaveManbow2Flash[MAXSLOTS] = {0,0,0,0,0,0};
 
 /** Disk images used by fMSX *********************************/
 const char *DSKName[MAXDRIVES] = { "DRIVEA.DSK","DRIVEB.DSK" };
@@ -174,11 +190,25 @@ uint32_t FmsxP1Select31Count = 0;     /* How many times page 1 selected slot 3-1
 uint32_t FmsxP1Select03Count = 0;     /* How many times page 1 selected slot 0-3 */
 uint8_t FmsxP1LastPS = 0xFF;          /* Last observed primary slot on page 1 */
 uint8_t FmsxP1LastSS = 0xFF;          /* Last observed secondary slot on page 1 */
+uint32_t FmsxVDPFrameCounter = 0;     /* Number of VDP frame starts observed */
+uint8_t FmsxVDPLinePhase = 0;         /* 0=active scan, 1=HBlank */
+uint8_t FmsxVDPScreenOnLatched = 0;   /* Display enable latched per scanline */
 uint32_t FmsxIE1EventCount = 0;       /* Number of VDP line-coincidence events */
 uint32_t FmsxIE1AckCount = 0;         /* Number of S#1 reads that clear IE1 flag */
 uint32_t FmsxIE1ArmedCount = 0;       /* Number of times IE1 was armed on active line */
 uint32_t FmsxIE1FiredHBlankCount = 0; /* Number of armed IE1 events fired on HBlank */
 static uint8_t FmsxIE1PendingHBlank = 0;
+static uint8_t FmsxVDPDisplayStateDirty = 0;
+static TFmsxVDPTraceEvent g_fmsx_vdp_trace[FMSX_VDP_TRACE_CAPACITY];
+static unsigned g_fmsx_vdp_trace_head = 0;
+static unsigned g_fmsx_vdp_trace_count = 0;
+static unsigned g_fmsx_vdp_trace_dropped = 0;
+static uint32_t g_fmsx_vdp_trace_seq = 0;
+uint32_t FmsxVDPPort99ReadCount = 0;  /* Reads from VDP status port 99h */
+uint32_t FmsxVDPPort99WriteCount = 0; /* Writes to VDP address/control port 99h */
+uint32_t FmsxVDPPort9BWriteCount = 0; /* Writes to indirect VDP register port 9Bh */
+uint32_t FmsxVDPRegWriteCount[64];    /* Per-register VDP write counters */
+uint32_t FmsxVDPStatusReadCount[16];  /* Per-status-register read counters via R#15 */
 uint32_t FmsxKanjiReadCount = 0;      /* Reads from Kanji data port D9h */
 uint32_t FmsxKanjiAddrWriteCount = 0; /* Writes to Kanji address ports D8h/D9h */
 uint32_t FmsxKanjiNullReadCount = 0;  /* D9h reads while Kanji ROM pointer is null */
@@ -233,6 +263,52 @@ SCC  SCChip;                       /* SCC registers & state  */
 uint8_t SCCOn[2];                  /* !=0: SCC page active   */
 uint8_t SCCIMode[2];               /* SCC-I mode register    */
 uint8_t *SCCIRAM;                /* SCC-I RAM (Nx8kB pages) */
+static uint8_t Manbow2FlashState[MAXSLOTS];
+static uint8_t Manbow2FlashMode[MAXSLOTS];
+uint8_t FmsxManbow2FlashLastOp = 0;
+uint8_t FmsxManbow2FlashLastSlot = 0xFFu;
+uint8_t FmsxManbow2FlashLastValue = 0;
+uint8_t FmsxManbow2FlashLastReadValue = 0;
+uint8_t FmsxManbow2FlashLastState = 0;
+uint8_t FmsxManbow2FlashLastMode = 0;
+uint16_t FmsxManbow2FlashLastAddr = 0;
+uint32_t FmsxManbow2FlashLastOffset = 0xFFFFFFFFu;
+uint32_t FmsxManbow2FlashProgramCount = 0;
+uint32_t FmsxManbow2FlashEraseCount = 0;
+uint32_t FmsxManbow2FlashReadCount = 0;
+
+#define FMSX_MANBOW2_FLASH_SAVE_SIZE 0x10000u
+#define FMSX_MANBOW2_FLASH_CMD_MASK  0x07FFu
+#define FMSX_MANBOW2_FLASH_CMD1      0x0555u
+#define FMSX_MANBOW2_FLASH_CMD2      0x02AAu
+
+enum
+{
+  FMSX_MANBOW2_FLASH_MODE_READ = 0,
+  FMSX_MANBOW2_FLASH_MODE_AUTOSELECT,
+};
+
+enum
+{
+  FMSX_MANBOW2_FLASH_IDLE = 0,
+  FMSX_MANBOW2_FLASH_UNLOCK1,
+  FMSX_MANBOW2_FLASH_UNLOCK2,
+  FMSX_MANBOW2_FLASH_PROGRAM,
+  FMSX_MANBOW2_FLASH_ERASE1,
+  FMSX_MANBOW2_FLASH_ERASE2,
+  FMSX_MANBOW2_FLASH_ERASE3
+};
+
+enum
+{
+  FMSX_MANBOW2_FLASH_OP_NONE = 0,
+  FMSX_MANBOW2_FLASH_OP_READ,
+  FMSX_MANBOW2_FLASH_OP_RESET,
+  FMSX_MANBOW2_FLASH_OP_AUTOSELECT,
+  FMSX_MANBOW2_FLASH_OP_PROGRAM,
+  FMSX_MANBOW2_FLASH_OP_ERASE,
+  FMSX_MANBOW2_FLASH_OP_CMD
+};
 uint16_t FMPACKey;                 /* MAGIC = SRAM active    */
 
 /** Real-time clock ******************************************/
@@ -321,6 +397,596 @@ static int fmsx_vdp_status_wait_cycles(void)
 
 /* Forward declaration: used by BIOS shadow sync helpers before prototype block. */
 static uint8_t RAMMapperSubSlot(void);
+static void FreeMemory(const void *Ptr);
+static uint8_t fmsx_vdp_status2_live(void);
+static uint8_t fmsx_vdp_status1_live(void);
+static uint8_t fmsx_vdp_ie1_target_line(void);
+static int fmsx_vdp_ie1_target_delta(void);
+static uint8_t fmsx_vdp_effective_odd_page(void);
+static uint8_t fmsx_vdp_render_page(void);
+static void fmsx_vdp_trace_log(uint8_t event_type);
+
+static int fmsx_string_contains(const char *text,const char *needle)
+{
+  return text&&needle&&strstr(text,needle);
+}
+
+static int fmsx_vdp_trace_enabled_now(void)
+{
+#if FMSX_VDP_TRACE_ENABLED
+  /*
+   * The Space Manbow flow keeps bouncing through RAM/fixed-bank dispatcher
+   * code, so filtering by ROM name/current bank was dropping the exact
+   * transition events we need around the black-screen freeze.
+   */
+  return 1;
+#else
+  return 0;
+#endif
+}
+
+static int fmsx_cart_slot_from_pages(uint8_t ps,uint8_t ss)
+{
+  switch(ps)
+  {
+    case 1: return 0;
+    case 2: return 1;
+    case 3: return ss==0? 2:(ss==1? 3:(ss==2? 4:(ss==3? 5:-1)));
+    case 0: return -1;
+    default:return -1;
+  }
+}
+
+static void fmsx_cart_window_banks(unsigned page,uint8_t *slot,uint8_t *bank_lo,uint8_t *bank_hi)
+{
+  int mapper_slot;
+  unsigned mapper_base;
+
+  if(slot) *slot = 0xFFu;
+  if(bank_lo) *bank_lo = 0xFFu;
+  if(bank_hi) *bank_hi = 0xFFu;
+  if((page<1u)||(page>2u)) return;
+
+  mapper_slot = fmsx_cart_slot_from_pages(PSL[page],SSL[page]);
+  if((mapper_slot<0)||(mapper_slot>=MAXSLOTS)||!ROMData[mapper_slot]||!ROMMask[mapper_slot]) return;
+
+  mapper_base = page==1u? 0u:2u;
+  if(slot) *slot = (uint8_t)mapper_slot;
+  if(bank_lo) *bank_lo = ROMMapper[mapper_slot][mapper_base+0u];
+  if(bank_hi) *bank_hi = ROMMapper[mapper_slot][mapper_base+1u];
+}
+
+static int fmsx_rom_type_is_manbow2(int type)
+{
+  return (type==MAP_MANBOW2)||(type==MAP_MANBOW2_2);
+}
+
+static void fmsx_manbow2_flash_note(uint8_t op,int slot,uint16_t addr,uint32_t offset,uint8_t value)
+{
+  FmsxManbow2FlashLastOp = op;
+  FmsxManbow2FlashLastSlot = (slot>=0 && slot<MAXSLOTS)? (uint8_t)slot:0xFFu;
+  FmsxManbow2FlashLastAddr = addr;
+  FmsxManbow2FlashLastOffset = offset;
+  FmsxManbow2FlashLastValue = value;
+  if((slot>=0)&&(slot<MAXSLOTS))
+  {
+    FmsxManbow2FlashLastState = Manbow2FlashState[slot];
+    FmsxManbow2FlashLastMode = Manbow2FlashMode[slot];
+  }
+}
+
+static uint32_t fmsx_cart_rom_bytes(int slot)
+{
+  return ((uint32_t)ROMMask[slot]+1u) << 13;
+}
+
+static uint32_t fmsx_manbow2_flash_save_offset(int slot)
+{
+  const uint32_t bytes = fmsx_cart_rom_bytes(slot);
+  return bytes>FMSX_MANBOW2_FLASH_SAVE_SIZE? bytes-FMSX_MANBOW2_FLASH_SAVE_SIZE:0u;
+}
+
+static int fmsx_manbow2_flash_ready(int slot)
+{
+  return (slot>=0)
+      && (slot<MAXSLOTS)
+      && ROMData[slot]
+      && ROMMask[slot]
+      && fmsx_rom_type_is_manbow2(ROMType[slot])
+      && (fmsx_cart_rom_bytes(slot)>=FMSX_MANBOW2_FLASH_SAVE_SIZE);
+}
+
+static uint8_t *fmsx_manbow2_flash_save_ptr(int slot)
+{
+  return fmsx_manbow2_flash_ready(slot)?
+    ROMData[slot]+fmsx_manbow2_flash_save_offset(slot):0;
+}
+
+static uint32_t fmsx_manbow2_flash_offset(int slot,uint16_t addr)
+{
+  unsigned page;
+
+  if(!fmsx_manbow2_flash_ready(slot)||addr<0x4000u||addr>=0xC000u) return 0xFFFFFFFFu;
+
+  page = (unsigned)(addr-0x4000u) >> 13;
+  if(page>=4u) return 0xFFFFFFFFu;
+
+  return ((uint32_t)ROMMapper[slot][page] << 13) | (uint32_t)(addr & 0x1FFFu);
+}
+
+static int fmsx_manbow2_flash_offset_writable(int slot,uint32_t offset)
+{
+  const uint32_t save_offset = fmsx_manbow2_flash_save_offset(slot);
+  return fmsx_manbow2_flash_ready(slot)
+      && (offset>=save_offset)
+      && (offset<fmsx_cart_rom_bytes(slot));
+}
+
+static int fmsx_manbow2_flash_sector_writable(int slot,uint32_t offset)
+{
+  return fmsx_manbow2_flash_offset_writable(slot,offset & ~(FMSX_MANBOW2_FLASH_SAVE_SIZE-1u));
+}
+
+static int fmsx_manbow2_flash_cmd_match(int slot,uint16_t addr,uint16_t expected)
+{
+  const uint32_t offset = fmsx_manbow2_flash_offset(slot,addr);
+  return (offset!=0xFFFFFFFFu) && ((offset & FMSX_MANBOW2_FLASH_CMD_MASK)==expected);
+}
+
+static void fmsx_manbow2_flash_soft_reset(int slot)
+{
+  Manbow2FlashState[slot] = FMSX_MANBOW2_FLASH_IDLE;
+  Manbow2FlashMode[slot] = FMSX_MANBOW2_FLASH_MODE_READ;
+  FmsxManbow2FlashLastState = Manbow2FlashState[slot];
+  FmsxManbow2FlashLastMode = Manbow2FlashMode[slot];
+}
+
+static uint8_t fmsx_manbow2_flash_read(int slot,uint16_t addr,int *handled)
+{
+  const uint32_t offset = fmsx_manbow2_flash_offset(slot,addr);
+  uint8_t value;
+
+  if(handled) *handled = 0;
+  if(offset==0xFFFFFFFFu) return 0xFFu;
+  if(handled) *handled = 1;
+  ++FmsxManbow2FlashReadCount;
+
+  switch(Manbow2FlashMode[slot])
+  {
+    case FMSX_MANBOW2_FLASH_MODE_AUTOSELECT:
+      switch(offset & 0x03u)
+      {
+        case 0u: value = 0x01u; break;
+        case 1u: value = 0xA4u; break;
+        case 2u: value = fmsx_manbow2_flash_sector_writable(slot,offset)? 0x00u:0x01u; break;
+        case 3u: value = 0x01u; break;
+        default: value = 0xFFu; break;
+      }
+      break;
+
+    default:
+      value = ROMData[slot][offset];
+      break;
+  }
+
+  FmsxManbow2FlashLastReadValue = value;
+  fmsx_manbow2_flash_note(FMSX_MANBOW2_FLASH_OP_READ,slot,addr,offset,value);
+  return value;
+}
+
+static void fmsx_manbow2_flash_program(int slot,uint32_t offset,uint8_t value)
+{
+  if(!fmsx_manbow2_flash_offset_writable(slot,offset)) return;
+
+  ROMData[slot][offset] &= value;
+  SaveManbow2Flash[slot] = 1;
+  ++FmsxManbow2FlashProgramCount;
+}
+
+static void fmsx_manbow2_flash_erase_sector(int slot,uint32_t offset)
+{
+  const uint32_t sector_base = offset & ~(FMSX_MANBOW2_FLASH_SAVE_SIZE-1u);
+  const uint32_t save_offset = fmsx_manbow2_flash_save_offset(slot);
+
+  if(!fmsx_manbow2_flash_ready(slot) || (sector_base!=save_offset)) return;
+
+  memset(ROMData[slot]+sector_base,0xFF,FMSX_MANBOW2_FLASH_SAVE_SIZE);
+  SaveManbow2Flash[slot] = 1;
+  ++FmsxManbow2FlashEraseCount;
+}
+
+static int fmsx_manbow2_flash_write(int slot,uint16_t addr,uint8_t value)
+{
+  uint32_t offset;
+
+restart:
+  switch(Manbow2FlashState[slot])
+  {
+    case FMSX_MANBOW2_FLASH_IDLE:
+      if(value==0xF0u)
+      {
+        fmsx_manbow2_flash_note(FMSX_MANBOW2_FLASH_OP_RESET,slot,addr,fmsx_manbow2_flash_offset(slot,addr),value);
+        fmsx_manbow2_flash_soft_reset(slot);
+        return 1;
+      }
+      if(fmsx_manbow2_flash_cmd_match(slot,addr,FMSX_MANBOW2_FLASH_CMD1)&&(value==0xAAu))
+      {
+        Manbow2FlashState[slot] = FMSX_MANBOW2_FLASH_UNLOCK1;
+        fmsx_manbow2_flash_note(FMSX_MANBOW2_FLASH_OP_CMD,slot,addr,fmsx_manbow2_flash_offset(slot,addr),value);
+        return 1;
+      }
+      return 0;
+
+    case FMSX_MANBOW2_FLASH_UNLOCK1:
+      if(fmsx_manbow2_flash_cmd_match(slot,addr,FMSX_MANBOW2_FLASH_CMD2)&&(value==0x55u))
+      {
+        Manbow2FlashState[slot] = FMSX_MANBOW2_FLASH_UNLOCK2;
+        fmsx_manbow2_flash_note(FMSX_MANBOW2_FLASH_OP_CMD,slot,addr,fmsx_manbow2_flash_offset(slot,addr),value);
+        return 1;
+      }
+      fmsx_manbow2_flash_soft_reset(slot);
+      goto restart;
+
+    case FMSX_MANBOW2_FLASH_UNLOCK2:
+      if(fmsx_manbow2_flash_cmd_match(slot,addr,FMSX_MANBOW2_FLASH_CMD1))
+      {
+        if(value==0xA0u)
+        {
+          Manbow2FlashState[slot] = FMSX_MANBOW2_FLASH_PROGRAM;
+          fmsx_manbow2_flash_note(FMSX_MANBOW2_FLASH_OP_CMD,slot,addr,fmsx_manbow2_flash_offset(slot,addr),value);
+          return 1;
+        }
+        if(value==0x80u)
+        {
+          Manbow2FlashState[slot] = FMSX_MANBOW2_FLASH_ERASE1;
+          fmsx_manbow2_flash_note(FMSX_MANBOW2_FLASH_OP_CMD,slot,addr,fmsx_manbow2_flash_offset(slot,addr),value);
+          return 1;
+        }
+        if(value==0x90u)
+        {
+          Manbow2FlashState[slot] = FMSX_MANBOW2_FLASH_IDLE;
+          Manbow2FlashMode[slot] = FMSX_MANBOW2_FLASH_MODE_AUTOSELECT;
+          fmsx_manbow2_flash_note(FMSX_MANBOW2_FLASH_OP_AUTOSELECT,slot,addr,fmsx_manbow2_flash_offset(slot,addr),value);
+          return 1;
+        }
+        if(value==0xF0u)
+        {
+          fmsx_manbow2_flash_note(FMSX_MANBOW2_FLASH_OP_RESET,slot,addr,fmsx_manbow2_flash_offset(slot,addr),value);
+          fmsx_manbow2_flash_soft_reset(slot);
+          return 1;
+        }
+      }
+      fmsx_manbow2_flash_soft_reset(slot);
+      goto restart;
+
+    case FMSX_MANBOW2_FLASH_PROGRAM:
+      offset = fmsx_manbow2_flash_offset(slot,addr);
+      if(offset!=0xFFFFFFFFu) fmsx_manbow2_flash_program(slot,offset,value);
+      fmsx_manbow2_flash_note(FMSX_MANBOW2_FLASH_OP_PROGRAM,slot,addr,offset,value);
+      fmsx_manbow2_flash_soft_reset(slot);
+      return 1;
+
+    case FMSX_MANBOW2_FLASH_ERASE1:
+      if(fmsx_manbow2_flash_cmd_match(slot,addr,FMSX_MANBOW2_FLASH_CMD1)&&(value==0xAAu))
+      {
+        Manbow2FlashState[slot] = FMSX_MANBOW2_FLASH_ERASE2;
+        fmsx_manbow2_flash_note(FMSX_MANBOW2_FLASH_OP_CMD,slot,addr,fmsx_manbow2_flash_offset(slot,addr),value);
+        return 1;
+      }
+      fmsx_manbow2_flash_soft_reset(slot);
+      goto restart;
+
+    case FMSX_MANBOW2_FLASH_ERASE2:
+      if(fmsx_manbow2_flash_cmd_match(slot,addr,FMSX_MANBOW2_FLASH_CMD2)&&(value==0x55u))
+      {
+        Manbow2FlashState[slot] = FMSX_MANBOW2_FLASH_ERASE3;
+        fmsx_manbow2_flash_note(FMSX_MANBOW2_FLASH_OP_CMD,slot,addr,fmsx_manbow2_flash_offset(slot,addr),value);
+        return 1;
+      }
+      fmsx_manbow2_flash_soft_reset(slot);
+      goto restart;
+
+    case FMSX_MANBOW2_FLASH_ERASE3:
+      offset = fmsx_manbow2_flash_offset(slot,addr);
+      if((offset!=0xFFFFFFFFu)&&(value==0x30u))
+      {
+        fmsx_manbow2_flash_erase_sector(slot,offset);
+        fmsx_manbow2_flash_note(FMSX_MANBOW2_FLASH_OP_ERASE,slot,addr,offset,value);
+        fmsx_manbow2_flash_soft_reset(slot);
+        return 1;
+      }
+      fmsx_manbow2_flash_soft_reset(slot);
+      goto restart;
+  }
+
+  fmsx_manbow2_flash_soft_reset(slot);
+  return 0;
+}
+
+static void fmsx_manbow2_konami5_bank_write(uint8_t slot,uint8_t ps,uint8_t ss,uint16_t addr,uint8_t value)
+{
+  uint8_t bank = (uint8_t)((addr-0x5000u)>>13);
+
+  if(bank==2u && slot<2u && (addr&0x1800u)==0x1000u) SCCOn[slot]=(value&0x3Fu)==0x3Fu;
+  else if(bank==3u && slot<2u && (addr&0x1800u)==0x1000u) SCCOn[slot]=(value&0x80u);
+
+  value &= ROMMask[slot];
+  if(value!=ROMMapper[slot][bank])
+  {
+    RAM[bank+2u]=MemMap[ps][ss][bank+2u]=ROMData[slot]+((int)value<<13);
+    ROMMapper[slot][bank]=value;
+  }
+}
+
+static void fmsx_manbow2_free_slot_resources(int slot)
+{
+  if((slot<0)||(slot>=MAXSLOTS)) return;
+
+  FreeMemory((uint8_t*)Manbow2FlashName[slot]);
+  Manbow2FlashName[slot] = 0;
+  SaveManbow2Flash[slot] = 0;
+  fmsx_manbow2_flash_soft_reset(slot);
+  if(FmsxManbow2FlashLastSlot==(uint8_t)slot)
+  {
+    FmsxManbow2FlashLastOp = FMSX_MANBOW2_FLASH_OP_NONE;
+    FmsxManbow2FlashLastSlot = 0xFFu;
+    FmsxManbow2FlashLastValue = 0;
+    FmsxManbow2FlashLastReadValue = 0;
+    FmsxManbow2FlashLastAddr = 0;
+    FmsxManbow2FlashLastOffset = 0xFFFFFFFFu;
+    FmsxManbow2FlashLastState = 0;
+    FmsxManbow2FlashLastMode = 0;
+    FmsxManbow2FlashProgramCount = 0;
+    FmsxManbow2FlashEraseCount = 0;
+    FmsxManbow2FlashReadCount = 0;
+  }
+}
+
+static int fmsx_pc_bank16(uint8_t *bank16)
+{
+  uint8_t slot,bank_lo,bank_hi;
+  unsigned page;
+
+  if(bank16) *bank16 = 0xFFu;
+  if((CPU.PC.W<0x4000u)||(CPU.PC.W>=0xC000u)) return 0;
+
+  page = (unsigned)(CPU.PC.W>>14);
+  if((page<1u)||(page>2u)) return 0;
+
+  fmsx_cart_window_banks(page,&slot,&bank_lo,&bank_hi);
+  if((slot==0xFFu)||(bank_lo==0xFFu)||(bank_hi==0xFFu)) return 0;
+  if((bank_hi==(uint8_t)(bank_lo+1u))&&!(bank_lo&1u))
+  {
+    if(bank16) *bank16 = (uint8_t)(bank_lo>>1);
+    return 1;
+  }
+  return 0;
+}
+
+static uint8_t fmsx_vdp_trace_window(void)
+{
+  uint8_t bank16;
+  const uint16_t pc = CPU.PC.W;
+
+  if(!fmsx_vdp_trace_enabled_now()) return FMSX_VDP_TRACE_NONE;
+  if(!fmsx_pc_bank16(&bank16) || (bank16!=27u)) return FMSX_VDP_TRACE_NONE;
+
+  if(((pc>=0x51D4u)&&(pc<=0x5403u))||((pc>=0x523Fu)&&(pc<=0x5297u)))
+    return FMSX_VDP_TRACE_TITLE;
+  if(((pc>=0x586Eu)&&(pc<=0x5897u))||((pc>=0x5E6Fu)&&(pc<=0x5F40u)))
+    return FMSX_VDP_TRACE_STARDATE;
+  if(((pc>=0x582Eu)&&(pc<=0x5E16u))||((pc>=0x5E87u)&&(pc<=0x5EC5u)))
+    return FMSX_VDP_TRACE_SAVE_SELECT;
+
+  return FMSX_VDP_TRACE_NONE;
+}
+
+uint16_t SetIRQ(uint8_t IRQ);            /* Set/Reset IRQ                   */
+uint8_t SetScreen(void);                 /* Change screen mode              */
+
+static int fmsx_vdp_vblank_start(void)
+{
+  return PALVideo ? (ScanLines212? (212+42):(192+52))
+                  : (ScanLines212? (212+18):(192+28));
+}
+
+static uint8_t fmsx_vdp_status2_hr(void)
+{
+  return FmsxVDPLinePhase ? 1u : 0u;
+}
+
+static uint8_t fmsx_vdp_status2_vr(void)
+{
+  return (ScanLine>=fmsx_vdp_vblank_start())? 1u:0u;
+}
+
+static uint8_t fmsx_vdp_status2_live(void)
+{
+  uint8_t status = VDPStatus[2];
+
+  if(fmsx_vdp_status2_hr()) status |= 0x20u;
+  else                      status &= (uint8_t)~0x20u;
+
+  if(fmsx_vdp_status2_vr()) status |= 0x40u;
+  else                      status &= (uint8_t)~0x40u;
+
+  return status;
+}
+
+static void fmsx_vdp_clear_ie1_status(void)
+{
+  VDPStatus[1]&=0xFEu;
+  SetIRQ(~INT_IE1);
+}
+
+static void fmsx_vdp_cancel_ie1(void)
+{
+  FmsxIE1PendingHBlank=0;
+  fmsx_vdp_clear_ie1_status();
+}
+
+static void fmsx_vdp_raise_ie1_latch(void)
+{
+  FmsxIE1PendingHBlank=0;
+  VDPStatus[1]|=0x01u;
+  if(VDP[0]&0x10u) SetIRQ(INT_IE1);
+}
+
+static void fmsx_vdp_commit_line_display_state(void)
+{
+  if(FmsxVDPDisplayStateDirty)
+  {
+    SetScreen();
+    FmsxVDPDisplayStateDirty=0;
+  }
+
+  FmsxVDPScreenOnLatched=(VDP[1]&0x40u)? 1u:0u;
+}
+
+static uint8_t fmsx_vdp_status1_live(void)
+{
+  /*
+   * Space Manbow relies on the horizontal interrupt flag in S#1 even when
+   * IE1 is disabled. The hardware keeps this as a sticky latch and clears it
+   * on S#1 reads, R#19 writes, R#0 writes, or VBlank start.
+   */
+  return VDPStatus[1];
+}
+
+static uint8_t fmsx_vdp_ie1_target_line(void)
+{
+  return (uint8_t)((VDP[19]-VScroll)&0xFFu);
+}
+
+static int fmsx_vdp_ie1_target_delta(void)
+{
+  int delta = (int)fmsx_vdp_ie1_target_line() - (ScanLine&0xFF);
+
+  if(delta<-128) delta += 256;
+  if(delta>127)  delta -= 256;
+  return delta;
+}
+
+static uint8_t fmsx_vdp_effective_odd_page(void)
+{
+  if(!FlipEvenOdd) return 0u;
+  /*
+   * BlueMSX/openMSX derive the displayed odd/even page from S#2 bit1.
+   * Bit1=0 selects the alternate ("odd") page when EO is enabled.
+   */
+  return (VDPStatus[2]&0x02u)? 0u:1u;
+}
+
+static uint8_t fmsx_vdp_render_page(void)
+{
+  return (uint8_t)(((VDP[2]>>5)&0x03u) ^ (fmsx_vdp_effective_odd_page()&0x01u));
+}
+
+static void fmsx_vdp_trace_log(uint8_t event_type)
+{
+#if FMSX_VDP_TRACE_ENABLED
+  TFmsxVDPTraceEvent *event;
+  uint8_t slot_p1,slot_p2,bank_p1_lo,bank_p1_hi,bank_p2_lo,bank_p2_hi;
+
+  if(!fmsx_vdp_trace_enabled_now()) return;
+
+  event = &g_fmsx_vdp_trace[g_fmsx_vdp_trace_head];
+  memset(event,0,sizeof(*event));
+
+  fmsx_cart_window_banks(1u,&slot_p1,&bank_p1_lo,&bank_p1_hi);
+  fmsx_cart_window_banks(2u,&slot_p2,&bank_p2_lo,&bank_p2_hi);
+
+  event->seq = ++g_fmsx_vdp_trace_seq;
+  event->frame = FmsxVDPFrameCounter;
+  event->scanline = (uint16_t)((ScanLine>=0)? ScanLine:0);
+  event->pc = CPU.PC.W;
+  event->line_phase = FmsxVDPLinePhase;
+  event->event_type = event_type;
+  event->capture_window = fmsx_vdp_trace_window();
+  event->scr_mode = ScrMode;
+  event->reg1 = VDP[1];
+  event->reg2 = VDP[2];
+  event->reg8 = VDP[8];
+  event->reg9 = VDP[9];
+  event->reg15 = VDP[15];
+  event->reg19 = VDP[19];
+  event->reg23 = VDP[23];
+  event->reg25 = VDP[25];
+  event->reg26 = VDP[26];
+  event->reg27 = VDP[27];
+  event->status0 = VDPStatus[0];
+  event->status1 = VDPStatus[1];
+  event->status2 = fmsx_vdp_status2_live();
+  event->irq_pending = IRQPending;
+  event->screen_on = ScreenON? 1u:0u;
+  event->ie0_enabled = (VDP[1]&0x20u)? 1u:0u;
+  event->ie1_enabled = (VDP[0]&0x10u)? 1u:0u;
+  event->hr = fmsx_vdp_status2_hr();
+  event->vr = fmsx_vdp_status2_vr();
+  event->ie1_target_line = fmsx_vdp_ie1_target_line();
+  event->ie1_target_delta = (int8_t)fmsx_vdp_ie1_target_delta();
+  event->effective_odd_page = fmsx_vdp_effective_odd_page();
+  event->render_page = fmsx_vdp_render_page();
+  event->cart_slot_p1 = slot_p1;
+  event->cart_slot_p2 = slot_p2;
+  event->cart_bank_p1_lo = bank_p1_lo;
+  event->cart_bank_p1_hi = bank_p1_hi;
+  event->cart_bank_p2_lo = bank_p2_lo;
+  event->cart_bank_p2_hi = bank_p2_hi;
+  event->vdp_cmd = (VDP[46]>>4)&0x0Fu;
+  event->vdp_ce = (VDPStatus[2]&0x01u)? 1u:0u;
+
+  g_fmsx_vdp_trace_head = (g_fmsx_vdp_trace_head+1u)%FMSX_VDP_TRACE_CAPACITY;
+  if(g_fmsx_vdp_trace_count<FMSX_VDP_TRACE_CAPACITY) ++g_fmsx_vdp_trace_count;
+  else ++g_fmsx_vdp_trace_dropped;
+#else
+  (void)event_type;
+#endif
+}
+
+void fmsx_vdp_trace_get_view(const TFmsxVDPTraceEvent **events,unsigned *capacity,unsigned *count,unsigned *head,unsigned *dropped)
+{
+  if(events)   *events = g_fmsx_vdp_trace;
+  if(capacity) *capacity = FMSX_VDP_TRACE_CAPACITY;
+  if(count)    *count = g_fmsx_vdp_trace_count;
+  if(head)     *head = g_fmsx_vdp_trace_head;
+  if(dropped)  *dropped = g_fmsx_vdp_trace_dropped;
+}
+
+void fmsx_vdp_trace_command_transition(uint8_t active)
+{
+  fmsx_vdp_trace_log(active? FMSX_VDP_EVENT_CMD_START:FMSX_VDP_EVENT_CMD_END);
+}
+
+uint8_t fmsx_vdp_get_status2_live(void)
+{
+  return fmsx_vdp_status2_live();
+}
+
+uint8_t fmsx_vdp_get_status1_live(void)
+{
+  return fmsx_vdp_status1_live();
+}
+
+uint8_t fmsx_vdp_get_ie1_target_line(void)
+{
+  return fmsx_vdp_ie1_target_line();
+}
+
+int fmsx_vdp_get_ie1_target_delta(void)
+{
+  return fmsx_vdp_ie1_target_delta();
+}
+
+uint8_t fmsx_vdp_get_effective_odd_page(void)
+{
+  return fmsx_vdp_effective_odd_page();
+}
+
+uint8_t fmsx_vdp_get_render_page(void)
+{
+  return fmsx_vdp_render_page();
+}
 
 static void fmsx_sync_bios_vdp_r9_shadow(void)
 {
@@ -455,11 +1121,12 @@ static const struct { uint8_t R2,R3,R4,R5,M2,M3,M4,M5; } MSK[MAXSCREEN+2] =
 };
 
 /** MegaROM Mapper Names *************************************/
-static const char *ROMNames[MAXMAPPERS+1] =
+static const char *ROMNames[FMSX_LOCAL_MAXMAPPERS+1] =
 {
   "GENERIC/8kB","GENERIC/16kB","KONAMI5/8kB",
   "KONAMI4/8kB","ASCII/8kB","ASCII/16kB",
-  "GMASTER2/SRAM","FMPAC/SRAM","UNKNOWN"
+  "GMASTER2/SRAM","FMPAC/SRAM","UNKNOWN",
+  "MANBOW2/FLASH","MANBOW2_2/FLASH"
 };
 
 /** Game Master SHA1s *************************************/
@@ -1324,6 +1991,8 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
 
   /* For all MegaROMs... */
   for(J=0;J<MAXSLOTS;++J)
+  {
+    fmsx_manbow2_flash_soft_reset(J);
     if((I=ROMMask[J]+1)>4)
     {
       /* For normal MegaROMs, set first four pages */
@@ -1335,6 +2004,7 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
       /* If 'AB' signature is not found at the beginning or the end */
       /* then it is not a MegaROM but rather a plain 64kB ROM       */
     }
+  }
 
   /* Reset sound chips */
 #if defined(FMSX_BAREMETAL_PSG_AUDIO_ONLY) && !defined(FMSX_BAREMETAL_SKIP_AUDIO_RESET)
@@ -1427,14 +2097,28 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   FmsxP1Select03Count = 0;
   FmsxP1LastPS = 0xFF;
   FmsxP1LastSS = 0xFF;
+  FmsxVDPFrameCounter = 0;
+  FmsxVDPLinePhase = 0;
+  FmsxVDPScreenOnLatched = 0;
   FmsxIE1EventCount = 0;
   FmsxIE1AckCount = 0;
   FmsxIE1ArmedCount = 0;
   FmsxIE1FiredHBlankCount = 0;
   FmsxIE1PendingHBlank = 0;
+  FmsxVDPDisplayStateDirty = 0;
+  FmsxVDPPort99ReadCount = 0;
+  FmsxVDPPort99WriteCount = 0;
+  FmsxVDPPort9BWriteCount = 0;
+  memset(FmsxVDPRegWriteCount,0,sizeof(FmsxVDPRegWriteCount));
+  memset(FmsxVDPStatusReadCount,0,sizeof(FmsxVDPStatusReadCount));
   FmsxKanjiReadCount = 0;
   FmsxKanjiAddrWriteCount = 0;
   FmsxKanjiNullReadCount = 0;
+  g_fmsx_vdp_trace_head = 0;
+  g_fmsx_vdp_trace_count = 0;
+  g_fmsx_vdp_trace_dropped = 0;
+  g_fmsx_vdp_trace_seq = 0;
+  memset(g_fmsx_vdp_trace,0,sizeof(g_fmsx_vdp_trace));
   KanCount=0;KanLetter=0;               /* Kanji extension  */
   ChrTab=ColTab=ChrGen=VRAM;            /* VDP tables       */
   SprTab=SprGen=VRAM;
@@ -1469,6 +2153,7 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
 uint8_t RdZ80(uint16_t A)
 {
   uint8_t J,PS,SS,I;
+  int flash_handled;
 
   /* Secondary slot selector */
   if(A==0xFFFF)
@@ -1511,6 +2196,12 @@ uint8_t RdZ80(uint16_t A)
   {
     J=A&0x00FF;
     return (A&0x2000) ? ReadSCCP(&SCChip,J) : ReadSCC(&SCChip,J);
+  }
+
+  if((I<MAXSLOTS)&&fmsx_rom_type_is_manbow2(ROMType[I])&&(A>=0x4000u)&&(A<0xC000u))
+  {
+    const uint8_t value = fmsx_manbow2_flash_read(I,A,&flash_handled);
+    if(flash_handled) return value;
   }
 
   /* Default to reading memory */
@@ -1672,22 +2363,35 @@ case 0x98: /* VRAM read port */
   return(Port);
 
 case 0x99: /* VDP status registers */
+{
+  const uint8_t status_reg = MODEL(MSX_MSX1)? 0u:(uint8_t)(VDP[15]&0x0Fu);
+  const uint8_t live_status1 = fmsx_vdp_status1_live();
+  const uint8_t live_status2 = fmsx_vdp_status2_live();
   fmsx_apply_vdp_io_wait(fmsx_vdp_status_wait_cycles());
+  FmsxVDPPort99ReadCount++;
+  FmsxVDPStatusReadCount[status_reg]++;
   /* MSX1/TMS9918 exposes only status register #0. */
-  Port=MODEL(MSX_MSX1)? VDPStatus[0]:VDPStatus[VDP[15]];
+  if(MODEL(MSX_MSX1)) Port=VDPStatus[0];
+  else Port=(status_reg==1u)? live_status1:((status_reg==2u)? live_status2:VDPStatus[status_reg]);
   /*
    * Keep upstream fMSX behavior here: do not force-reset VKey on status reads.
    * Some BIOS/software paths depend on the original latch sequencing.
    */
+  if(status_reg==1u) fmsx_vdp_trace_log(FMSX_VDP_EVENT_S1_READ);
+  if(status_reg==2u) fmsx_vdp_trace_log(FMSX_VDP_EVENT_S2_READ);
   /* Update status register's contents */
-  switch(VDP[15])
+  switch(status_reg)
   {
     case 0: VDPStatus[0]&=0x5F;SetIRQ(~INT_IE0);break;
-    case 1: FmsxIE1AckCount++;FmsxIE1PendingHBlank=0;VDPStatus[1]&=0xFE;SetIRQ(~INT_IE1);break;
+    case 1:
+      if(Port&0x01u) FmsxIE1AckCount++;
+      fmsx_vdp_clear_ie1_status();
+      break;
     case 7: VDPStatus[7]=VDP[44]=VDPRead();break;
   }
   /* Return the status register value */
   return(Port);
+}
 
 case 0xA2: /* PSG input port */
   /* PSG[14] returns joystick/mouse data */
@@ -1875,6 +2579,7 @@ case 0x98: /* VDP Data */
   return;
 
 case 0x99: /* VDP Address Latch */
+  FmsxVDPPort99WriteCount++;
   fmsx_apply_vdp_io_wait(kVDPIOWaitCyclesData);
   if(VKey) { ALatch=Value;VKey=0; }
   else
@@ -1934,6 +2639,7 @@ case 0x9A: /* VDP Palette Latch */
   return;
 
 case 0x9B: /* VDP Register Access */
+  FmsxVDPPort9BWriteCount++;
   fmsx_apply_vdp_io_wait(kVDPIOWaitCyclesData);
   if(MODEL(MSX_MSX1)) return;
   J=VDP[17]&0x3F;
@@ -2121,8 +2827,8 @@ void MapROM(uint16_t A,uint8_t V)
       WriteSCC(&SCChip,J,V);
     }
 
-    /* Done writing to SCC */   
-    return;
+    /* Manbow2 forwards SCC window writes to both SCC and flash/mapper. */
+    if(!fmsx_rom_type_is_manbow2(ROMType[I])) return;
   }
 
   /* If no cartridge or no mapper, exit */
@@ -2165,18 +2871,17 @@ void MapROM(uint16_t A,uint8_t V)
     case MAP_KONAMI5: /* KONAMI5 8kB cartridges */
       /* Only interested in writes to 5000h/7000h/9000h/B000h */
       if((A<0x5000)||(A>0xB000)||((A&0x1FFF)!=0x1000)) break;
-      J=(A-0x5000)>>13;
-      /* Turn SCC on/off on writes to 9000-97FF */
-      /* note that the 'if' above already filtered anything but 9000. That ignores the mirrors - see https://www.msx.org/wiki/MegaROM_Mappers#Konami.27s_MegaROMs_with_SCC */
-      if(J==2 && I<2 && (A&0x1800)==0x1000) SCCOn[I]=(V&0x3F)==0x3F;
-      /* Turn SCC-I on/off on writes to B000-B7FF */
-      else if(J==3 && I<2 && (A&0x1800)==0x1000) SCCOn[I]=(V&0x80);
-      /* Switch ROM pages */
-      V&=ROMMask[I];
-      if(V!=ROMMapper[I][J])
+      fmsx_manbow2_konami5_bank_write(I,PS,SS,A,V);
+      return;
+
+    case MAP_MANBOW2:
+    case MAP_MANBOW2_2:
+      if((A<0x4000)||(A>0xBFFF)) break;
+      (void)fmsx_manbow2_flash_write(I,A,V);
+      if((A>=0x5000)&&(A<=0xB000)&&((A&0x1FFF)==0x1000))
       {
-        RAM[J+2]=MemMap[PS][SS][J+2]=ROMData[I]+((int)V<<13);
-        ROMMapper[I][J]=V;
+        fmsx_manbow2_konami5_bank_write(I,PS,SS,A,V);
+        return;
       }
       return;
 
@@ -2475,6 +3180,34 @@ uint16_t SetIRQ(uint8_t IRQ)
   return(CPU.IRequest);
 }
 
+static uint8_t fmsx_vdp_r2_shift(uint8_t ScreenMode)
+{
+  /*
+   * BlueMSX/openMSX use R#2 << 10 for bitmap name-table base and let the
+   * renderer/command engine handle planar/interleaved VRAM details.
+   */
+  if(((ScreenMode>=5)&&(ScreenMode<=8))||((ScreenMode>=10)&&(ScreenMode<=12)))
+    return 10;
+
+  return (ScreenMode>6)&&(ScreenMode!=MAXSCREEN+1)? 11:10;
+}
+
+static uint8_t fmsx_vdp_r2_base(uint8_t ScreenMode,uint8_t Reg2)
+{
+  uint8_t R2Base;
+
+  R2Base=Reg2&MSK[ScreenMode].R2;
+
+  /* In bitmap modes, R2 bit5 becomes the display-page selector when
+   * multi-page horizontal scroll is enabled and must not skew the base.
+   */
+  if(MODEL(MSX_MSX2P) && (VDP[25]&0x01) && (Reg2&0x20)
+  && (((ScreenMode>=5)&&(ScreenMode<=8))||((ScreenMode>=10)&&(ScreenMode<=12))))
+    R2Base&=~0x20;
+
+  return R2Base;
+}
+
 /** SetScreen() **********************************************/
 /** Change screen mode. Returns new screen mode.            **/
 /*************************************************************/
@@ -2498,14 +3231,8 @@ uint8_t SetScreen(void)
   }
 
   /* Recompute table addresses */
-  I=(J>6)&&(J!=MAXSCREEN+1)? 11:10;
-  R2Base=VDP[2]&MSK[J].R2;
-  /* V9958 two-page horizontal scroll: in bitmap modes, R2 bit5 selects
-   * display page and must not offset the table base address itself.
-   */
-  if(MODEL(MSX_MSX2P) && (VDP[25]&0x01) && (VDP[2]&0x20)
-  && (((J>=5)&&(J<=8)) || ((J>=10)&&(J<=12))))
-    R2Base&=~0x20;
+  I=fmsx_vdp_r2_shift(J);
+  R2Base=fmsx_vdp_r2_base(J,VDP[2]);
   ChrTab  = VRAM+((int)R2Base<<I);
   ChrGen  = VRAM+((int)(VDP[4]&MSK[J].R4)<<11);
   ColTab  = VRAM+((int)(VDP[3]&MSK[J].R3)<<6)+((int)VDP[10]<<14);
@@ -2567,6 +3294,8 @@ void VDPOut(uint8_t R,uint8_t V)
 {
   uint8_t J,R2Base;
 
+  if(R<64u) FmsxVDPRegWriteCount[R]++;
+
   if(MODEL(MSX_MSX1) && (R>7))
   {
     return;
@@ -2574,25 +3303,19 @@ void VDPOut(uint8_t R,uint8_t V)
 
   switch(R)
   {
-    case  0: /* Reset HBlank interrupt if disabled */
-             if((VDPStatus[1]&0x01)&&!(V&0x10))
-             {
-               VDPStatus[1]&=0xFE;
-               SetIRQ(~INT_IE1);
-             }
-             /* Set screen mode */
-             if(VDP[0]!=V) { VDP[0]=V;SetScreen(); }
+    case  0: /* Writing R#0 clears the HBlank interrupt latch */
+             if((VDPStatus[1]&0x01u)||FmsxIE1PendingHBlank||(IRQPending&INT_IE1))
+               fmsx_vdp_cancel_ie1();
+             /* Latch display mode change at the next scanline boundary. */
+             if(VDP[0]!=V) { VDP[0]=V;FmsxVDPDisplayStateDirty=1; }
              break;
     case  1: /* Set/Reset VBlank interrupt if enabled or disabled */
              if(VDPStatus[0]&0x80) SetIRQ(V&0x20? INT_IE0:~INT_IE0);
-             /* Set screen mode */
-             if(VDP[1]!=V) { VDP[1]=V;SetScreen(); }
+             /* Latch display on/off and mode bits at the next scanline. */
+             if(VDP[1]!=V) { VDP[1]=V;FmsxVDPDisplayStateDirty=1; }
              break;
-    case  2: J=(ScrMode>6)&&(ScrMode!=MAXSCREEN+1)? 11:10;
-             R2Base=V&MSK[ScrMode].R2;
-             if(MODEL(MSX_MSX2P) && (VDP[25]&0x01) && (V&0x20)
-             && (((ScrMode>=5)&&(ScrMode<=8)) || ((ScrMode>=10)&&(ScrMode<=12))))
-               R2Base&=~0x20;
+    case  2: J=fmsx_vdp_r2_shift(ScrMode);
+             R2Base=fmsx_vdp_r2_base(ScrMode,V);
              ChrTab  = VRAM+((int)R2Base<<J);
              ChrTabM = ((int)(V|~MSK[ScrMode].M2)<<J)|((1<<J)-1);
              break;
@@ -2619,9 +3342,18 @@ void VDPOut(uint8_t R,uint8_t V)
     case 15: V&=0x0F;break;
     case 16: V&=0x0F;PKey=1;break;
     case 17: V&=0xBF;break;
-    case 19: FmsxIE1PendingHBlank=0;VDPStatus[1]&=0xFE;SetIRQ(~INT_IE1);break;
-    case 25: VDP[25]=V;
-             SetScreen();
+    case 18: if(VDP[18]!=V) FmsxVDPDisplayStateDirty=1;
+             break;
+    case 19: if((VDPStatus[1]&0x01u)||FmsxIE1PendingHBlank||(IRQPending&INT_IE1))
+               fmsx_vdp_cancel_ie1();
+             if(VDP[19]!=V) fmsx_vdp_trace_log(FMSX_VDP_EVENT_R19_WRITE);
+             break;
+    case 23: if(VDP[23]!=V)
+             {
+               fmsx_vdp_trace_log(FMSX_VDP_EVENT_R23_WRITE);
+             }
+             break;
+    case 25: if(VDP[25]!=V) { VDP[25]=V;FmsxVDPDisplayStateDirty=1; }
              break;
     case 44: VDPWrite(V);break;
     case 46: VDPDraw(V);break;
@@ -2735,9 +3467,10 @@ uint16_t LoopZ80(Z80 *R)
 
   /* Flip HRefresh bit */
   VDPStatus[2]^=0x20;
+  FmsxVDPLinePhase = (VDPStatus[2]&0x20)? 1u:0u;
 
   /* If HRefresh is now in progress... */
-  if(!(VDPStatus[2]&0x20))
+  if(!FmsxVDPLinePhase)
   {
     /* HRefresh takes most of the scanline */
     R->IPeriod=fmsx_scale_cycles(!ScrMode||(ScrMode==MAXSCREEN+1)? CPU_H240:CPU_H256);
@@ -2750,6 +3483,9 @@ uint16_t LoopZ80(Z80 *R)
     {
       if(log_cb && !LoggedFrameStart1) { log_cb(1,"LoopZ80: frame start #1\n"); LoggedFrameStart1=1; }
       else if(log_cb && !LoggedFrameStart2) { log_cb(1,"LoopZ80: frame start #2\n"); LoggedFrameStart2=1; }
+
+      FmsxVDPFrameCounter++;
+      VDPStatus[2]^=0x02;
 
       /* Drawing now... */
       Drawing=1;
@@ -2785,26 +3521,25 @@ uint16_t LoopZ80(Z80 *R)
       }
     }
 
+    /*
+     * BlueMSX and the OCM-PLD V9938 both avoid mid-scanline mode/display
+     * tearing by effecting key display bits per scanline, not immediately.
+     */
+    fmsx_vdp_commit_line_display_state();
+
     /* Line coincidence is active at 0..255 */
     /* in PAL and 0..234/244 in NTSC        */
     J=pal_timing? 256:ScanLines212? 245:235;
-
-    /* When reaching end of active line coincidence window, clear IE1 state */
-    if(ScanLine==J)
-    {
-      FmsxIE1PendingHBlank=0;
-      VDPStatus[1]&=0xFE;
-      SetIRQ(~INT_IE1);
-    }
 
     /* Arm line interrupt when the logical target line is reached */
     if(ScanLine<J)
     {
       const uint8_t IE1TargetLine = (uint8_t)((VDP[19]-VScroll)&0xFF);
-      if(((uint8_t)ScanLine==IE1TargetLine)&&!FmsxIE1PendingHBlank)
+      if(((uint8_t)ScanLine==IE1TargetLine)&&!FmsxIE1PendingHBlank&&!(VDPStatus[1]&0x01u))
       {
         FmsxIE1PendingHBlank=1;
         FmsxIE1ArmedCount++;
+        fmsx_vdp_trace_log(FMSX_VDP_EVENT_IE1_ARM);
       }
     }
 
@@ -2820,11 +3555,10 @@ uint16_t LoopZ80(Z80 *R)
   /* Fire IE1 at end-of-line (HBlank entry) once armed in active phase */
   if(FmsxIE1PendingHBlank)
   {
-    FmsxIE1PendingHBlank=0;
     FmsxIE1EventCount++;
     FmsxIE1FiredHBlankCount++;
-    VDPStatus[1]|=0x01;
-    if(VDP[0]&0x10) SetIRQ(INT_IE1);
+    fmsx_vdp_raise_ie1_latch();
+    fmsx_vdp_trace_log(FMSX_VDP_EVENT_IE1_FIRE);
   }
 
   /* HBlank takes HPeriod-HRefresh */
@@ -2849,9 +3583,14 @@ uint16_t LoopZ80(Z80 *R)
     /* Set VBlank bit, set VRefresh bit */
     VDPStatus[0]|=0x80;
     VDPStatus[2]|=0x40;
+    fmsx_vdp_cancel_ie1();
 
     /* Generate VBlank interrupt */
-    if(VDP[1]&0x20) SetIRQ(INT_IE0);
+    if(VDP[1]&0x20)
+    {
+      SetIRQ(INT_IE0);
+      fmsx_vdp_trace_log(FMSX_VDP_EVENT_IE0_FIRE);
+    }
   }
 
   /* Run V9938 engine */
@@ -3530,7 +4269,7 @@ int Cheats(int Switch)
 /*************************************************************/
 int GuessROM(const uint8_t *Buf,int Size)
 {
-  int J,I,K,Result,ROMCount[MAXMAPPERS];
+  int J,I,K,Result,ROMCount[FMSX_LOCAL_MAXMAPPERS];
   int BestScore,BestPrio,CandidatePrio;
   char S[256];
   RFILE *F;
@@ -3592,7 +4331,7 @@ int GuessROM(const uint8_t *Buf,int Size)
   if(Result>=0) return(Result);
 
   /* Clear all counters */
-  for(J=0;J<MAXMAPPERS;++J) ROMCount[J]=1;
+  for(J=0;J<FMSX_LOCAL_MAXMAPPERS;++J) ROMCount[J]=1;
   /* Generic 8kB mapper is default */
   ROMCount[MAP_GEN8]+=1;
   /* ASCII 16kB preferred over ASCII 8kB */
@@ -3625,7 +4364,7 @@ int GuessROM(const uint8_t *Buf,int Size)
   }
 
   /* Prefer practical MegaROM mappers over generic ones on ties. */
-  static const int MapperTiePriority[MAXMAPPERS] =
+  static const int MapperTiePriority[FMSX_LOCAL_MAXMAPPERS] =
   {
     10, /* MAP_GEN8     */
     20, /* MAP_GEN16    */
@@ -3634,14 +4373,17 @@ int GuessROM(const uint8_t *Buf,int Size)
     35, /* MAP_ASCII8   */
     50, /* MAP_ASCII16  */
     5,  /* MAP_GMASTER2 */
-    5   /* MAP_FMPAC    */
+    5,  /* MAP_FMPAC    */
+    0,  /* MAP_GUESS    */
+    60, /* MAP_MANBOW2  */
+    60  /* MAP_MANBOW2_2 */
   };
 
   /* Find mapper with best score; break ties by mapper priority. */
   I=0;
   BestScore=ROMCount[0];
   BestPrio=MapperTiePriority[0];
-  for(J=1;J<MAXMAPPERS;++J)
+  for(J=1;J<FMSX_LOCAL_MAXMAPPERS;++J)
   {
     CandidatePrio=MapperTiePriority[J];
     if((ROMCount[J]>BestScore)
@@ -3655,6 +4397,74 @@ int GuessROM(const uint8_t *Buf,int Size)
 
   /* Return the most likely mapper type */
   return(I);
+}
+
+static void fmsx_manbow2_save_flash_file(int slot)
+{
+  RFILE *f;
+  uint8_t *save_ptr;
+
+  if((slot<0)||(slot>=MAXSLOTS)) return;
+  if(!SaveManbow2Flash[slot] || !Manbow2FlashName[slot]) return;
+
+  save_ptr = fmsx_manbow2_flash_save_ptr(slot);
+  if(!save_ptr)
+  {
+    SaveManbow2Flash[slot] = 0;
+    return;
+  }
+
+  f = rfopen(Manbow2FlashName[slot],"wb");
+  if(!f)
+  {
+    SaveManbow2Flash[slot] = 0;
+    return;
+  }
+
+  if(rfwrite(save_ptr,1,FMSX_MANBOW2_FLASH_SAVE_SIZE,f)!=FMSX_MANBOW2_FLASH_SAVE_SIZE)
+    SaveManbow2Flash[slot] = 0;
+  else
+    SaveManbow2Flash[slot] = 0;
+
+  rfclose(f);
+}
+
+static void fmsx_manbow2_load_flash_file(int slot)
+{
+  RFILE *f;
+  uint8_t *save_ptr;
+
+  if((slot<0)||(slot>=MAXSLOTS) || !Manbow2FlashName[slot]) return;
+
+  save_ptr = fmsx_manbow2_flash_save_ptr(slot);
+  if(!save_ptr) return;
+
+  f = rfopen(Manbow2FlashName[slot],"rb");
+  if(!f) return;
+
+  memset(save_ptr,0xFF,FMSX_MANBOW2_FLASH_SAVE_SIZE);
+  (void)rfread(save_ptr,1,FMSX_MANBOW2_FLASH_SAVE_SIZE,f);
+  rfclose(f);
+}
+
+static void fmsx_manbow2_prepare_flash_file(int slot,const char *file_name)
+{
+  char *ext;
+
+  if((slot<0)||(slot>=MAXSLOTS) || !file_name) return;
+
+  fmsx_manbow2_free_slot_resources(slot);
+
+  Manbow2FlashName[slot]=(char *)GetMemory(strlen(file_name)+5u);
+  if(!Manbow2FlashName[slot]) return;
+
+  strcpy(Manbow2FlashName[slot],file_name);
+  ext = (char*)strrchr(Manbow2FlashName[slot],'.');
+  if(ext) strcpy(ext,".sav");
+  else strcat(Manbow2FlashName[slot],".sav");
+
+  fmsx_manbow2_flash_soft_reset(slot);
+  fmsx_manbow2_load_flash_file(slot);
 }
 
 /** LoadFNT() ************************************************/
@@ -3772,6 +4582,9 @@ int LoadCart(const char *FileName,int Slot,int Type)
   if(PS>=4)
      return 0;
 
+  if(fmsx_rom_type_is_manbow2(ROMType[Slot]))
+    fmsx_manbow2_save_flash_file(Slot);
+
   /* If there is a SRAM in this cartridge slot... */
   if(SRAMData[Slot]&&SaveSRAM[Slot]&&SRAMName[Slot])
   {
@@ -3815,6 +4628,12 @@ int LoadCart(const char *FileName,int Slot,int Type)
       FreeMemory(ROMData[Slot]);
       ROMData[Slot] = 0;
       ROMMask[Slot] = 0;
+      FreeMemory(SRAMData[Slot]);
+      FreeMemory((uint8_t*)SRAMName[Slot]);
+      SRAMData[Slot] = 0;
+      SRAMName[Slot] = 0;
+      SaveSRAM[Slot] = 0;
+      fmsx_manbow2_free_slot_resources(Slot);
       /* Set memory map to dummy RAM */
       for(C1=0;C1<8;++C1) MemMap[PS][SS][C1]=EmptyRAM;
       /* Restart MSX */
@@ -3970,7 +4789,7 @@ int LoadCart(const char *FileName,int Slot,int Type)
   }
 
   /* Guess MegaROM mapper type if not given */
-  if((Type>=MAP_GUESS)&&(ROMMask[Slot]+1>4))
+  if((Type==MAP_GUESS)&&(ROMMask[Slot]+1>4))
   {
     Type=GuessROM(P,Len<<13);
     if(Slot<MAXCARTS) SETROMTYPE(Slot,Type);
@@ -3979,6 +4798,11 @@ int LoadCart(const char *FileName,int Slot,int Type)
 
   /* Save MegaROM type */
   ROMType[Slot]=Type;
+
+  if(fmsx_rom_type_is_manbow2(Type))
+    fmsx_manbow2_prepare_flash_file(Slot,FileName);
+  else
+    fmsx_manbow2_free_slot_resources(Slot);
 
   /* For Generic/16kB carts, set ROM pages as 0:1:N-2:N-1 */
   if((Type==MAP_GEN16)&&(ROMMask[Slot]+1>4))
@@ -4042,6 +4866,14 @@ int LoadCart(const char *FileName,int Slot,int Type)
         }
       }
     }
+  }
+  else
+  {
+    FreeMemory(SRAMData[Slot]);
+    FreeMemory((uint8_t*)SRAMName[Slot]);
+    SRAMData[Slot]=0;
+    SRAMName[Slot]=0;
+    SaveSRAM[Slot]=0;
   }
 
   /* Done setting up cartridge */
@@ -4345,6 +5177,8 @@ unsigned int LoadState(unsigned char *Buf,unsigned int MaxSize)
 
   /* Set screen mode and VRAM table addresses */
   SetScreen();
+  FmsxVDPScreenOnLatched = (VDP[1]&0x40u)? 1u:0u;
+  FmsxVDPDisplayStateDirty = 0;
 
   /* Set some other variables */
   VPAGE    = VRAM+((int)VDP[14]<<14);

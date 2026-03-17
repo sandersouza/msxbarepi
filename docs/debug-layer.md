@@ -125,7 +125,8 @@ Diretriz visual (overlay e menu):
   - `HS`: valor efetivo de scroll horizontal.
   - `MP`: multipágina real ativa (`R25 bit0` **e** `R2 bit5`).
   - `DP`: página de display (`R2[6:5]`).
-  - `I1/F1`: IE1 habilitado (`R0 bit4`) e flag de coincidência ativa (`S#1 bit0`).
+  - `EP`: página efetiva usada pelo renderer na linha atual, já considerando odd/even do V9958.
+  - `I1/F1`: IE1 habilitado (`R0 bit4`) e latch horizontal ativo em `S#1 bit0` (sticky ate leitura de `S#1`, write em `R#19/R#0` ou inicio de VBlank).
 - `TM3`: telemetria VDP/timing útil para MSX2+ (parte 2):
   - `C`: comando VDP atual (`R46` high nibble).
   - `CE/TR`: bits de status do command engine (`S#2 bit0` e `S#2 bit7`).
@@ -134,7 +135,7 @@ Diretriz visual (overlay e menu):
   - `P1:x-y`: seleção ativa da página `4000h` (`PSL[1]-SSL[1]`).
   - `D:e/l`: `e`=setting efetiva (`disk_rom` ligado/desligado), `l`=estado de carga da `DISK.ROM` (`DiskROMLoaded`).
   - `S`: `HScroll512` bruto (bit `R25 bit0`).
-- `TM4`: diagnostico de progresso de boot MSX2+:
+- `TM4`: diagnostico de progresso de boot MSX2+ (parte principal):
   - `I1:a/b`: `a`=eventos de coincidencia de linha (`IE1`) gerados, `b`=ack por leitura de `S#1`.
   - `IA`: quantidade de vezes que o evento IE1 foi armado na fase ativa da linha.
   - `IH`: quantidade de vezes que o IE1 armado foi efetivamente disparado na entrada do HBlank.
@@ -143,8 +144,14 @@ Diretriz visual (overlay e menu):
   - `R1`: valor atual do registrador VDP `R#1`.
   - `R7`: valor atual do registrador VDP `R#7` (cores FG/BG em modos texto/tile).
   - `SO`: estado de `ScreenON` (`R#1 bit6`).
+- `TM4B`: diagnostico de interrupcao de VBlank (linha dedicada):
   - `I0`: habilitacao de interrupcao de VBlank (`R#1 bit5`).
   - `S0`: flag de VBlank em `S#0 bit7`.
+  - `HR/VR`: estado efetivo de `S#2 bit5/bit6` na fase atual da linha/frame.
+  - `LP`: fase da linha (`0`=area ativa, `1`=HBlank).
+  - `TL/TD`: linha-alvo de `IE1` e delta assinado entre o compare atual e a scanline corrente.
+  - `EO`: odd/even efetivo derivado de `S#2 bit1`.
+  - `RP`: página efetiva atualmente selecionada para render.
 - `TM5`: diagnostico de FDC/WD1793 (especialmente para `Disk I/O error`):
   - `ST`: `FDC.R[0]` (status WD1793).
   - `TR`: `FDC.R[1]` (track register).
@@ -152,6 +159,36 @@ Diretriz visual (overlay e menu):
   - `DR/SD`: drive e side ativos.
   - `IQ`: latch de `IRQ/DRQ` (`FDC.IRQ`).
   - `WT`: watchdog interno (`FDC.Wait`).
+- `TM6A`: trace de writes em registradores VDP — exibe **delta por frame** (variacao desde a ultima leitura, nao acumulado):
+  - `W9/W15/W18/W19/W25/W26/W27`: writes por frame em cada registrador VDP (cap 9999).
+- `TM6B`: ultimo evento capturado no trace VDP/IRQ das janelas do `SMANBOW2`:
+  - `EV`: tipo do ultimo evento (`I0`, `I1A`, `I1F`, `R19`, `R23`, `S1`, `S2`, `CS`, `CE`).
+  - `W`: janela do trace (`TI`=titulo, `SV`=save select, `SD`=transicao `STARDATE`).
+  - `PC/SL/LP`: `PC`, scanline e fase de linha (`0`=area ativa, `1`=HBlank) do ultimo evento.
+  - `B:x/y`: bancos MegaROM ativos em `4000h-7FFFh` e `8000h-BFFFh` no momento do evento.
+  - `R1/R23/S2`: snapshot dos registradores/status mais relevantes naquele ultimo evento.
+- `TM6C`: diagnostico direto do cart `SMANBOW2` / Flash `Manbow2`:
+  - `A8`: valor atual do registrador primario de slots.
+  - `EW`: `EnWrite` efetivo da pagina `4000h-7FFFh` (`1` indica que writes estao indo para RAM, nao para o cart).
+  - `C/T`: slot logico do cart ativo em `4000h-7FFFh` e `ROMType` detectado.
+  - `B:a/b/c/d`: bancos atuais nas quatro janelas de 8KB (`4000h/6000h/8000h/A000h`).
+  - `F`: ultima operacao relevante da Flash (`RD`, `RS`, `AS`, `PG`, `ER`, `CM`).
+  - `S/M`: estado interno da sequencia AMD e modo de leitura atual da Flash.
+  - `A/O`: ultimo endereco Z80 e ultimo offset absoluto na Flash vistos pelo mapper.
+  - `V:w/r`: ultimo valor escrito e ultimo valor lido de volta pela Flash.
+
+## Trace detalhado VDP/IRQ
+
+- O overlay continua exibindo apenas o resumo persistente por frame.
+- O dump detalhado passou para um buffer circular de runtime exposto por `fmsx_runtime_get_vdp_trace_view()`.
+- Cada evento do trace registra, em build `DEBUG=1`:
+  - frame, scanline, fase da linha, `PC` e screen mode;
+  - `R#1/R#2/R#8/R#9/R#15/R#19/R#23/R#25/R#26/R#27`;
+  - `S#0/S#1/S#2`, `IRQPending`, `ScreenON`, `IE0`, `IE1`;
+  - odd/even efetivo, página efetiva de render e bancos MegaROM ativos em `4000h-7FFFh` e `8000h-BFFFh`;
+  - eventos de `IE0`, `IE1`, writes em `R#19/R#23`, reads de `S#1/S#2` e início/fim de comando VDP.
+- O overlay agora exibe apenas o **ultimo** evento relevante dessa trilha em `TM6B`, para facilitar captura por screenshot em hardware.
+- Para o freeze do `SMANBOW2` em `PC:C698/C699`, `TM6C` e a linha de maior valor diagnostico: ela mostra se a pagina `4000h` continua apontando para o cart, quais bancos estao ativos e se a Flash realmente recebeu/programou/leu o offset esperado (`0x70000+`).
 
 ## Arquitetura (modular)
 - Renderer da debug layer desacoplado em objeto plugavel:

@@ -14,6 +14,11 @@
 /*************************************************************/
 #ifndef NARROW
 
+#ifndef FMSX_SCREEN_ON
+extern uint8_t FmsxVDPScreenOnLatched;
+#define FMSX_SCREEN_ON (FmsxVDPScreenOnLatched)
+#endif
+
 /** ClearLine512() *******************************************/
 /** Clear 512 pixels from P with color C.                   **/
 /*************************************************************/
@@ -151,14 +156,13 @@ void RefreshLine6(uint8_t Y)
   uint16_t *P=RefreshBorder512(Y,XPal[BGColor&0x03]);
   if(!P) return;
 
-  if(!ScreenON) ClearLine512(P,XPal[BGColor&0x03]);
+  if(!FMSX_SCREEN_ON) ClearLine512(P,XPal[BGColor&0x03]);
   else
   {
     LastScanline = Y + FirstLine;
     ColorSprites(Y,ZBuf);
     R=ZBuf+32;
-    T=ChrTab+(((int)(Y+VScroll)<<7)&ChrTabM&0x7FFF);
-    if (FlipEvenOdd && OddPage && VRAM<=T-0x8000) T-=0x8000;
+    T=V9958BitmapLinePtr(ChrTab,Y);
     Coarse = V9958CoarseScroll512();
     Fine = V9958FineScroll512();
     LeftMask = V9958MaskLeft512();
@@ -207,7 +211,7 @@ void RefreshLine6(uint8_t Y)
 /*************************************************************/
 void RefreshLine7(uint8_t Y)
 {
-  uint8_t C,*T,*R,*T0,*T1;
+  uint8_t C,*T,*R,*T0,*T1,*Plane0,*Plane1;
   int PIdx,Src;
   unsigned Coarse;
   unsigned Fine;
@@ -220,34 +224,41 @@ void RefreshLine7(uint8_t Y)
   uint16_t *P=RefreshBorder512(Y,XPal[BGColor]);
   if(!P) return;
 
-  if(!ScreenON) ClearLine512(P,XPal[BGColor]);
+  if(!FMSX_SCREEN_ON) ClearLine512(P,XPal[BGColor]);
   else
   {
     LastScanline = Y + FirstLine;
     ColorSprites(Y,ZBuf);
     R=ZBuf+32;
-    T=ChrTab+(((int)(Y+VScroll)<<8)&ChrTabM&0xFFFF);
-    if (FlipEvenOdd && OddPage && VRAM<=T-0x10000) T-=0x10000;
+    T=V9958BitmapLinePtr(ChrTab,Y);
     Coarse = V9958CoarseScroll512();
     Fine = V9958FineScroll512();
     LeftMask = V9958MaskLeft512();
     VirtualWidth = V9958VirtualWidth512();
 
     T0=T;
-    for(PIdx=0;PIdx<256;PIdx++)
+    Plane0=T0;
+    Plane1=V9958ScrollPagePtr(T0,(int)V9958InterleavedPlaneOffset());
+    for(PIdx=0;PIdx<128;PIdx++)
     {
-      BgRaw[(PIdx<<1)+0]=T0[PIdx]>>4;
-      BgRaw[(PIdx<<1)+1]=T0[PIdx]&0x0F;
+      BgRaw[(PIdx<<2)+0]=Plane0[PIdx]>>4;
+      BgRaw[(PIdx<<2)+1]=Plane0[PIdx]&0x0F;
+      BgRaw[(PIdx<<2)+2]=Plane1[PIdx]>>4;
+      BgRaw[(PIdx<<2)+3]=Plane1[PIdx]&0x0F;
     }
 
     if(VirtualWidth>512u)
     {
-      /* SCR7 next horizontal page is +0x10000 in fMSX VRAM layout. */
-      T1=V9958ScrollPagePtr(T0,0x10000);
-      for(PIdx=0;PIdx<256;PIdx++)
+      /* SCR7 multipage follows the same +0x8000 page step as SCR5/6/8. */
+      T1=V9958ScrollPagePtr(T0,0x8000);
+      Plane0=T1;
+      Plane1=V9958ScrollPagePtr(T1,(int)V9958InterleavedPlaneOffset());
+      for(PIdx=0;PIdx<128;PIdx++)
       {
-        BgRaw[512+(PIdx<<1)+0]=T1[PIdx]>>4;
-        BgRaw[512+(PIdx<<1)+1]=T1[PIdx]&0x0F;
+        BgRaw[512+(PIdx<<2)+0]=Plane0[PIdx]>>4;
+        BgRaw[512+(PIdx<<2)+1]=Plane0[PIdx]&0x0F;
+        BgRaw[512+(PIdx<<2)+2]=Plane1[PIdx]>>4;
+        BgRaw[512+(PIdx<<2)+3]=Plane1[PIdx]&0x0F;
       }
     }
 
@@ -278,7 +289,7 @@ void RefreshLineTx80(uint8_t Y)
   uint16_t *P=RefreshBorder512(Y,BC);
   if(!P) return;
 
-  if(!ScreenON) ClearLine512(P,BC);
+  if(!FMSX_SCREEN_ON) ClearLine512(P,BC);
   else
   {
     LastScanline = Y + FirstLine;
