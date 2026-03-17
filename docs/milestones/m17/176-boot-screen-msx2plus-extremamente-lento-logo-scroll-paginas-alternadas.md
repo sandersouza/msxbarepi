@@ -89,6 +89,31 @@ Restaurar velocidade normal da animacao de boot no MSX2+ sem regressao em:
   - distinguir se o loop em `PC:C698/C699` falha por banco incorreto, write que nao chega ao cart ou readback incoerente da Flash.
 - ainda falta validacao em hardware para confirmar se o splash/tela de save deixaram de ler o mesmo plano duas vezes e quanto de distorcao visual residual ainda resta no renderer do V9958.
 
+## Estado atual (17/03/2026 11:10 BRT)
+- `SMANBOW2` continua fora de escopo; a frente ativa segue sendo apenas o boot screen/logo do `MSX2+`.
+- A tentativa anterior de portar `SCREEN 6/7` de forma mais literal ao BlueMSX **regrediu** o logo:
+  - barras verticais;
+  - letras severamente corrompidas;
+  - boot ainda terminando por volta de `F:004300`.
+- Acao corretiva aplicada:
+  - revertido o rewrite amplo de `RefreshLine6()/RefreshLine7()` nos caminhos `NARROW` e `WIDE`;
+  - restaurado o baseline anterior com `BgRaw[1024]`/largura virtual, que era menos agressivo;
+  - o foco da rodada foi deslocado para o command engine do VDP.
+- Ajuste novo ativo:
+  - `GetVdpTimingValue()` agora reduz o custo dos comandos (`/8`, minimo `1`) apenas dentro do fluxo BIOS do logo `MSX2+`:
+    - `0x2BE4..0x2C27`
+    - `0x2E3E..0x2F97`
+    - `0x3040..0x3147`
+    - `0x3299..0x3325`
+  - objetivo: aproximar a cadencia de fim de comando/polling de `S#2 bit0` ao BlueMSX/openMSX sem tocar em carts/gameplay.
+- Evidencia local:
+  - `scripts/check-third-party-pristine.sh` OK
+  - `make -j4 DEBUG=1` OK
+  - `BUILD_HASH:cf021ce-b889f9d9d4ae9e4b8086e9d94dec84170b30abec`
+- Proximo passo:
+  - validar em hardware o comportamento do boot com o renderer revertido e timing BIOS ajustado;
+  - se continuar lento ate ~`F:004300`, atacar diretamente a semantica de `S#2 bit0`/polling do loop `0x2BE4`.
+
 ## Checklist
 - [x] Abrir issue e vincular a milestone m17
 - [x] Criar branch vinculada da issue

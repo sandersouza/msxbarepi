@@ -57,9 +57,9 @@ Registro de desafios enfrentados por issue, decisão adotada e status da soluç�
 - Status: Futuro
 - Referência: [186-p1-bug-rensha-turbo-auto-fire-space-parou-de-funcionar.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/186-p1-bug-rensha-turbo-auto-fire-space-parou-de-funcionar.md)
 
-### #187 — Reduzir latência do teclado
-- Desafio: Latência de input ainda perceptível em jogo/menu e potencial subamostragem de leitura por ciclo.
-- Solução adotada: Em backlog; instrumentar polling/processamento de teclado por ciclo e reduzir latência sem regressão de press/release.
+### #187 — fila de captura USB-HID fora do ciclo do Z80
+- Desafio: O pipeline ainda pode perder ou distorcer transições `press/release` por subamostragem entre o clock de captura USB-HID e o clock de consumo do core, gerando falha intermitente ou repetição contínua em gameplay.
+- Solução adotada: Issue reaberta com foco arquitetural; criar tool importável de fila/cache de input em `src/tools/input/`, desacoplando captura e consumo e preservando transições antes da integração definitiva no core.
 - Status: Futuro
 - Referência: [187-p1-reduzir-latencia-do-teclado-polling-processamento-por-ciclo.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/187-p1-reduzir-latencia-do-teclado-polling-processamento-por-ciclo.md)
 

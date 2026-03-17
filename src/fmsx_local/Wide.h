@@ -143,12 +143,14 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
 /*************************************************************/
 void RefreshLine6(uint8_t Y)
 {
-  uint8_t C,*T,*R,*T0,*T1;
+  uint8_t C,*T,*R,*T0;
   int PIdx,Src;
   unsigned Coarse;
   unsigned Fine;
   unsigned LeftMask;
   unsigned VirtualWidth;
+  unsigned ByteWidth;
+  uint8_t ByteRaw[256];
   uint8_t BgRaw[1024];
   uint8_t BgIndex;
   uint8_t MaskBg;
@@ -167,27 +169,16 @@ void RefreshLine6(uint8_t Y)
     Fine = V9958FineScroll512();
     LeftMask = V9958MaskLeft512();
     VirtualWidth = V9958VirtualWidth512();
+    ByteWidth = VirtualWidth>>2;
 
     T0=T;
-    for(PIdx=0;PIdx<128;PIdx++)
+    V9958BuildScreen67ByteStream(T0,ByteRaw,ByteWidth);
+    for(PIdx=0;PIdx<(int)ByteWidth;PIdx++)
     {
-      BgRaw[(PIdx<<2)+0]=T0[PIdx]>>6;
-      BgRaw[(PIdx<<2)+1]=(T0[PIdx]>>4)&0x03;
-      BgRaw[(PIdx<<2)+2]=(T0[PIdx]>>2)&0x03;
-      BgRaw[(PIdx<<2)+3]=T0[PIdx]&0x03;
-    }
-
-    if(VirtualWidth>512u)
-    {
-      /* SCR6 next horizontal page is +0x8000 in fMSX VRAM layout. */
-      T1=V9958ScrollPagePtr(T0,0x8000);
-      for(PIdx=0;PIdx<128;PIdx++)
-      {
-        BgRaw[512+(PIdx<<2)+0]=T1[PIdx]>>6;
-        BgRaw[512+(PIdx<<2)+1]=(T1[PIdx]>>4)&0x03;
-        BgRaw[512+(PIdx<<2)+2]=(T1[PIdx]>>2)&0x03;
-        BgRaw[512+(PIdx<<2)+3]=T1[PIdx]&0x03;
-      }
+      BgRaw[(PIdx<<2)+0]=ByteRaw[PIdx]>>6;
+      BgRaw[(PIdx<<2)+1]=(ByteRaw[PIdx]>>4)&0x03;
+      BgRaw[(PIdx<<2)+2]=(ByteRaw[PIdx]>>2)&0x03;
+      BgRaw[(PIdx<<2)+3]=ByteRaw[PIdx]&0x03;
     }
 
     MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];
@@ -211,13 +202,16 @@ void RefreshLine6(uint8_t Y)
 /*************************************************************/
 void RefreshLine7(uint8_t Y)
 {
-  uint8_t C,*T,*R,*T0,*T1,*Plane0,*Plane1;
+  uint8_t C,*T,*R,*T0,*Plane0,*Plane1;
   int PIdx,Src;
   unsigned Coarse;
   unsigned Fine;
   unsigned LeftMask;
   unsigned VirtualWidth;
+  unsigned ByteWidth;
   uint8_t BgRaw[1024];
+  uint8_t ByteRaw0[256];
+  uint8_t ByteRaw1[256];
   uint8_t BgIndex;
   uint8_t MaskBg;
   uint8_t ZBuf[304];
@@ -235,31 +229,19 @@ void RefreshLine7(uint8_t Y)
     Fine = V9958FineScroll512();
     LeftMask = V9958MaskLeft512();
     VirtualWidth = V9958VirtualWidth512();
+    ByteWidth = VirtualWidth>>2;
 
     T0=T;
     Plane0=T0;
     Plane1=V9958VRAMOffsetPtr(T0,(int)V9958InterleavedPlaneOffset());
-    for(PIdx=0;PIdx<128;PIdx++)
+    V9958BuildScreen67ByteStream(Plane0,ByteRaw0,ByteWidth);
+    V9958BuildScreen67ByteStream(Plane1,ByteRaw1,ByteWidth);
+    for(PIdx=0;PIdx<(int)ByteWidth;PIdx++)
     {
-      BgRaw[(PIdx<<2)+0]=Plane0[PIdx]>>4;
-      BgRaw[(PIdx<<2)+1]=Plane0[PIdx]&0x0F;
-      BgRaw[(PIdx<<2)+2]=Plane1[PIdx]>>4;
-      BgRaw[(PIdx<<2)+3]=Plane1[PIdx]&0x0F;
-    }
-
-    if(VirtualWidth>512u)
-    {
-      /* SCR7 multipage follows the same +0x8000 page step as SCR5/6/8. */
-      T1=V9958ScrollPagePtr(T0,0x8000);
-      Plane0=T1;
-      Plane1=V9958VRAMOffsetPtr(T1,(int)V9958InterleavedPlaneOffset());
-      for(PIdx=0;PIdx<128;PIdx++)
-      {
-        BgRaw[512+(PIdx<<2)+0]=Plane0[PIdx]>>4;
-        BgRaw[512+(PIdx<<2)+1]=Plane0[PIdx]&0x0F;
-        BgRaw[512+(PIdx<<2)+2]=Plane1[PIdx]>>4;
-        BgRaw[512+(PIdx<<2)+3]=Plane1[PIdx]&0x0F;
-      }
+      BgRaw[(PIdx<<2)+0]=ByteRaw0[PIdx]>>4;
+      BgRaw[(PIdx<<2)+1]=ByteRaw0[PIdx]&0x0F;
+      BgRaw[(PIdx<<2)+2]=ByteRaw1[PIdx]>>4;
+      BgRaw[(PIdx<<2)+3]=ByteRaw1[PIdx]&0x0F;
     }
 
     MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];

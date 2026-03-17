@@ -1002,3 +1002,76 @@ Delta TM6A/TM6B por frame validados em hardware. Tabela de achados:
 - Proximo passo:
   - validar em hardware se o fundo/logo do `SMANBOW2` deixou de ser recomposto em blocos/tercos;
   - se ainda restar glitch visual, o foco seguinte fica em scroll/mask/page source efetiva de `RefreshLine8()`, nao mais em mapper/cart nem no path `0x98`.
+
+## Iteracao atual (17/03/2026 11:10 BRT)
+- Mudanca de foco consolidada:
+  - `SMANBOW2` permanece fora do escopo ativo;
+  - a frente atual continua sendo exclusivamente o boot/logo do `MSX2+`.
+- Evidencia nova de hardware:
+  - a tentativa anterior de reescrever `SCREEN 6/7` em modo "ponteiro inicial + decode direto" regrediu fortemente o logo;
+  - o sintoma em hardware virou barras verticais/coloridas e letras corrompidas, ainda parando por volta de `F:004300`;
+  - os prints mais recentes mostraram `TM6C ... T:07/2 ...`, com o problema agora claramente no renderer/timing do boot, nao em mapper/cart.
+- Analise de referencia usada nesta rodada:
+  - BlueMSX:
+    - `third_party/bluemsx/blueMSX/Src/VideoChips/Common.h`
+      - `RefreshLine6()`
+      - `RefreshLine7()`
+      - `jumpTable`
+    - `third_party/bluemsx/blueMSX/Src/VideoChips/VDP.c`
+      - `vdpGetStatus()`
+      - `vdpGetHScroll()`
+      - `vdpIsOddPage()`
+  - disassembly/workflow locais:
+    - `docs/reverse-engineering/msx2plus/MSX2PEXT.ROM.dis`
+    - `docs/workflow_boot_msx2plus.md`
+    - pontos relevantes do BIOS:
+      - `0x2BE4`: loop de espera de fim de comando via `S#2 bit0`
+      - `0x2BEF`: selecao de status/`in a,(099h)`
+      - `0x2E3E`, `0x2EBF`, `0x3040`, `0x3299`: estagios de setup/animacao do logo
+- Causa raiz refinada:
+  - a tentativa de portar o renderer de `SCREEN 6/7` "mais literalmente" para o modelo do BlueMSX foi agressiva demais e nao fechou com o layout/estado efetivo atual do core local;
+  - o caminho anterior com `BgRaw[1024]` e largura virtual continua sendo o baseline menos quebrado;
+  - a frente mais promissora voltou a ser a cadencia do command engine/polling de `S#2 bit0` no BIOS do `MSX2+`, nao mais uma troca estrutural grande no renderer.
+- Correcao aplicada nesta rodada:
+  - `src/fmsx_local/Common.h`
+    - revertido o rewrite "decode direto" de `RefreshLine6()`/`RefreshLine7()` para o baseline anterior baseado em `BgRaw[1024]`;
+    - preservados apenas os helpers pequenos ja introduzidos para `chrTab`/scroll, sem recolocar o caminho quebrado no renderer ativo;
+  - `src/fmsx_local/Wide.h`
+    - revertido o rewrite "decode direto" de `RefreshLine6()`/`RefreshLine7()` para o baseline anterior do caminho `WIDE`;
+  - `src/fmsx_local/V9938.c`
+    - mantido `LoopVDP()` baseado em `VdpAdvanceOps()`;
+    - `GetVdpTimingValue()` agora reduz o custo dos comandos (`/8`, minimo `1`) apenas quando `CPU.PC.W` esta no fluxo de boot BIOS do `MSX2+`:
+      - `0x2BE4..0x2C27`
+      - `0x2E3E..0x2F97`
+      - `0x3040..0x3147`
+      - `0x3299..0x3325`
+    - objetivo: aproximar a cadencia de fim de comando do BlueMSX/openMSX sem tocar em gameplay, carts ou outros modelos.
+- Justificativa tecnica:
+  - a tentativa anterior provou que o problema restante nao aceita uma reescrita ampla do renderer sem fechar primeiro a semantica de timing do boot;
+  - esta rodada retorna o renderer ao ultimo baseline menos agressivo e isola o proximo experimento no command engine/polling do BIOS.
+- Validacao local:
+  - `scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1` (OK)
+  - artefatos atualizados:
+    - `artifacts/kernel8-issue176.img`
+    - `artifacts/kernel8-default.img`
+- Rastreabilidade:
+  - `BUILD_HASH:cf021ce-b889f9d9d4ae9e4b8086e9d94dec84170b30abec`
+- Proximo passo:
+  - validar em hardware a build com o renderer revertido e o timing do command engine reduzido apenas no caminho BIOS do boot;
+  - se o frame final continuar em ~`F:004300`, o proximo alvo fica em `S#2 bit0`/cadencia de polling do `0x2BE4`, nao mais em reescrever `RefreshLine6/7`.
+
+## Iteracao atual (17/03/2026 11:03 BRT)
+- Sincronizacao de gestao executada via GitHub MCP:
+  - issue remota `#187` foi reaberta na milestone `#17`;
+  - titulo atualizado para focar fila de captura USB-HID fora do ciclo do Z80;
+  - corpo reescrito para deixar explicito que `PRESS UP/DOWN` significa transicoes `press/release`, e nao teclas direcionais.
+- Decisao arquitetural registrada:
+  - a proxima frente de input deve nascer como tool importavel em `src/tools/input/`;
+  - a issue passa a exigir separacao entre `capture clock` e `consume clock`;
+  - a primeira entrega segue focada em teclado, com joystick previsto desde ja no contrato publico.
+- Espelho local sincronizado:
+  - `docs/milestones/m17/187-p1-reduzir-latencia-do-teclado-polling-processamento-por-ciclo.md`
+  - `docs/milestones/m17/CHALLENGES.md`
+- Observacao:
+  - nenhuma mudanca funcional de codigo foi aplicada nesta iteracao; apenas gestao remota da issue e sincronizacao documental.

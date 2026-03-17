@@ -18,6 +18,14 @@ Este documento consolida:
 ## Fluxo da ROM/SUBROM (disassembly)
 Fonte: `docs/reverse-engineering/msx2plus/MSX2PEXT.ROM.dis`.
 
+### Confirmacao de origem do logo
+- O fluxo do logo esta no `MSX2PEXT.ROM`, nao no `KANJI.ROM`.
+- Ponto de entrada confirmado:
+  - `0x047d -> CALL 0x2c76`
+- Clarificacao operacional:
+  - o contador `F:xxxxx` do overlay e frame de runtime;
+  - ele nao corresponde a endereco de ROM.
+
 ### Rotina de espera de comando VDP
 - Endereço `0x2BE4`:
   - `LD A,02h`
@@ -46,6 +54,18 @@ Nesses blocos, a ROM:
 Conclusão: o boot logo depende fortemente de
 1) progressão correta do command engine, e
 2) polling de status com semântica fiel.
+
+### Leitura refinada da animacao
+- A leitura do disassembly confirma a percepcao visual de hardware:
+  - o efeito usa composicao por paginas/linhas alternadas;
+  - o BIOS empurra blocos de comando para o VDP e sincroniza por polling de status;
+  - ha transformacao de dados na CPU (`RRCA`, `RLCA`, `AND`, `OR`) antes de parte dos `OTIR` para `0x9B`.
+- A hipotese de "dois framebuffers completos prontos e apenas exibidos depois" nao foi confirmada.
+- O modelo mais consistente com a ROM e com BlueMSX/openMSX e:
+  - composicao guiada por command engine;
+  - uso de odd/even page;
+  - scroll horizontal oposto por paginas/linhas alternadas;
+  - reuniao progressiva no centro.
 
 ## Workflow de referência: BlueMSX
 Fontes:
@@ -153,6 +173,28 @@ Critério de saída:
 Critério de saída:
 - efeito visual do logo equivalente ao padrão BlueMSX (blocos/linhas alternadas por lados), sem regressão em MSX1/MSX2.
 
+### Estado da Fase 1 em 17/03/2026 11:10 BRT
+- Odd/even page ja foi migrado para estado efetivo do VDP nas rodadas anteriores.
+- A tentativa de portar `SCREEN 6/7` para um modelo mais literal ao BlueMSX **regrediu** o logo em hardware:
+  - barras verticais;
+  - letras corrompidas;
+  - boot ainda indo ate ~`F:004300`.
+- Decisao da rodada:
+  - o rewrite amplo de `RefreshLine6()/RefreshLine7()` foi revertido;
+  - o baseline voltou ao caminho anterior com `BgRaw[1024]`/largura virtual;
+  - a Fase 1 continua aberta, mas sem novo rewrite estrutural ate fechar a semantica do timing do boot.
+- Implicacao:
+  - qualquer novo ajuste visual em `SCREEN 6/7` daqui em diante deve ser incremental e validado contra o comportamento do command engine/polling real do BIOS.
+
+### Refinamento incremental em 17/03/2026 11:52 BRT
+- Novo ajuste implementado no renderer `SCREEN 6/7`:
+  - sem reescrever o caminho inteiro;
+  - trocando apenas a montagem da fonte virtual da linha.
+- `Common.h` e `Wide.h` agora usam um stream de bytes guiado por `jumpTable` para `SCREEN 6/7`, em vez de assumir que a segunda metade virtual da linha e sempre `+0x8000`.
+- Objetivo do ajuste:
+  - alinhar o fetch de linha ao comportamento do BlueMSX quando `hscroll512` e page split entram no logo;
+  - atacar diretamente os sintomas de blocos deslocados/duplicados sem reabrir o rewrite que ja havia regredido o logo.
+
 ### Fase 2 — Corrigir cadência do command engine
 - Remover dependência de quantum “turbinado” específico de modelo.
 - Sincronizar progressão do command engine com tempo emulado e pontos de I/O VDP (modelo BlueMSX/openMSX).
@@ -160,6 +202,20 @@ Critério de saída:
 
 Critério de saída:
 - reduzir tempo de boot logo de ~4500 frames para faixa próxima do esperado em referência, sem quebrar 60Hz já estabilizado.
+
+### Estado da Fase 2 em 17/03/2026 11:10 BRT
+- `LoopVDP()` continua baseado em `VdpAdvanceOps()`.
+- A rodada atual adicionou um ajuste local em `GetVdpTimingValue()`:
+  - custo dos comandos dividido por `8` apenas dentro do fluxo BIOS do logo `MSX2+`:
+    - `0x2BE4..0x2C27`
+    - `0x2E3E..0x2F97`
+    - `0x3040..0x3147`
+    - `0x3299..0x3325`
+- Hipotese ativa:
+  - o gargalo restante dominante esta na cadencia do polling de `S#2 bit0`, nao em mapper/cart nem em rewrite estrutural do renderer.
+- Proxima verificacao de hardware:
+  - confirmar se o frame final desce de ~`F:004300`;
+  - se nao descer, revisar a semantica de `S#2 bit0` e o ponto exato do fim de comando esperado pelo BIOS em `0x2BE4`.
 
 ### Fase 3 — Regressão completa e limpeza
 - Revalidar:
