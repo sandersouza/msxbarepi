@@ -140,6 +140,10 @@ typedef struct {
     unsigned slot_reg;
     unsigned p1_write_enabled;
     unsigned cart_type_p1;
+    unsigned cart_type_source_p1;
+    unsigned cart_last_type_slot;
+    unsigned cart_last_type_value;
+    unsigned cart_last_type_source;
     unsigned msx2p_kanji_basic;
     unsigned msx2p_kanji_basic_map_ok;
     unsigned msx2p_kanji_basic_selected_p1;

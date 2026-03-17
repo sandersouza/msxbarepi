@@ -79,11 +79,11 @@ INLINE unsigned V9958VirtualWidth512(void)
   return (MODEL(MSX_MSX2P) && (VDP[25] & 0x01u) && (VDP[2] & 0x20u)) ? 1024u : 512u;
 }
 
-INLINE uint8_t *V9958ScrollPagePtr(uint8_t *Base,int Offset)
+INLINE uint8_t *V9958VRAMOffsetPtr(uint8_t *Base,int Offset)
 {
   int Size,Pos;
 
-  if(!MODEL(MSX_MSX2P) || !(VDP[25] & 0x01u) || !(VDP[2] & 0x20u) || !Offset) return Base;
+  if(!Offset) return Base;
   Size=VRAMPages<<14;
   if(Size<=0) return Base;
 
@@ -91,6 +91,12 @@ INLINE uint8_t *V9958ScrollPagePtr(uint8_t *Base,int Offset)
   Pos%=Size;
   if(Pos<0) Pos+=Size;
   return VRAM+Pos;
+}
+
+INLINE uint8_t *V9958ScrollPagePtr(uint8_t *Base,int Offset)
+{
+  if(!MODEL(MSX_MSX2P) || !(VDP[25] & 0x01u) || !(VDP[2] & 0x20u) || !Offset) return Base;
+  return V9958VRAMOffsetPtr(Base,Offset);
 }
 
 INLINE unsigned V9958InterleavedPlaneOffset(void)
@@ -127,7 +133,7 @@ INLINE void V9958ExpandInterleaved256ToPalette(uint16_t *Dst,uint8_t *EvenBase)
   uint8_t *OddBase;
   int I;
 
-  OddBase=V9958ScrollPagePtr(EvenBase,(int)V9958InterleavedPlaneOffset());
+  OddBase=V9958VRAMOffsetPtr(EvenBase,(int)V9958InterleavedPlaneOffset());
   for(I=0;I<128;++I)
   {
     Dst[(I<<1)+0]=BPal[EvenBase[I]];
@@ -140,7 +146,7 @@ INLINE void V9958ExpandInterleaved256ToBytes(uint8_t *Dst,uint8_t *EvenBase)
   uint8_t *OddBase;
   int I;
 
-  OddBase=V9958ScrollPagePtr(EvenBase,(int)V9958InterleavedPlaneOffset());
+  OddBase=V9958VRAMOffsetPtr(EvenBase,(int)V9958InterleavedPlaneOffset());
   for(I=0;I<128;++I)
   {
     Dst[(I<<1)+0]=EvenBase[I];
@@ -1065,11 +1071,7 @@ void RefreshLine8(uint8_t Y)
     R0=R;
     S0=R;
     P0=P;
-    /*
-     * SCREEN 8 stores adjacent pixels in alternating 64KB planes on V9938/V9958.
-     * Follow BlueMSX/openMSX layout here: 128 bytes per line per plane, page bit in
-     * +0x8000, odd/even pixel plane in +0x10000.
-     */
+    /* Follow BlueMSX/openMSX interleaved layout: 128 bytes/line per plane. */
     T=V9958BitmapLinePtr(ChrTab,Y);
     Coarse = V9958CoarseScroll256();
     Fine = V9958FineScroll256();
@@ -1081,7 +1083,6 @@ void RefreshLine8(uint8_t Y)
 
     if(VirtualWidth>256u)
     {
-      /* SCREEN 8 horizontal multipage toggles bit15 inside each interleaved plane. */
       T1=V9958ScrollPagePtr(T0,0x8000);
       V9958ExpandInterleaved256ToPalette(BgRaw+256,T1);
     }
@@ -1144,7 +1145,6 @@ void RefreshLine10(uint8_t Y)
 
     if(VirtualWidth>256u)
     {
-      /* YJK/YAE 256px modes share the same interleaved VRAM layout as SCREEN 8. */
       T1=V9958ScrollPagePtr(T0,0x8000);
       V9958ExpandInterleaved256ToBytes(BgRaw+256,T1);
     }
@@ -1369,7 +1369,7 @@ void RefreshLine7(uint8_t Y)
 
     T0=T;
     Plane0=T0;
-    Plane1=V9958ScrollPagePtr(T0,(int)V9958InterleavedPlaneOffset());
+    Plane1=V9958VRAMOffsetPtr(T0,(int)V9958InterleavedPlaneOffset());
     for(X=0;X<128;X++)
     {
       BgRaw[(X<<2)+0]=XPal[Plane0[X]>>4];
@@ -1382,7 +1382,7 @@ void RefreshLine7(uint8_t Y)
     {
       T1=V9958ScrollPagePtr(T0,0x8000);
       Plane0=T1;
-      Plane1=V9958ScrollPagePtr(T1,(int)V9958InterleavedPlaneOffset());
+      Plane1=V9958VRAMOffsetPtr(T1,(int)V9958InterleavedPlaneOffset());
       for(X=0;X<128;X++)
       {
         BgRaw[512+(X<<2)+0]=XPal[Plane0[X]>>4];

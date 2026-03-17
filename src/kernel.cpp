@@ -2169,11 +2169,12 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 			timing_stats.trace_last_status2 & 0xFFu);
 		WriteScreenText(line);
 
-		line.Format("\x1b[97m\x1b[49m\x1b[19;1HTM6C A8:%02X EW:%u C:%u T:%02X B:%02X/%02X/%02X/%02X F:%s S:%u M:%u A:%04X O:%05X V:%02X/%02X",
+		line.Format("\x1b[97m\x1b[49m\x1b[19;1HTM6C A8:%02X EW:%u C:%u T:%02X/%u B:%02X/%02X/%02X/%02X F:%s S:%u M:%u A:%04X O:%05X V:%02X/%02X",
 			timing_stats.slot_reg & 0xFFu,
 			timing_stats.p1_write_enabled ? 1u : 0u,
 			timing_stats.cart_slot_p1 & 0xFFu,
 			timing_stats.cart_type_p1 & 0xFFu,
+			timing_stats.cart_type_source_p1 > 9u ? 9u : timing_stats.cart_type_source_p1,
 			timing_stats.cart_bank_p1_lo & 0xFFu,
 			timing_stats.cart_bank_p1_hi & 0xFFu,
 			timing_stats.cart_bank_p2_lo & 0xFFu,

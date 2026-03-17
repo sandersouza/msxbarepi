@@ -834,3 +834,171 @@ Delta TM6A/TM6B por frame validados em hardware. Tabela de achados:
   - validar em hardware se o freeze finalmente sai de `PC:C698/C699`;
   - se a gameplay ainda nao entrar, usar `TM6C` ja funcional na linha 19 para verificar se o write path da Flash esta ativo e qual offset/banco o helper em RAM esta tentando programar;
   - manter a distorcao visual do titulo/save como frente separada do renderer V9958.
+
+## Iteracao atual (16/03/2026 23:05 BRT)
+- Regressao confirmada em hardware apos a iteracao anterior:
+  - a build passou a travar ja na carga de ROMs em `MSX2` e `MSX2+`, incluindo `XEVIOUS.ROM` e `SMANBOW2.ROM`;
+  - os prints mostraram `TM6C` com `T:00`, isto e, o cart ativo em `P1` estava voltando ao tipo base generico logo na carga, antes mesmo do freeze especifico do `SMANBOW2`.
+- Causa raiz da regressao:
+  - o hotfix anterior trocou o teste de guess em `LoadCart()` para `Type==MAP_GUESS`;
+  - porem o projeto nao passa apenas `8` nesse caminho: ele chama `LoadCart()` com `ROMGUESS(n)|ROMTYPE(n)`, ou seja, flag de guess nos bits altos combinada com o nibble baixo do tipo base;
+  - com `Type==MAP_GUESS`, o loader deixou de reconhecer quase todo carregamento normal que dependia de autodeteccao, e ROMs grandes ficaram presas no tipo base truncado.
+- Correcao aplicada:
+  - `src/fmsx_local/MSX.c`
+    - `LoadCart()` agora separa explicitamente:
+      - `GuessRequested`: pedido de autodeteccao vindo de `MAP_GUESS` puro ou de `ROMGUESS(A/B)` nos bits altos;
+      - `Type`: tipo efetivo do mapper mantido no nibble baixo (`Type &= 0x0F`);
+    - a autodeteccao volta a ocorrer para o fluxo normal de carga de ROM, sem reabrir o bug que fazia `MAP_MANBOW2=9`/`MAP_MANBOW2_2=10` cairem de novo no caminho de guess.
+- Justificativa tecnica:
+  - esta rodada corrige a regressao do loader sem desfazer a extensao local do mapper `Manbow2`;
+  - o objetivo e restaurar imediatamente o baseline de carga de ROM em `MSX2/MSX2+` antes de continuar depurando o freeze da gameplay do `SMANBOW2`.
+- Validacao local:
+  - `scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1` (OK)
+  - artefatos atualizados: `artifacts/kernel8-issue176.img` e `artifacts/kernel8-default.img`
+- Rastreabilidade:
+  - `BUILD_HASH:35a2c85-e2c56ca76cc5b5c4e07e8b690e386f94bc747c77`
+- Proximo passo:
+  - validar em hardware se `XEVIOUS.ROM` e outras ROMs comuns voltaram a carregar normalmente em `MSX2/MSX2+`;
+  - se o baseline de carga voltar, retomar o `SMANBOW2` no ponto certo: distorcao visual do titulo/save e freeze em `C698/C699`.
+
+## Iteracao atual (17/03/2026 00:22 BRT)
+- Causa raiz mais forte do `SMANBOW2` em `PC:C69A` fechada no path de autodeteccao:
+  - `SMANBOW2.ROM` nao existe em `roms/initramfs/CARTS.SHA`;
+  - mesmo assim, como `CARTS.SHA` existe fisicamente, o `GuessROM()` local nunca chegava ao fallback SHA interno;
+  - na pratica, isso fazia o cart cair na heuristica classica do fMSX e voltar como `MAP_KONAMI5` (`T:02` no `TM6C`), exatamente no fluxo em que o disassembly do `bank00` espera um cart `Manbow2` com Flash AMD.
+- Correcao aplicada:
+  - `src/fmsx_local/MSX.c`
+    - `GuessROM()` agora sempre tenta o fallback SHA local quando `CARTS.SHA` nao encontrou a ROM, e nao apenas quando o arquivo esta ausente;
+    - a classificacao efetiva do cart passou a ficar travada por slot (`FmsxCartMapperLockedType[]` + origem), em vez de depender de o nibble de `Mode` ser recomposto corretamente em resets/subciclos;
+    - `ResetMSX()` e `LoadState()` reaplicam o tipo efetivo travado para slots A/B, evitando voltar silenciosamente a `ROMTYPE(0/1)` quando o cart ja foi classificado como `Manbow2`;
+    - o eject do cart tambem limpa explicitamente esse estado efetivo.
+  - `src/fmsx_runtime.h`
+  - `src/fmsx_runtime.c`
+  - `src/kernel.cpp`
+    - `TM6C` passou a exibir `T:%02X/%u`, onde o segundo valor indica a origem da classificacao (`3`=`CARTS.CRC`, `4`=`CARTS.SHA`, `5`=fallback SHA local, `6`=heuristica).
+  - `docs/debug-layer.md`
+    - documentacao da nova semantica de `TM6C`.
+- Justificativa tecnica:
+  - os prints de hardware mostravam `TM6C ... T:02 ... B:38/39/3A/3B` no helper de Flash do disassembly (`6c9a -> 6ca1 -> 6caa..6cc5`);
+  - isso significava que o problema ainda nao era "write path da Flash", e sim "cart errado no slot ativo";
+  - com esta rodada, o primeiro criterio de aceite e simples:
+    - no mesmo freeze-point, `TM6C` nao pode mais mostrar `T:02`;
+    - o esperado passa a ser `T:09/5` para o SHA canonico `00a81872d548a7278b8901608bf12e8f79009bee`.
+- Validacao local:
+  - `scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1` (OK)
+  - artefatos atualizados: `artifacts/kernel8-issue176.img` e `artifacts/kernel8-default.img`
+- Rastreabilidade:
+  - `BUILD_HASH:35a2c85-ddabb681fb289b233ee93314624367ff6c939a36`
+- Proximo passo:
+  - validar em hardware se `TM6C` finalmente passa a refletir `MAP_MANBOW2` no menu e no helper de Flash;
+  - se o tipo efetivo corrigir e o freeze persistir em `C69A`, o proximo alvo deixa de ser a classificacao do cart e passa a ser o backend de `PROGRAM/READBACK` da Flash AMD.
+
+## Iteracao atual (17/03/2026 08:27 BRT)
+- Novo estado confirmado pelo usuario:
+  - a gameplay do `SMANBOW2` passou a entrar;
+  - o defeito que restou ficou concentrado no renderer do titulo/save, com o fundo aparentando pixels/linhas duplicados e largura efetiva em `2x`.
+- Causa raiz fechada:
+  - o caminho local de `SCREEN 8/7/10/12` passou a reutilizar `V9958ScrollPagePtr()` tanto para:
+    - trocar a pagina horizontal (`+0x8000`, que depende de multipage real);
+    - quanto para acessar o segundo plano intercalado (`+0x10000`);
+  - como `V9958ScrollPagePtr()` so aplicava offset quando `R#25 bit0` e `R#2 bit5` estavam ativos, o renderer acabava lendo o mesmo plano duas vezes quando o multipage horizontal estava desligado;
+  - no titulo do `SMANBOW2`, isso produz exatamente o sintoma reportado: splash/fundo "2x largo" e com repeticao aparente de linhas/pixels.
+- Correcao aplicada:
+  - `src/fmsx_local/Common.h`
+    - adicionado `V9958VRAMOffsetPtr()`, helper de offset bruto com wrap em VRAM, sem depender de multipage;
+    - `V9958ScrollPagePtr()` passou a ficar restrito ao salto horizontal de pagina;
+    - `V9958ExpandInterleaved256ToPalette()` e `V9958ExpandInterleaved256ToBytes()` agora usam `V9958VRAMOffsetPtr(...,0x10000)` para o segundo plano de `SCREEN 8/10/12`;
+    - `RefreshLine7()` tambem passou a usar `V9958VRAMOffsetPtr()` para o plano intercalado.
+  - `src/fmsx_local/Wide.h`
+    - mesmo ajuste no caminho wide de `SCREEN 7`.
+- Justificativa tecnica:
+  - esta rodada nao mexe em cart `Manbow2`, Flash, IRQ ou timing;
+  - ela corrige apenas a diferenca entre "offset de pagina horizontal" e "offset de plano intercalado", alinhando o renderer ao comportamento esperado do BlueMSX/openMSX.
+- Validacao local:
+  - `scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1` (OK)
+  - artefatos atualizados: `artifacts/kernel8-issue176.img` e `artifacts/kernel8-default.img`
+- Rastreabilidade:
+  - `BUILD_HASH:35a2c85-5c7df106589989821d6162b394e03ffc5e15da52`
+- Proximo passo:
+  - validar em hardware se o splash/tela de save deixou de ler o mesmo plano duas vezes;
+  - se ainda restar distorcao visual, o proximo foco fica restrito a `SCREEN 8` via renderer/porta `0x98`, nao mais ao cart path.
+
+## Iteracao atual (17/03/2026 08:48 BRT)
+- Feedback de hardware apos a rodada anterior:
+  - a gameplay permaneceu funcional;
+  - o titulo do `SMANBOW2` deixou de duplicar pixels, mas passou a exibir um espacamento regular entre eles, como se cada pixel impar estivesse vindo vazio/preto.
+- Causa raiz refinada:
+  - o sintoma novo mostrou que a correção anterior foi longe demais no renderer narrow:
+    - o caminho local de `SCREEN 8/10/12` passou a expandir cada linha como se a VRAM estivesse fisicamente em dois planos intercalados de `128+128` bytes;
+    - porem o backend de renderer do nosso core continua modelando esses modos no estilo fMSX, isto e, como `256` bytes lineares por linha com flip odd/even em `-0x10000`;
+    - por isso a rodada anterior saiu de "pixel duplicado" para "pixel espacado": o renderer passou a buscar os pixels impares num plano que nao correspondia aos dados lineares realmente carregados na linha.
+- Correcao aplicada:
+  - `src/fmsx_local/Common.h`
+    - adicionado `V9958BitmapLinePtr256()`, com:
+      - `linePos = ((Y+VScroll)<<8)`;
+      - preservacao do bloco alto de `ChrTab`;
+      - flip odd/even em `0x10000` para `SCR8/10/12`;
+    - adicionados helpers `V9958ExpandLinear256ToPalette()` e `V9958ExpandLinear256ToBytes()`;
+    - `RefreshLine8()`, `RefreshLine10()` e `RefreshLine12()` passaram a usar fetch linear por linha, em vez de expansao intercalada `+0x10000`.
+- Justificativa tecnica:
+  - esta rodada nao altera mapper/cart, Flash, IRQ ou timing;
+  - ela corrige apenas a incompatibilidade entre:
+    - renderer linear herdado do fMSX;
+    - e a tentativa anterior de importar literalmente o layout intercalado do BlueMSX para `SCREEN 8/10/12`.
+- Validacao local:
+  - `scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1` (OK)
+  - artefatos atualizados: `artifacts/kernel8-issue176.img` e `artifacts/kernel8-default.img`
+- Rastreabilidade:
+  - `BUILD_HASH:35a2c85-4fd803d45400b3f5004586fdf44ae416d520ad23`
+- Proximo passo:
+  - validar em hardware se o titulo volta a ter densidade normal de pixels no fundo/logo;
+  - se ainda houver distorcao residual, o proximo foco fica em `RefreshLine8()`/scroll horizontal, nao mais em interleave/cart/gameplay.
+
+## Iteracao atual (17/03/2026 09:12 BRT)
+- Novo estado confirmado pelo usuario:
+  - a gameplay segue entrando corretamente;
+  - o defeito residual ficou restrito ao renderer do titulo/save em `SCREEN 8`, agora com blocos/tercos duplicados e mistura parcial do fundo com a UI de selecao de slot.
+- Causa raiz refinada:
+  - a hipotese de `SCR8/10/12` linear da rodada de `08:48 BRT` estava errada;
+  - comparando com o BlueMSX (`VDP.c` + `Common.h`), fechou a inconsistência real do core local:
+    - o command engine de `SCR7/8` ja operava em layout intercalado;
+    - a porta direta de VRAM `0x98` ainda lia/escrevia linearmente (`VPAGE[VAddr]`);
+    - e o renderer narrow de `SCR8/10/12` tinha sido movido para fetch linear;
+  - isso deixava CPU, command engine e renderer enxergando layouts diferentes para a mesma VRAM, o que explica a progressao de sintomas:
+    - "stretch 2x";
+    - depois "1 pixel de espaco";
+    - e agora blocos/duplicacoes por pagina/terco.
+- Correcao aplicada:
+  - `src/fmsx_local/MSX.c`
+    - adicionados helpers de mapeamento de VRAM para a porta `0x98`, inspirados na semantica do `MAP_VRAM`/`MAP_VRAMINDEX` do BlueMSX;
+    - reads e writes pela porta de dados do VDP agora remapeiam `SCREEN 7/8` (incluindo derivados YJK/YAE) com:
+      - `addr -> (addr >> 1) | ((addr & 1) << 16)`;
+    - o preload de leitura apos latch de endereco (`port 0x99` em modo read) passou a usar o mesmo caminho.
+  - `src/fmsx_local/Common.h`
+    - `RefreshLine8()`, `RefreshLine10()` e `RefreshLine12()` voltaram ao modelo intercalado de `128 bytes/linha/plano`, alinhado ao BlueMSX;
+    - removido o caminho temporario linear introduzido na rodada anterior;
+    - mantida a separacao correta entre:
+      - `V9958ScrollPagePtr()` para salto de pagina horizontal;
+      - `V9958VRAMOffsetPtr()` para offset bruto do segundo plano intercalado (`+0x10000`).
+- Justificativa tecnica:
+  - esta rodada nao mexe em mapper/cart, Flash, IRQ ou command timing;
+  - ela fecha apenas a inconsistencia estrutural de layout de VRAM no caminho do V9958 para `SCREEN 8`.
+- Referencias consultadas:
+  - `third_party/bluemsx/blueMSX/Src/VideoChips/VDP.c`
+    - macros `MAP_VRAM` / `MAP_VRAMINDEX`
+    - `readNoTimingCheck()` / `write()`
+  - `third_party/bluemsx/blueMSX/Src/VideoChips/Common.h`
+    - `RefreshLine8()`
+- Validacao local:
+  - `scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1` (OK)
+  - artefatos atualizados: `artifacts/kernel8-issue176.img` e `artifacts/kernel8-default.img`
+- Rastreabilidade:
+  - `BUILD_HASH:35a2c85-cd57ef6c8ffce5fb72cbcba45c616bd65c37b67a`
+- Proximo passo:
+  - validar em hardware se o fundo/logo do `SMANBOW2` deixou de ser recomposto em blocos/tercos;
+  - se ainda restar glitch visual, o foco seguinte fica em scroll/mask/page source efetiva de `RefreshLine8()`, nao mais em mapper/cart nem no path `0x98`.

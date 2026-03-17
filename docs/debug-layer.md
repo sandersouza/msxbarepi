@@ -170,7 +170,7 @@ Diretriz visual (overlay e menu):
 - `TM6C`: diagnostico direto do cart `SMANBOW2` / Flash `Manbow2`:
   - `A8`: valor atual do registrador primario de slots.
   - `EW`: `EnWrite` efetivo da pagina `4000h-7FFFh` (`1` indica que writes estao indo para RAM, nao para o cart).
-  - `C/T`: slot logico do cart ativo em `4000h-7FFFh` e `ROMType` detectado.
+  - `C/T`: slot logico do cart ativo em `4000h-7FFFh`, `ROMType` efetivo e origem da classificacao (`0`=nenhuma, `2`=explicito, `3`=`CARTS.CRC`, `4`=`CARTS.SHA`, `5`=fallback SHA local, `6`=heuristica).
   - `B:a/b/c/d`: bancos atuais nas quatro janelas de 8KB (`4000h/6000h/8000h/A000h`).
   - `F`: ultima operacao relevante da Flash (`RD`, `RS`, `AS`, `PG`, `ER`, `CM`).
   - `S/M`: estado interno da sequencia AMD e modo de leitura atual da Flash.

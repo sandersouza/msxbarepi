@@ -102,6 +102,11 @@ extern uint8_t *ROMData[];
 extern uint8_t ROMMapper[][4];
 extern uint8_t ROMMask[];
 extern uint8_t ROMType[];
+extern uint8_t FmsxCartMapperLockedType[];
+extern uint8_t FmsxCartMapperTypeSource[];
+extern uint8_t FmsxCartLastClassifiedSlot;
+extern uint8_t FmsxCartLastClassifiedType;
+extern uint8_t FmsxCartLastClassifiedSource;
 extern uint8_t FmsxManbow2FlashLastOp;
 extern uint8_t FmsxManbow2FlashLastSlot;
 extern uint8_t FmsxManbow2FlashLastValue;
@@ -1379,6 +1384,7 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
         stats->cart_bank_p1_lo = page_lo;
         stats->cart_bank_p1_hi = page_hi;
         stats->cart_type_p1 = (page_slot < MAXSLOTS) ? (unsigned) ROMType[page_slot] : 0xFFu;
+        stats->cart_type_source_p1 = (page_slot < MAXSLOTS) ? (unsigned) FmsxCartMapperTypeSource[page_slot] : 0u;
 
         page_slot = 0xFFu;
         page_lo = 0xFFu;
@@ -1395,6 +1401,9 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
         stats->cart_bank_p2_lo = page_lo;
         stats->cart_bank_p2_hi = page_hi;
     }
+    stats->cart_last_type_slot = (unsigned) FmsxCartLastClassifiedSlot;
+    stats->cart_last_type_value = (unsigned) FmsxCartLastClassifiedType;
+    stats->cart_last_type_source = (unsigned) FmsxCartLastClassifiedSource;
     cmd = (unsigned) ((VDP[46] >> 4) & 0x0Fu);
     ce = (live_status2 & 0x01u) ? 1u : 0u;
     copy_cmd = (cmd == 0x09u || cmd == 0x0Du || cmd == 0x0Eu) ? 1u : 0u;

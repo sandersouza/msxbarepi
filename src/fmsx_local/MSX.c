@@ -265,6 +265,11 @@ uint8_t SCCIMode[2];               /* SCC-I mode register    */
 uint8_t *SCCIRAM;                /* SCC-I RAM (Nx8kB pages) */
 static uint8_t Manbow2FlashState[MAXSLOTS];
 static uint8_t Manbow2FlashMode[MAXSLOTS];
+uint8_t FmsxCartMapperLockedType[MAXSLOTS];
+uint8_t FmsxCartMapperTypeSource[MAXSLOTS];
+uint8_t FmsxCartLastClassifiedSlot = 0xFFu;
+uint8_t FmsxCartLastClassifiedType = 0xFFu;
+uint8_t FmsxCartLastClassifiedSource = 0u;
 uint8_t FmsxManbow2FlashLastOp = 0;
 uint8_t FmsxManbow2FlashLastSlot = 0xFFu;
 uint8_t FmsxManbow2FlashLastValue = 0;
@@ -281,6 +286,18 @@ uint32_t FmsxManbow2FlashReadCount = 0;
 #define FMSX_MANBOW2_FLASH_CMD_MASK  0x07FFu
 #define FMSX_MANBOW2_FLASH_CMD1      0x0555u
 #define FMSX_MANBOW2_FLASH_CMD2      0x02AAu
+
+enum
+{
+  FMSX_CART_SOURCE_NONE = 0,
+  FMSX_CART_SOURCE_MODE,
+  FMSX_CART_SOURCE_EXPLICIT,
+  FMSX_CART_SOURCE_CARTS_CRC,
+  FMSX_CART_SOURCE_CARTS_SHA,
+  FMSX_CART_SOURCE_LOCAL_SHA,
+  FMSX_CART_SOURCE_HEURISTIC,
+  FMSX_CART_SOURCE_STATE
+};
 
 enum
 {
@@ -459,6 +476,44 @@ static void fmsx_cart_window_banks(unsigned page,uint8_t *slot,uint8_t *bank_lo,
 static int fmsx_rom_type_is_manbow2(int type)
 {
   return (type==MAP_MANBOW2)||(type==MAP_MANBOW2_2);
+}
+
+static void fmsx_cart_note_classification(int slot,int type,uint8_t source)
+{
+  if((slot<0)||(slot>=MAXSLOTS)) return;
+
+  FmsxCartMapperLockedType[slot] = (uint8_t)(type & 0x0Fu);
+  FmsxCartMapperTypeSource[slot] = source;
+  FmsxCartLastClassifiedSlot = (uint8_t)slot;
+  FmsxCartLastClassifiedType = (uint8_t)(type & 0x0Fu);
+  FmsxCartLastClassifiedSource = source;
+}
+
+static void fmsx_cart_set_effective_type(int slot,int type,uint8_t source)
+{
+  if((slot<0)||(slot>=MAXSLOTS)) return;
+
+  type &= 0x0F;
+  ROMType[slot] = (uint8_t)type;
+  if(slot<MAXCARTS) SETROMTYPE(slot,type);
+  fmsx_cart_note_classification(slot,type,source);
+}
+
+static void fmsx_cart_clear_effective_type(int slot)
+{
+  if((slot<0)||(slot>=MAXSLOTS)) return;
+
+  ROMType[slot] = MAP_GEN8;
+  FmsxCartMapperLockedType[slot] = 0xFFu;
+  FmsxCartMapperTypeSource[slot] = FMSX_CART_SOURCE_NONE;
+  if(slot<MAXCARTS) SETROMTYPE(slot,MAP_GEN8);
+}
+
+static uint8_t fmsx_cart_effective_type_for_slot(int slot)
+{
+  if((slot<0)||(slot>=MAXSLOTS)) return MAP_GEN8;
+  if(FmsxCartMapperLockedType[slot]!=0xFFu) return FmsxCartMapperLockedType[slot];
+  return slot<MAXCARTS? (uint8_t)ROMTYPE(slot):ROMType[slot];
 }
 
 static void fmsx_manbow2_flash_note(uint8_t op,int slot,uint16_t addr,uint32_t offset,uint8_t value)
@@ -880,6 +935,40 @@ static uint8_t fmsx_vdp_effective_odd_page(void)
 static uint8_t fmsx_vdp_render_page(void)
 {
   return (uint8_t)(((VDP[2]>>5)&0x03u) ^ (fmsx_vdp_effective_odd_page()&0x01u));
+}
+
+static uint8_t fmsx_vdp_cpu_port_uses_interleaved_layout(void)
+{
+  /*
+   * BlueMSX/openMSX remap direct VRAM port accesses for SCREEN 7/8 and YJK/YAE
+   * derivatives. Our internal mode numbering keeps these as ScrMode 7/8.
+   */
+  return (ScrMode>=7u)&&(ScrMode<=8u);
+}
+
+static unsigned fmsx_vdp_cpu_port_vram_index(void)
+{
+  unsigned addr;
+  unsigned size;
+
+  addr = (((unsigned)VDP[14])<<14) | (unsigned)(VAddr&0x3FFFu);
+  if(fmsx_vdp_cpu_port_uses_interleaved_layout())
+    addr = (addr>>1) | ((addr&1u)<<16);
+
+  size = (unsigned)(VRAMPages<<14);
+  if(size) addr %= size;
+
+  return addr;
+}
+
+static uint8_t fmsx_vdp_cpu_port_read_next(void)
+{
+  return VRAM[fmsx_vdp_cpu_port_vram_index()];
+}
+
+static void fmsx_vdp_cpu_port_write_next(uint8_t value)
+{
+  VRAM[fmsx_vdp_cpu_port_vram_index()] = value;
 }
 
 static void fmsx_vdp_trace_log(uint8_t event_type)
@@ -1388,6 +1477,8 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
     ROMMask[J]  = 0;
     ROMData[J]  = 0;
     ROMType[J]  = 0;
+    FmsxCartMapperLockedType[J] = 0xFFu;
+    FmsxCartMapperTypeSource[J] = FMSX_CART_SOURCE_NONE;
     SRAMData[J] = 0;
     SRAMName[J] = 0;
     SaveSRAM[J] = 0;
@@ -1906,8 +1997,10 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   if(log_cb) log_cb(1,"ResetMSX: mode assigned\n");
 
   /* Set ROM types for cartridges A/B */
-  ROMType[0]     = ROMTYPE(0);
-  ROMType[1]     = ROMTYPE(1);
+  ROMType[0]     = fmsx_cart_effective_type_for_slot(0);
+  ROMType[1]     = fmsx_cart_effective_type_for_slot(1);
+  if(ROMData[0]) SETROMTYPE(0,ROMType[0]);
+  if(ROMData[1]) SETROMTYPE(1,ROMType[1]);
 
   /* Set CPU timings */
   VPeriod        = fmsx_scale_cycles((VIDEO(MSX_PAL)? VPERIOD_PAL:VPERIOD_NTSC)/6);
@@ -2350,8 +2443,8 @@ case 0x98: /* VRAM read port */
   Port=VDPData;
   /* Reset VAddr latch sequencer */
   VKey=1;
-  /* Fill data buffer with a new value */
-  VDPData=VPAGE[VAddr];
+  /* Fill data buffer with the next VRAM byte using V9958 direct-port mapping. */
+  VDPData=fmsx_vdp_cpu_port_read_next();
   /* Increment VRAM address */
   VAddr=(VAddr+1)&0x3FFF;
   /* If rolled over, modify VRAM page# */
@@ -2568,7 +2661,8 @@ case 0x87:
 case 0x98: /* VDP Data */
   fmsx_apply_vdp_io_wait(kVDPIOWaitCyclesData);
   VKey=1;
-  VDPData=VPAGE[VAddr]=Value;
+  VDPData=Value;
+  fmsx_vdp_cpu_port_write_next(Value);
   VAddr=(VAddr+1)&0x3FFF;
   /* If VAddr rolled over, modify VRAM page# */
   if(!VAddr&&(ScrMode>3))
@@ -2603,7 +2697,7 @@ case 0x99: /* VDP Address Latch */
         /* When set for reading, perform first read */
         if(!(Value&0x40))
         {
-          VDPData=VPAGE[VAddr];
+          VDPData=fmsx_vdp_cpu_port_read_next();
           VAddr=(VAddr+1)&0x3FFF;
           if(!VAddr&&(ScrMode>3))
           {
@@ -4271,11 +4365,13 @@ int GuessROM(const uint8_t *Buf,int Size)
 {
   int J,I,K,Result,ROMCount[FMSX_LOCAL_MAXMAPPERS];
   int BestScore,BestPrio,CandidatePrio;
+  uint8_t guess_source;
   char S[256];
   RFILE *F;
 
   /* No result yet */
   Result = -1;
+  guess_source = FMSX_CART_SOURCE_NONE;
 
   /* Change to the program directory */
   if(ProgDir && chdir(ProgDir)) { }
@@ -4289,7 +4385,7 @@ int GuessROM(const uint8_t *Buf,int Size)
     /* Scan file comparing CRCs */
     while(rfgets(S,sizeof(S)-4,F))
       if(sscanf(S,"%08X %d",&J,&I)==2)
-        if(K==J) { Result=I;break; }
+        if(K==J) { Result=I;guess_source=FMSX_CART_SOURCE_CARTS_CRC;break; }
 
     /* Done with the file */
     rfclose(F);
@@ -4308,27 +4404,36 @@ int GuessROM(const uint8_t *Buf,int Size)
     {
       while(rfgets(S,sizeof(S)-4,F))
         if((sscanf(S,"%40s %d",S2,&J)==2) && local_sha1_equals_ignore_case(S1,S2))
-        { Result=J;break; }
+        { Result=J;guess_source=FMSX_CART_SOURCE_CARTS_SHA;break; }
     }
 
     /* Done with the file */
     rfclose(F);
   }
-  else if(Result<0)
+
+  if(Result<0)
   {
     char S1[41];
     SHA1 C;
     ResetSHA1(&C);
     InputSHA1(&C,Buf,Size);
     if(ComputeSHA1(&C) && OutputSHA1(&C,S1,sizeof(S1)))
-      if(fmsx_carts_sha_fallback_lookup(S1,&J)) Result=J;
+      if(fmsx_carts_sha_fallback_lookup(S1,&J))
+      {
+        Result=J;
+        guess_source=FMSX_CART_SOURCE_LOCAL_SHA;
+      }
   }
 
   /* We are now back to working directory */
   if(WorkDir && chdir(WorkDir)) { }
 
   /* If found ROM by CRC or SHA1, we are done */
-  if(Result>=0) return(Result);
+  if(Result>=0)
+  {
+    FmsxCartLastClassifiedSource = guess_source;
+    return(Result);
+  }
 
   /* Clear all counters */
   for(J=0;J<FMSX_LOCAL_MAXMAPPERS;++J) ROMCount[J]=1;
@@ -4396,6 +4501,7 @@ int GuessROM(const uint8_t *Buf,int Size)
   }
 
   /* Return the most likely mapper type */
+  FmsxCartLastClassifiedSource = FMSX_CART_SOURCE_HEURISTIC;
   return(I);
 }
 
@@ -4564,6 +4670,8 @@ int LoadCart(const char *FileName,int Slot,int Type)
 {
   int64_t Len;
   int C1, C2, Pages, ROM64, BASIC;
+  int GuessRequested;
+  uint8_t cart_source;
   uint8_t *P,PS,SS;
   char *T;
   RFILE *F;
@@ -4581,6 +4689,16 @@ int LoadCart(const char *FileName,int Slot,int Type)
   /* Drop out if slots not found */
   if(PS>=4)
      return 0;
+
+  /*
+   * LoadCart() is called both with raw mapper ids (0..15) and with the
+   * ROMGUESS() flags ORed into the low mapper nibble. Keep these concerns
+   * separate: the guess request lives in the high bits, while the effective
+   * mapper type is the low 4-bit value stored in Mode/ROMType.
+   */
+  GuessRequested = (Type==MAP_GUESS) || ((Type&(MSX_GUESSA|MSX_GUESSB))!=0);
+  Type &= 0x0F;
+  cart_source = GuessRequested? FMSX_CART_SOURCE_HEURISTIC:FMSX_CART_SOURCE_EXPLICIT;
 
   if(fmsx_rom_type_is_manbow2(ROMType[Slot]))
     fmsx_manbow2_save_flash_file(Slot);
@@ -4633,6 +4751,7 @@ int LoadCart(const char *FileName,int Slot,int Type)
       SRAMData[Slot] = 0;
       SRAMName[Slot] = 0;
       SaveSRAM[Slot] = 0;
+      fmsx_cart_clear_effective_type(Slot);
       fmsx_manbow2_free_slot_resources(Slot);
       /* Set memory map to dummy RAM */
       for(C1=0;C1<8;++C1) MemMap[PS][SS][C1]=EmptyRAM;
@@ -4789,15 +4908,14 @@ int LoadCart(const char *FileName,int Slot,int Type)
   }
 
   /* Guess MegaROM mapper type if not given */
-  if((Type==MAP_GUESS)&&(ROMMask[Slot]+1>4))
+  if(GuessRequested&&(ROMMask[Slot]+1>4))
   {
     Type=GuessROM(P,Len<<13);
-    if(Slot<MAXCARTS) SETROMTYPE(Slot,Type);
+    cart_source = FmsxCartLastClassifiedSource? FmsxCartLastClassifiedSource:FMSX_CART_SOURCE_HEURISTIC;
   }
-  else if (Type==MAP_GMASTER2 && Slot<MAXCARTS) SETROMTYPE(Slot,Type); // required to enable GM2 in slot A/B
 
   /* Save MegaROM type */
-  ROMType[Slot]=Type;
+  fmsx_cart_set_effective_type(Slot,Type,cart_source);
 
   if(fmsx_rom_type_is_manbow2(Type))
     fmsx_manbow2_prepare_flash_file(Slot,FileName);
@@ -5139,7 +5257,13 @@ unsigned int LoadState(unsigned char *Buf,unsigned int MaxSize)
       ROMMapper[I][1]=ROMMapper[I][0]|1;
       ROMMapper[I][3]=ROMMapper[I][2]|1;
     }
+
+    if(ROMData[I]&&FmsxCartMapperLockedType[I]!=0xFFu)
+      ROMType[I] = FmsxCartMapperLockedType[I];
   }
+
+  if(ROMData[0]&&FmsxCartMapperLockedType[0]!=0xFFu) SETROMTYPE(0,ROMType[0]);
+  if(ROMData[1]&&FmsxCartMapperLockedType[1]!=0xFFu) SETROMTYPE(1,ROMType[1]);
 
   /* SCC setup */
   if (!(Mode&MSX_NO_MEGARAM))

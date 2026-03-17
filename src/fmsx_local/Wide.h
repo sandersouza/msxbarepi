@@ -238,7 +238,7 @@ void RefreshLine7(uint8_t Y)
 
     T0=T;
     Plane0=T0;
-    Plane1=V9958ScrollPagePtr(T0,(int)V9958InterleavedPlaneOffset());
+    Plane1=V9958VRAMOffsetPtr(T0,(int)V9958InterleavedPlaneOffset());
     for(PIdx=0;PIdx<128;PIdx++)
     {
       BgRaw[(PIdx<<2)+0]=Plane0[PIdx]>>4;
@@ -252,7 +252,7 @@ void RefreshLine7(uint8_t Y)
       /* SCR7 multipage follows the same +0x8000 page step as SCR5/6/8. */
       T1=V9958ScrollPagePtr(T0,0x8000);
       Plane0=T1;
-      Plane1=V9958ScrollPagePtr(T1,(int)V9958InterleavedPlaneOffset());
+      Plane1=V9958VRAMOffsetPtr(T1,(int)V9958InterleavedPlaneOffset());
       for(PIdx=0;PIdx<128;PIdx++)
       {
         BgRaw[512+(PIdx<<2)+0]=Plane0[PIdx]>>4;
