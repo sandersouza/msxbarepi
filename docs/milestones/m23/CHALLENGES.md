@@ -17,8 +17,8 @@ Registro de desafios enfrentados por issue, decisao adotada e status da solucao.
 
 ### #205 - catalogo navegavel de jogos com cheat
 - Desafio: reaproveitar a ergonomia do file browser atual sem acoplar o fluxo a uma arvore real de diretorios.
-- Solucao adotada: planejar uma lista virtual de titulos derivada do catalogo parseado, preservando scroll, paginacao, auto-repeat e jump por letra.
-- Status: Futuro
+- Solucao adotada: `CComboFileBrowser` ganhou modo virtual `Game Master+` via `OpenGameMaster()`, com selecao/indexacao por fonte virtual e labels curtos legiveis para jogos, preservando scroll, paginacao, auto-repeat e jump por letra sem acoplar o menu a diretorios reais.
+- Status: Resolvido
 - Referencia: [205-criar-catalogo-navegavel-jogos-cheat-estilo-file-browser.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m23/205-criar-catalogo-navegavel-jogos-cheat-estilo-file-browser.md)
 
 ### #206 - menu `Game Master+` e tela `Active Cheats`

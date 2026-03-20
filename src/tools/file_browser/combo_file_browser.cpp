@@ -214,6 +214,8 @@ CComboFileBrowser::CComboFileBrowser(void)
   m_Count(0u),
   m_SelectedAbs(0u),
   m_Top(0u),
+  m_GameMasterCatalog(0),
+  m_SourceIndex{0},
   m_Names{{0}},
   m_Paths{{0}},
   m_IsDir{FALSE},
@@ -237,6 +239,7 @@ void CComboFileBrowser::Reset(void)
     m_Count = 0u;
     m_SelectedAbs = 0u;
     m_Top = 0u;
+    m_GameMasterCatalog = 0;
     CopySmallText(m_CurrentDir, sizeof(m_CurrentDir), kRomsRootPath);
     m_LastUpPressed = FALSE;
     m_LastDownPressed = FALSE;
@@ -247,6 +250,7 @@ void CComboFileBrowser::Reset(void)
     ++m_ContentStamp;
     for (unsigned i = 0u; i < kMaxEntries; ++i)
     {
+        m_SourceIndex[i] = 0u;
         m_IsDir[i] = FALSE;
         m_IsParent[i] = FALSE;
         m_Names[i][0] = '\0';
@@ -258,7 +262,23 @@ void CComboFileBrowser::Open(unsigned mode, unsigned slot_index)
 {
     m_Mode = (mode == (unsigned) ComboFileBrowserModeDisk) ? (unsigned) ComboFileBrowserModeDisk : (unsigned) ComboFileBrowserModeRom;
     m_SlotIndex = slot_index > 1u ? 1u : slot_index;
+    m_GameMasterCatalog = 0;
     CopySmallText(m_CurrentDir, sizeof(m_CurrentDir), RootPath());
+    m_LastUpPressed = FALSE;
+    m_LastDownPressed = FALSE;
+    m_LastPageUpPressed = FALSE;
+    m_LastPageDownPressed = FALSE;
+    m_UpHoldFrames = 0u;
+    m_DownHoldFrames = 0u;
+    RebuildCatalog();
+}
+
+void CComboFileBrowser::OpenGameMaster(const TGameMasterCatalog *catalog)
+{
+    m_Mode = (unsigned) ComboFileBrowserModeGameMaster;
+    m_SlotIndex = 0u;
+    m_GameMasterCatalog = catalog;
+    m_CurrentDir[0] = '\0';
     m_LastUpPressed = FALSE;
     m_LastDownPressed = FALSE;
     m_LastPageUpPressed = FALSE;
@@ -270,6 +290,10 @@ void CComboFileBrowser::Open(unsigned mode, unsigned slot_index)
 
 void CComboFileBrowser::EnterDirectory(const char *dir_path)
 {
+    if (m_Mode == (unsigned) ComboFileBrowserModeGameMaster)
+    {
+        return;
+    }
     if (dir_path == 0 || dir_path[0] == '\0')
     {
         return;
@@ -308,6 +332,15 @@ unsigned CComboFileBrowser::GetSelectedAbs(void) const
     return m_SelectedAbs;
 }
 
+unsigned CComboFileBrowser::GetSelectedSourceIndex(void) const
+{
+    if (m_SelectedAbs >= m_Count)
+    {
+        return 0u;
+    }
+    return m_SourceIndex[m_SelectedAbs];
+}
+
 unsigned CComboFileBrowser::GetSelectedVisibleIndex(void) const
 {
     if (m_Count == 0u)
@@ -329,6 +362,16 @@ unsigned CComboFileBrowser::GetSelectedVisibleIndex(void) const
         visible = max_visible - 1u;
     }
     return visible;
+}
+
+unsigned CComboFileBrowser::GetSourceIndexVisible(unsigned visible_index) const
+{
+    const unsigned abs = m_Top + visible_index;
+    if (abs >= m_Count)
+    {
+        return 0u;
+    }
+    return m_SourceIndex[abs];
 }
 
 unsigned CComboFileBrowser::GetVisibleCount(void) const
@@ -703,6 +746,59 @@ void CComboFileBrowser::FormatName20NoExt(const char *path, char out_name[21])
     out_name[n] = '\0';
 }
 
+void CComboFileBrowser::FormatTitle20(const char *title, char out_name[21])
+{
+    unsigned n = 0u;
+    int last_space = 1;
+
+    if (out_name == 0)
+    {
+        return;
+    }
+
+    out_name[0] = '\0';
+    if (title == 0 || title[0] == '\0')
+    {
+        return;
+    }
+
+    for (unsigned i = 0u; title[i] != '\0' && n < 20u; ++i)
+    {
+        char ch = title[i];
+        if (ch == '\t' || ch == '\r' || ch == '\n')
+        {
+            ch = ' ';
+        }
+        if ((unsigned char) ch < 32u || (unsigned char) ch > 126u)
+        {
+            continue;
+        }
+        if (ch == ' ')
+        {
+            if (last_space)
+            {
+                continue;
+            }
+            last_space = 1;
+        }
+        else
+        {
+            last_space = 0;
+        }
+        out_name[n++] = ch;
+    }
+
+    while (n > 0u && out_name[n - 1u] == ' ')
+    {
+        --n;
+    }
+    if (n == 0u)
+    {
+        out_name[n++] = '_';
+    }
+    out_name[n] = '\0';
+}
+
 boolean CComboFileBrowser::IsPathInsideRoot(const char *path, const char *root)
 {
     if (path == 0 || root == 0 || root[0] == '\0')
@@ -730,7 +826,8 @@ void CComboFileBrowser::InsertSorted(unsigned section_start,
                                      const char *name,
                                      const char *path,
                                      boolean is_dir,
-                                     boolean is_parent)
+                                     boolean is_parent,
+                                     unsigned source_index)
 {
     if (name == 0 || path == 0 || m_Count >= kMaxEntries)
     {
@@ -751,6 +848,7 @@ void CComboFileBrowser::InsertSorted(unsigned section_start,
     {
         for (unsigned move = m_Count; move > insert_at; --move)
         {
+            m_SourceIndex[move] = m_SourceIndex[move - 1u];
             CopySmallText(m_Names[move], sizeof(m_Names[0]), m_Names[move - 1u]);
             CopySmallText(m_Paths[move], sizeof(m_Paths[0]), m_Paths[move - 1u]);
             m_IsDir[move] = m_IsDir[move - 1u];
@@ -758,6 +856,7 @@ void CComboFileBrowser::InsertSorted(unsigned section_start,
         }
     }
 
+    m_SourceIndex[insert_at] = source_index;
     CopySmallText(m_Names[insert_at], sizeof(m_Names[0]), name);
     CopySmallText(m_Paths[insert_at], sizeof(m_Paths[0]), path);
     m_IsDir[insert_at] = is_dir;
@@ -771,6 +870,35 @@ void CComboFileBrowser::RebuildCatalog(void)
     m_Count = 0u;
     m_SelectedAbs = 0u;
     m_Top = 0u;
+
+    if (m_Mode == (unsigned) ComboFileBrowserModeGameMaster)
+    {
+        if (m_GameMasterCatalog == 0)
+        {
+            ++m_ContentStamp;
+            return;
+        }
+
+        for (unsigned i = 0u; i < m_GameMasterCatalog->game_count && m_Count < kMaxEntries; ++i)
+        {
+            char label[21];
+            char key[192];
+            const TGameMasterGame *game = &m_GameMasterCatalog->games[i];
+            FormatTitle20(game->title, label);
+            if (game->rom_id[0] != '\0')
+            {
+                CopySmallText(key, sizeof(key), game->rom_id);
+            }
+            else
+            {
+                CopySmallText(key, sizeof(key), game->title);
+            }
+            InsertSorted(0u, label, key, FALSE, FALSE, i);
+        }
+
+        ++m_ContentStamp;
+        return;
+    }
 
     if (!IsPathInsideRoot(m_CurrentDir, root_path))
     {
@@ -787,6 +915,7 @@ void CComboFileBrowser::RebuildCatalog(void)
         }
         CopySmallText(m_Names[m_Count], sizeof(m_Names[0]), "..");
         CopySmallText(m_Paths[m_Count], sizeof(m_Paths[0]), parent_dir);
+        m_SourceIndex[m_Count] = 0u;
         m_IsDir[m_Count] = TRUE;
         m_IsParent[m_Count] = TRUE;
         ++m_Count;
@@ -837,7 +966,7 @@ void CComboFileBrowser::RebuildCatalog(void)
 
             char new_name[21];
             FormatName20NoExt(full_path, new_name);
-            InsertSorted(pass_start, new_name, full_path, is_dir, FALSE);
+            InsertSorted(pass_start, new_name, full_path, is_dir, FALSE, m_Count);
         }
 
         f_closedir(&dir);
@@ -847,5 +976,9 @@ void CComboFileBrowser::RebuildCatalog(void)
 
 const char *CComboFileBrowser::RootPath(void) const
 {
+    if (m_Mode == (unsigned) ComboFileBrowserModeGameMaster)
+    {
+        return "";
+    }
     return (m_Mode == (unsigned) ComboFileBrowserModeDisk) ? kDisksRootPath : kRomsRootPath;
 }

@@ -7,12 +7,12 @@
 - Labels: `priority:P2`, `type:feature`, `area:settings`, `area:storage`
 
 ## Checklist
-- [ ] Definir/adaptar um browser de lista virtual para titulos vindos do `gamemaster.cht`
-- [ ] Preservar semantica visual e de navegacao do file browser atual
-- [ ] Exibir nome do jogo em formato curto/legivel para a UI atual
-- [ ] Implementar estados de catalogo vazio, erro de carga e retorno ao menu
-- [ ] Garantir que o menu continue desacoplado da logica de catalogo
-- [ ] Atualizar documentacao do componente se a API/comportamento do browser mudar
+- [x] Definir/adaptar um browser de lista virtual para titulos vindos do `gamemaster.cht`
+- [x] Preservar semantica visual e de navegacao do file browser atual
+- [x] Exibir nome do jogo em formato curto/legivel para a UI atual
+- [x] Implementar estados de catalogo vazio, erro de carga e retorno ao menu
+- [x] Garantir que o menu continue desacoplado da logica de catalogo
+- [x] Atualizar documentacao do componente se a API/comportamento do browser mudar
 
 ## DoR (sugestao)
 - Estrutura de catalogo por jogo definida pela issue `#204`.
@@ -27,6 +27,12 @@
 
 ## Status da iteracao atual
 
-- Issue criada para tratar a listagem de jogos com cheats como uma fonte virtual, e nao como navegacao de diretorio real.
-- A abordagem prevista e reaproveitar a ergonomia do browser atual: scroll, paginacao, auto-repeat e jump por letra.
-- O objetivo e manter o menu como orquestrador visual, deixando catalogacao e navegacao encapsuladas no componente.
+- `CComboFileBrowser` passou a suportar `OpenGameMaster(const TGameMasterCatalog *)` com modo virtual dedicado (`ComboFileBrowserModeGameMaster`).
+- O browser virtual preserva scroll, paginacao, auto-repeat, jump por letra e selecao por evento, sem depender de diretorio real.
+- Cada linha visivel agora mapeia para o indice da fonte virtual via `GetSelectedSourceIndex()` / `GetSourceIndexVisible(i)`, mantendo o menu desacoplado da ordenacao interna.
+- O label do jogo passou a usar titulo curto legivel (ate 20 caracteres ASCII imprimiveis), em vez da semantica 8.3 usada para arquivos do SD.
+- Catalogo vazio resulta em `GetCount()==0`, preservando o contrato atual para o consumidor lidar com empty state/retorno sem embutir logica de dominio no browser.
+- Documentacao atualizada em `docs/file-browser-component.md`.
+- Validacao executada:
+  - `scripts/check-third-party-pristine.sh` OK
+  - `make -j4 DEBUG=1` OK
