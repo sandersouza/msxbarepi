@@ -1075,3 +1075,22 @@ Delta TM6A/TM6B por frame validados em hardware. Tabela de achados:
   - `docs/milestones/m17/CHALLENGES.md`
 - Observacao:
   - nenhuma mudanca funcional de codigo foi aplicada nesta iteracao; apenas gestao remota da issue e sincronizacao documental.
+
+## Iteracao atual (19/03/2026 23:35 -03)
+- Rollback solicitado pelo usuario para o ultimo baseline estavel conhecido da frente do boot `MSX2+`, correspondente ao artefato com SHA1 `8a25ae3e1f79b1c0744b200e2f3439d1ff044903`.
+- Acao executada:
+  - revertidos os experimentos posteriores no core e na instrumentacao de serial/boot;
+  - preservado o baseline de `LINE` presente nesse ponto estavel;
+  - mantidos intactos os arquivos sujos nao relacionados (`sdcard/config.txt`, `.tmp/`, `docs/milestones/m22/`, `scripts/logserial.sh`).
+- Arquivos restaurados ao baseline da branch:
+  - `src/fmsx_host_stubs.c`
+  - `src/fmsx_local/Common.h`
+  - `src/fmsx_local/MSX.c`
+  - `src/fmsx_local/V9938.c`
+  - `src/fmsx_local/Wide.h`
+  - `src/fmsx_runtime.c`
+  - `src/fmsx_runtime.h`
+  - `src/kernel.cpp`
+  - `src/kernel.h`
+- Proximo passo:
+  - rebuild local e confirmacao do SHA1 do artefato para validar o retorno ao baseline estavel antes de retomar a frente do boot logo.

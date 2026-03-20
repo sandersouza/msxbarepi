@@ -235,3 +235,11 @@ Com esse fluxo, a correção deixa de depender de “ajustar número mágico” 
 - o protocolo de comando da ROM (poll CE/status),
 - o pipeline gráfico multipage/odd-even real do V9958,
 - e o timing de execução necessário para o boot logo aparecer com o mesmo comportamento dos emuladores de referência.
+
+## Atualizacao 2026-03-19 23:35 -03
+- A investigacao experimental posterior foi revertida para o ultimo baseline estavel conhecido.
+- Referencia operacional atual:
+  - artefato estavel alvo: SHA1 `8a25ae3e1f79b1c0744b200e2f3439d1ff044903`
+- Regra pratica a partir deste ponto:
+  - qualquer nova iteracao do boot `MSX2+` deve partir desse baseline restaurado;
+  - nao reintroduzir instrumentacao ou heuristicas de velocidade sem evidencia nova e isolada.

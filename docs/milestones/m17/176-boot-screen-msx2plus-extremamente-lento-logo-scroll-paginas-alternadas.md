@@ -124,3 +124,13 @@ Restaurar velocidade normal da animacao de boot no MSX2+ sem regressao em:
 - [ ] Validar em hardware (MSX1/MSX2/MSX2+)
 - [ ] Abrir PR para `fix-acurating-timing-vdp9958`
 - [ ] Merge e fechamento da issue
+
+## Atualizacao 2026-03-19 23:35 -03
+- A frente experimental posterior foi descartada por regressao e custo de iteracao.
+- O codigo voltou ao ultimo baseline estavel conhecido, correspondente ao artefato SHA1 `8a25ae3e1f79b1c0744b200e2f3439d1ff044903`.
+- Escopo do rollback:
+  - restaurados os arquivos do core/renderer/runtime tocados pelos experimentos de boot `MSX2+`;
+  - preservados arquivos locais nao relacionados fora dessa frente.
+- Proximo passo:
+  - confirmar o SHA1 do artefato rebuildado;
+  - retomar a investigacao do boot `MSX2+` a partir desse ponto estavel.
