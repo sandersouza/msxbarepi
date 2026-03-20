@@ -2,6 +2,7 @@
 
 Milestone remota: #24
 Issue remota: #214
+PR remota: #218
 
 ## Objetivo
 Congelar o baseline estavel atual do `SMANBOW2`, localizar o caminho real da voz `START!` e fechar uma matriz objetiva de diferencas entre o SCC/SCC+ local e as referencias `openMSX`/`blueMSX` antes de mexer no core.

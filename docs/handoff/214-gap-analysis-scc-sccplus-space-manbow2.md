@@ -24,8 +24,10 @@ Data: 2026-03-20
 - Espelho local criado em `docs/milestones/m24/`.
 - Milestone remota `#24` criada no GitHub.
 - Issues remotas `#214` a `#217` criadas e vinculadas a milestone.
-- Issues adicionadas ao projeto `MSX BarePI`; houve rate limit do GraphQL ao atualizar o campo `Status`, entao esse ajuste pode precisar ser repetido em uma rodada curta posterior.
+- Issues adicionadas ao projeto `MSX BarePI`.
 - Branch da issue `#214` criada via `gh issue develop` e sincronizada com `origin`.
+- PR remoto aberto para review: `#218 - Issue #214: fechar gap analysis SCC/SCC+ vs openMSX/blueMSX`
+- Item `#214` no projeto atualizado para `In review`.
 
 ## Achados consolidados da #214
 - Baseline funcional a preservar:
