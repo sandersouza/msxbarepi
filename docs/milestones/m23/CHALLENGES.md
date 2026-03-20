@@ -1,0 +1,40 @@
+# Desafios da Milestone
+
+Registro de desafios enfrentados por issue, decisao adotada e status da solucao.
+
+## Status
+- `Resolvido` = solucao aplicada e validada
+- `Parcial` = mitigado, requer iteracao
+- `Futuro` = movido para issue/milestone futura
+
+## Itens por issue
+
+### #204 - formato canonico de `gamemaster.cht`
+- Desafio: definir um catalogo de cheats rico o bastante para multi-POKE e simples o bastante para parse baremetal sem parser JSON/XML generico.
+- Solucao adotada: planejar um formato texto declarativo de baixo custo, com blocos de jogo/cheat/poke e caminho canonico `SD:/gamemaster.cht`.
+- Status: Futuro
+- Referencia: [204-definir-formato-canonico-gamemaster-cht-parser-baremetal.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m23/204-definir-formato-canonico-gamemaster-cht-parser-baremetal.md)
+
+### #205 - catalogo navegavel de jogos com cheat
+- Desafio: reaproveitar a ergonomia do file browser atual sem acoplar o fluxo a uma arvore real de diretorios.
+- Solucao adotada: planejar uma lista virtual de titulos derivada do catalogo parseado, preservando scroll, paginacao, auto-repeat e jump por letra.
+- Status: Futuro
+- Referencia: [205-criar-catalogo-navegavel-jogos-cheat-estilo-file-browser.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m23/205-criar-catalogo-navegavel-jogos-cheat-estilo-file-browser.md)
+
+### #206 - menu `Game Master+` e tela `Active Cheats`
+- Desafio: encaixar um novo fluxo de UI no menu principal sem regressao visual e mantendo localizacao PT/EN/ES.
+- Solucao adotada: separar browser de jogos e tela de toggles ON/OFF por jogo, inspirada no comportamento do `Active Cheats` do blueMSX.
+- Status: Futuro
+- Referencia: [206-implementar-menu-game-master-plus-active-cheats-on-off.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m23/206-implementar-menu-game-master-plus-active-cheats-on-off.md)
+
+### #207 - sessao de cheats no core fMSX
+- Desafio: transformar a infraestrutura atual de `CHT`/`MCF` em uma sessao interativa com multiplos cheats ativos e restauração segura dos valores originais.
+- Solucao adotada: planejar uma ponte de runtime dedicada, com multi-POKE, ON/OFF individual e restore seguro sem quebrar os helpers legados.
+- Status: Futuro
+- Referencia: [207-integrar-sessao-cheats-core-fmsx-multi-poke-restore-seguro.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m23/207-integrar-sessao-cheats-core-fmsx-multi-poke-restore-seguro.md)
+
+### #208 - documentacao e validacao em hardware
+- Desafio: evitar que a feature dependa de conhecimento implícito do autor e fechar a milestone com evidencia de UX/runtime no hardware real.
+- Solucao adotada: exigir documentacao do formato, arquivo de exemplo, fallbacks para erro/ausencia de catalogo e smoke test com jogos representativos.
+- Status: Futuro
+- Referencia: [208-documentar-fluxo-game-master-plus-validar-catalogo-ux-hardware.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m23/208-documentar-fluxo-game-master-plus-validar-catalogo-ux-hardware.md)

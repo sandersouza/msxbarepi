@@ -26,6 +26,10 @@ applyTo:
 - Usar caixa opaca curta para legibilidade; evitar faixa opaca global sem necessidade.
 - Fazer flush de cache apenas na area do painel, com throttle.
 - Evitar getters de debug que copiam structs grandes; preferir getters escalares.
+- Tratar `TXTDBG BUILD:XXXX` (4 digitos hex) como identificador visual canonico da build em teste.
+- Em casos de freeze com RPi ainda responsivo, complementar overlay HDMI com logs UART para diagnostico aprofundado.
+- Limitar cada linha do overlay HDMI a no maximo 64 caracteres visiveis para nao sobrepor a area do mailbox do emulador.
+- Ao adicionar nova linha no overlay, atualizar a rotina de limpeza (`ClearDebugOverlay`) no mesmo ciclo para limpar explicitamente a nova linha quando o debug for desativado.
 
 ## Baseline visual
 

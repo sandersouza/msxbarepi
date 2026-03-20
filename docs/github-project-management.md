@@ -11,7 +11,10 @@ Data de referência desta versão: 5 de março de 2026.
 
 ## Regras operacionais
 - Descrições de milestones e issues devem ser claras, objetivas, conter checklist de progresso (sub-tasks).
+- Toda issue deve ter `DoR` (Definition of Ready) e `DoD` (Definition of Done) explícitos; quando ainda houver descoberta pendente, registrar `DoR/DoD` como sugestão inicial.
 - As descrições, comentários e textos em geral, precisam ser em formato markdown compatível com o GitHub, utilizando recursos como links, imagens, tabelas e formatação para melhor clareza.
+- Criar primeiro o espelho local (`docs/milestones/...`) e usar esses `.md` como fonte da milestone/issue remota; publicar no GitHub vem depois.
+- Evitar comandos longos inline no terminal para criar issues; preferir corpo oriundo de arquivo `.md` previamente preparado.
 - Criar branch de issue somente quando formos atuar nela.
 - Toda branch criada para trabalho deve ser criada/vinculada pela issue de origem via `gh issue develop`.
 - Todo PR deve ser criado somente a partir de uma branch vinculada a uma issue ativa.
@@ -22,7 +25,8 @@ Data de referência desta versão: 5 de março de 2026.
 - Ao terminar uma milestone e/ou issue, sincronize-a localmente e feche-a no GitHub, garantindo que todas as issues associadas estejam fechadas ou movidas para outra milestone.
 - Para issues de performance (`type:performance`), anexar evidência da suíte em `docs/performance-regression-suite.md` antes de mover para `In review`.
 - Sempre atualizar o campo `Status` do item no projeto `MSX BarePI` durante o ciclo:
-  - ao iniciar uma milestone: mover todas as issues abertas da milestone para `Ready`
+  - ao criar uma issue: iniciar em `Backlog`
+  - ao ativar uma milestone: mover todas as issues abertas da milestone para `Ready`
   - ao iniciar trabalho: `In progress`
   - ao estabilizar e entrar em testes: `In review`
   - se testes falharem: voltar para `In progress`
@@ -54,24 +58,27 @@ Data de referência desta versão: 5 de março de 2026.
   - `docs/milestones/m2/fmsx-bootstrap-status.md`
 
 ## Fluxo padrão por issue
-1. Selecionar issue alvo no GitHub.
-2. Criar branch somente nesse momento:
+1. Preparar/atualizar primeiro o espelho local da milestone/issue em `docs/milestones/`.
+2. Publicar ou atualizar a issue remota usando o conteúdo do `.md` local, preferindo GitHub MCP; usar `gh` CLI apenas como fallback e, nesse caso, apontando para arquivo (`--body-file`) em vez de comandos longos inline.
+3. Selecionar issue alvo no GitHub.
+4. Criar branch somente nesse momento:
 ```bash
 gh issue develop <numero> -R sandersouza/msxbarepi --name <numero>-<slug> --base main --checkout
 git pull --ff-only
 ```
-2.1 Validar vínculo branch <-> issue:
+4.1 Validar vínculo branch <-> issue:
 ```bash
 gh issue develop --list <numero> -R sandersouza/msxbarepi
 ```
-3. Implementar, validar build e atualizar docs locais da issue/milestone.
-3.1 Se a issue for `type:performance`, gerar sessão baseline/candidate com `scripts/perf-regression.sh` e registrar comparação no comentário da issue/PR.
-4. Marcar progresso/checklists na issue remota (`gh issue comment` e checklist no corpo da issue).
-5. Garantir vínculo da issue ao projeto `MSX BarePI`:
+5. Implementar, validar build e atualizar docs locais da issue/milestone.
+5.1 Se a issue for `type:performance`, gerar sessão baseline/candidate com `scripts/perf-regression.sh` e registrar comparação no comentário da issue/PR.
+6. Marcar progresso/checklists na issue remota (`gh issue comment` e checklist no corpo da issue).
+7. Garantir vínculo da issue ao projeto `MSX BarePI`:
 ```bash
 gh issue edit <numero> -R sandersouza/msxbarepi --add-project "MSX BarePI"
 ```
-5.1 Atualizar `Status` no projeto para `In progress` ao começar:
+7.1 Issue recem-criada deve permanecer em `Backlog` ate a milestone ser ativada ou o trabalho de fato iniciar.
+7.2 Atualizar `Status` no projeto para `In progress` ao começar:
 ```bash
 # 1) localizar IDs
 PROJECT_ID=$(gh project view 3 --owner sandersouza --format json --jq '.id')
@@ -82,7 +89,7 @@ ITEM_ID=$(gh project item-list 3 --owner sandersouza --limit 200 --format json -
 INPROGRESS_OPTION_ID=$(gh project field-list 3 --owner sandersouza --format json --jq '.fields[] | select(.name=="Status") | .options[] | select(.name=="In progress") | .id')
 gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$STATUS_FIELD_ID" --single-select-option-id "$INPROGRESS_OPTION_ID"
 ```
-5.2 Ao iniciar milestone, preparar board em massa para `Ready` (issues abertas da milestone):
+7.3 Ao ativar milestone, preparar board em massa para `Ready` (issues abertas da milestone):
 ```bash
 READY_OPTION_ID=$(gh project field-list 3 --owner sandersouza --format json --jq '.fields[] | select(.name=="Status") | .options[] | select(.name=="Ready") | .id')
 for N in $(gh issue list -R sandersouza/msxbarepi --state open -L 200 --json number,milestone --jq '.[] | select(.milestone!=null and .milestone.title=="<milestone-title>") | .number'); do
@@ -90,26 +97,26 @@ for N in $(gh issue list -R sandersouza/msxbarepi --state open -L 200 --json num
   gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$STATUS_FIELD_ID" --single-select-option-id "$READY_OPTION_ID"
 done
 ```
-6. Quando estabilizada em hardware, abrir PR para `main`:
+8. Quando estabilizada em hardware, abrir PR para `main`:
 ```bash
 gh pr create -B main -H <branch-da-issue> --fill
 ```
-6.1 Ao entrar em fase de teste/review, atualizar `Status` para `In review`:
+8.1 Ao entrar em fase de teste/review, atualizar `Status` para `In review`:
 ```bash
 INREVIEW_OPTION_ID=$(gh project field-list 3 --owner sandersouza --format json --jq '.fields[] | select(.name=="Status") | .options[] | select(.name=="In review") | .id')
 gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$STATUS_FIELD_ID" --single-select-option-id "$INREVIEW_OPTION_ID"
 ```
-6.2 Se teste falhar, rollback de status para `In progress`:
+8.2 Se teste falhar, rollback de status para `In progress`:
 ```bash
 gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$STATUS_FIELD_ID" --single-select-option-id "$INPROGRESS_OPTION_ID"
 ```
-7. Aplicar labels do PR, vincular o PR ao projeto `MSX BarePI` e definir a milestone do PR igual à milestone da issue de origem; registrar link para review na issue e no arquivo local:
+9. Aplicar labels do PR, vincular o PR ao projeto `MSX BarePI` e definir a milestone do PR igual à milestone da issue de origem; registrar link para review na issue e no arquivo local:
 ```bash
 gh pr edit <numero-pr> -R sandersouza/msxbarepi --add-label "priority:P0" --add-label "type:performance" --add-label "area:video"
 gh pr edit <numero-pr> -R sandersouza/msxbarepi --add-project "MSX BarePI"
 gh pr edit <numero-pr> -R sandersouza/msxbarepi --milestone "<titulo-da-milestone>"
 ```
-8. Após abrir o PR e compartilhar o link de review com o usuário, ao concluir a issue e iniciar a próxima, atualizar `Status` para `Done`:
+10. Após abrir o PR e compartilhar o link de review com o usuário, ao concluir a issue e iniciar a próxima, atualizar `Status` para `Done`:
 ```bash
 DONE_OPTION_ID=$(gh project field-list 3 --owner sandersouza --format json --jq '.fields[] | select(.name=="Status") | .options[] | select(.name=="Done") | .id')
 gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$STATUS_FIELD_ID" --single-select-option-id "$DONE_OPTION_ID"

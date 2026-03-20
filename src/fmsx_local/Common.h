@@ -35,7 +35,8 @@ extern uint8_t FmsxVDPScreenOnLatched;
 INLINE unsigned V9958CoarseBlocks(void)
 {
   if(!MODEL(MSX_MSX2P)) return 0u;
-  return (unsigned)(VDP[26] & 0x3Fu);
+  /* openMSX behavior: multi-page scroll requires R25 bit0 AND R2 bit5. */
+  return (unsigned)(VDP[26] & (((VDP[25] & 0x01u) && (VDP[2] & 0x20u)) ? 0x3Fu : 0x1Fu));
 }
 
 INLINE unsigned V9958CoarseScroll256(void)
@@ -78,30 +79,6 @@ INLINE unsigned V9958VirtualWidth512(void)
   return (MODEL(MSX_MSX2P) && (VDP[25] & 0x01u) && (VDP[2] & 0x20u)) ? 1024u : 512u;
 }
 
-INLINE unsigned V9958HScroll512Flag(void)
-{
-  return MODEL(MSX_MSX2P) ? (unsigned)(VDP[25] & ((VDP[2] >> 5) & 0x01u) & 0x01u) : 0u;
-}
-
-INLINE unsigned V9958HScrollValue(void)
-{
-  unsigned scroll;
-
-  scroll = (((unsigned)(VDP[26] & 0x3Fu) << 3) - (unsigned)(VDP[27] & 0x07u)) & 0x1FFu;
-  if(!V9958HScroll512Flag()) scroll &= 0x0FFu;
-  return scroll;
-}
-
-INLINE unsigned V9958ChrTabBaseMask(void)
-{
-  unsigned base;
-  unsigned mask;
-
-  base = ((((unsigned)VDP[2]) << 10) & ~((unsigned)(VDP[25] & 0x01u) << 15)) | 0x03FFu;
-  mask = (unsigned)((VRAMPages << 14) - 1);
-  return mask ? (base & mask) : base;
-}
-
 INLINE uint8_t *V9958VRAMOffsetPtr(uint8_t *Base,int Offset)
 {
   int Size,Pos;
@@ -122,42 +99,6 @@ INLINE uint8_t *V9958ScrollPagePtr(uint8_t *Base,int Offset)
   return V9958VRAMOffsetPtr(Base,Offset);
 }
 
-INLINE void V9958BuildScreen67ByteStream(uint8_t *Base,uint8_t *Dst,unsigned Count)
-{
-  static const int JumpTable[4] = { -128, -128, -0x8080, 0x7f80 };
-  uint8_t *Ptr;
-  const int *Jump;
-  unsigned HScroll512Flag;
-  unsigned Page;
-  unsigned BytePos;
-  unsigned I;
-  unsigned BasePos;
-
-  Ptr=Base;
-  HScroll512Flag=V9958HScroll512Flag();
-  Jump=JumpTable+(HScroll512Flag? 2:0);
-  BasePos=(unsigned)(Base-VRAM);
-  Page=(BasePos>>15)&0x01u;
-  BytePos=0u;
-
-  if(HScroll512Flag && (BasePos&0x8000u))
-  {
-    Ptr=V9958VRAMOffsetPtr(Ptr,Jump[Page^=1]+128);
-  }
-
-  for(I=0;I<Count;++I)
-  {
-    Dst[I]=Ptr[0];
-    Ptr=V9958VRAMOffsetPtr(Ptr,1);
-
-    if(HScroll512Flag && (++BytePos&0x80u))
-    {
-      BytePos=0u;
-      Ptr=V9958VRAMOffsetPtr(Ptr,Jump[Page^=1]);
-    }
-  }
-}
-
 INLINE unsigned V9958InterleavedPlaneOffset(void)
 {
   return (VRAMPages>=8) ? 0x10000u : 0u;
@@ -169,23 +110,6 @@ INLINE uint8_t *V9958BitmapLinePtr(uint8_t *Base,uint8_t Y)
   int BasePos;
   int LinePos;
   int Pos;
-
-  if(MODEL(MSX_MSX2P) && ((ScrMode==6u)||(ScrMode==7u)))
-  {
-    const unsigned oddPage = (FlipEvenOdd && OddPage) ? 0x100u : 0u;
-    const unsigned lineMask =
-      (unsigned)((-1 << 15) | ((((unsigned)(Y + VScroll)) & 0xFFu) << 7));
-    const unsigned oddMask = (unsigned)((~oddPage) << 7);
-
-    Pos = (int)(V9958ChrTabBaseMask() & oddMask & lineMask);
-    Size = VRAMPages << 14;
-    if(Size > 0)
-    {
-      Pos %= Size;
-      if(Pos < 0) Pos += Size;
-    }
-    return VRAM + Pos;
-  }
 
   BasePos=(int)(Base-VRAM);
   LinePos=(((int)(Y+VScroll)<<7)&ChrTabM&0x7FFF);
@@ -1342,14 +1266,12 @@ void RefreshLine12(uint8_t Y)
 /*************************************************************/
 void RefreshLine6(uint8_t Y)
 {
-  uint8_t X,*T,*R,*T0,C;
+  uint8_t X,*T,*R,*T0,*T1,C;
   int I,Src;
   unsigned Coarse;
   unsigned Fine;
   unsigned LeftMask;
   unsigned VirtualWidth;
-  unsigned ByteWidth;
-  uint8_t ByteRaw[256];
   uint16_t Bg;
   uint8_t ZBuf[320];
   uint16_t BgRaw[1024];
@@ -1371,18 +1293,29 @@ void RefreshLine6(uint8_t Y)
     Fine = V9958FineScroll512();
     LeftMask = V9958MaskLeft512();
     VirtualWidth = V9958VirtualWidth512();
-    ByteWidth = VirtualWidth>>2;
 
     T0=T;
-    V9958BuildScreen67ByteStream(T0,ByteRaw,ByteWidth);
-    for(X=0;X<ByteWidth;X++)
+    for(X=0,T=T0;X<128;X++,T++)
     {
-      BgRaw[(X<<2)+0]=XPal[ByteRaw[X]>>6];
-      BgRaw[(X<<2)+1]=XPal[(ByteRaw[X]>>4)&0x03];
-      BgRaw[(X<<2)+2]=XPal[(ByteRaw[X]>>2)&0x03];
-      BgRaw[(X<<2)+3]=XPal[ByteRaw[X]&0x03];
+      BgRaw[(X<<2)+0]=XPal[T[0]>>6];
+      BgRaw[(X<<2)+1]=XPal[(T[0]>>4)&0x03];
+      BgRaw[(X<<2)+2]=XPal[(T[0]>>2)&0x03];
+      BgRaw[(X<<2)+3]=XPal[T[0]&0x03];
     }
 
+    if(VirtualWidth>512u)
+    {
+      T1=V9958ScrollPagePtr(T0,0x8000);
+      for(X=0,T=T1;X<128;X++,T++)
+      {
+        BgRaw[512+(X<<2)+0]=XPal[T[0]>>6];
+        BgRaw[512+(X<<2)+1]=XPal[(T[0]>>4)&0x03];
+        BgRaw[512+(X<<2)+2]=XPal[(T[0]>>2)&0x03];
+        BgRaw[512+(X<<2)+3]=XPal[T[0]&0x03];
+      }
+    }
+
+    /* Match left mask color to current scrolled backdrop pixel. */
     MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];
     for(I=0;I<256;I++)
     {
@@ -1404,19 +1337,16 @@ void RefreshLine6(uint8_t Y)
 /*************************************************************/
 void RefreshLine7(uint8_t Y)
 {
-  uint8_t C,*T,*R,*T0,*Plane0,*Plane1;
+  uint8_t C,*T,*R,*T0,*T1,*Plane0,*Plane1;
   unsigned X;
   int I,Src;
   unsigned Coarse;
   unsigned Fine;
   unsigned LeftMask;
   unsigned VirtualWidth;
-  unsigned ByteWidth;
   uint16_t Bg;
   uint16_t MaskBg;
   uint8_t ZBuf[320];
-  uint8_t ByteRaw0[256];
-  uint8_t ByteRaw1[256];
   uint16_t BgRaw[1024];
   uint8_t *R0;
   uint16_t *P0;
@@ -1436,21 +1366,33 @@ void RefreshLine7(uint8_t Y)
     Fine = V9958FineScroll512();
     LeftMask = V9958MaskLeft512();
     VirtualWidth = V9958VirtualWidth512();
-    ByteWidth = VirtualWidth>>2;
 
     T0=T;
     Plane0=T0;
     Plane1=V9958VRAMOffsetPtr(T0,(int)V9958InterleavedPlaneOffset());
-    V9958BuildScreen67ByteStream(Plane0,ByteRaw0,ByteWidth);
-    V9958BuildScreen67ByteStream(Plane1,ByteRaw1,ByteWidth);
-    for(X=0;X<ByteWidth;X++)
+    for(X=0;X<128;X++)
     {
-      BgRaw[(X<<2)+0]=XPal[ByteRaw0[X]>>4];
-      BgRaw[(X<<2)+1]=XPal[ByteRaw0[X]&0x0F];
-      BgRaw[(X<<2)+2]=XPal[ByteRaw1[X]>>4];
-      BgRaw[(X<<2)+3]=XPal[ByteRaw1[X]&0x0F];
+      BgRaw[(X<<2)+0]=XPal[Plane0[X]>>4];
+      BgRaw[(X<<2)+1]=XPal[Plane0[X]&0x0F];
+      BgRaw[(X<<2)+2]=XPal[Plane1[X]>>4];
+      BgRaw[(X<<2)+3]=XPal[Plane1[X]&0x0F];
     }
 
+    if(VirtualWidth>512u)
+    {
+      T1=V9958ScrollPagePtr(T0,0x8000);
+      Plane0=T1;
+      Plane1=V9958VRAMOffsetPtr(T1,(int)V9958InterleavedPlaneOffset());
+      for(X=0;X<128;X++)
+      {
+        BgRaw[512+(X<<2)+0]=XPal[Plane0[X]>>4];
+        BgRaw[512+(X<<2)+1]=XPal[Plane0[X]&0x0F];
+        BgRaw[512+(X<<2)+2]=XPal[Plane1[X]>>4];
+        BgRaw[512+(X<<2)+3]=XPal[Plane1[X]&0x0F];
+      }
+    }
+
+    /* Match left mask color to current scrolled backdrop pixel. */
     MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];
     for(I=0;I<256;I++)
     {

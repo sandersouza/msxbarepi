@@ -28,5 +28,6 @@ Espelho local de milestones/issues do GitHub para planejamento técnico e handof
 - `m16` (Release: ONEROM Static Build)
 - `m17` (FIX: Minor Issues / Other Issues)
 - `m19` (Release: Migração fMSX -> blueMSX backend)
-
 - `m21` (Release: Build Menuconfig e Feature Gates)
+- `m22` (Release: Suporte Master System)
+- `m23` (Game Master+)
