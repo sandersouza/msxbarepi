@@ -185,14 +185,12 @@ INLINE void VdpTraceSyncCE(void)
  */
 INLINE int VdpOpsQuantum(void)
 {
-  return MODEL(MSX_MSX2P) ? 2048 : 1024;
-}
-
-INLINE void VdpAdvanceOps(int ops)
-{
-  if(ops>0) VdpOpsCnt += ops;
-  if(VdpEngine && (VdpOpsCnt > 0)) VdpEngine();
-  VdpTraceSyncCE();
+  /*
+   * MSX2+ BIOS logo and some command-heavy transitions rely on sustained
+   * VDP copy throughput. Keep command progression higher on V9958 profiles
+   * without altering frame cadence.
+   */
+  return MODEL(MSX_MSX2P) ? 250000 : 12500;
 }
 
 INLINE int VdpCommandScreenMode(void)
@@ -377,30 +375,7 @@ INLINE void VDPpset(uint8_t SM, int DX, int DY, uint8_t CL, uint8_t OP)
 /*************************************************************/
 static int GetVdpTimingValue(int *timing_values)
 {
-  int value = timing_values[((VDP[1]>>6)&1)|(VDP[8]&2)|((VDP[9]<<1)&4)];
-
-  /*
-   * The MSX2+ boot logo polls S#2 in tight loops at 0x2BE4 and the setup
-   * stages chained from 0x2E3E/0x2EBF/0x3040/0x3299. BlueMSX/openMSX advance
-   * the VDP command engine on every timed VDP access, while our core still
-   * runs with a coarser budget. Scale command cost down only inside this BIOS
-   * boot path so the polling cadence converges without touching gameplay/cart
-   * paths that are already stable.
-   */
-  if(MODEL(MSX_MSX2P))
-  {
-    const uint16_t pc = CPU.PC.W;
-    if(((pc>=0x2BE4u)&&(pc<=0x2C27u)) ||
-       ((pc>=0x2E3Eu)&&(pc<=0x2F97u)) ||
-       ((pc>=0x3040u)&&(pc<=0x3147u)) ||
-       ((pc>=0x3299u)&&(pc<=0x3325u)))
-    {
-      value = (value + 7) / 8;
-      if(value < 1) value = 1;
-    }
-  }
-
-  return value;
+  return(timing_values[((VDP[1]>>6)&1)|(VDP[8]&2)|((VDP[9]<<1)&4)]);
 }
 
 /** SrchEgine()** ********************************************/
@@ -896,7 +871,8 @@ void VDPWrite(uint8_t V)
 {
   VDPStatus[2]&=0x7F;
   VDPStatus[7]=VDP[44]=V;
-  VdpAdvanceOps(0);
+  if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
+  VdpTraceSyncCE();
 }
 
 /** VDPRead() ************************************************/
@@ -905,7 +881,8 @@ void VDPWrite(uint8_t V)
 uint8_t VDPRead(void)
 {
   VDPStatus[2]&=0x7F;
-  VdpAdvanceOps(0);
+  if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
+  VdpTraceSyncCE();
   return(VDP[44]);
 }
 
@@ -1023,7 +1000,8 @@ uint8_t VDPDraw(uint8_t Op)
   VDPStatus[2]|=0x01;
 
   /* Start execution if we still have time slices */
-  VdpAdvanceOps(0);
+  if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
+  VdpTraceSyncCE();
 
   /* Operation successfull initiated */
   return(1);
@@ -1034,5 +1012,17 @@ uint8_t VDPDraw(uint8_t Op)
 /*************************************************************/
 void LoopVDP(void)
 {
-  VdpAdvanceOps(VdpOpsQuantum());
+  const int quantum = VdpOpsQuantum();
+
+  if(VdpOpsCnt<=0)
+  {
+    VdpOpsCnt+=quantum;
+    if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
+  }
+  else
+  {
+    VdpOpsCnt=quantum;
+    if(VdpEngine) VdpEngine();
+  }
+  VdpTraceSyncCE();
 }

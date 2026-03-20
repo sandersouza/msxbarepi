@@ -30,12 +30,14 @@ applyTo:
 - Preservar expectativa de artefatos: `artifacts/kernel8-default.img`.
 - Em branch de issue (`<numero>-...`), garantir tambem `artifacts/kernel8-issue<numero>.img` e prioriza-lo para a issue ativa.
 - Ao entregar build para teste, informar identificador curto `BUILD_HASH:<git>-<sha1>`.
+- Em validacao de hardware, sempre informar tambem o `BUILD_ID` de 4 digitos exibido no overlay (`TXTDBG BUILD:XXXX`), pois esse e o identificador visual canonico em campo.
 
 ## SD e empacotamento
 
-- Usar apenas `scripts/prepare-sd.sh` para preparo de SD em docs/comandos.
-- Antes de executar `scripts/prepare-sd.sh` sem `DRY_RUN=1`, pedir confirmacao explicita do usuario no chat.
-- Ao finalizar build de teste, sempre incluir comando de preparo de SD sem `DRY_RUN=1`.
+- Usar `make sdcard` como comando oficial para preparo/gravação de SD em docs/comandos.
+- Evitar orientar `scripts/prepare-sd.sh` diretamente no chat quando o objetivo for gravar SD; preferir sempre `make sdcard`.
+- Antes de executar `make sdcard`, pedir confirmacao explicita do usuario no chat.
+- Ao finalizar build de teste, sempre incluir o comando `make sdcard`.
 - Em `make package`, usar `DEBUG=0|1` e `OWNER=\"<nome>\"`; nome esperado do zip: `artifacts/sdcard-package-<OWNER>.zip`.
 
 ## Alinhamento com docs

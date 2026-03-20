@@ -23,6 +23,7 @@ applyTo:
 
 - Seguir `docs/github-project-management.md` como fonte de verdade para workflow.
 - Manter `docs/milestones/` sincronizado com remoto no mesmo ciclo de criacao/atualizacao.
+- Em criacao de milestone/issue, preparar primeiro o espelho local (`README.md`, `CHALLENGES.md`, arquivo da issue) e usar esse material como fonte para publicacao remota.
 - Cada milestone remota deve ter pasta local com `README.md` contendo `Milestone remota: #<numero>`.
 - Cada pasta de milestone deve ter `CHALLENGES.md` com desafios por issue, solucao adotada e encaminhamentos.
 - Cada issue da milestone deve ter arquivo local `<numero>-<slug>.md` (inclusive issues fechadas, para historico).

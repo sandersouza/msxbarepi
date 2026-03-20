@@ -758,12 +758,19 @@ restart:
   return 0;
 }
 
-static void fmsx_manbow2_konami5_bank_write(uint8_t slot,uint8_t ps,uint8_t ss,uint16_t addr,uint8_t value)
+static int fmsx_scc_window_match(int type,uint16_t addr)
+{
+  /* MegaFlashROM SCC / Manbow2 exposes SCC registers only at 9800h-9FFFh. */
+  if(fmsx_rom_type_is_manbow2(type)) return (addr&0xF800u)==0x9800u;
+  return (addr&0xD800u)==0x9800u;
+}
+
+static void fmsx_konami5_bank_write(uint8_t slot,uint8_t ps,uint8_t ss,uint16_t addr,uint8_t value,uint8_t scc_plus_enable)
 {
   uint8_t bank = (uint8_t)((addr-0x5000u)>>13);
 
   if(bank==2u && slot<2u && (addr&0x1800u)==0x1000u) SCCOn[slot]=(value&0x3Fu)==0x3Fu;
-  else if(bank==3u && slot<2u && (addr&0x1800u)==0x1000u) SCCOn[slot]=(value&0x80u);
+  else if(scc_plus_enable && bank==3u && slot<2u && (addr&0x1800u)==0x1000u) SCCOn[slot]=(value&0x80u);
 
   value &= ROMMask[slot];
   if(value!=ROMMapper[slot][bank])
@@ -2285,7 +2292,7 @@ uint8_t RdZ80(uint16_t A)
   {
     fmsx_runtime_notify_media_probe();
   }
-  if(I<2 && SCCOn[I] && ((A&0xD800)==0x9800))
+  if(I<2 && SCCOn[I] && (ROMData[I]? fmsx_scc_window_match(ROMType[I],A):((A&0xD800)==0x9800)))
   {
     J=A&0x00FF;
     return (A&0x2000) ? ReadSCCP(&SCChip,J) : ReadSCC(&SCChip,J);
@@ -2438,7 +2445,6 @@ case 0x87:
   /*return(Rd8251(&SIO,Port&0x07));*/
 
 case 0x98: /* VRAM read port */
-  if(!MODEL(MSX_MSX1)) LoopVDP();
   fmsx_apply_vdp_io_wait(kVDPIOWaitCyclesData);
   /* Read from VRAM data buffer */
   Port=VDPData;
@@ -2461,7 +2467,6 @@ case 0x99: /* VDP status registers */
   const uint8_t status_reg = MODEL(MSX_MSX1)? 0u:(uint8_t)(VDP[15]&0x0Fu);
   const uint8_t live_status1 = fmsx_vdp_status1_live();
   const uint8_t live_status2 = fmsx_vdp_status2_live();
-  if(!MODEL(MSX_MSX1)) LoopVDP();
   fmsx_apply_vdp_io_wait(fmsx_vdp_status_wait_cycles());
   FmsxVDPPort99ReadCount++;
   FmsxVDPStatusReadCount[status_reg]++;
@@ -2661,7 +2666,6 @@ case 0x87:
   return;*/
 
 case 0x98: /* VDP Data */
-  if(!MODEL(MSX_MSX1)) LoopVDP();
   fmsx_apply_vdp_io_wait(kVDPIOWaitCyclesData);
   VKey=1;
   VDPData=Value;
@@ -2677,7 +2681,6 @@ case 0x98: /* VDP Data */
 
 case 0x99: /* VDP Address Latch */
   FmsxVDPPort99WriteCount++;
-  if(!MODEL(MSX_MSX1)) LoopVDP();
   fmsx_apply_vdp_io_wait(kVDPIOWaitCyclesData);
   if(VKey) { ALatch=Value;VKey=0; }
   else
@@ -2738,7 +2741,6 @@ case 0x9A: /* VDP Palette Latch */
 
 case 0x9B: /* VDP Register Access */
   FmsxVDPPort9BWriteCount++;
-  if(!MODEL(MSX_MSX1)) LoopVDP();
   fmsx_apply_vdp_io_wait(kVDPIOWaitCyclesData);
   if(MODEL(MSX_MSX1)) return;
   J=VDP[17]&0x3F;
@@ -2899,7 +2901,7 @@ void MapROM(uint16_t A,uint8_t V)
   }
 
   /* If writing to SCC... [whether we have a ROM in this slot or not] */
-  if(I<2 && SCCOn[I] && ((A&0xD800)==0x9800)) // D8==1101.1000 => ignore upper b5 for SCC/SCC-I and b0-3 for 8 mirrored SCC register blocks
+  if(I<2 && SCCOn[I] && (ROMData[I]? fmsx_scc_window_match(ROMType[I],A):((A&0xD800)==0x9800)))
   {
     /* Compute SCC register number */
     J=A&0x00FF;
@@ -2970,7 +2972,7 @@ void MapROM(uint16_t A,uint8_t V)
     case MAP_KONAMI5: /* KONAMI5 8kB cartridges */
       /* Only interested in writes to 5000h/7000h/9000h/B000h */
       if((A<0x5000)||(A>0xB000)||((A&0x1FFF)!=0x1000)) break;
-      fmsx_manbow2_konami5_bank_write(I,PS,SS,A,V);
+      fmsx_konami5_bank_write(I,PS,SS,A,V,1);
       return;
 
     case MAP_MANBOW2:
@@ -2979,7 +2981,7 @@ void MapROM(uint16_t A,uint8_t V)
       (void)fmsx_manbow2_flash_write(I,A,V);
       if((A>=0x5000)&&(A<=0xB000)&&((A&0x1FFF)==0x1000))
       {
-        fmsx_manbow2_konami5_bank_write(I,PS,SS,A,V);
+        fmsx_konami5_bank_write(I,PS,SS,A,V,0);
         return;
       }
       return;

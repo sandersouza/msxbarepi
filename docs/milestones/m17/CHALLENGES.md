@@ -74,3 +74,9 @@ Registro de desafios enfrentados por issue, decisão adotada e status da soluç�
 - Solução adotada: Em backlog; corrigir com abordagem definitiva e proteção anti-regressão validando MSX1/MSX2/MSX2+.
 - Status: Futuro
 - Referência: [189-p0-bug-regressao-60hz-no-msx2-msx2plus-msxdiag-detecta-50hz.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/189-p0-bug-regressao-60hz-no-msx2-msx2plus-msxdiag-detecta-50hz.md)
+
+### #201 — Space Manbow 2: crash no gameplay + voice START ausente
+- Desafio: Mapper `Manbow2` ainda divergente do comportamento de referência no caminho SCC/MegaFlash, com sintomas de áudio ausente e instabilidade em runtime.
+- Solução adotada: Restrição do window SCC do `Manbow2` para `9800h-9FFFh` (sem espelho SCC+ em `B800h-BFFFh`) e separação do latch SCC+ no bank-switch: mantido para `MAP_KONAMI5`, desativado para `MAP_MANBOW2`.
+- Status: Parcial
+- Referência: [201-bug-space-manbow-2-crash-no-gameplay-e-voice-start-ausente.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/201-bug-space-manbow-2-crash-no-gameplay-e-voice-start-ausente.md)

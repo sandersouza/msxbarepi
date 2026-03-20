@@ -23,6 +23,7 @@ applyTo:
 
 - Preferir **GitHub MCP** para operacoes de gestao (issues, PRs, projeto, milestones) sempre que estiver disponivel/funcional.
 - Usar **`gh` CLI apenas como fallback** quando MCP estiver indisponivel, com erro de autenticacao/permissao, ou sem suporte para a operacao desejada.
+- Evitar comandos longos inline no terminal para criar issues; preparar um `.md` local e usá-lo como fonte da issue remota.
 
 ## Branches
 
@@ -33,10 +34,16 @@ applyTo:
 
 ## Ciclo de issue/board
 
+- Issue recem-criada deve entrar em `Backlog`, nao em `Ready`.
 - Atualizar status de item no projeto: `In progress` -> `In review` -> `Done`.
 - Se testes falharem, voltar item para `In progress`.
 - Ao concluir issue, mover item para `Done` no mesmo ciclo.
-- Ao iniciar milestone, preparar board movendo abertas para `Ready` e manter apenas a ativa em `In progress`.
+- Ao ativar milestone, preparar board movendo todas as issues abertas da milestone para `Ready` e manter apenas a ativa em `In progress`.
+
+## Definicao de issue
+
+- Toda issue deve nascer com `DoR` (Definition of Ready) e `DoD` (Definition of Done) bem definidos; quando ainda houver descoberta pendente, registrar `DoR/DoD` como sugestao inicial.
+- Checklist operacional nao substitui `DoR/DoD`; ambos devem deixar claro prerequisitos, escopo de entrega e criterio de aceite.
 
 ## PRs
 
@@ -47,6 +54,7 @@ applyTo:
 ## Espelho local de milestones/issues
 
 - Manter `docs/milestones/` sincronizado com remoto.
+- Criar primeiro o espelho local da milestone/issue e so depois subir a milestone/issue remota ao GitHub.
 - Cada milestone remota deve ter pasta local com `README.md` e campo `Milestone remota: #<numero>`.
 - Cada pasta de milestone deve conter `CHALLENGES.md` com desafios/solucao/encaminhamento por issue.
 - Cada issue da milestone deve ter arquivo `<numero>-<slug>.md`, inclusive fechadas para historico.

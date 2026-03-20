@@ -15,6 +15,7 @@ applyTo: "**"
 - Alvo: Raspberry Pi 3B em AArch64 (`kernel8.img`) com premissas freestanding/no-libc.
 - Manter C para logica de kernel/runtime e Assembly apenas para bootstrap de baixo nivel.
 - Tratar HDMI como saida obrigatoria de video; UART como canal auxiliar de debug.
+- Quando houver freeze com RPi ainda responsivo, priorizar instrumentacao adicional via UART para capturar trilha temporal de eventos criticos.
 
 ## Estilo de codigo e implementacao
 
@@ -37,12 +38,14 @@ applyTo: "**"
 - Executar localmente as iteracoes de build/teste necessarias e inspecionar erros/warnings antes de propor proximos passos.
 - Em gates de milestone ou antes de avancos maiores, preferir build limpo (`make clean && make`) e validacao em hardware.
 - Manter expectativa de artefatos alinhada: `artifacts/kernel8-default.img` e imagem especifica da issue em branches de issue (`artifacts/kernel8-issue<numero>.img`).
-- Ao entregar build para teste, informar id curto de rastreio (`BUILD_HASH:<git>-<sha1>`) e incluir comando de preparo de SD sem `DRY_RUN=1`.
+- Ao entregar build para teste, informar id curto de rastreio (`BUILD_HASH:<git>-<sha1>`) e incluir o comando `make sdcard`.
+- Em testes de hardware, registrar tambem o `BUILD_ID` de 4 digitos mostrado no overlay (`TXTDBG BUILD:XXXX`).
 
 ## Fluxo de SD e assets de runtime
 
-- Usar apenas `scripts/prepare-sd.sh` como caminho oficial de preparacao de SD em docs/comandos.
-- Antes de executar `scripts/prepare-sd.sh` sem `DRY_RUN=1`, pedir confirmacao explicita do usuario no chat.
+- Usar `make sdcard` como caminho oficial de preparacao/gravação de SD em docs/comandos.
+- Evitar orientar `scripts/prepare-sd.sh` diretamente no chat quando o objetivo for gravar SD; preferir sempre `make sdcard`.
+- Antes de executar `make sdcard`, pedir confirmacao explicita do usuario no chat.
 - Sempre que o fluxo de boot exigir novos arquivos no SD, atualizar `scripts/prepare-sd.sh` na mesma mudanca.
 - Nesta fase, assets de BIOS/ROM para runtime devem ser fornecidos externamente via initramfs CPIO (sem versionar assets protegidos).
 

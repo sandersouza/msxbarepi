@@ -162,20 +162,19 @@ Diretriz visual (overlay e menu):
 - `TM6A`: trace de writes em registradores VDP — exibe **delta por frame** (variacao desde a ultima leitura, nao acumulado):
   - `W9/W15/W18/W19/W25/W26/W27`: writes por frame em cada registrador VDP (cap 9999).
 - `TM6B`: ultimo evento capturado no trace VDP/IRQ das janelas do `SMANBOW2`:
-  - `EV`: tipo do ultimo evento (`I0`, `I1A`, `I1F`, `R19`, `R23`, `S1`, `S2`, `CS`, `CE`).
+  - `EV`: tipo do ultimo evento (`I0`, `I1A`, `I1F`, `R19`, `R23`, `R25`, `R26`, `R27`, `S1`, `S2`, `CS`, `CE`).
   - `W`: janela do trace (`TI`=titulo, `SV`=save select, `SD`=transicao `STARDATE`).
   - `PC/SL/LP`: `PC`, scanline e fase de linha (`0`=area ativa, `1`=HBlank) do ultimo evento.
   - `B:x/y`: bancos MegaROM ativos em `4000h-7FFFh` e `8000h-BFFFh` no momento do evento.
   - `R1/R23/S2`: snapshot dos registradores/status mais relevantes naquele ultimo evento.
 - `TM6C`: diagnostico direto do cart `SMANBOW2` / Flash `Manbow2`:
   - `A8`: valor atual do registrador primario de slots.
-  - `EW`: `EnWrite` efetivo da pagina `4000h-7FFFh` (`1` indica que writes estao indo para RAM, nao para o cart).
+  - `E`: `EnWrite` efetivo da pagina `4000h-7FFFh` (`1` indica que writes estao indo para RAM, nao para o cart).
   - `C/T`: slot logico do cart ativo em `4000h-7FFFh`, `ROMType` efetivo e origem da classificacao (`0`=nenhuma, `2`=explicito, `3`=`CARTS.CRC`, `4`=`CARTS.SHA`, `5`=fallback SHA local, `6`=heuristica).
   - `B:a/b/c/d`: bancos atuais nas quatro janelas de 8KB (`4000h/6000h/8000h/A000h`).
   - `F`: ultima operacao relevante da Flash (`RD`, `RS`, `AS`, `PG`, `ER`, `CM`).
   - `S/M`: estado interno da sequencia AMD e modo de leitura atual da Flash.
-  - `A/O`: ultimo endereco Z80 e ultimo offset absoluto na Flash vistos pelo mapper.
-  - `V:w/r`: ultimo valor escrito e ultimo valor lido de volta pela Flash.
+  - Observacao: para respeitar o limite de 64 caracteres por linha no overlay HDMI, `A/O/V` sairam da `TM6C` e permanecem disponiveis via logs UART (`LOOP MAP ...`).
 
 ## Trace detalhado VDP/IRQ
 
@@ -189,6 +188,11 @@ Diretriz visual (overlay e menu):
   - eventos de `IE0`, `IE1`, writes em `R#19/R#23`, reads de `S#1/S#2` e início/fim de comando VDP.
 - O overlay agora exibe apenas o **ultimo** evento relevante dessa trilha em `TM6B`, para facilitar captura por screenshot em hardware.
 - Para o freeze do `SMANBOW2` em `PC:C698/C699`, `TM6C` e a linha de maior valor diagnostico: ela mostra se a pagina `4000h` continua apontando para o cart, quais bancos estao ativos e se a Flash realmente recebeu/programou/leu o offset esperado (`0x70000+`).
+- Em paralelo, o kernel emite telemetria UART adicional focada em VDP:
+  - `VDP ST`: transicao compacta de estado (`R25`, slot/tipo do cart em `P1`, `A8`, `P1 PS/SS`), incluindo alerta quando mapper entra em estado invalido (`C:255`/`T:FF`).
+  - `VDP EVT`: write pontual em `R25/R26/R27` com `PC` da escrita no trace;
+  - `VDP LOOP`: snapshot reduzido em degraus de repeticao de PC (`200`, `400`, ...).
+  - Observacao: logs de alta frequencia (`VDP CHG/IRQ/RG/IO`) foram removidos por impacto de performance (flood UART) durante gameplay.
 
 ## Arquitetura (modular)
 - Renderer da debug layer desacoplado em objeto plugavel:
