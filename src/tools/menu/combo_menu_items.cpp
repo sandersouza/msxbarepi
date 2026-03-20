@@ -164,11 +164,7 @@ const TComboMenuItem *combo_menu_root_items_get(unsigned language, unsigned boot
     {
         ADD_ROOT_ITEM(locale->root_load_disk, ComboMenuActionDiskDriveA, TRUE);
     }
-    if (MSXBARE_ENABLE_FMSX)
-    {
-        ADD_ROOT_ITEM(locale->root_game_master, ComboMenuActionGameMaster, TRUE);
-    }
-    if (MSXBARE_FEAT_LOAD_ROM || MSXBARE_FEAT_LOAD_DISK || MSXBARE_ENABLE_FMSX)
+    if (MSXBARE_FEAT_LOAD_ROM || MSXBARE_FEAT_LOAD_DISK)
     {
         ADD_ROOT_ITEM("", ComboMenuActionSeparator, FALSE);
     }
@@ -176,6 +172,10 @@ const TComboMenuItem *combo_menu_root_items_get(unsigned language, unsigned boot
     ADD_ROOT_ITEM(locale->root_load_state, ComboMenuActionLoadState, TRUE);
     ADD_ROOT_ITEM("", ComboMenuActionSeparator, FALSE);
     ADD_ROOT_ITEM(locale->root_settings, ComboMenuActionSettings, TRUE);
+    if (MSXBARE_ENABLE_FMSX)
+    {
+        ADD_ROOT_ITEM(locale->root_game_master, ComboMenuActionGameMaster, TRUE);
+    }
     ADD_ROOT_ITEM("", ComboMenuActionSeparator, FALSE);
     if (boot_mode != 2u)
     {

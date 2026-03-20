@@ -35,3 +35,7 @@
 - Proximo passo:
   - PR aberto: `#212` `Issue #206: add Game Master menu and Active Cheats UI`
   - sincronizar o espelho local/remoto da issue e mover o item para `In review`.
+
+## Ajuste de UX (20/03/2026 11:46 -03)
+- A entrada visivel no pause menu foi renomeada de `Game Master+` para `Game Master`.
+- A posicao do item no menu raiz foi movida para logo abaixo de `Settings`.
