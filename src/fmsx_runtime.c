@@ -3,6 +3,7 @@
 #include "../third_party/fmsx/fMSX/MSX.h"
 #include "../third_party/fmsx/Z80/Z80.h"
 #include "../third_party/fmsx/EMULib/Sound.h"
+#include "fmsx_compat/stdio.h"
 #include "fmsx_virtual_fs.h"
 #include "fmsx_initramfs.h"
 
@@ -121,9 +122,13 @@ extern uint32_t FmsxManbow2FlashReadCount;
 extern uint8_t *MemMap[4][4][8];
 extern uint8_t *EmptyRAM;
 extern uint8_t *Kanji;
+extern uint8_t *RAM[8];
 extern const char *DSKName[];
 extern FDIDisk FDD[];
 extern WD1793 FDC;
+extern int CheatCount;
+extern CheatCode CheatCodes[MAXCHEATS];
+extern int ApplyCheats(void);
 extern void fmsx_video_set_overscan(boolean enabled);
 extern void fmsx_local_ym2413_set_layer_gain_pct(unsigned pct);
 extern unsigned fmsx_local_ym2413_get_layer_gain_pct(void);
@@ -1285,6 +1290,237 @@ boolean fmsx_runtime_unload_disk(unsigned drive_index)
     DSKName[drive_index] = 0;
     g_disk_path[drive_index][0] = '\0';
     g_fmsx_status.last_pc = (int) CPU.PC.W;
+    return TRUE;
+}
+
+boolean fmsx_runtime_apply_game_master_cheat(const TGameMasterPoke *pokes, unsigned poke_count)
+{
+    return fmsx_runtime_set_game_master_cheat_enabled(pokes, poke_count, TRUE);
+}
+
+boolean fmsx_runtime_set_game_master_cheat_value(const TGameMasterPoke *pokes, unsigned poke_count, uint16_t value)
+{
+    TGameMasterPoke poke_copy;
+
+    if (pokes == 0 || poke_count != 1u)
+    {
+        return FALSE;
+    }
+
+    poke_copy = pokes[0];
+    if (poke_copy.size_bits == 8u)
+    {
+        poke_copy.value = (uint16_t) (value & 0x00FFu);
+    }
+    else if (poke_copy.size_bits == 16u)
+    {
+        poke_copy.value = value;
+    }
+    else
+    {
+        return FALSE;
+    }
+
+    return fmsx_runtime_set_game_master_cheat_enabled(&poke_copy, 1u, TRUE);
+}
+
+boolean fmsx_runtime_is_game_master_cheat_active(const TGameMasterPoke *pokes, unsigned poke_count)
+{
+    if (!g_fmsx_status.initialized || !g_fmsx_status.running || pokes == 0 || poke_count == 0u)
+    {
+        return FALSE;
+    }
+
+    for (unsigned i = 0u; i < poke_count; ++i)
+    {
+        const TGameMasterPoke *poke = &pokes[i];
+        if (poke->size_bits == 16u)
+        {
+            uint16_t current16 = 0u;
+            if (!fmsx_runtime_peek16(poke->address, &current16) || current16 != poke->value)
+            {
+                return FALSE;
+            }
+        }
+        else if (poke->size_bits == 8u)
+        {
+            uint8_t current8 = 0u;
+            if (!fmsx_runtime_peek8(poke->address, &current8) || current8 != (uint8_t) (poke->value & 0x00FFu))
+            {
+                return FALSE;
+            }
+        }
+        else
+        {
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
+boolean fmsx_runtime_set_game_master_cheat_enabled(const TGameMasterPoke *pokes, unsigned poke_count, boolean enabled)
+{
+    unsigned applied = 0u;
+
+    if (!g_fmsx_status.initialized || !g_fmsx_status.running || pokes == 0 || poke_count == 0u || poke_count > MAXCHEATS)
+    {
+        return FALSE;
+    }
+
+    if (!enabled)
+    {
+        Cheats(CHTS_OFF);
+
+        for (unsigned i = 0u; i < poke_count; ++i)
+        {
+            const uint32_t cheat_addr = 0x01000000u | (unsigned) pokes[i].address;
+            for (int j = 0; j < CheatCount; ++j)
+            {
+                if (CheatCodes[j].Addr == cheat_addr)
+                {
+                    for (int k = j; k + 1 < CheatCount; ++k)
+                    {
+                        CheatCodes[k] = CheatCodes[k + 1];
+                    }
+                    --CheatCount;
+                    break;
+                }
+            }
+        }
+
+        Cheats(CHTS_ON);
+        (void) ApplyCheats();
+        return TRUE;
+    }
+
+    for (unsigned i = 0u; i < poke_count; ++i)
+    {
+        const unsigned address = (unsigned) pokes[i].address;
+        const unsigned page = address >> 13;
+        const unsigned offset = address & 0x1FFFu;
+        const uint32_t cheat_addr = 0x01000000u | address;
+        CheatCode *code = 0;
+        int existing_index = -1;
+
+        if (pokes[i].size_bits != 8u && pokes[i].size_bits != 16u)
+        {
+            return FALSE;
+        }
+
+        for (int j = 0; j < CheatCount; ++j)
+        {
+            if (CheatCodes[j].Addr == cheat_addr)
+            {
+                existing_index = j;
+                break;
+            }
+        }
+
+        if (existing_index >= 0)
+        {
+            code = &CheatCodes[existing_index];
+        }
+        else
+        {
+            if (CheatCount >= MAXCHEATS)
+            {
+                return FALSE;
+            }
+
+            code = &CheatCodes[CheatCount++];
+            code->Addr = cheat_addr;
+            code->Orig = (page < 8u && RAM[page] != 0) ? RAM[page][offset] : RdZ80(address & 0xFFFFu);
+            if (pokes[i].size_bits == 16u)
+            {
+                const unsigned page_hi = (address + 1u) >> 13;
+                const unsigned offset_hi = (address + 1u) & 0x1FFFu;
+                const uint8_t hi = (page_hi < 8u && RAM[page_hi] != 0)
+                    ? RAM[page_hi][offset_hi]
+                    : RdZ80((address + 1u) & 0xFFFFu);
+                code->Orig |= (uint16_t) (hi << 8);
+            }
+        }
+
+        code->Data = (uint16_t) (pokes[i].size_bits == 16u ? pokes[i].value : (pokes[i].value & 0x00FFu));
+        code->Size = (uint8_t) (pokes[i].size_bits == 16u ? 2u : 1u);
+        snprintf((char *) code->Text,
+                 sizeof(code->Text),
+                 code->Size > 1u ? "%04X-%04X" : "%04X-%02X",
+                 address & 0xFFFFu,
+                 code->Data);
+
+        if (page < 8u && RAM[page] != 0)
+        {
+            RAM[page][offset] = (uint8_t) (code->Data & 0x00FFu);
+        }
+        WrZ80((uint16_t) (address & 0xFFFFu), (uint8_t) (code->Data & 0x00FFu));
+        if (code->Size > 1u)
+        {
+            const unsigned page_hi = (address + 1u) >> 13;
+            const unsigned offset_hi = (address + 1u) & 0x1FFFu;
+            if (page_hi < 8u && RAM[page_hi] != 0)
+            {
+                RAM[page_hi][offset_hi] = (uint8_t) (code->Data >> 8);
+            }
+            WrZ80((uint16_t) ((address + 1u) & 0xFFFFu), (uint8_t) (code->Data >> 8));
+        }
+
+        if (((page < 8u && RAM[page] != 0) ? RAM[page][offset] : RdZ80((uint16_t) (address & 0xFFFFu)))
+            != (uint8_t) (code->Data & 0x00FFu))
+        {
+            return FALSE;
+        }
+        if (code->Size > 1u)
+        {
+            const unsigned page_hi = (address + 1u) >> 13;
+            const unsigned offset_hi = (address + 1u) & 0x1FFFu;
+            const uint8_t hi = (page_hi < 8u && RAM[page_hi] != 0)
+                ? RAM[page_hi][offset_hi]
+                : RdZ80((uint16_t) ((address + 1u) & 0xFFFFu));
+            if (hi != (uint8_t) (code->Data >> 8))
+            {
+                return FALSE;
+            }
+        }
+
+        ++applied;
+    }
+
+    Cheats(CHTS_ON);
+    (void) ApplyCheats();
+    return applied == poke_count ? TRUE : FALSE;
+}
+
+boolean fmsx_runtime_peek8(uint16_t address, uint8_t *value)
+{
+    const unsigned page = ((unsigned) address) >> 13;
+    const unsigned offset = ((unsigned) address) & 0x1FFFu;
+
+    if (!g_fmsx_status.initialized || !g_fmsx_status.running || value == 0)
+    {
+        return FALSE;
+    }
+
+    *value = (page < 8u && RAM[page] != 0) ? RAM[page][offset] : RdZ80(address);
+    return TRUE;
+}
+
+boolean fmsx_runtime_peek16(uint16_t address, uint16_t *value)
+{
+    uint8_t lo = 0u;
+    uint8_t hi = 0u;
+
+    if (value == 0)
+    {
+        return FALSE;
+    }
+    if (!fmsx_runtime_peek8(address, &lo) || !fmsx_runtime_peek8((uint16_t) (address + 1u), &hi))
+    {
+        return FALSE;
+    }
+
+    *value = (uint16_t) ((uint16_t) lo | ((uint16_t) hi << 8));
     return TRUE;
 }
 

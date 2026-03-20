@@ -38,6 +38,7 @@ typedef struct {
     const char *game_master_invalid;
     const char *game_master_no_cheats;
     const char *game_master_line;
+    const char *game_master_apply_hint;
     const char *settings_language;
     const char *settings_resolution;
     const char *settings_scale;

@@ -16,6 +16,7 @@ applyTo: "**"
 - Manter C para logica de kernel/runtime e Assembly apenas para bootstrap de baixo nivel.
 - Tratar HDMI como saida obrigatoria de video; UART como canal auxiliar de debug.
 - Quando houver freeze com RPi ainda responsivo, priorizar instrumentacao adicional via UART para capturar trilha temporal de eventos criticos.
+- Em depuracao de hardware envolvendo estado interno do emulador (memoria, cheats, mapeamento, slots, IO), preferir instrumentar logs UART objetivos antes de expandir o overlay HDMI.
 
 ## Estilo de codigo e implementacao
 

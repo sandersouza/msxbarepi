@@ -2,7 +2,6 @@
 #define MSXBARE_CIRCLE_MSXBARE_FILE_BROWSER_H
 
 #include <circle/types.h>
-#include "gamemaster_catalog.h"
 
 enum TComboFileBrowserMode {
     ComboFileBrowserModeRom = 0,
@@ -27,7 +26,7 @@ public:
 
     void Reset(void);
     void Open(unsigned mode, unsigned slot_index);
-    void OpenGameMaster(const TGameMasterCatalog *catalog);
+    void OpenGameMaster(void);
     void EnterDirectory(const char *dir_path);
     unsigned GetMode(void) const;
     unsigned GetSlotIndex(void) const;
@@ -72,7 +71,6 @@ private:
     unsigned m_Count;
     unsigned m_SelectedAbs;
     unsigned m_Top;
-    const TGameMasterCatalog *m_GameMasterCatalog;
     unsigned m_SourceIndex[kMaxEntries];
     char m_Names[kMaxEntries][21];
     char m_Paths[kMaxEntries][192];

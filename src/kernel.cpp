@@ -3697,31 +3697,127 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 
 	case ComboMenuActionGameMaster:
 #if !MSXBARE_ENABLE_FMSX
-		m_Logger.Write(FromKernel, LogNotice, "Game Master+ indisponivel neste build");
+		m_Logger.Write(FromKernel, LogNotice, "Game Codes indisponivel neste build");
 		break;
 #else
 		{
-			const int load_status = game_master_catalog_load_default(&m_GameMasterCatalog);
-			const unsigned error_line = (unsigned) m_GameMasterCatalog.error_line;
-			m_PauseMenu.OpenGameMaster(
-				load_status == (int) GameMasterLoadOk ? &m_GameMasterCatalog : 0,
-				(unsigned) load_status,
-				error_line);
-			if (load_status == (int) GameMasterLoadOk)
+			game_master_catalog_reset(&m_GameMasterCatalog);
+			m_PauseMenu.OpenGameMaster(&m_GameMasterCatalog, (unsigned) GameMasterLoadOk, 0u);
+			m_Logger.Write(FromKernel, LogNotice, "Game Codes aberto: SD:/cheats");
+		}
+		break;
+#endif
+
+	case ComboMenuActionApplyGameMasterCheat:
+#if !MSXBARE_ENABLE_FMSX
+		break;
+#else
+		if (m_FmsxReady)
+		{
+			unsigned game_index = 0u;
+			unsigned cheat_index = 0u;
+			boolean has_value_override = FALSE;
+			uint16_t value_override = 0u;
+			if (m_PauseMenu.ConsumePendingGameMasterCheat(&game_index, &cheat_index, &has_value_override, &value_override)
+				&& game_index < (unsigned) m_GameMasterCatalog.game_count
+				&& cheat_index < (unsigned) m_GameMasterCatalog.cheat_count)
 			{
+				const TGameMasterGame *game = &m_GameMasterCatalog.games[game_index];
+				const TGameMasterCheat *cheat = &m_GameMasterCatalog.cheats[cheat_index];
+				boolean applied = FALSE;
 				CString line;
-				line.Format("Game Master+ carregado: %u jogos, %u cheats",
-				            (unsigned) m_GameMasterCatalog.game_count,
-				            (unsigned) m_GameMasterCatalog.cheat_count);
-				m_Logger.Write(FromKernel, LogNotice, line);
-			}
-			else
-			{
-				CString line;
-				line.Format("Game Master+ falhou: %s (linha %u)",
-				            game_master_catalog_status_name((unsigned) load_status),
-				            error_line);
-				m_Logger.Write(FromKernel, LogWarning, line);
+
+				if (cheat_index >= (unsigned) game->cheat_first
+					&& cheat_index < (unsigned) game->cheat_first + (unsigned) game->cheat_count
+					&& cheat->poke_count > 0u
+					&& cheat->poke_first + cheat->poke_count <= (unsigned) m_GameMasterCatalog.poke_count)
+				{
+					const boolean was_active = fmsx_runtime_is_game_master_cheat_active(
+						&m_GameMasterCatalog.pokes[cheat->poke_first],
+						(unsigned) cheat->poke_count);
+					line.Format("GM APPLY begin game=%s cheat=%s pokes=%u",
+					            game->title,
+					            cheat->title,
+					            (unsigned) cheat->poke_count);
+					m_Logger.Write(FromKernel, LogNotice, line);
+
+					for (unsigned i = 0u; i < (unsigned) cheat->poke_count; ++i)
+					{
+						const TGameMasterPoke *poke = &m_GameMasterCatalog.pokes[cheat->poke_first + i];
+						if (poke->size_bits == 16u)
+						{
+							uint16_t before16 = 0u;
+							(void) fmsx_runtime_peek16(poke->address, &before16);
+							line.Format("GM APPLY pre  A:%04X S:%u V:%04X R:%04X",
+							            (unsigned) poke->address,
+							            (unsigned) poke->size_bits,
+							            (unsigned) poke->value,
+							            (unsigned) before16);
+						}
+						else
+						{
+							uint8_t before8 = 0u;
+							(void) fmsx_runtime_peek8(poke->address, &before8);
+							line.Format("GM APPLY pre  A:%04X S:%u V:%02X R:%02X",
+							            (unsigned) poke->address,
+							            (unsigned) poke->size_bits,
+							            (unsigned) (poke->value & 0x00FFu),
+							            (unsigned) before8);
+						}
+						m_Logger.Write(FromKernel, LogNotice, line);
+					}
+
+					if (has_value_override)
+					{
+						line.Format("GM APPLY set  game=%s cheat=%s value=%u",
+						            game->title,
+						            cheat->title,
+						            (unsigned) value_override);
+						m_Logger.Write(FromKernel, LogNotice, line);
+						applied = fmsx_runtime_set_game_master_cheat_value(
+							&m_GameMasterCatalog.pokes[cheat->poke_first],
+							(unsigned) cheat->poke_count,
+							value_override);
+					}
+					else
+					{
+						applied = fmsx_runtime_set_game_master_cheat_enabled(
+							&m_GameMasterCatalog.pokes[cheat->poke_first],
+							(unsigned) cheat->poke_count,
+							was_active ? FALSE : TRUE);
+					}
+
+					for (unsigned i = 0u; i < (unsigned) cheat->poke_count; ++i)
+					{
+						const TGameMasterPoke *poke = &m_GameMasterCatalog.pokes[cheat->poke_first + i];
+						if (poke->size_bits == 16u)
+						{
+							uint16_t after16 = 0u;
+							(void) fmsx_runtime_peek16(poke->address, &after16);
+							line.Format("GM APPLY post A:%04X S:%u V:%04X R:%04X",
+							            (unsigned) poke->address,
+							            (unsigned) poke->size_bits,
+							            (unsigned) poke->value,
+							            (unsigned) after16);
+						}
+						else
+						{
+							uint8_t after8 = 0u;
+							(void) fmsx_runtime_peek8(poke->address, &after8);
+							line.Format("GM APPLY post A:%04X S:%u V:%02X R:%02X",
+							            (unsigned) poke->address,
+							            (unsigned) poke->size_bits,
+							            (unsigned) (poke->value & 0x00FFu),
+							            (unsigned) after8);
+						}
+						m_Logger.Write(FromKernel, LogNotice, line);
+					}
+				}
+
+				line.Format("Game Codes: %s [%s]",
+				            cheat->title,
+				            applied ? "toggled" : "failed");
+				m_Logger.Write(FromKernel, applied ? LogNotice : LogWarning, line);
 			}
 		}
 		break;

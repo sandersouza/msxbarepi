@@ -40,6 +40,7 @@ enum TComboMenuAction {
     ComboMenuActionToggleOverlay,
     ComboMenuActionToggleDebugLog,
     ComboMenuActionAudioGainChanged,
+    ComboMenuActionApplyGameMasterCheat,
     ComboMenuActionSaveState,
     ComboMenuActionLoadState,
     ComboMenuActionSaveSettings,

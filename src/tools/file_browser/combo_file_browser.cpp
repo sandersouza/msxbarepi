@@ -1,4 +1,5 @@
 #include "combo_file_browser.h"
+#include "gamemaster_catalog.h"
 
 extern "C" {
 #include <fatfs/ff.h>
@@ -6,6 +7,7 @@ extern "C" {
 
 static const char *kRomsRootPath = "SD:/roms";
 static const char *kDisksRootPath = "SD:/disks";
+static const char *kCheatsRootPath = GAMEMASTER_CHEATS_ROOT;
 static const unsigned kRepeatDelayFrames = 30u;  /* ~500ms em 60Hz */
 static const unsigned kRepeatPeriodFrames = 6u;  /* ~10 passos/s em 60Hz */
 
@@ -108,6 +110,10 @@ static int ComboIsSupportedFileForMode(unsigned mode, const char *name)
             || ComboEndsWithIgnoreCase(name, ".img")
             || ComboEndsWithIgnoreCase(name, ".di1")
             || ComboEndsWithIgnoreCase(name, ".di2");
+    }
+    if (mode == (unsigned) ComboFileBrowserModeGameMaster)
+    {
+        return ComboEndsWithIgnoreCase(name, ".mcf");
     }
     return ComboEndsWithIgnoreCase(name, ".rom")
         || ComboEndsWithIgnoreCase(name, ".mx1")
@@ -214,7 +220,6 @@ CComboFileBrowser::CComboFileBrowser(void)
   m_Count(0u),
   m_SelectedAbs(0u),
   m_Top(0u),
-  m_GameMasterCatalog(0),
   m_SourceIndex{0},
   m_Names{{0}},
   m_Paths{{0}},
@@ -239,7 +244,6 @@ void CComboFileBrowser::Reset(void)
     m_Count = 0u;
     m_SelectedAbs = 0u;
     m_Top = 0u;
-    m_GameMasterCatalog = 0;
     CopySmallText(m_CurrentDir, sizeof(m_CurrentDir), kRomsRootPath);
     m_LastUpPressed = FALSE;
     m_LastDownPressed = FALSE;
@@ -262,7 +266,6 @@ void CComboFileBrowser::Open(unsigned mode, unsigned slot_index)
 {
     m_Mode = (mode == (unsigned) ComboFileBrowserModeDisk) ? (unsigned) ComboFileBrowserModeDisk : (unsigned) ComboFileBrowserModeRom;
     m_SlotIndex = slot_index > 1u ? 1u : slot_index;
-    m_GameMasterCatalog = 0;
     CopySmallText(m_CurrentDir, sizeof(m_CurrentDir), RootPath());
     m_LastUpPressed = FALSE;
     m_LastDownPressed = FALSE;
@@ -273,12 +276,11 @@ void CComboFileBrowser::Open(unsigned mode, unsigned slot_index)
     RebuildCatalog();
 }
 
-void CComboFileBrowser::OpenGameMaster(const TGameMasterCatalog *catalog)
+void CComboFileBrowser::OpenGameMaster(void)
 {
     m_Mode = (unsigned) ComboFileBrowserModeGameMaster;
     m_SlotIndex = 0u;
-    m_GameMasterCatalog = catalog;
-    m_CurrentDir[0] = '\0';
+    CopySmallText(m_CurrentDir, sizeof(m_CurrentDir), RootPath());
     m_LastUpPressed = FALSE;
     m_LastDownPressed = FALSE;
     m_LastPageUpPressed = FALSE;
@@ -290,10 +292,6 @@ void CComboFileBrowser::OpenGameMaster(const TGameMasterCatalog *catalog)
 
 void CComboFileBrowser::EnterDirectory(const char *dir_path)
 {
-    if (m_Mode == (unsigned) ComboFileBrowserModeGameMaster)
-    {
-        return;
-    }
     if (dir_path == 0 || dir_path[0] == '\0')
     {
         return;
@@ -871,35 +869,6 @@ void CComboFileBrowser::RebuildCatalog(void)
     m_SelectedAbs = 0u;
     m_Top = 0u;
 
-    if (m_Mode == (unsigned) ComboFileBrowserModeGameMaster)
-    {
-        if (m_GameMasterCatalog == 0)
-        {
-            ++m_ContentStamp;
-            return;
-        }
-
-        for (unsigned i = 0u; i < m_GameMasterCatalog->game_count && m_Count < kMaxEntries; ++i)
-        {
-            char label[21];
-            char key[192];
-            const TGameMasterGame *game = &m_GameMasterCatalog->games[i];
-            FormatTitle20(game->title, label);
-            if (game->rom_id[0] != '\0')
-            {
-                CopySmallText(key, sizeof(key), game->rom_id);
-            }
-            else
-            {
-                CopySmallText(key, sizeof(key), game->title);
-            }
-            InsertSorted(0u, label, key, FALSE, FALSE, i);
-        }
-
-        ++m_ContentStamp;
-        return;
-    }
-
     if (!IsPathInsideRoot(m_CurrentDir, root_path))
     {
         CopySmallText(m_CurrentDir, sizeof(m_CurrentDir), root_path);
@@ -978,7 +947,7 @@ const char *CComboFileBrowser::RootPath(void) const
 {
     if (m_Mode == (unsigned) ComboFileBrowserModeGameMaster)
     {
-        return "";
+        return kCheatsRootPath;
     }
     return (m_Mode == (unsigned) ComboFileBrowserModeDisk) ? kDisksRootPath : kRomsRootPath;
 }

@@ -28,6 +28,8 @@ applyTo:
 - Evitar getters de debug que copiam structs grandes; preferir getters escalares.
 - Tratar `TXTDBG BUILD:XXXX` (4 digitos hex) como identificador visual canonico da build em teste.
 - Em casos de freeze com RPi ainda responsivo, complementar overlay HDMI com logs UART para diagnostico aprofundado.
+- Quando houver investigacao de runtime em hardware (ex.: cheat nao aplicado, valor incorreto em memoria, divergencia entre UI e estado interno), priorizar telemetria adicional via UART com endereco, valor esperado, valor lido e ponto temporal da operacao.
+- Tratar UART como canal oficial de telemetria detalhada para depuracao de memoria/estado quando o overlay HDMI nao for suficiente ou puder mascarar o problema.
 - Limitar cada linha do overlay HDMI a no maximo 64 caracteres visiveis para nao sobrepor a area do mailbox do emulador.
 - Ao adicionar nova linha no overlay, atualizar a rotina de limpeza (`ClearDebugOverlay`) no mesmo ciclo para limpar explicitamente a nova linha quando o debug for desativado.
 

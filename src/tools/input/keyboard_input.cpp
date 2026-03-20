@@ -7,6 +7,7 @@ static const u8 kHidKeyUp = 0x52;
 static const u8 kHidKeyPageUp = 0x4B;
 static const u8 kHidKeyPageDown = 0x4E;
 static const u8 kHidKeyEnter = 0x28;
+static const u8 kHidKeyKeypadEnter = 0x58;
 static const u8 kHidKeyEsc = 0x29;
 static const u8 kHidKeyDel = 0x4C;
 static const u8 kHidKeyF6 = 0x3F;
@@ -126,7 +127,7 @@ void ComboDecodeKeyboardRaw(unsigned char modifiers,
 		{
 			out_state->menu_page_down_pressed = TRUE;
 		}
-		if (key == kHidKeyEnter)
+		if (key == kHidKeyEnter || key == kHidKeyKeypadEnter)
 		{
 			out_state->menu_enter_pressed = TRUE;
 		}

@@ -1,6 +1,8 @@
 #include "combo_menu.h"
 #include "combo_locale.h"
 #include "viewport_screenshot.h"
+#include "fmsx_runtime.h"
+#include <string.h>
 
 #if DEPTH == 32
 static const TScreenColor kPauseMenuBgColor = COLOR32(0, 0, 0x9B, 0xFF);
@@ -138,6 +140,156 @@ static void ComboAppendText(char *dst, unsigned dst_size, unsigned *cursor, cons
     *cursor = pos;
 }
 
+static void ComboBuildTabLabel(char *dst, unsigned dst_size, const char *label, const char *flag)
+{
+    unsigned cursor = 0u;
+
+    if (dst == 0 || dst_size == 0u)
+    {
+        return;
+    }
+
+    dst[0] = '\0';
+    if (label == 0)
+    {
+        label = "";
+    }
+    if (flag == 0)
+    {
+        flag = "";
+    }
+
+    ComboAppendText(dst, dst_size, &cursor, label);
+    if (cursor + 1u < dst_size)
+    {
+        dst[cursor++] = '\t';
+        dst[cursor] = '\0';
+    }
+    ComboAppendText(dst, dst_size, &cursor, flag);
+}
+
+static const char *ComboBaseName(const char *path)
+{
+    const char *base = path;
+    if (path == 0)
+    {
+        return "";
+    }
+    for (const char *p = path; *p != '\0'; ++p)
+    {
+        if (*p == '/' || *p == '\\' || *p == ':')
+        {
+            base = p + 1;
+        }
+    }
+    return base;
+}
+
+static void ComboBuildRomIdFromPath(const char *path, char *dst, unsigned dst_size)
+{
+    unsigned n = 0u;
+    const char *base = ComboBaseName(path);
+    const char *dot = 0;
+
+    if (dst == 0 || dst_size == 0u)
+    {
+        return;
+    }
+    dst[0] = '\0';
+
+    for (const char *p = base; *p != '\0'; ++p)
+    {
+        if (*p == '.')
+        {
+            dot = p;
+        }
+    }
+
+    for (const char *p = base; *p != '\0' && p != dot && n + 1u < dst_size; ++p)
+    {
+        char ch = ComboToUpperAscii(*p);
+        if ((ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-')
+        {
+            dst[n++] = ch;
+        }
+    }
+    dst[n] = '\0';
+}
+
+static void ComboBuildTitleFromPath(const char *path, char *dst, unsigned dst_size)
+{
+    unsigned n = 0u;
+    int last_space = 1;
+    const char *base = ComboBaseName(path);
+    const char *dot = 0;
+
+    if (dst == 0 || dst_size == 0u)
+    {
+        return;
+    }
+    dst[0] = '\0';
+
+    for (const char *p = base; *p != '\0'; ++p)
+    {
+        if (*p == '.')
+        {
+            dot = p;
+        }
+    }
+
+    for (const char *p = base; *p != '\0' && p != dot && n + 1u < dst_size; ++p)
+    {
+        char ch = *p;
+        if (ch == '_' || ch == '-')
+        {
+            ch = ' ';
+        }
+        if (ch == ' ')
+        {
+            if (!last_space && n + 1u < dst_size)
+            {
+                dst[n++] = ' ';
+                last_space = 1;
+            }
+            continue;
+        }
+        if (ch >= 'A' && ch <= 'Z')
+        {
+            if (!last_space && n + 1u < dst_size)
+            {
+                dst[n++] = ' ';
+            }
+            dst[n++] = ch;
+            last_space = 0;
+            continue;
+        }
+        if (ch >= 'a' && ch <= 'z')
+        {
+            if (last_space)
+            {
+                ch = (char) (ch - 'a' + 'A');
+            }
+            dst[n++] = ch;
+            last_space = 0;
+            continue;
+        }
+        if (ch >= '0' && ch <= '9')
+        {
+            if (!last_space && n > 0u && !(dst[n - 1u] >= '0' && dst[n - 1u] <= '9') && n + 1u < dst_size)
+            {
+                dst[n++] = ' ';
+            }
+            dst[n++] = ch;
+            last_space = 0;
+        }
+    }
+    if (n > 0u && dst[n - 1u] == ' ')
+    {
+        --n;
+    }
+    dst[n] = '\0';
+}
+
 static void ComboAppendUnsigned(char *dst, unsigned dst_size, unsigned *cursor, unsigned value)
 {
     char digits[12];
@@ -181,6 +333,309 @@ static void ComboBuildLineLabel(char *dst, unsigned dst_size, const char *prefix
     ComboAppendText(dst, dst_size, &cursor, prefix);
     ComboAppendText(dst, dst_size, &cursor, " ");
     ComboAppendUnsigned(dst, dst_size, &cursor, line);
+}
+
+typedef struct
+{
+    boolean active;
+    boolean is_enum;
+    uint16_t values[16];
+    unsigned value_count;
+} TGameMasterSelectorInfo;
+
+static int ComboIsDigit(char ch)
+{
+    return ch >= '0' && ch <= '9';
+}
+
+static boolean ComboParseUnsigned(const char *text, unsigned *value, unsigned *used_len)
+{
+    unsigned cursor = 0u;
+    unsigned parsed = 0u;
+
+    if (text == 0 || value == 0)
+    {
+        return FALSE;
+    }
+    while (text[cursor] == ' ')
+    {
+        ++cursor;
+    }
+    if (!ComboIsDigit(text[cursor]))
+    {
+        return FALSE;
+    }
+    while (ComboIsDigit(text[cursor]))
+    {
+        parsed = (parsed * 10u) + (unsigned) (text[cursor] - '0');
+        ++cursor;
+    }
+    if (used_len != 0)
+    {
+        *used_len = cursor;
+    }
+    *value = parsed;
+    return TRUE;
+}
+
+static boolean ComboExtractParenthesizedSuffix(const char *title, char *dst, unsigned dst_size)
+{
+    const unsigned len = ComboStrLen(title);
+    unsigned start = len;
+    unsigned end = len;
+
+    if (dst == 0 || dst_size == 0u)
+    {
+        return FALSE;
+    }
+    dst[0] = '\0';
+    if (title == 0 || len < 3u || title[len - 1u] != ')')
+    {
+        return FALSE;
+    }
+
+    end = len - 1u;
+    for (unsigned i = end; i > 0u; --i)
+    {
+        if (title[i - 1u] == '(')
+        {
+            start = i;
+            break;
+        }
+    }
+    if (start >= end)
+    {
+        return FALSE;
+    }
+
+    ComboSliceCopy(dst, dst_size, title, start, end - start);
+    return TRUE;
+}
+
+static boolean ComboParseRangeSelector(const char *text, TGameMasterSelectorInfo *info)
+{
+    unsigned min_value = 0u;
+    unsigned max_value = 0u;
+    unsigned used = 0u;
+
+    if (text == 0 || info == 0)
+    {
+        return FALSE;
+    }
+    if (!ComboParseUnsigned(text, &min_value, &used))
+    {
+        return FALSE;
+    }
+    text += used;
+    while (*text == ' ')
+    {
+        ++text;
+    }
+    if (*text != '-')
+    {
+        return FALSE;
+    }
+    ++text;
+    if (!ComboParseUnsigned(text, &max_value, &used))
+    {
+        return FALSE;
+    }
+    text += used;
+    while (*text == ' ')
+    {
+        ++text;
+    }
+    if (*text != '\0' || min_value > max_value || max_value > 0xFFFFu)
+    {
+        return FALSE;
+    }
+
+    info->active = TRUE;
+    info->is_enum = FALSE;
+    info->value_count = 0u;
+    for (unsigned value = min_value; value <= max_value && info->value_count < 16u; ++value)
+    {
+        info->values[info->value_count++] = (uint16_t) value;
+    }
+    return info->value_count > 0u ? TRUE : FALSE;
+}
+
+static boolean ComboParseEnumSelector(const char *text, TGameMasterSelectorInfo *info)
+{
+    const char *cursor = text;
+
+    if (text == 0 || info == 0)
+    {
+        return FALSE;
+    }
+
+    info->active = FALSE;
+    info->is_enum = TRUE;
+    info->value_count = 0u;
+
+    while (*cursor != '\0' && info->value_count < 16u)
+    {
+        unsigned number = 0u;
+        unsigned used = 0u;
+
+        while (*cursor == ' ')
+        {
+            ++cursor;
+        }
+        if (!ComboParseUnsigned(cursor, &number, &used))
+        {
+            ++cursor;
+            continue;
+        }
+        cursor += used;
+        while (*cursor == ' ')
+        {
+            ++cursor;
+        }
+        if (*cursor != '=')
+        {
+            continue;
+        }
+        if (number <= 0xFFFFu)
+        {
+            info->values[info->value_count++] = (uint16_t) number;
+            info->active = TRUE;
+        }
+        ++cursor;
+        while (*cursor != '\0' && *cursor != ' ')
+        {
+            ++cursor;
+        }
+    }
+
+    return info->active;
+}
+
+static boolean ComboDescribeGameMasterSelector(const TGameMasterCheat *cheat, TGameMasterSelectorInfo *info)
+{
+    char suffix[64];
+
+    if (info == 0)
+    {
+        return FALSE;
+    }
+    info->active = FALSE;
+    info->is_enum = FALSE;
+    info->value_count = 0u;
+
+    if (cheat == 0 || cheat->poke_count != 1u)
+    {
+        return FALSE;
+    }
+    if (!ComboExtractParenthesizedSuffix(cheat->title, suffix, sizeof(suffix)))
+    {
+        return FALSE;
+    }
+    if (ComboParseRangeSelector(suffix, info))
+    {
+        return TRUE;
+    }
+    if (ComboParseEnumSelector(suffix, info))
+    {
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static boolean ComboGameMasterCheatCurrentValue(const TGameMasterCatalog *catalog,
+                                                const TGameMasterCheat *cheat,
+                                                uint16_t *value)
+{
+    const TGameMasterPoke *poke = 0;
+
+    if (catalog == 0 || cheat == 0 || value == 0 || cheat->poke_count != 1u)
+    {
+        return FALSE;
+    }
+    if (cheat->poke_first >= catalog->poke_count)
+    {
+        return FALSE;
+    }
+
+    poke = &catalog->pokes[cheat->poke_first];
+    if (poke->size_bits == 16u)
+    {
+        return fmsx_runtime_peek16(poke->address, value);
+    }
+    if (poke->size_bits == 8u)
+    {
+        uint8_t value8 = 0u;
+        if (!fmsx_runtime_peek8(poke->address, &value8))
+        {
+            return FALSE;
+        }
+        *value = value8;
+        return TRUE;
+    }
+    return FALSE;
+}
+
+static int ComboSelectorFindValue(const TGameMasterSelectorInfo *info, uint16_t value)
+{
+    if (info == 0 || !info->active)
+    {
+        return -1;
+    }
+    for (unsigned i = 0u; i < info->value_count; ++i)
+    {
+        if (info->values[i] == value)
+        {
+            return (int) i;
+        }
+    }
+    return -1;
+}
+
+static uint16_t ComboSelectorStepValue(const TGameMasterSelectorInfo *info,
+                                       uint16_t current_value,
+                                       boolean current_valid,
+                                       int direction)
+{
+    int index = -1;
+
+    if (info == 0 || !info->active || info->value_count == 0u)
+    {
+        return current_value;
+    }
+
+    if (current_valid)
+    {
+        index = ComboSelectorFindValue(info, current_value);
+    }
+
+    if (index < 0)
+    {
+        return direction < 0 ? info->values[info->value_count - 1u] : info->values[0];
+    }
+
+    index += direction;
+    if (index < 0)
+    {
+        index = (int) info->value_count - 1;
+    }
+    else if ((unsigned) index >= info->value_count)
+    {
+        index = 0;
+    }
+    return info->values[index];
+}
+
+static void ComboBuildSelectorFlag(char *dst, unsigned dst_size, uint16_t value)
+{
+    unsigned cursor = 0u;
+
+    if (dst == 0 || dst_size == 0u)
+    {
+        return;
+    }
+
+    dst[0] = '\0';
+    ComboAppendUnsigned(dst, dst_size, &cursor, (unsigned) value);
 }
 
 static unsigned ComboFindFirstContaining(const char *const *labels, unsigned count, char letter)
@@ -292,7 +747,12 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_GameMasterSelectedGame(0u),
     m_GameMasterCheatSelected(0u),
     m_GameMasterCheatTop(0u),
-    m_GameMasterCheatEnabled{FALSE},
+    m_HasPendingGameMasterCheat(FALSE),
+    m_PendingGameMasterGame(0u),
+    m_PendingGameMasterCheat(0u),
+    m_PendingGameMasterCheatHasValueOverride(FALSE),
+    m_PendingGameMasterCheatValueOverride(0u),
+    m_GameMasterApplyBlinkFrames(0u),
     m_GameMasterCheatItems{{0}},
     m_GameMasterCheatItemLabels{{0}},
     m_LastBackPressed(FALSE),
@@ -399,10 +859,12 @@ void CComboPauseMenu::ResetGameMasterState(void)
     m_GameMasterSelectedGame = 0u;
     m_GameMasterCheatSelected = 0u;
     m_GameMasterCheatTop = 0u;
-    for (unsigned i = 0u; i < GAMEMASTER_MAX_CHEATS; ++i)
-    {
-        m_GameMasterCheatEnabled[i] = FALSE;
-    }
+    m_HasPendingGameMasterCheat = FALSE;
+    m_PendingGameMasterGame = 0u;
+    m_PendingGameMasterCheat = 0u;
+    m_PendingGameMasterCheatHasValueOverride = FALSE;
+    m_PendingGameMasterCheatValueOverride = 0u;
+    m_GameMasterApplyBlinkFrames = 0u;
     for (unsigned i = 0u; i < CComboFileBrowser::kVisibleRows + 2u; ++i)
     {
         m_GameMasterCheatItems[i].label = m_GameMasterCheatItemLabels[i];
@@ -892,6 +1354,39 @@ boolean CComboPauseMenu::ConsumePendingDiskBrowserOpen(unsigned *drive_index, ch
     return TRUE;
 }
 
+boolean CComboPauseMenu::ConsumePendingGameMasterCheat(unsigned *game_index,
+                                                       unsigned *cheat_index,
+                                                       boolean *has_value_override,
+                                                       uint16_t *value_override)
+{
+    if (!m_HasPendingGameMasterCheat)
+    {
+        return FALSE;
+    }
+    if (game_index != 0)
+    {
+        *game_index = m_PendingGameMasterGame;
+    }
+    if (cheat_index != 0)
+    {
+        *cheat_index = m_PendingGameMasterCheat;
+    }
+    if (has_value_override != 0)
+    {
+        *has_value_override = m_PendingGameMasterCheatHasValueOverride;
+    }
+    if (value_override != 0)
+    {
+        *value_override = m_PendingGameMasterCheatValueOverride;
+    }
+    m_HasPendingGameMasterCheat = FALSE;
+    m_PendingGameMasterGame = 0u;
+    m_PendingGameMasterCheat = 0u;
+    m_PendingGameMasterCheatHasValueOverride = FALSE;
+    m_PendingGameMasterCheatValueOverride = 0u;
+    return TRUE;
+}
+
 void CComboPauseMenu::OpenFileBrowser(unsigned mode, unsigned slot_index, const char *path)
 {
     if (path != 0 && path[0] != '\0')
@@ -910,23 +1405,16 @@ void CComboPauseMenu::OpenFileBrowser(unsigned mode, unsigned slot_index, const 
     m_BrowserWarmupRedraws = 1u;
 }
 
-void CComboPauseMenu::OpenGameMaster(const TGameMasterCatalog *catalog, unsigned load_status, unsigned error_line)
+void CComboPauseMenu::OpenGameMaster(TGameMasterCatalog *catalog, unsigned load_status, unsigned error_line)
 {
     ResetGameMasterState();
     m_GameMasterLoadStatus = load_status;
     m_GameMasterErrorLine = error_line;
-    m_GameMasterCatalog = (load_status == (unsigned) GameMasterLoadOk) ? catalog : 0;
+    m_GameMasterCatalog = catalog;
 
     m_FileBrowser.Reset();
-    if (m_GameMasterCatalog != 0)
-    {
-        m_FileBrowser.OpenGameMaster(m_GameMasterCatalog);
-        m_Selected = m_FileBrowser.GetSelectedVisibleIndex();
-    }
-    else
-    {
-        m_Selected = 0u;
-    }
+    m_FileBrowser.OpenGameMaster();
+    m_Selected = m_FileBrowser.GetSelectedVisibleIndex();
 
     m_View = MenuViewGameMasterBrowser;
     m_LastDrawnSelected = 0xFFFFFFFFu;
@@ -1164,14 +1652,34 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
         for (unsigned i = 0u; i < visible; ++i)
         {
             const unsigned cheat_abs = game->cheat_first + m_GameMasterCheatTop + i;
-            const char *cheat_title = m_GameMasterCatalog->cheats[cheat_abs].title;
-            const char *flag = m_GameMasterCheatEnabled[cheat_abs] ? locale->flag_on : locale->flag_off;
-            unsigned cursor = 0u;
-
+            const TGameMasterCheat *cheat = &m_GameMasterCatalog->cheats[cheat_abs];
+            const char *cheat_title = cheat->title;
+            const char *status_flag = locale->flag_off;
+            char selector_flag[16];
+            TGameMasterSelectorInfo selector;
+            uint16_t current_value = 0u;
+            const boolean selector_active = ComboDescribeGameMasterSelector(cheat, &selector);
+#if MSXBARE_ENABLE_FMSX
+            if (selector_active
+                && ComboGameMasterCheatCurrentValue(m_GameMasterCatalog, cheat, &current_value)
+                && ComboSelectorFindValue(&selector, current_value) >= 0)
+            {
+                ComboBuildSelectorFlag(selector_flag, sizeof(selector_flag), current_value);
+                status_flag = selector_flag;
+            }
+            else if (cheat->poke_count > 0u
+                && cheat->poke_first + cheat->poke_count <= (unsigned) m_GameMasterCatalog->poke_count
+                && fmsx_runtime_is_game_master_cheat_active(&m_GameMasterCatalog->pokes[cheat->poke_first],
+                                                            (unsigned) cheat->poke_count))
+            {
+                status_flag = locale->flag_on;
+            }
+#endif
             m_GameMasterCheatItemLabels[i][0] = '\0';
-            ComboAppendText(m_GameMasterCheatItemLabels[i], sizeof(m_GameMasterCheatItemLabels[i]), &cursor, cheat_title);
-            ComboAppendText(m_GameMasterCheatItemLabels[i], sizeof(m_GameMasterCheatItemLabels[i]), &cursor, "\t");
-            ComboAppendText(m_GameMasterCheatItemLabels[i], sizeof(m_GameMasterCheatItemLabels[i]), &cursor, flag);
+            ComboBuildTabLabel(m_GameMasterCheatItemLabels[i],
+                               sizeof(m_GameMasterCheatItemLabels[i]),
+                               cheat_title,
+                               status_flag);
 
             m_GameMasterCheatItems[i].label = m_GameMasterCheatItemLabels[i];
             m_GameMasterCheatItems[i].action = ComboMenuActionNone;
@@ -1437,7 +1945,6 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         const boolean left_edge = (left_pressed && !m_LastLeftPressed) ? TRUE : FALSE;
         const boolean right_edge = (right_pressed && !m_LastRightPressed) ? TRUE : FALSE;
         const boolean enter_edge = (enter_pressed && !m_LastEnterPressed) ? TRUE : FALSE;
-        boolean toggled = FALSE;
 
         if (cheat_count > 0u)
         {
@@ -1490,31 +1997,35 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
 
             SyncGameMasterCheatWindow();
 
-            if (enter_edge || left_edge || right_edge)
+            if (left_edge || right_edge || enter_edge)
             {
                 const unsigned cheat_abs = game->cheat_first + m_GameMasterCheatSelected;
-                boolean next_state = m_GameMasterCheatEnabled[cheat_abs];
-                if (left_edge)
-                {
-                    next_state = FALSE;
-                }
-                else if (right_edge)
-                {
-                    next_state = TRUE;
-                }
-                else
-                {
-                    next_state = next_state ? FALSE : TRUE;
-                }
+                const TGameMasterCheat *cheat = &m_GameMasterCatalog->cheats[cheat_abs];
+                TGameMasterSelectorInfo selector;
+                uint16_t current_value = 0u;
+                const boolean selector_active = ComboDescribeGameMasterSelector(cheat, &selector);
 
-                if (next_state != m_GameMasterCheatEnabled[cheat_abs])
+                m_HasPendingGameMasterCheat = TRUE;
+                m_PendingGameMasterGame = m_GameMasterSelectedGame;
+                m_PendingGameMasterCheat = cheat_abs;
+                m_PendingGameMasterCheatHasValueOverride = FALSE;
+                m_PendingGameMasterCheatValueOverride = 0u;
+                if (selector_active)
                 {
-                    m_GameMasterCheatEnabled[cheat_abs] = next_state;
-                    toggled = TRUE;
-                    m_ForceRedraw = TRUE;
-                    m_ForceHighlightRedraw = FALSE;
-                    m_ForceContentRedraw = FALSE;
+                    const boolean has_current_value = ComboGameMasterCheatCurrentValue(m_GameMasterCatalog, cheat, &current_value);
+                    const boolean current_valid = has_current_value && (ComboSelectorFindValue(&selector, current_value) >= 0);
+                    const int direction = left_edge ? -1 : 1;
+                    m_PendingGameMasterCheatHasValueOverride = TRUE;
+                    m_PendingGameMasterCheatValueOverride = ComboSelectorStepValue(&selector,
+                                                                                   current_value,
+                                                                                   current_valid,
+                                                                                   direction);
                 }
+                m_GameMasterApplyBlinkFrames = 8u;
+                action = ComboMenuActionApplyGameMasterCheat;
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
+                m_ForceContentRedraw = FALSE;
             }
         }
         else
@@ -1524,14 +2035,13 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             m_Selected = 0u;
         }
 
-        if (!toggled
-            && (m_GameMasterCheatTop != old_cheat_top
+        if (m_GameMasterCheatTop != old_cheat_top
                 || m_GameMasterCheatSelected != old_cheat_selected
                 || up_edge
                 || down_edge
                 || page_up_edge
                 || page_down_edge
-                || (jump_letter >= 'A' && jump_letter <= 'Z')))
+                || (jump_letter >= 'A' && jump_letter <= 'Z'))
         {
             m_ForceContentRedraw = TRUE;
         }
@@ -1545,7 +2055,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_LastRightPressed = right_pressed;
         m_LastEnterPressed = enter_pressed;
         m_LastDeletePressed = delete_pressed;
-        return ComboMenuActionNone;
+        return action;
     }
 
     if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser)
@@ -1692,15 +2202,32 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             }
             else
             {
-                m_GameMasterSelectedGame = m_FileBrowser.GetSelectedSourceIndex();
-                m_GameMasterCheatSelected = 0u;
-                m_GameMasterCheatTop = 0u;
-                SyncGameMasterCheatWindow();
-                m_View = MenuViewGameMasterCheats;
-                m_ForceRedraw = TRUE;
-                m_ForceHighlightRedraw = FALSE;
-                m_ForceContentRedraw = FALSE;
-                m_RequestBackgroundRestore = TRUE;
+                char title[64];
+                char rom_id[48];
+                const int load_status = (m_GameMasterCatalog != 0)
+                    ? (ComboBuildTitleFromPath(selected_path, title, sizeof(title)),
+                       ComboBuildRomIdFromPath(selected_path, rom_id, sizeof(rom_id)),
+                       game_master_catalog_load_mcf(m_GameMasterCatalog, selected_path, title, rom_id))
+                    : (int) GameMasterLoadSyntaxError;
+                if (load_status == (int) GameMasterLoadOk && m_GameMasterCatalog != 0)
+                {
+                    m_GameMasterLoadStatus = (unsigned) GameMasterLoadOk;
+                    m_GameMasterErrorLine = 0u;
+                    m_GameMasterSelectedGame = 0u;
+                    m_GameMasterCheatSelected = 0u;
+                    m_GameMasterCheatTop = 0u;
+                    SyncGameMasterCheatWindow();
+                    m_View = MenuViewGameMasterCheats;
+                    m_ForceRedraw = TRUE;
+                    m_ForceHighlightRedraw = FALSE;
+                    m_ForceContentRedraw = FALSE;
+                    m_RequestBackgroundRestore = TRUE;
+                }
+                else
+                {
+                    m_GameMasterLoadStatus = (unsigned) GameMasterLoadOk;
+                    m_GameMasterErrorLine = 0u;
+                }
             }
         }
 
@@ -2224,10 +2751,10 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         const unsigned browser_content_cols = browser_name_cols + 8u;
         content_cols = browser_content_cols > title_len ? browser_content_cols : title_len;
     }
-
     const unsigned box_cols = content_cols;
     const boolean has_unload_hint = (m_View == MenuViewLoadRom || m_View == MenuViewLoadDisk) ? TRUE : FALSE;
-    const unsigned box_rows = item_count + 3u + (has_unload_hint ? 2u : 0u);
+    const boolean has_cheat_hint = FALSE;
+    const unsigned box_rows = item_count + 3u + (has_unload_hint ? 2u : 0u) + (has_cheat_hint ? 2u : 0u);
     const unsigned box_w_px = box_cols * cell_w;
     const unsigned box_h_px = box_rows * cell_h;
 
@@ -2472,7 +2999,9 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
             }
             else
             {
-                const unsigned x = box_x + ((box_cols - text_len) / 2u) * cell_w;
+                const unsigned x = cheat_list_row
+                    ? (box_x + (2u * cell_w))
+                    : (box_x + ((box_cols - text_len) / 2u) * cell_w);
                 renderer->DrawText(x, y, items[i].label, left_style, scale_x, scale_y);
             }
         }
@@ -2564,7 +3093,6 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         const unsigned hint_x = box_x + ((box_cols - hint_len) / 2u) * cell_w;
         renderer->DrawText(hint_x, hint_y, hint, normal_style, scale_x, scale_y);
     }
-
     m_Row = box_y;
     m_Col = box_x;
     m_LastDrawnSelected = m_Selected;
@@ -2614,6 +3142,11 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     if ((m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser) && m_BrowserWarmupRedraws > 0u)
     {
         --m_BrowserWarmupRedraws;
+        m_ForceRedraw = TRUE;
+    }
+    if (m_GameMasterApplyBlinkFrames > 0u)
+    {
+        --m_GameMasterApplyBlinkFrames;
         m_ForceRedraw = TRUE;
     }
     m_Visible = TRUE;
