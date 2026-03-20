@@ -222,6 +222,9 @@ typedef struct {
     unsigned fdc_wait;
 } TFmsxTimingDebug;
 
+extern uint8_t g_fmsx_scc_internal_slot;
+extern uint8_t g_fmsx_scc_dual_slot;
+
 #define FMSX_MODEL_PROFILE_MSX1  0u
 #define FMSX_MODEL_PROFILE_MSX2  1u
 #define FMSX_MODEL_PROFILE_MSX2P 2u
@@ -256,6 +259,13 @@ void fmsx_runtime_set_z80_turbo_mode(unsigned mode);
 unsigned fmsx_runtime_get_z80_turbo_mode(void);
 void fmsx_runtime_set_fm_music_enabled(boolean enabled);
 boolean fmsx_runtime_get_fm_music_enabled(void);
+void fmsx_runtime_set_scc_plus_enabled(boolean enabled);
+boolean fmsx_runtime_get_scc_plus_enabled(void);
+boolean fmsx_runtime_set_scc_dual_cart_enabled(boolean enabled);
+boolean fmsx_runtime_get_scc_dual_cart_enabled(void);
+boolean fmsx_runtime_get_scc_dual_cart_available(void);
+unsigned fmsx_runtime_get_scc_plus_internal_slot(void);
+unsigned fmsx_runtime_get_scc_plus_dual_slot(void);
 void fmsx_runtime_set_scc_cart_enabled(boolean enabled);
 boolean fmsx_runtime_get_scc_cart_enabled(void);
 void fmsx_runtime_set_fm_layer_gain_pct(unsigned pct);

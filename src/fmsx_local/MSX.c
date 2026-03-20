@@ -15,6 +15,7 @@
 
 #include "MSX.h"
 #include "../fmsx_runtime.h"
+#include "../fmsx_audio_layout.h"
 #include "Sound.h"
 #include "Floppy.h"
 #include "SHA1.h"
@@ -75,6 +76,12 @@ static unsigned fmsx_megaram_bytes(void)
 static unsigned fmsx_megaram_mask(void)
 {
   return fmsx_megaram_pages_from_kb() - 1u;
+}
+
+static int fmsx_slot_has_virtual_sccplus(uint8_t slot)
+{
+  return (slot<MAXSLOTS)
+      && ((slot==g_fmsx_scc_internal_slot)||(slot==g_fmsx_scc_dual_slot));
 }
 
 /* MSDOS chdir() is broken and has to be replaced :( */
@@ -259,9 +266,9 @@ FDIDisk FDD[NUM_FDI_DRIVES];       /* Floppy disk images     */
 AY8910 PSG;                        /* PSG registers & state  */
 YM2413 OPLL;                /* OPLL registers & state (fMSX) */
 YM2413_NukeYKT OPLL_NukeYKT;/*OPLL registers & state(NukeYKT)*/
-SCC  SCChip;                       /* SCC registers & state  */
-uint8_t SCCOn[2];                  /* !=0: SCC page active   */
-uint8_t SCCIMode[2];               /* SCC-I mode register    */
+SCC  SCChip[FMSX_SCC_CHIP_COUNT];  /* SCC registers & state  */
+uint8_t SCCOn[MAXSLOTS];           /* !=0: SCC page active   */
+uint8_t SCCIMode[MAXSLOTS];        /* SCC-I mode register    */
 uint8_t *SCCIRAM;                /* SCC-I RAM (Nx8kB pages) */
 static uint8_t Manbow2FlashState[MAXSLOTS];
 static uint8_t Manbow2FlashMode[MAXSLOTS];
@@ -476,6 +483,78 @@ static void fmsx_cart_window_banks(unsigned page,uint8_t *slot,uint8_t *bank_lo,
 static int fmsx_rom_type_is_manbow2(int type)
 {
   return (type==MAP_MANBOW2)||(type==MAP_MANBOW2_2);
+}
+
+static int fmsx_slot_has_rom_scc_device(uint8_t slot)
+{
+  if((slot>=MAXCARTS) || !ROMData[slot]) return 0;
+
+  switch(ROMType[slot])
+  {
+    case MAP_KONAMI5:
+    case MAP_MANBOW2:
+    case MAP_MANBOW2_2:
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+static int fmsx_scc_chip_index_for_slot(uint8_t slot)
+{
+  if(slot>=MAXSLOTS) return -1;
+
+  /*
+   * Keep deterministic ownership of the two available SCC buses:
+   * - chip0: user cart A if it has SCC, otherwise the internal SCC+ cart
+   * - chip1: user cart B if it has SCC, otherwise the dual SCC+ cart
+   *
+   * This mirrors the current topology work: two independent SCC(+)
+   * devices can coexist without sharing waveform/frequency state.
+   */
+  if((slot==0u) && fmsx_slot_has_rom_scc_device(slot)) return FMSX_SCC_CHIP_PRIMARY;
+  if((slot==1u) && fmsx_slot_has_rom_scc_device(slot)) return FMSX_SCC_CHIP_SECONDARY;
+
+  if((slot==g_fmsx_scc_internal_slot) && !fmsx_slot_has_rom_scc_device(0u))
+    return FMSX_SCC_CHIP_PRIMARY;
+
+  if((slot==g_fmsx_scc_dual_slot) && !fmsx_slot_has_rom_scc_device(1u))
+    return FMSX_SCC_CHIP_SECONDARY;
+
+  return -1;
+}
+
+static SCC *fmsx_scc_chip_for_slot(uint8_t slot)
+{
+  const int chip = fmsx_scc_chip_index_for_slot(slot);
+  return (chip>=0) && (chip<FMSX_SCC_CHIP_COUNT)? &SCChip[chip]:0;
+}
+
+static void fmsx_reset_scc_chips(void)
+{
+  unsigned chip;
+
+  for(chip=0; chip<FMSX_SCC_CHIP_COUNT; ++chip)
+    ResetSCC(&SCChip[chip],FMSX_SCC_CHIP_FIRST_CHANNEL(chip));
+}
+
+static void fmsx_sync_scc_chips(uint8_t mode)
+{
+  unsigned chip;
+
+  for(chip=0; chip<FMSX_SCC_CHIP_COUNT; ++chip)
+    SyncSCC(&SCChip[chip],mode);
+}
+
+static void fmsx_mark_scc_chips_dirty(void)
+{
+  unsigned chip;
+
+  for(chip=0; chip<FMSX_SCC_CHIP_COUNT; ++chip)
+  {
+    SCChip[chip].Changed  = (1u<<SCC_CHANNELS)-1u;
+    SCChip[chip].WChanged = (1u<<SCC_CHANNELS)-1u;
+  }
 }
 
 static void fmsx_cart_note_classification(int slot,int type,uint8_t source)
@@ -2118,14 +2197,14 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   if(log_cb) log_cb(1,"ResetMSX: sound reset begin\n");
   Reset8910(&PSG,PSG_CLOCK,FIRST_AY8910_CHANNEL);
   if(log_cb) log_cb(1,"ResetMSX: Reset8910 ok\n");
-  ResetSCC(&SCChip,FIRST_SCC_CHANNEL);
+  fmsx_reset_scc_chips();
   if(log_cb) log_cb(1,"ResetMSX: ResetSCC ok\n");
   Reset2413(&OPLL,FIRST_YM2413_CHANNEL);
   if(log_cb) log_cb(1,"ResetMSX: Reset2413 ok\n");
   NukeYKT_Reset2413(&OPLL_NukeYKT);
   if(log_cb) log_cb(1,"ResetMSX: NukeYKT reset ok\n");
   Sync8910(&PSG,AY8910_SYNC);
-  SyncSCC(&SCChip,SCC_SYNC);
+  fmsx_sync_scc_chips(SCC_SYNC);
   Sync2413(&OPLL,YM2413_SYNC);
   if(log_cb) log_cb(1,"ResetMSX: sound chips reset\n");
 #else
@@ -2186,8 +2265,11 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   IRQPending=0x00;                      /* No IRQs pending  */
   g_vdp_status_poll_last_pc = 0xFFFFu;
   g_vdp_status_poll_streak = 0;
-  SCCOn[0]=SCCOn[1]=0;                  /* SCCs off for now */
-  SCCIMode[0]=SCCIMode[1]=0;            /* bankselect/SCC   */
+  for(J=0;J<MAXSLOTS;++J)
+  {
+    SCCOn[J]=0;                         /* SCCs off for now */
+    SCCIMode[J]=0;                      /* bankselect/SCC   */
+  }
   RTCReg=RTCMode=0;                     /* Clock registers  */
   FmsxRTCReadCount = 0;
   FmsxRTCWriteCount = 0;
@@ -2292,10 +2374,14 @@ uint8_t RdZ80(uint16_t A)
   {
     fmsx_runtime_notify_media_probe();
   }
-  if(I<2 && SCCOn[I] && (ROMData[I]? fmsx_scc_window_match(ROMType[I],A):((A&0xD800)==0x9800)))
+  if((I<MAXSLOTS) && SCCOn[I]
+  && (ROMData[I]
+    ? ((I<2) ? fmsx_scc_window_match(ROMType[I],A) : 0)
+    : (fmsx_slot_has_virtual_sccplus(I) && ((A&0xD800)==0x9800))))
   {
+    SCC *chip = fmsx_scc_chip_for_slot(I);
     J=A&0x00FF;
-    return (A&0x2000) ? ReadSCCP(&SCChip,J) : ReadSCC(&SCChip,J);
+    return chip? ((A&0x2000) ? ReadSCCP(chip,J) : ReadSCC(chip,J)):NORAM;
   }
 
   if((I<MAXSLOTS)&&fmsx_rom_type_is_manbow2(ROMType[I])&&(A>=0x4000u)&&(A<0xC000u))
@@ -2864,7 +2950,7 @@ void MapROM(uint16_t A,uint8_t V)
 
   /* SCC handling for no cart */
   /* Note: we don't do SCC-I handling if we _do_ have a ROM cart - SCC-I was only available in 2 flavours, both without ROM. */
-  if(I<2 && !ROMData[I] && 0x4000<=A && A<0xC000) // only support SCC(-I) in (unexpanded) external slots 1 & 2, page 1&2
+  if(fmsx_slot_has_virtual_sccplus(I) && !ROMData[I] && 0x4000<=A && A<0xC000)
   {
     if ((A|1)==0xBFFF && !(Mode&MSX_NO_MEGARAM))
     {
@@ -2901,8 +2987,12 @@ void MapROM(uint16_t A,uint8_t V)
   }
 
   /* If writing to SCC... [whether we have a ROM in this slot or not] */
-  if(I<2 && SCCOn[I] && (ROMData[I]? fmsx_scc_window_match(ROMType[I],A):((A&0xD800)==0x9800)))
+  if((I<MAXSLOTS) && SCCOn[I]
+  && (ROMData[I]
+    ? ((I<2) ? fmsx_scc_window_match(ROMType[I],A) : 0)
+    : (fmsx_slot_has_virtual_sccplus(I) && ((A&0xD800)==0x9800))))
   {
+    SCC *chip = fmsx_scc_chip_for_slot(I);
     /* Compute SCC register number */
     J=A&0x00FF;
 
@@ -2915,7 +3005,7 @@ void MapROM(uint16_t A,uint8_t V)
       if(!ROMData[I]&&(J<0xA0)) EmptyRAM[0x1800+J]=V;
 
       /* Output data to SCC chip */
-      WriteSCCP(&SCChip,J,V);
+      if(chip) WriteSCCP(chip,J,V);
   }
   else
   {
@@ -2925,7 +3015,7 @@ void MapROM(uint16_t A,uint8_t V)
       if(!ROMData[I]&&(J<0x80)) EmptyRAM[0x1800+J]=V;
 
       /* Output data to SCC chip */
-      WriteSCC(&SCChip,J,V);
+      if(chip) WriteSCC(chip,J,V);
     }
 
     /* Manbow2 forwards SCC window writes to both SCC and flash/mapper. */
@@ -3778,7 +3868,7 @@ uint16_t LoopZ80(Z80 *R)
 
 #if !defined(FMSX_BAREMETAL_PSG_AUDIO_ONLY)
     /* Keep SCC/FM cadence aligned with PSG to avoid source handoff artifacts. */
-    SyncSCC(&SCChip,SCC_FLUSH);
+    fmsx_sync_scc_chips(SCC_FLUSH);
     if(!OPTION(MSX_NUKEYKT))
       Sync2413(&OPLL,YM2413_FLUSH);
 #endif
@@ -3803,7 +3893,7 @@ uint16_t LoopZ80(Z80 *R)
 #ifndef FMSX_BAREMETAL_SKIP_AUDIO_RUNTIME
 #if !defined(FMSX_BAREMETAL_PSG_AUDIO_ONLY)
     /* Frame-end safety flush for SCC/FM. */
-    SyncSCC(&SCChip,SCC_FLUSH);
+    fmsx_sync_scc_chips(SCC_FLUSH);
     if(!OPTION(MSX_NUKEYKT))
       Sync2413(&OPLL,YM2413_FLUSH);
 #endif
@@ -5167,10 +5257,8 @@ unsigned int SaveState(unsigned char *Buf,unsigned int MaxSize)
   /* SCC setup */
   if (!(Mode&MSX_NO_MEGARAM))
   {
-    State[J++] = SCCOn[0];
-    State[J++] = SCCOn[1];
-    State[J++] = SCCIMode[0];
-    State[J++] = SCCIMode[1];
+    for(I=0;I<MAXSLOTS;++I) State[J++] = SCCOn[I];
+    for(I=0;I<MAXSLOTS;++I) State[J++] = SCCIMode[I];
   }
 
   /* Write out data structures */
@@ -5275,10 +5363,8 @@ unsigned int LoadState(unsigned char *Buf,unsigned int MaxSize)
   /* SCC setup */
   if (!(Mode&MSX_NO_MEGARAM))
   {
-    SCCOn[0]    = State[J++];
-    SCCOn[1]    = State[J++];
-    SCCIMode[0] = State[J++];
-    SCCIMode[1] = State[J++];
+    for(I=0;I<MAXSLOTS;++I) SCCOn[I] = State[J++];
+    for(I=0;I<MAXSLOTS;++I) SCCIMode[I] = State[J++];
   }
 
   /* Set RAM mapper pages */
@@ -5321,8 +5407,7 @@ unsigned int LoadState(unsigned char *Buf,unsigned int MaxSize)
 
   /* All sound channels could have been changed */
   PSG.Changed     = (1<<AY8910_CHANNELS)-1;
-  SCChip.Changed  = (1<<SCC_CHANNELS)-1;
-  SCChip.WChanged = (1<<SCC_CHANNELS)-1;
+  fmsx_mark_scc_chips_dirty();
   OPLL.Changed    = (1<<YM2413_CHANNELS)-1;
 
   /* Return amount of data read */

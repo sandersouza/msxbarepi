@@ -2,7 +2,8 @@
 
 #include "../third_party/fmsx/fMSX/MSX.h"
 #include "../third_party/fmsx/Z80/Z80.h"
-#include "../third_party/fmsx/EMULib/Sound.h"
+#include "Sound.h"
+#include "fmsx_audio_layout.h"
 #include "fmsx_compat/stdio.h"
 #include "fmsx_virtual_fs.h"
 #include "fmsx_initramfs.h"
@@ -155,12 +156,15 @@ unsigned g_fmsx_megaram_kb = 0u;
 static boolean g_use_embedded_bios = FALSE;
 static unsigned g_z80_turbo_mode = 0u;
 static boolean g_fm_music_enabled = TRUE;
-static boolean g_scc_cart_enabled = TRUE;
+static boolean g_scc_plus_enabled = TRUE;
+static boolean g_scc_dual_cart_enabled = FALSE;
 static boolean g_audio_layer1_muted = FALSE; /* PSG + noise */
 static boolean g_audio_layer2_muted = FALSE; /* FM */
 static boolean g_audio_layer3_muted = FALSE; /* SCC */
 static unsigned g_fm_layer_gain_pct = 100u;
 int g_fmsx_fmpac_enabled = 1;
+uint8_t g_fmsx_scc_internal_slot = 0xFFu;
+uint8_t g_fmsx_scc_dual_slot = 0xFFu;
 static unsigned g_vdp_prev_ce = 0u;
 static unsigned g_vdp_cmd_starts = 0u;
 static unsigned g_vdp_copy_starts = 0u;
@@ -261,6 +265,59 @@ static boolean fmsx_runtime_find_slot_map(unsigned slot, unsigned *out_ps, unsig
         }
     }
     return FALSE;
+}
+
+static boolean fmsx_runtime_slot_has_user_cartridge(unsigned slot_index)
+{
+    if (slot_index > 1u)
+    {
+        return FALSE;
+    }
+    return (ROMData[slot_index] != 0)
+        || (g_cartridge_path[slot_index][0] != '\0')
+        || (ROMName[slot_index] != 0);
+}
+
+static unsigned fmsx_runtime_pick_internal_scc_slot(void)
+{
+    static const uint8_t kPreferredSlots[] = { 5u, 4u, 3u, 2u };
+
+    for (unsigned i = 0u; i < sizeof(kPreferredSlots) / sizeof(kPreferredSlots[0]); ++i)
+    {
+        const unsigned slot = kPreferredSlots[i];
+        if (slot < MAXSLOTS && ROMData[slot] == 0)
+        {
+            return slot;
+        }
+    }
+    return 0xFFu;
+}
+
+static void fmsx_runtime_refresh_scc_virtual_slots(void)
+{
+    g_fmsx_scc_internal_slot = 0xFFu;
+    g_fmsx_scc_dual_slot = 0xFFu;
+
+    if (g_scc_plus_enabled)
+    {
+        const unsigned slot = fmsx_runtime_pick_internal_scc_slot();
+        if (slot < MAXSLOTS)
+        {
+            g_fmsx_scc_internal_slot = (uint8_t) slot;
+        }
+    }
+
+    if (g_scc_dual_cart_enabled)
+    {
+        if (fmsx_runtime_slot_has_user_cartridge(1u))
+        {
+            g_scc_dual_cart_enabled = FALSE;
+        }
+        else
+        {
+            g_fmsx_scc_dual_slot = 1u;
+        }
+    }
 }
 
 static int fmsx_runtime_game_master_is_owned_text(const uint8_t text[14])
@@ -754,14 +811,10 @@ static void fmsx_runtime_apply_audio_channels(void)
     unsigned mask = (1u << SND_CHANNELS) - 1u;
     const unsigned psg_mask = ((1u << AY8910_CHANNELS) - 1u) << FIRST_AY8910_CHANNEL;
     const unsigned fm_mask = ((1u << YM2413_CHANNELS) - 1u) << FIRST_YM2413_CHANNEL;
-    const unsigned scc_mask = ((1u << SCC_CHANNELS) - 1u) << FIRST_SCC_CHANNEL;
+    const unsigned scc_mask = ((1u << FMSX_TOTAL_SCC_CHANNELS) - 1u) << FIRST_SCC_CHANNEL;
     if (!g_fm_music_enabled)
     {
         mask &= ~fm_mask;
-    }
-    if (!g_scc_cart_enabled)
-    {
-        mask &= ~scc_mask;
     }
     if (g_audio_layer1_muted)
     {
@@ -839,6 +892,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     }
 
     g_use_embedded_bios = FALSE;
+    fmsx_runtime_refresh_scc_virtual_slots();
     fmsx_runtime_set_load_diag(2101u); /* before StartMSX */
     boolean started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages(), 2) ? TRUE : FALSE;
     fmsx_runtime_set_load_diag(started ? 2102u : 9102u); /* after StartMSX */
@@ -852,6 +906,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
          */
         TrashMSX();
         g_use_embedded_bios = TRUE;
+        fmsx_runtime_refresh_scc_virtual_slots();
         fmsx_runtime_set_load_diag(2107u); /* MSX1 GAME retry with forced embedded BIOS */
         started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages(), 2) ? TRUE : FALSE;
         fmsx_runtime_set_load_diag(started ? 2108u : 9108u); /* forced BIOS retry result */
@@ -869,6 +924,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
         {
             TrashMSX();
             g_use_embedded_bios = FALSE;
+            fmsx_runtime_refresh_scc_virtual_slots();
             fmsx_runtime_set_load_diag(2105u); /* retry after full initramfs mount */
             started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages(), 2) ? TRUE : FALSE;
             fmsx_runtime_set_load_diag(started ? 2106u : 9106u); /* retry result */
@@ -886,6 +942,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
         started_model_profile = FMSX_MODEL_PROFILE_MSX1;
         startup_mode = fmsx_runtime_machine_mode_bits_for_profile(FMSX_MODEL_PROFILE_MSX1) | base_mode;
         g_use_embedded_bios = FALSE;
+        fmsx_runtime_refresh_scc_virtual_slots();
         fmsx_runtime_set_load_diag(2103u); /* fallback retry as MSX1 */
         started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages(), 2) ? TRUE : FALSE;
         fmsx_runtime_set_load_diag(started ? 2104u : 9104u); /* fallback result */
@@ -897,6 +954,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
              */
             TrashMSX();
             g_use_embedded_bios = TRUE;
+            fmsx_runtime_refresh_scc_virtual_slots();
             fmsx_runtime_set_load_diag(2109u); /* MSX2->MSX1 fallback retry forced embedded BIOS */
             started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages(), 2) ? TRUE : FALSE;
             fmsx_runtime_set_load_diag(started ? 2110u : 9110u); /* forced BIOS fallback result */
@@ -918,6 +976,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     Mode &= ~(MSX_AUTOSPACE | MSX_AUTOFIREA | MSX_AUTOFIREB);
     g_active_model_profile = started_model_profile;
     g_fmsx_quit_after_vblank = 1;
+    fmsx_runtime_refresh_scc_virtual_slots();
 
     if (!fmsx_runtime_disk_rom_effective(started_model_profile))
     {
@@ -1352,15 +1411,60 @@ unsigned fmsx_runtime_get_z80_turbo_mode(void)
     return g_z80_turbo_mode;
 }
 
+void fmsx_runtime_set_scc_plus_enabled(boolean enabled)
+{
+    g_scc_plus_enabled = enabled ? TRUE : FALSE;
+    fmsx_runtime_refresh_scc_virtual_slots();
+}
+
+boolean fmsx_runtime_get_scc_plus_enabled(void)
+{
+    return g_scc_plus_enabled;
+}
+
+boolean fmsx_runtime_set_scc_dual_cart_enabled(boolean enabled)
+{
+    const boolean value = enabled ? TRUE : FALSE;
+    if (value && !fmsx_runtime_get_scc_dual_cart_available())
+    {
+        g_scc_dual_cart_enabled = FALSE;
+        fmsx_runtime_refresh_scc_virtual_slots();
+        return FALSE;
+    }
+
+    g_scc_dual_cart_enabled = value;
+    fmsx_runtime_refresh_scc_virtual_slots();
+    return TRUE;
+}
+
+boolean fmsx_runtime_get_scc_dual_cart_enabled(void)
+{
+    return g_scc_dual_cart_enabled;
+}
+
+boolean fmsx_runtime_get_scc_dual_cart_available(void)
+{
+    return fmsx_runtime_slot_has_user_cartridge(1u) ? FALSE : TRUE;
+}
+
+unsigned fmsx_runtime_get_scc_plus_internal_slot(void)
+{
+    return (g_fmsx_scc_internal_slot < MAXSLOTS) ? (unsigned) g_fmsx_scc_internal_slot : 0xFFu;
+}
+
+unsigned fmsx_runtime_get_scc_plus_dual_slot(void)
+{
+    return (g_fmsx_scc_dual_slot < MAXSLOTS) ? (unsigned) g_fmsx_scc_dual_slot : 0xFFu;
+}
+
 void fmsx_runtime_set_scc_cart_enabled(boolean enabled)
 {
-    g_scc_cart_enabled = enabled ? TRUE : FALSE;
-    fmsx_runtime_apply_audio_channels();
+    fmsx_runtime_set_scc_plus_enabled(enabled);
 }
 
 boolean fmsx_runtime_get_scc_cart_enabled(void)
 {
-    return g_scc_cart_enabled;
+    return fmsx_runtime_get_scc_plus_enabled();
 }
 
 void fmsx_runtime_set_fm_music_enabled(boolean enabled)
@@ -1482,6 +1586,7 @@ boolean fmsx_runtime_set_cartridge_path(unsigned slot_index, const char *path)
     {
         g_cartridge_path[slot_index][0] = '\0';
         ROMName[slot_index] = 0;
+        fmsx_runtime_refresh_scc_virtual_slots();
         return TRUE;
     }
 
@@ -1499,6 +1604,7 @@ boolean fmsx_runtime_set_cartridge_path(unsigned slot_index, const char *path)
     }
 
     ROMName[slot_index] = g_cartridge_path[slot_index];
+    fmsx_runtime_refresh_scc_virtual_slots();
     return TRUE;
 }
 
@@ -1555,6 +1661,7 @@ boolean fmsx_runtime_load_cartridge(unsigned slot_index, const char *path)
         return FALSE;
     }
     fmsx_runtime_set_load_diag(2302u); /* LoadCart ok */
+    fmsx_runtime_refresh_scc_virtual_slots();
     g_fmsx_status.last_pc = (int) CPU.PC.W;
     return TRUE;
 }
@@ -1633,6 +1740,7 @@ boolean fmsx_runtime_unload_cartridge(unsigned slot_index)
         MemMap[ps][ss][page] = EmptyRAM;
     }
 
+    fmsx_runtime_refresh_scc_virtual_slots();
     g_fmsx_status.last_pc = (int) CPU.PC.W;
     return TRUE;
 }

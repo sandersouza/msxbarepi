@@ -896,6 +896,7 @@ CComboKernel::CComboKernel(void)
 	m_FmMusicEnabled(MSXBARE_FEAT_FMPAC ? TRUE : FALSE),
 	m_FmLayerGainPct(100u),
 	m_SccCartEnabled(MSXBARE_FEAT_SCC ? TRUE : FALSE),
+	m_SccDualCartEnabled(FALSE),
 	m_FrameIntervalUs(FrameIntervalFromRefreshHz(60u)),
 	m_FramePacingResetPending(FALSE),
 	m_FmsxFallbackPattern(FALSE),
@@ -972,6 +973,7 @@ void CComboKernel::NormalizeSettingsForBuild(void)
 #endif
 #if !MSXBARE_FEAT_SCC
 	m_SccCartEnabled = FALSE;
+	m_SccDualCartEnabled = FALSE;
 #endif
 
 	m_RamMapperKb = ClampRamMapperKb(m_RamMapperKb);
@@ -1122,7 +1124,11 @@ TComboShutdownMode CComboKernel::Run(void)
 			fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
 			fmsx_runtime_set_fm_music_enabled(m_FmMusicEnabled);
 			fmsx_runtime_set_fm_layer_gain_pct(m_FmLayerGainPct);
-			fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
+			fmsx_runtime_set_scc_plus_enabled(m_SccCartEnabled);
+			if (!fmsx_runtime_set_scc_dual_cart_enabled(m_SccDualCartEnabled))
+			{
+				m_SccDualCartEnabled = FALSE;
+			}
 		}
 		m_FmsxReady = emulator_backend_init();
 		{
@@ -1221,6 +1227,13 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetRenshaMode(m_RenshaMode);
 	m_PauseMenu.SetFmMusicEnabled(m_FmMusicEnabled);
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
+	m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled,
+	#if MSXBARE_ENABLE_FMSX
+		fmsx_runtime_get_scc_dual_cart_available()
+	#else
+		FALSE
+	#endif
+	);
 	m_PauseMenu.SetOverlayEnabled(
 		(MSXBARE_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked) ? m_DebugOverlayEnabled : FALSE,
 		(MSXBARE_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked) ? TRUE : FALSE);
@@ -1233,9 +1246,12 @@ TComboShutdownMode CComboKernel::Run(void)
 		m_PauseMenu.SetScalePercent(m_OverscanPercent);
 	}
 	#if MSXBARE_ENABLE_FMSX
+		m_Logger.Write(FromKernel, LogNotice, "Boot step: apply runtime");
 		ApplyRuntimeSettingsToFmsx();
+		m_Logger.Write(FromKernel, LogNotice, "Boot step: runtime OK");
 		if (!m_UsbReady)
 		{
+			m_Logger.Write(FromKernel, LogNotice, "Boot step: init USB");
 			if (m_USBHCI.Initialize())
 			{
 				m_UsbReady = TRUE;
@@ -1251,10 +1267,13 @@ TComboShutdownMode CComboKernel::Run(void)
 		/* Force first visible frame to use current viewport policy (avoid transient wide boot frame). */
 		if (m_FmsxReady)
 		{
+			m_Logger.Write(FromKernel, LogNotice, "Boot step: first blit");
 			BlitFmsxFrame(TRUE);
+			m_Logger.Write(FromKernel, LogNotice, "Boot step: blit OK");
 		}
 	#endif
 
+	m_Logger.Write(FromKernel, LogNotice, "Boot step: main loop");
 	u64 next_frame_us = CTimer::GetClockTicks64();
 	for (unsigned tick = 0; ; ++tick)
 	{
@@ -2590,7 +2609,11 @@ void CComboKernel::ApplyRuntimeSettingsToFmsx(void)
 	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
 	fmsx_runtime_set_fm_music_enabled(m_FmMusicEnabled);
 	fmsx_runtime_set_fm_layer_gain_pct(m_FmLayerGainPct);
-	fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
+	fmsx_runtime_set_scc_plus_enabled(m_SccCartEnabled);
+	if (!fmsx_runtime_set_scc_dual_cart_enabled(m_SccDualCartEnabled))
+	{
+		m_SccDualCartEnabled = FALSE;
+	}
 #endif
 }
 
@@ -2686,6 +2709,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	boolean has_cfg_cartb = FALSE;
 	boolean has_cfg_diska = FALSE;
 	boolean has_cfg_diskb = FALSE;
+	boolean has_scc_plus = FALSE;
 	char cfg_carta_path[192];
 	char cfg_cartb_path[192];
 	char cfg_diska_path[192];
@@ -2788,9 +2812,21 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			{
 				m_RenshaMode = (value > 3u) ? 0u : value;
 			}
-			else if (SettingsKeyEquals(line, key_len, "scc_cart"))
+			else if (SettingsKeyEquals(line, key_len, "scc_plus"))
 			{
 				m_SccCartEnabled = value ? TRUE : FALSE;
+				has_scc_plus = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "scc_dual"))
+			{
+				m_SccDualCartEnabled = value ? TRUE : FALSE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "scc_cart"))
+			{
+				if (!has_scc_plus)
+				{
+					m_SccCartEnabled = value ? TRUE : FALSE;
+				}
 			}
 			else if (SettingsKeyEquals(line, key_len, "fm_music"))
 			{
@@ -2859,6 +2895,8 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetRenshaMode(m_RenshaMode);
 	m_PauseMenu.SetFmMusicEnabled(m_FmMusicEnabled);
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
+	m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled,
+		has_cfg_cartb && cfg_cartb_path[0] ? FALSE : TRUE);
 	m_PauseMenu.SetOverlayEnabled(
 		(MSXBARE_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked) ? m_DebugOverlayEnabled : FALSE,
 		(MSXBARE_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked) ? TRUE : FALSE);
@@ -2881,7 +2919,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	fmsx_runtime_set_z80_turbo_mode(m_Z80TurboMode);
 	fmsx_runtime_set_fm_music_enabled(m_FmMusicEnabled);
 	fmsx_runtime_set_fm_layer_gain_pct(m_FmLayerGainPct);
-	fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
+	fmsx_runtime_set_scc_plus_enabled(m_SccCartEnabled);
 #if MSXBARE_FEAT_LOAD_ROM
 		if (has_cfg_carta) (void) fmsx_runtime_set_cartridge_path(0u, cfg_carta_path[0] ? cfg_carta_path : 0);
 		if (has_cfg_cartb) (void) fmsx_runtime_set_cartridge_path(1u, cfg_cartb_path[0] ? cfg_cartb_path : 0);
@@ -2896,6 +2934,11 @@ void CComboKernel::LoadSettingsFromStorage(void)
 		(void) has_cfg_diska;
 		(void) has_cfg_diskb;
 #endif
+		if (!fmsx_runtime_set_scc_dual_cart_enabled(m_SccDualCartEnabled))
+		{
+			m_SccDualCartEnabled = FALSE;
+		}
+		m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled, fmsx_runtime_get_scc_dual_cart_available());
 	#endif
 
 	CString line_log;
@@ -2961,7 +3004,8 @@ void CComboKernel::SaveSettingsToStorage(void)
 	APPEND_LINE_FMT("z80_turbo=%u\n", m_Z80TurboMode);
 	APPEND_LINE_FMT("rensha=%u\n", m_RenshaMode);
 	APPEND_LINE_FMT("fm_music=%u\n", m_FmMusicEnabled ? 1u : 0u);
-	APPEND_LINE_FMT("scc_cart=%u\n", m_SccCartEnabled ? 1u : 0u);
+	APPEND_LINE_FMT("scc_plus=%u\n", m_SccCartEnabled ? 1u : 0u);
+	APPEND_LINE_FMT("scc_dual=%u\n", m_SccDualCartEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("debugger=%u\n", m_DebugOverlayEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("audio_gain=%u\n", m_AudioOutputGainPct > 100u ? 100u : m_AudioOutputGainPct);
 	#if MSXBARE_ENABLE_FMSX
@@ -3587,6 +3631,12 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 				{
 					slot_index = (action == ComboMenuActionCartridgeB) ? 1u : 0u;
 				}
+				if (slot_index == 1u && m_SccDualCartEnabled)
+				{
+					UpdateLoadDiagTelemetry(9008u); /* slot B reserved by Konami SCC+ DUAL */
+					m_Logger.Write(FromKernel, LogWarning, "Load ROM bloqueado: SLOT2 reservado por Konami SCC+ DUAL");
+					break;
+				}
 				if (!fmsx_runtime_set_cartridge_path(slot_index, rom_path))
 				{
 					UpdateLoadDiagTelemetry(9001u); /* set_cartridge_path failed */
@@ -3599,6 +3649,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 					if (fmsx_runtime_unload_cartridge(slot_index))
 					{
 						UpdateLoadDiagTelemetry(2005u); /* unload cart ok */
+						m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled, fmsx_runtime_get_scc_dual_cart_available());
 						CString line;
 						line.Format("Unload ROM: SLOT%u", slot_index + 1u);
 						m_Logger.Write(FromKernel, LogNotice, line);
@@ -4235,14 +4286,51 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		m_Logger.Write(FromKernel, LogNotice, "SCC indisponivel neste build");
 		break;
 #else
-		m_SccCartEnabled = m_SccCartEnabled ? FALSE : TRUE;
+	{
+		boolean dual_available = TRUE;
+	#if MSXBARE_ENABLE_FMSX
+		dual_available = fmsx_runtime_get_scc_dual_cart_available();
+	#endif
+		if (!m_SccCartEnabled)
+		{
+			m_SccCartEnabled = TRUE;
+			m_SccDualCartEnabled = FALSE;
+		}
+		else if (!m_SccDualCartEnabled && dual_available)
+		{
+			m_SccCartEnabled = TRUE;
+			m_SccDualCartEnabled = TRUE;
+		}
+		else
+		{
+			m_SccCartEnabled = FALSE;
+			m_SccDualCartEnabled = FALSE;
+		}
 		m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
+		m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled, dual_available);
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX
-		fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
+		fmsx_runtime_set_scc_plus_enabled(m_SccCartEnabled);
+		if (!fmsx_runtime_set_scc_dual_cart_enabled(m_SccDualCartEnabled))
+		{
+			m_SccDualCartEnabled = FALSE;
+		}
+		m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled, fmsx_runtime_get_scc_dual_cart_available());
 	#endif
-		m_Logger.Write(FromKernel, LogNotice, m_SccCartEnabled ? "Settings: SCC Cart ON" : "Settings: SCC Cart OFF");
+		if (!m_SccCartEnabled)
+		{
+			m_Logger.Write(FromKernel, LogNotice, "Settings: Konami SCC+ OFF");
+		}
+		else if (m_SccDualCartEnabled)
+		{
+			m_Logger.Write(FromKernel, LogNotice, "Settings: Konami SCC+ DUAL");
+		}
+		else
+		{
+			m_Logger.Write(FromKernel, LogNotice, "Settings: Konami SCC+ ON");
+		}
 		break;
+	}
 #endif
 
 	case ComboMenuActionToggleFmMusic:
@@ -4598,7 +4686,7 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	{
 #if MSXBARE_FEAT_SCC
 		m_SccCartEnabled = m_SccCartEnabled ? FALSE : TRUE;
-		fmsx_runtime_set_scc_cart_enabled(m_SccCartEnabled);
+		fmsx_runtime_set_scc_plus_enabled(m_SccCartEnabled);
 #endif
 	}
 	if (f10_edge)

@@ -388,3 +388,5 @@ VIDEO_MODE_PRESET=720 COPY_GAMES_TO_ROOT=1 ./scripts/update-sd-incremental.sh
 - Quando `SD_DEVICE` e informado (via `prepare-sd.sh` ou manualmente), o script tenta detectar/montar a particao e resolver `TARGET_VOLUME` automaticamente.
 - Se `make-initramfs.sh` estiver disponivel e `INITRAMFS_SRC_DIR` existir, regenera `msx.cpio` antes da copia.
   - quando `CONFIG_MSXBARE_BOOT_SCREEN` estiver desligado (`[ ]`), remove `KANJI*.ROM`/`KANJIBASIC*.ROM` do pacote gerado.
+- Ao final da copia, executa `sync` e tenta desmontar automaticamente o volume alvo.
+- Se `EJECT_AT_END=1` e o disco puder ser resolvido, faz ejeção segura do SD; caso contrario, cai para desmontagem simples do volume.
