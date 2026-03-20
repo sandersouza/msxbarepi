@@ -12,7 +12,8 @@ roms/machines/*/
 roms/games/*/*
 
 # Ignore SD card contents, which may contain large binary files and are not part of the source code.
-sdcard/*/*
+sdcard/disks/*
+sdcard/roms/*
 sdcard/msx.cpio
 
 # Ignore macOS metadata files, which are not relevant to the project and can clutter the repository.

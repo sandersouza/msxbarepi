@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <circle/types.h>
+#include "gamemaster_catalog.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -273,6 +274,12 @@ boolean fmsx_runtime_load_cartridge(unsigned slot_index, const char *path);
 boolean fmsx_runtime_load_disk(unsigned drive_index, const char *path);
 boolean fmsx_runtime_unload_cartridge(unsigned slot_index);
 boolean fmsx_runtime_unload_disk(unsigned drive_index);
+boolean fmsx_runtime_apply_game_master_cheat(const TGameMasterPoke *pokes, unsigned poke_count);
+boolean fmsx_runtime_set_game_master_cheat_enabled(const TGameMasterPoke *pokes, unsigned poke_count, boolean enabled);
+boolean fmsx_runtime_set_game_master_cheat_value(const TGameMasterPoke *pokes, unsigned poke_count, uint16_t value);
+boolean fmsx_runtime_is_game_master_cheat_active(const TGameMasterPoke *pokes, unsigned poke_count);
+boolean fmsx_runtime_peek8(uint16_t address, uint8_t *value);
+boolean fmsx_runtime_peek16(uint16_t address, uint16_t *value);
 void fmsx_runtime_set_load_diag(unsigned stage);
 unsigned fmsx_runtime_get_load_diag(void);
 TFmsxRuntimeStatus fmsx_runtime_get_status(void);

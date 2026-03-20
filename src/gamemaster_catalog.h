@@ -4,12 +4,13 @@
 #include <stdint.h>
 
 #define GAMEMASTER_CATALOG_PATH "SD:/gamemaster.cht"
+#define GAMEMASTER_CHEATS_ROOT "SD:/cheats"
 
-#define GAMEMASTER_MAX_GAMES 64u
-#define GAMEMASTER_MAX_CHEATS 256u
-#define GAMEMASTER_MAX_POKES 512u
-#define GAMEMASTER_TITLE_MAX 48u
-#define GAMEMASTER_ROM_ID_MAX 24u
+#define GAMEMASTER_MAX_GAMES 4u
+#define GAMEMASTER_MAX_CHEATS 160u
+#define GAMEMASTER_MAX_POKES 256u
+#define GAMEMASTER_TITLE_MAX 96u
+#define GAMEMASTER_ROM_ID_MAX 40u
 
 typedef enum
 {
@@ -75,6 +76,10 @@ extern "C" {
 void game_master_catalog_reset(TGameMasterCatalog *catalog);
 int game_master_catalog_load(TGameMasterCatalog *catalog, const char *path);
 int game_master_catalog_load_default(TGameMasterCatalog *catalog);
+int game_master_catalog_load_mcf(TGameMasterCatalog *catalog,
+                                 const char *path,
+                                 const char *title,
+                                 const char *rom_id);
 const char *game_master_catalog_status_name(unsigned status);
 
 #ifdef __cplusplus

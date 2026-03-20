@@ -1,8 +1,8 @@
 #include "gamemaster_catalog.h"
 
 #include <string.h>
-
-#include "streams/file_stream.h"
+#include "fmsx_compat/streams/file_stream.h"
+#include <fatfs/ff.h>
 
 typedef struct
 {
@@ -233,6 +233,27 @@ static int gm_parse_size_bits(char **cursor, uint8_t *size_bits)
         return 1;
     }
     return 0;
+}
+
+static int gm_parse_dec32(const char *text, unsigned *value)
+{
+    unsigned result = 0u;
+    unsigned i = 0u;
+    if (text == 0 || text[0] == '\0')
+    {
+        return 0;
+    }
+    while (text[i] != '\0')
+    {
+        if (text[i] < '0' || text[i] > '9')
+        {
+            return 0;
+        }
+        result = (result * 10u) + (unsigned) (text[i] - '0');
+        ++i;
+    }
+    *value = result;
+    return 1;
 }
 
 static void gm_fail(TGameMasterCatalog *catalog, unsigned status, unsigned line_number)
@@ -658,6 +679,149 @@ int game_master_catalog_load(TGameMasterCatalog *catalog, const char *path)
 int game_master_catalog_load_default(TGameMasterCatalog *catalog)
 {
     return game_master_catalog_load(catalog, GAMEMASTER_CATALOG_PATH);
+}
+
+int game_master_catalog_load_mcf(TGameMasterCatalog *catalog,
+                                 const char *path,
+                                 const char *title,
+                                 const char *rom_id)
+{
+    FIL file;
+    TGameMasterGame *game;
+    TGameMasterCheat *last_cheat = 0;
+    char line[160];
+    unsigned line_number = 0u;
+
+    if (catalog == 0 || path == 0 || path[0] == '\0')
+    {
+        return (int) GameMasterLoadSyntaxError;
+    }
+
+    game_master_catalog_reset(catalog);
+    if (f_open(&file, path, FA_READ) != FR_OK)
+    {
+        gm_fail(catalog, GameMasterLoadFileOpenFailed, 0u);
+        return (int) catalog->last_status;
+    }
+
+    game = &catalog->games[0];
+    memset(game, 0, sizeof(*game));
+    catalog->game_count = 1u;
+    game->cheat_first = 0u;
+    if (title != 0 && title[0] != '\0')
+    {
+        strncpy(game->title, title, sizeof(game->title) - 1u);
+        game->title[sizeof(game->title) - 1u] = '\0';
+    }
+    if (rom_id != 0 && rom_id[0] != '\0')
+    {
+        strncpy(game->rom_id, rom_id, sizeof(game->rom_id) - 1u);
+        game->rom_id[sizeof(game->rom_id) - 1u] = '\0';
+    }
+
+    while (f_gets(line, (int) sizeof(line), &file) != 0)
+    {
+        char *cursor;
+        char *parts[5];
+        unsigned part_count = 0u;
+
+        ++line_number;
+        gm_strip_eol(line);
+        cursor = gm_skip_space(line);
+        if (*cursor == '\0' || *cursor == '!' || *cursor == '#' || *cursor == ';')
+        {
+            continue;
+        }
+
+        parts[part_count++] = cursor;
+        while (*cursor != '\0' && part_count < 5u)
+        {
+            if (*cursor == ',')
+            {
+                *cursor = '\0';
+                parts[part_count++] = cursor + 1;
+            }
+            ++cursor;
+        }
+        if (part_count != 5u)
+        {
+            continue;
+        }
+
+        for (unsigned i = 0u; i < 5u; ++i)
+        {
+            parts[i] = gm_skip_space(parts[i]);
+        }
+        if (!gm_streq_nocase(parts[0], "0") || !gm_streq_nocase(parts[3], "0"))
+        {
+            continue;
+        }
+
+        {
+            unsigned address = 0u;
+            unsigned value = 0u;
+            TGameMasterCheat *cheat = 0;
+            TGameMasterPoke *poke = 0;
+
+            if (!gm_parse_dec32(parts[1], &address) || !gm_parse_dec32(parts[2], &value))
+            {
+                continue;
+            }
+            if (address > 0xFFFFu || value > 0xFFFFu)
+            {
+                continue;
+            }
+            if (parts[4][0] == '\0')
+            {
+                continue;
+            }
+
+            if (last_cheat != 0 && gm_streq_nocase(last_cheat->title, parts[4]))
+            {
+                cheat = last_cheat;
+            }
+            else
+            {
+                if (catalog->cheat_count >= GAMEMASTER_MAX_CHEATS)
+                {
+                    gm_fail(catalog, GameMasterLoadTooManyCheats, line_number);
+                    f_close(&file);
+                    return (int) catalog->last_status;
+                }
+                cheat = &catalog->cheats[catalog->cheat_count++];
+                memset(cheat, 0, sizeof(*cheat));
+                strncpy(cheat->title, parts[4], sizeof(cheat->title) - 1u);
+                cheat->title[sizeof(cheat->title) - 1u] = '\0';
+                cheat->poke_first = catalog->poke_count;
+                game->cheat_count++;
+                last_cheat = cheat;
+            }
+
+            if (catalog->poke_count >= GAMEMASTER_MAX_POKES)
+            {
+                gm_fail(catalog, GameMasterLoadTooManyPokes, line_number);
+                f_close(&file);
+                return (int) catalog->last_status;
+            }
+            poke = &catalog->pokes[catalog->poke_count++];
+            poke->address = (uint16_t) address;
+            poke->value = (uint16_t) value;
+            poke->size_bits = (uint8_t) (value > 0xFFu ? 16u : 8u);
+            cheat->poke_count++;
+        }
+    }
+
+    f_close(&file);
+
+    if (catalog->cheat_count == 0u || catalog->poke_count == 0u)
+    {
+        gm_fail(catalog, GameMasterLoadCatalogEmpty, line_number);
+        return (int) catalog->last_status;
+    }
+
+    catalog->last_status = (uint8_t) GameMasterLoadOk;
+    catalog->error_line = 0u;
+    return (int) GameMasterLoadOk;
 }
 
 const char *game_master_catalog_status_name(unsigned status)

@@ -170,6 +170,7 @@ private:
     boolean m_BlitMapValid;
     u16 m_BlitXMap[kBlitMapMaxAxis];
     u16 m_BlitYMap[kBlitMapMaxAxis];
+    TGameMasterCatalog m_GameMasterCatalog;
     CComboPauseMenu m_PauseMenu;
     unsigned m_OverscanPercent;
     unsigned m_Language;

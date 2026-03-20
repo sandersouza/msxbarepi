@@ -14,11 +14,14 @@ typedef struct {
     const char *title_settings;
     const char *title_load_rom;
     const char *title_load_disk;
+    const char *title_game_master;
+    const char *title_active_cheats;
     const char *root_load_cart;
     const char *root_load_disk;
     const char *root_save_state;
     const char *root_load_state;
     const char *root_settings;
+    const char *root_game_master;
     const char *root_msx_basic;
     const char *root_reset;
     const char *root_patreon_prefix;
@@ -30,6 +33,12 @@ typedef struct {
     const char *load_disk_drive2;
     const char *load_disk_empty;
     const char *load_disk_unload_hint;
+    const char *game_master_empty;
+    const char *game_master_open_failed;
+    const char *game_master_invalid;
+    const char *game_master_no_cheats;
+    const char *game_master_line;
+    const char *game_master_apply_hint;
     const char *settings_language;
     const char *settings_resolution;
     const char *settings_scale;

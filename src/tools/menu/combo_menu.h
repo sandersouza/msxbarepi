@@ -1,6 +1,7 @@
 #ifndef MSXBARE_CIRCLE_MSXBARE_MENU_H
 #define MSXBARE_CIRCLE_MSXBARE_MENU_H
 
+#include "gamemaster_catalog.h"
 #include "gfx_textbox.h"
 #include "combo_file_browser.h"
 #include "combo_menu_items.h"
@@ -47,7 +48,12 @@ public:
     boolean ConsumePendingDiskSelection(unsigned *drive_index, char *path, unsigned path_size);
     boolean ConsumePendingRomBrowserOpen(unsigned *slot_index, char *path, unsigned path_size);
     boolean ConsumePendingDiskBrowserOpen(unsigned *drive_index, char *path, unsigned path_size);
+    boolean ConsumePendingGameMasterCheat(unsigned *game_index,
+                                          unsigned *cheat_index,
+                                          boolean *has_value_override,
+                                          uint16_t *value_override);
     void OpenFileBrowser(unsigned mode, unsigned slot_index, const char *path);
+    void OpenGameMaster(TGameMasterCatalog *catalog, unsigned load_status, unsigned error_line);
     unsigned GetAudioGainPercent(void) const;
     boolean IsInSettings(void) const;
     void RequestRedraw(void);
@@ -77,13 +83,19 @@ private:
         MenuViewLoadRom = 2,
         MenuViewLoadRomBrowser = 3,
         MenuViewLoadDisk = 4,
-        MenuViewLoadDiskBrowser = 5
+        MenuViewLoadDiskBrowser = 5,
+        MenuViewGameMasterBrowser = 6,
+        MenuViewGameMasterCheats = 7
     };
     static void CopySmallText(char *dst, unsigned dst_size, const char *src);
     const TComboMenuItem *GetItems(unsigned *count) const;
     unsigned FindFirstSelectable(void) const;
     unsigned FindPrevSelectable(unsigned from) const;
     unsigned FindNextSelectable(unsigned from) const;
+    void ResetGameMasterState(void);
+    const TGameMasterGame *GetSelectedGameMasterGame(void) const;
+    unsigned GetSelectedGameMasterCheatCount(void) const;
+    void SyncGameMasterCheatWindow(void);
 
 private:
     unsigned m_Row;
@@ -132,6 +144,20 @@ private:
     boolean m_HasPendingDiskBrowserOpen;
     unsigned m_PendingDiskBrowserDrive;
     char m_PendingDiskBrowserPath[192];
+    TGameMasterCatalog *m_GameMasterCatalog;
+    unsigned m_GameMasterLoadStatus;
+    unsigned m_GameMasterErrorLine;
+    unsigned m_GameMasterSelectedGame;
+    unsigned m_GameMasterCheatSelected;
+    unsigned m_GameMasterCheatTop;
+    boolean m_HasPendingGameMasterCheat;
+    unsigned m_PendingGameMasterGame;
+    unsigned m_PendingGameMasterCheat;
+    boolean m_PendingGameMasterCheatHasValueOverride;
+    uint16_t m_PendingGameMasterCheatValueOverride;
+    unsigned m_GameMasterApplyBlinkFrames;
+    mutable TComboMenuItem m_GameMasterCheatItems[CComboFileBrowser::kVisibleRows + 2u];
+    mutable char m_GameMasterCheatItemLabels[CComboFileBrowser::kVisibleRows + 2u][64];
     boolean m_LastBackPressed;
     unsigned m_LastDrawnView;
     unsigned m_LastDrawnScalePercent;

@@ -23,13 +23,15 @@ Registro de desafios enfrentados por issue, decisao adotada e status da solucao.
 
 ### #206 - menu `Game Master+` e tela `Active Cheats`
 - Desafio: encaixar um novo fluxo de UI no menu principal sem regressao visual e mantendo localizacao PT/EN/ES.
-- Solucao adotada: separar browser de jogos e tela de toggles ON/OFF por jogo, inspirada no comportamento do `Active Cheats` do blueMSX.
-- Status: Futuro
+- Solucao adotada: o menu raiz passou a abrir `Game Master+` via carga sob demanda de `gamemaster.cht`; a UI foi separada em browser de jogos e tela `Active Cheats`, com mensagens localizadas de erro/vazio, hint `[ENTER] APPLY` centralizado, blink curto no `[ENTER]` e aplicacao imediata do cheat selecionado no runtime. A causa raiz de um falso `ENTER` sem efeito foi um retorno incorreto de `ComboMenuActionNone` na view de cheats, corrigido para propagar `ComboMenuActionApplyGameMasterCheat` ao kernel.
+- Ajustes posteriores: a sessao de cheats RAM-based deixou de ser reiniciada a cada `APPLY`; os novos pokes agora se acumulam na sessao ativa e enderecos repetidos atualizam a entrada existente. Em seguida, a UI voltou a mostrar `ON/OFF` por cheat, mas derivando esse estado da memoria emulada em vez de um flag local, com `ENTER` operando como toggle real.
+- Ajuste de UX posterior: o hint visual de rodape foi removido e o toggle passou a responder tambem a `LEFT/RIGHT`, reduzindo a caixa e deixando a interacao mais direta.
+- Status: Resolvido
 - Referencia: [206-implementar-menu-game-master-plus-active-cheats-on-off.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m23/206-implementar-menu-game-master-plus-active-cheats-on-off.md)
 
 ### #207 - sessao de cheats no core fMSX
 - Desafio: transformar a infraestrutura atual de `CHT`/`MCF` em uma sessao interativa com multiplos cheats ativos e restauração segura dos valores originais.
-- Solucao adotada: planejar uma ponte de runtime dedicada, com multi-POKE, ON/OFF individual e restore seguro sem quebrar os helpers legados.
+- Solucao adotada: apos a aplicacao imediata de cheat entregue na `#206`, manter a `#207` focada na sessao persistente com multiplos cheats ativos, ON/OFF individual, restore seguro e gerenciamento de ciclo de vida sem quebrar os helpers legados.
 - Status: Futuro
 - Referencia: [207-integrar-sessao-cheats-core-fmsx-multi-poke-restore-seguro.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m23/207-integrar-sessao-cheats-core-fmsx-multi-poke-restore-seguro.md)
 
