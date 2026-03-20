@@ -1,5 +1,5 @@
 arm_64bit=1
-enable_uart=0
+enable_uart=1
 disable_splash=1
 kernel=kernel8.img
 initramfs msx.cpio followkernel
