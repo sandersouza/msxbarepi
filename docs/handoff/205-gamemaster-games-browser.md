@@ -29,4 +29,6 @@
   - `scripts/check-third-party-pristine.sh` OK
   - `make -j4 DEBUG=1` OK
 - Proximo passo:
-  - sincronizar o corpo remoto da `#205`, abrir PR para `main` e compartilhar o link para review antes de avancar para a `#206`.
+  - PR aberto: `#211` `Issue #205: add Game Master virtual browser`
+  - issue `#205` movida para `In review` no projeto `MSX BarePI`
+  - link para review: https://github.com/sandersouza/msxbarepi/pull/211
