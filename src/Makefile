@@ -80,6 +80,7 @@ OBJS += emulator_backend.o fmsx_backend_shim.o bluemsx_backend.o
 EXTRACLEAN += tools/*.o tools/*.d tools/*/*.o tools/*/*.d
 
 OBJS += fmsx_runtime.o fmsx_host_stubs.o fmsx_compat_stubs.o fmsx_libc_shim.o
+OBJS += gamemaster_catalog.o
 OBJS += fmsx_virtual_fs.o fmsx_initramfs.o
 OBJS += fmsx_carts_sha_fallback.o
 OBJS += fmsx_embedded_initramfs.o
