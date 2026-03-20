@@ -212,12 +212,42 @@ static int local_lookup_vfs_aliases_for_request(const char *name,
         return local_lookup_vfs_alias_list(kAliases, sizeof(kAliases) / sizeof(kAliases[0]), data, size);
     }
 
+    if (local_str_ieq(name, "MSX2PEXT.ROM"))
+    {
+        static const char *kAliases[] = {
+            "MSX2SUB.ROM",
+            "SUBROM.ROM",
+            "HB-F1XDJ_MSX2PSUB.ROM",
+            "FS-A1FX_MSX2PSUB.ROM"
+        };
+        return local_lookup_vfs_alias_list(kAliases, sizeof(kAliases) / sizeof(kAliases[0]), data, size);
+    }
+
     if (local_str_ieq(name, "KANJI.ROM"))
     {
         static const char *kAliases[] = {
             "KANJIFONT.ROM",
             "FS-A1F_KANJIFONT.ROM",
             "KANJI16.ROM"
+        };
+        return local_lookup_vfs_alias_list(kAliases, sizeof(kAliases) / sizeof(kAliases[0]), data, size);
+    }
+
+    if (local_str_ieq(name, "KANJIBASIC.ROM"))
+    {
+        static const char *kAliases[] = {
+            "HB-F1XDJ_KANJIBASIC.ROM",
+            "FS-A1FX_KANJIBASIC.ROM",
+            "FS-A1WSX_KANJIBASIC.ROM"
+        };
+        return local_lookup_vfs_alias_list(kAliases, sizeof(kAliases) / sizeof(kAliases[0]), data, size);
+    }
+
+    if (local_str_ieq(name, "MSXJE.ROM"))
+    {
+        static const char *kAliases[] = {
+            "HB-F1XDJ.ROM",
+            "HB-F1XDJ_MSXJE.ROM"
         };
         return local_lookup_vfs_alias_list(kAliases, sizeof(kAliases) / sizeof(kAliases[0]), data, size);
     }

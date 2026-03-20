@@ -10,6 +10,7 @@ PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 REPOS=(
   "$PROJECT_ROOT/third_party/circle"
   "$PROJECT_ROOT/third_party/fmsx"
+  "$PROJECT_ROOT/third_party/bluemsx"
 )
 
 check_repo_clean() {
@@ -20,13 +21,15 @@ check_repo_clean() {
     return 1
   fi
 
-  if [[ ! -d "$repo/.git" ]]; then
-    echo "[ERRO] Guardrail exige repositório git em: $repo"
+  local status
+  if [[ -d "$repo/.git" ]]; then
+    status="$(git -C "$repo" status --porcelain)"
+  elif [[ -d "$repo/.gitbak" ]]; then
+    status="$(git --git-dir="$repo/.gitbak" --work-tree="$repo" status --porcelain --untracked-files=no)"
+  else
+    echo "[ERRO] Guardrail exige repositório git (.git ou .gitbak) em: $repo"
     return 1
   fi
-
-  local status
-  status="$(git -C "$repo" status --porcelain)"
   if [[ -n "$status" ]]; then
     echo "[ERRO] Alterações locais detectadas em third_party: $repo"
     echo "$status"

@@ -1,25 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+. "${PROJECT_ROOT}/scripts/sdcard-common.sh"
+
 if [ "${EUID:-$(id -u)}" -eq 0 ]; then
   echo "[ERRO] Este script nao pode ser executado como root."
   exit 1
 fi
 
-if ! command -v diskutil >/dev/null 2>&1; then
-  echo "[ERRO] 'diskutil' nao encontrado (macOS obrigatorio)."
-  exit 1
-fi
-
-if ! command -v fzf >/dev/null 2>&1; then
-  echo "[ERRO] 'fzf' nao encontrado."
-  echo "Instale com: brew install fzf"
-  exit 1
-fi
-
-PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 VOLUME_NAME="${VOLUME_NAME:-RPIBOOT}"
-TARGET_VOLUME="/Volumes/${VOLUME_NAME}"
+TARGET_VOLUME="${TARGET_VOLUME:-$(sdcard_default_target_volume "$VOLUME_NAME")}"
 MAX_BYTES=$((128 * 1024 * 1024 * 1024))
 DRY_RUN="${DRY_RUN:-0}"
 NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
@@ -44,6 +35,9 @@ CONFIG_TMP=""
 
 # Evita gravacao de AppleDouble/extended attributes em volumes FAT.
 export COPYFILE_DISABLE=1
+
+sdcard_require_prepare_deps
+sdcard_require_interactive_selector
 
 cleanup_temp_files() {
   if [ -n "${CONFIG_TMP:-}" ] && [ -f "${CONFIG_TMP:-}" ]; then
@@ -86,6 +80,49 @@ bytes_to_human() {
     if (i == 1) printf "%.0f%s", b, u[i];
     else printf "%.1f%s", b, u[i];
   }'
+}
+
+has_minimum_rpi_boot_payload() {
+  local volume="$1"
+  local required=(
+    "bootcode.bin"
+    "start.elf"
+    "fixup.dat"
+    "bcm2710-rpi-3-b.dtb"
+    "config.txt"
+    "kernel8.img"
+  )
+  local item=""
+
+  [ -d "$volume" ] || return 1
+
+  for item in "${required[@]}"; do
+    if [ ! -f "${volume}/${item}" ]; then
+      return 1
+    fi
+  done
+
+  return 0
+}
+
+select_sd_operation_mode() {
+  local default_mode="$1"
+  local selected=""
+
+  if [ "$NON_INTERACTIVE" = "1" ]; then
+    printf '%s' "$default_mode"
+    return 0
+  fi
+
+  selected="$(select_with_fzf "Acao SD > " \
+    "Cartao com estrutura de boot detectada. Escolha a acao." \
+    "UPDATE (manter dados e atualizar arquivos)" \
+    "FORMATAR (apagar e preparar do zero)")" || return 1
+
+  case "$selected" in
+    UPDATE*) printf '%s' "update" ;;
+    *) printf '%s' "format" ;;
+  esac
 }
 
 run_or_echo() {
@@ -337,29 +374,25 @@ safe_eject_disk() {
   if [ "$DRY_RUN" = "1" ]; then
     run_or_echo sync
     run_or_echo sleep 1
-    run_or_echo diskutil unmountDisk "$disk"
-    run_or_echo diskutil eject "$disk"
+    if sdcard_is_macos; then
+      run_or_echo diskutil unmountDisk "$disk" --force
+      run_or_echo diskutil eject "$disk"
+    else
+      run_or_echo sdcard_unmount_disk "$disk"
+      if command -v udisksctl >/dev/null 2>&1; then
+        run_or_echo udisksctl power-off -b "$disk"
+      fi
+    fi
     return 0
   fi
 
-  sync
-  sleep 1
-
-  # Spotlight/mdsync pode segurar o volume logo apos a copia.
-  diskutil unmountDisk "$disk" >/dev/null 2>&1 || true
-  sleep 1
-
-  if diskutil eject "$disk" >/dev/null 2>&1; then
-    return 0
-  fi
-
-  sleep 2
-  diskutil unmountDisk "$disk" >/dev/null 2>&1 || true
-  diskutil eject "$disk" >/dev/null
+  sdcard_safe_eject_disk "$disk"
 }
 
 skip_physical_disk=0
 target_disk=""
+selected_sd_mount=""
+sd_operation_mode="format"
 if [ "$DRY_RUN" = "1" ] && [ "$OFFLINE_DRY_PACKAGE" = "1" ]; then
   skip_physical_disk=1
   target_disk="DRY_RUN_OFFLINE"
@@ -367,7 +400,27 @@ if [ "$DRY_RUN" = "1" ] && [ "$OFFLINE_DRY_PACKAGE" = "1" ]; then
   mkdir -p "$TARGET_VOLUME"
   echo "[INFO] OFFLINE_DRY_PACKAGE=1: pulando deteccao/formatacao/ejecao de disco fisico."
 else
-  disk_paths="$(diskutil list external physical | awk '/^\/dev\/disk[0-9]+/{print $1}')"
+  if sdcard_is_macos; then
+    disk_paths="$(diskutil list external physical | awk '/^\/dev\/disk[0-9]+/{print $1}')"
+  else
+    root_source="$(findmnt -n -o SOURCE / 2>/dev/null || true)"
+    root_disk=""
+    if [ -n "$root_source" ]; then
+      root_parent="$(lsblk -nro PKNAME "$root_source" 2>/dev/null | head -n1)"
+      if [ -n "$root_parent" ]; then
+        root_disk="/dev/${root_parent}"
+      fi
+    fi
+
+    disk_paths="$(
+      lsblk -bdnpo NAME,SIZE,TRAN,RM,HOTPLUG,TYPE 2>/dev/null | \
+      awk -v max="$MAX_BYTES" -v root="$root_disk" '
+        $6=="disk" && $1!=root && $2>0 && $2<=max {
+          is_candidate = ($3=="usb" || $4=="1" || $5=="1" || $1 ~ /\/dev\/mmcblk/);
+          if (is_candidate) print $1;
+        }'
+    )"
+  fi
   if [ -z "${disk_paths}" ]; then
     echo "[ERRO] Nenhum disco externo fisico encontrado."
     exit 1
@@ -380,19 +433,33 @@ else
   while IFS= read -r disk; do
     [ -z "$disk" ] && continue
 
-    info_file="$(mktemp)"
-    diskutil info -plist "$disk" > "$info_file"
+    if sdcard_is_macos; then
+      info_file="$(mktemp)"
+      diskutil info -plist "$disk" > "$info_file"
 
-    size_bytes="$(plist_get TotalSize "$info_file")"
-    protocol="$(plist_get Protocol "$info_file")"
-    if [ -z "$protocol" ]; then
-      protocol="$(plist_get BusProtocol "$info_file")"
+      size_bytes="$(plist_get TotalSize "$info_file")"
+      protocol="$(plist_get Protocol "$info_file")"
+      if [ -z "$protocol" ]; then
+        protocol="$(plist_get BusProtocol "$info_file")"
+      fi
+      media_name="$(plist_get MediaName "$info_file")"
+      model_name="$(plist_get DeviceModel "$info_file")"
+      internal_flag="$(plist_get Internal "$info_file")"
+
+      rm -f "$info_file"
+    else
+      disk_line="$(lsblk -bdnpo NAME,SIZE,TRAN,RM,HOTPLUG,MODEL "$disk" 2>/dev/null | head -n1)"
+      size_bytes="$(printf '%s\n' "$disk_line" | awk '{print $2}')"
+      protocol="$(printf '%s\n' "$disk_line" | awk '{print $3}')"
+      rm_flag="$(printf '%s\n' "$disk_line" | awk '{print $4}')"
+      hotplug_flag="$(printf '%s\n' "$disk_line" | awk '{print $5}')"
+      media_name="$(printf '%s\n' "$disk_line" | cut -d' ' -f6-)"
+      model_name="$media_name"
+      internal_flag="false"
+      if [ "${rm_flag:-0}" != "1" ] && [ "${hotplug_flag:-0}" != "1" ] && [ "${protocol:-}" != "usb" ] && [[ "$disk" != /dev/mmcblk* ]]; then
+        internal_flag="true"
+      fi
     fi
-    media_name="$(plist_get MediaName "$info_file")"
-    model_name="$(plist_get DeviceModel "$info_file")"
-    internal_flag="$(plist_get Internal "$info_file")"
-
-    rm -f "$info_file"
 
     [ -z "$size_bytes" ] && size_bytes=0
     [ "$size_bytes" -le 0 ] && continue
@@ -453,6 +520,42 @@ else
     echo "[ERRO] Falha ao identificar disco selecionado."
     exit 1
   fi
+
+  selected_sd_mount="$(sdcard_discover_mounted_volume_for_disk "$target_disk" || true)"
+  if [ -z "$selected_sd_mount" ] && [ "$DRY_RUN" != "1" ]; then
+    sdcard_mount_disk_if_needed "$target_disk"
+    selected_sd_mount="$(sdcard_discover_mounted_volume_for_disk "$target_disk" || true)"
+  fi
+
+  if [ -n "$selected_sd_mount" ] && has_minimum_rpi_boot_payload "$selected_sd_mount"; then
+    echo "[INFO] Estrutura minima de boot detectada em ${selected_sd_mount}."
+    sd_operation_mode="$(select_sd_operation_mode "update")" || {
+      echo "[ABORTADO] Selecao de acao cancelada."
+      exit 1
+    }
+    echo "[INFO] Acao selecionada: ${sd_operation_mode}"
+  fi
+fi
+
+if [ "$sd_operation_mode" = "update" ]; then
+  echo "[INFO] Executando atualizacao incremental no SD selecionado..."
+  SD_DEVICE="$target_disk" \
+  TARGET_VOLUME="${selected_sd_mount:-}" \
+  KERNEL_IMG="$KERNEL_IMG" \
+  CONFIG_TXT="$CONFIG_TXT" \
+  CMDLINE_TXT="$CMDLINE_TXT" \
+  INITRAMFS_IMG="$INITRAMFS_IMG" \
+  INITRAMFS_SRC_DIR="$INITRAMFS_SRC_DIR" \
+  SETTINGS_CFG="$SETTINGS_CFG" \
+  FIRMWARE_DIR="$FIRMWARE_DIR" \
+  GAMES_SRC_DIR="$GAMES_SRC_DIR" \
+  COPY_GAMES_TO_ROOT="${COPY_GAMES_TO_ROOT:-0}" \
+  DEBUG="$DEBUG" \
+  VIDEO_MODE_PRESET="$VIDEO_MODE_PRESET" \
+  EJECT_AT_END=0 \
+  "${PROJECT_ROOT}/scripts/update-sd-incremental.sh"
+  echo "[OK] Atualizacao incremental concluida."
+  exit 0
 fi
 
 echo "[INFO] KERNEL_IMG padrao: ${KERNEL_IMG}"
@@ -502,16 +605,27 @@ else
   echo
   echo "[INFO] Desmontando ${target_disk}..."
   if [ "$DRY_RUN" = "1" ]; then
-    run_or_echo diskutil unmountDisk "$target_disk"
+    if sdcard_is_macos; then
+      run_or_echo diskutil unmountDisk "$target_disk"
+    else
+      run_or_echo sdcard_unmount_disk "$target_disk"
+    fi
   else
-    run_or_echo diskutil unmountDisk "$target_disk" >/dev/null
+    sdcard_unmount_disk "$target_disk"
   fi
 
   echo "[INFO] Formatando ${target_disk} como FAT32 (MBR)..."
   if [ "$DRY_RUN" = "1" ]; then
-    run_or_echo diskutil eraseDisk FAT32 "$VOLUME_NAME" MBRFormat "$target_disk"
+    if sdcard_is_macos; then
+      run_or_echo diskutil eraseDisk FAT32 "$VOLUME_NAME" MBRFormat "$target_disk"
+    else
+      echo "[DRY-RUN] sudo parted -s $target_disk mklabel msdos"
+      echo "[DRY-RUN] sudo parted -s -a optimal $target_disk mkpart primary fat32 1MiB 100%"
+      echo "[DRY-RUN] sudo mkfs.vfat -F 32 -n $VOLUME_NAME <primeira-particao-de-$target_disk>"
+    fi
   else
-    run_or_echo diskutil eraseDisk FAT32 "$VOLUME_NAME" MBRFormat "$target_disk" >/dev/null
+    sdcard_format_disk "$target_disk" "$VOLUME_NAME"
+    TARGET_VOLUME="$(sdcard_discover_mounted_volume_for_disk "$target_disk" || true)"
   fi
 
   if [ "$DRY_RUN" != "1" ] && [ ! -d "$TARGET_VOLUME" ]; then

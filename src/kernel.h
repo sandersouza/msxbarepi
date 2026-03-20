@@ -4,6 +4,7 @@
 #include "gfx_textbox.h"
 #include "combo_menu.h"
 #include "media_catalog.h"
+#include "tools/usb_hid_keyboard.h"
 
 #include <circle/actled.h>
 #include <circle/devicenameservice.h>
@@ -18,7 +19,6 @@
 #include <circle/timer.h>
 #include <circle/types.h>
 #include <circle/usb/usbhcidevice.h>
-#include <circle/usb/usbkeyboard.h>
 #include <SDCard/emmc.h>
 extern "C" {
 #include <fatfs/ff.h>
@@ -42,6 +42,7 @@ public:
 private:
     void RefillAudioQueue(void);
     void PrimeAudioSilenceBeforeReset(void);
+    boolean PerformMenuHardReset(unsigned requested_diag, unsigned success_diag, unsigned fail_diag);
     void InitializeAudioOutput(boolean fmsx_audio_enabled);
     void GenerateSamples(s16 *buffer, unsigned frames);
     void DrawDebugOverlay(unsigned tick);
@@ -72,10 +73,9 @@ private:
     void RenderTelemetryBufferView(void);
     void ProcessPendingTelemetryToggle(void);
     void ProcessPendingViewportScreenshot(void);
+    void NormalizeSettingsForBuild(void);
 
     static void KeyPressedHandler(const char *text);
-    static void KeyStatusRawHandler(unsigned char modifiers, const unsigned char raw_keys[6], void *context);
-    static void KeyboardRemovedHandler(CDevice *device, void *context);
 
 private:
 	static const unsigned kBlitMapMaxAxis = 2048u;
@@ -96,8 +96,7 @@ private:
     FATFS m_SettingsFileSystem;
 
     CSoundBaseDevice *m_Sound;
-    CUSBKeyboardDevice *m_Keyboard;
-    void *m_KeyboardRemovedHandle;
+    CUsbHidKeyboard m_UsbKeyboard;
 
     u32 m_AudioPhase;
     u32 m_AudioStep;
@@ -142,6 +141,8 @@ private:
     boolean m_PauseRenderSuppressed;
     boolean m_FmsxEnabled;
     boolean m_FmsxReady;
+    const char *m_EmulatorBackendName;
+    unsigned m_BackendInitFailCode;
     unsigned long m_FmsxFrames;
     int m_FmsxLastError;
     int m_FmsxLastPC;

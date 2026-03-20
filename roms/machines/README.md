@@ -1,0 +1,1 @@
+https://download.file-hunter.com/System%20ROMs/Full%20Set%20System%20ROMs%20for%20OpenMSX%20-%2021-04-2025.zip

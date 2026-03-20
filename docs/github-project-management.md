@@ -5,6 +5,10 @@ Padronizar a gestão do projeto no GitHub (Issues, Milestones, Branches e PRs) e
 
 Data de referência desta versão: 5 de março de 2026.
 
+## Integração MCP (GitHub)
+- Guia de implementação/configuração do MCP no Codex: [`docs/github-mcp-setup.md`](./github-mcp-setup.md)
+- Política operacional: usar **GitHub MCP como padrão** para gestão de Issues/PRs/Projects/Milestones; usar `gh` CLI somente como fallback quando o MCP não estiver funcional ou não suportar a operação.
+
 ## Regras operacionais
 - Descrições de milestones e issues devem ser claras, objetivas, conter checklist de progresso (sub-tasks).
 - As descrições, comentários e textos em geral, precisam ser em formato markdown compatível com o GitHub, utilizando recursos como links, imagens, tabelas e formatação para melhor clareza.
@@ -99,10 +103,11 @@ gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$STA
 ```bash
 gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$STATUS_FIELD_ID" --single-select-option-id "$INPROGRESS_OPTION_ID"
 ```
-7. Aplicar labels do PR e vincular também o PR ao projeto `MSX BarePI`; registrar link para review na issue e no arquivo local:
+7. Aplicar labels do PR, vincular o PR ao projeto `MSX BarePI` e definir a milestone do PR igual à milestone da issue de origem; registrar link para review na issue e no arquivo local:
 ```bash
 gh pr edit <numero-pr> -R sandersouza/msxbarepi --add-label "priority:P0" --add-label "type:performance" --add-label "area:video"
 gh pr edit <numero-pr> -R sandersouza/msxbarepi --add-project "MSX BarePI"
+gh pr edit <numero-pr> -R sandersouza/msxbarepi --milestone "<titulo-da-milestone>"
 ```
 8. Após abrir o PR e compartilhar o link de review com o usuário, ao concluir a issue e iniciar a próxima, atualizar `Status` para `Done`:
 ```bash

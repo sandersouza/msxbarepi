@@ -1,390 +1,200 @@
 # MSX BarePI
 
-Projeto de emulação de MSX em baremetal no Raspberry Pi 3B.
+Projeto de emulacao de MSX em baremetal no Raspberry Pi 3B.
 
 ## Estado atual
 
-- Fluxo principal de build usa `src` (kernel fMSX/Circle).
-- Comando principal atual: `make` (gera `artifacts/kernel8-default.img` e, em branch de issue, `artifacts/kernel8-issue<id>.img`).
-- Preparação de mídia: `make sdcard` (interativo) ou `make package` (pacote ZIP em dry-run offline por padrão).
-- Pastas `boot/` e `src/` são legado do bring-up inicial (M0), mantidas temporariamente para histórico.
+- Fluxo principal de build usa `src` (kernel + runtime fMSX/Circle).
+- Comando principal: `make`.
+- Artefato padrao: `artifacts/kernel8-default.img`.
+- Em branch de issue no formato `<numero>-...`, o build tambem gera `artifacts/kernel8-issue<numero>.img`.
+- Preparacao de midia: `make sdcard` (fluxo oficial `scripts/prepare-sd.sh`).
+- Empacotamento offline: `make package` (dry-run sem formatar disco fisico).
 
-> demais versões do RPi podem ser suportadas, mas o foco inicial é o 3B (SoC BCM2837, AArch64, 1GB RAM).
+## Requisitos
 
-## Ambiente de desenvolvimento
+- Toolchain AArch64 no PATH (`aarch64-none-elf-*`, `aarch64-elf-*` ou `aarch64-linux-gnu-*`).
+- Dependencias de scripts validadas por `scripts/check-toolchain.sh`.
+- Repositorios em `third_party/` presentes e integros.
 
-Atualmente o desenvolvimento é focado em macOS, com toolchain de compilação cruzada AArch64 baremetal (ex.: `aarch64-none-elf-gcc`). O projeto é organizado para ser portátil, mas o suporte a outros sistemas operacionais (ex.: Linux) e toolchains pode exigir ajustes manuais (ex.: scripts de build, configuração do ambiente).
+Checagem rapida de ambiente:
 
-### RPi em modo boot USB / Ethernet (sem microSD)
-- RPi 3B suporta boot por USB (ex.: pendrive) ou Ethernet (PXE), eliminando a necessidade de um microSD.
-- Requer configuração prévia do RPi usando `Raspberry OS` para habilitar o boot por USB/Ethernet (ex.: via `raspi-config` ou editando `config.txt`).
-- O processo de preparação do dispositivo de boot (ex.: pendrive) é similar ao do microSD, copiando a imagem gerada (`kernel8.img`) para a partição de boot.
-- Para Ethernet, é necessário configurar um servidor PXE na rede para fornecer a imagem de boot ao RPi.
+```bash
+./scripts/check-toolchain.sh
+```
 
-### Debug e logs
-- Logs de diagnóstico são exibidos via HDMI (limitado e com flag específica de build) e UART.
-- Para debug mais detalhado, é recomendado usar a UART, especialmente durante o desenvolvimento inicial e otimizações de performance.
-- Para montar um debugger JTAG, é necessário hardware adicional (ex.: Raspberry Pi Debug Probe) e configuração específica, o que pode ser considerado em fases posteriores do projeto.
-- Para console serial, é possível usar um adaptador USB-serial conectado aos pinos GPIO do RPi para acessar os logs de diagnóstico e interagir com o sistema em tempo real.
+Instalacao/sugestao de toolchain por SO:
 
-### Hardware adicional
-- Para desenvolvimento avançado, pode ser útil um osciloscópio para analisar sinais de áudio e vídeo, especialmente ao implementar a saída de vídeo composto e otimizar a pipeline de áudio.
-- Um analisador lógico pode ser útil para depurar a comunicação via mailbox e outros protocolos de hardware entre o kernel e o firmware do RPi.
-- Para testes de áudio, um amplificador e alto-falantes ou fones de ouvido são necessários para avaliar a qualidade do som gerado pelo backend HDMI ou P2.
+```bash
+./scripts/install-toolchains.sh
+```
 
+## Estrutura principal
 
-## Escolha de linguagem
+- `src/`: runtime principal e integracao com backend de emulacao.
+- `include/`: headers locais.
+- `linker/`: scripts de link.
+- `scripts/`: utilitarios de build, SD, benchmark e validacoes.
+- `docs/`: documentacao tecnica e operacional.
+- `docs/legal/`: licencas e atribuicoes.
+- `third_party/`: referencias/upstream (`fmsx`, `circle`, `bluemsx`).
+- `artifacts/`: binarios/imagens gerados.
 
-- Kernel/runtime: `C` (controle baixo nível, toolchain madura e previsível em baremetal)
-- Bootstrap inicial: `AArch64 Assembly` (vetor de entrada e setup mínimo da stack)
-- Scripts de build/deploy: `Bash` (simplicidade e portabilidade, sem dependências externas)
+## Build
 
-## Estrutura do projeto (scaffold)
-
-- `artifacts/`: binários e imagens gerados (ex.: `kernel8.img`, variantes otimizadas, builds de teste)
-- `src/`: runtime principal atual (kernel C++ + fMSX + menu + debug + storage)
-- `boot/`: legado do bootstrap inicial
-- `src/`: legado do kernel C inicial
-- `include/`: headers
-- `linker/`: script de link
-- `scripts/`: utilitários de build/deploy
-- `docs/`: documentação técnica
-- `docs/legal`: licenças e atribuições de código de terceiros
-
-## Third-party
-
-A pasta `third_party/` inclui código de terceiros usado no projeto, organizado por componente e precisa ser populada manualmente ( ver third_party/README.md para detalhes ).
-
-- `third_party/fmsx/`: código do emulador fMSX (GPLv2)
-- `third_party/circle/`: código de referência para audio HDMI (Circle, MIT)
-- Spike USB/HID com Circle: `artifacts/kernel8-circle-usbkeyboard-debug.img` (sample `08-usbkeyboard`, standalone)
-
-## Build rápido
-
-Requer toolchain baremetal AArch64 no PATH.
-Prefixos suportados por auto-detecção:
-
-- `aarch64-none-elf-*`
-- `aarch64-elf-*` (Homebrew)
+Build padrao:
 
 ```bash
 make
 ```
 
-Artefatos em `artifacts/`.
-
-Flags públicas de build (estado atual):
-
-- `DEBUG=0|1`: liga/desliga debug compilado no kernel.
-- `OWNER="<nome>"`: etiqueta de identificação em build debug e no nome do pacote.
-- `MSXBARE_SIZE_OPT=0|1`: otimização de tamanho (`-Os`, gc-sections).
-- `FIRMWARE_DIR=<dir>`: caminho do firmware RPi para `make package`/`make sdcard`.
-
-Flags de infraestrutura (uso avançado):
-
-- `CROSS=<prefixo>`: prefixo do toolchain (ex.: `aarch64-elf-`).
-- `CIRCLE_KERNEL_MAX_SIZE=<hex>`: limite do tamanho do kernel (default `0x400000`).
-- `BUILD_BID=<id>`: identificador textual da build.
-- `INITRAMFS_IN=<dir>` / `INITRAMFS_OUT=<path>`: entrada/saída do alvo `make initramfs`.
-- `MSXBARE_CARTA_ONLY=0|1`: compat legado de cartucho A only.
-
-Exemplos:
+Build com debug compilado (recomendado em desenvolvimento):
 
 ```bash
-make
-DEBUG=1 OWNER="BetaUser" make package
-DEBUG=1 OWNER="BetaUser" FIRMWARE_DIR=./rpi-firmware make package
+make DEBUG=1
 ```
 
-## M2 fMSX: politica de BIOS/ROM/DSK (compliance)
-
-- O `msx.cpio` no SD e obrigatorio no fluxo do projeto (`initramfs` externo).
-- A BIOS dentro do `msx.cpio` e opcional: se nao existir, o kernel faz fallback para C-BIOS estatica.
-- O build nao embute `msx.cpio` no kernel (fixo em compile-time).
-- A BIOS estatica de fallback e fixa e vem de `roms/cbios` (atualmente `cbios_main_msx1.rom`).
-- O boot sempre realiza carga completa (sem startup minimo/deferred por flag de build).
-
-Knobs de build relevantes no target `default`:
-
-- `RAM Mapper` e `MegaRAM` agora sao configurados em runtime no menu `Settings` e persistidos em `MSXBARE.CFG` (`rammapper_kb` e `megaram_kb`).
-- `RAM Mapper` ativo somente para `MSX2/MSX2+`; em `MSX1` aparece como `N/A`.
-- `MegaRAM` possui opcoes `OFF/256/512/1024`.
-
-Nota importante:
-- `MegaRAM` controla RAM do SCC-I (cartucho), nao substitui a deteccao de mapper da ROM.
-- A deteccao de mapper de cartucho e fixa em auto-detect (`MSX_GUESSA|MSX_GUESSB`) no startup.
-
-Exemplo:
+Configurar features de build (frontend real do Linux Kconfig/mconf):
 
 ```bash
-make default
+make menuconfig
 ```
 
-## Build configurável (menu interativo)
+Atalhos no menuconfig (interativo): os mesmos do menuconfig classico do Linux.
 
-Para selecionar rapidamente se o debug será compilado:
+Help de targets/flags:
 
 ```bash
-bash ./scripts/build-config.sh
+make help
 ```
 
-O script permite selecionar:
-- Debug compilado: `ON/OFF`
+Targets atualmente suportados pelo `Makefile`:
 
-Seleção de boot:
-- Use um build normal (`make default`) e escolha o modo em `Settings -> Boot Mode [NORM/FAST/GAME]`.
-- Para persistir no próximo boot, use `Gravar` no menu settings.
-- Artefato gerado por esse target: `artifacts/kernel8-default.img`.
+- `default` (padrao de `make`)
+- `sdcard`
+- `sdcard-update`
+- `initramfs`
+- `package`
+- `menuconfig`
+- `syncconfig`
+- `clean`
+- `help`
 
-## Build default estavel (`make`)
+Flags publicas principais:
 
-O comando abaixo agora gera por padrão o artefato estavel em `artifacts/kernel8-default.img`:
+- `DEBUG=0|1`
+- `OWNER="<nome>"` (nomeia pacote em `make package`)
+- `MSXBARE_PATREON_TAG="<nome>"` (fallback para owner quando `OWNER` nao for informado)
+- `FIRMWARE_DIR=<dir>`
+- `EMULATOR_BACKEND=fmsx|bluemsx`
+- `CROSS=<prefixo>`
+
+## Fluxo de SD
+
+Fluxo oficial (interativo, com formatacao):
 
 ```bash
-make
+./scripts/prepare-sd.sh
 ```
 
-Perfil aplicado no default:
-- Debug OFF (`DEBUG=0`)
-- Boot mode definido em runtime via `Settings -> Boot Mode`
-
-Atalhos de teclado no runtime:
-- `F12`: pausa/retoma emulacao
-- `F11`: toggle do overlay de debug (somente quando compilado com `DEBUG=1`)
-- `Pause` (teclado PC): mapeado para `STOP` do MSX
-- No menu pausado: `Enter` abre/ativa item, `ESC` volta do submenu `Settings` para o menu principal, `F12` fecha o menu (retoma emulacao)
-
-Submenu `Settings` (mock inicial):
-- `Overscan [000..100]`: ajusta a intensidade do overscan com `seta esquerda/direita` (0 = sem overscan, 100 = maximo)
-- `Widescreen ON/OFF`: alterna entre render 4:3 (OFF) e stretch 16:9 (ON, quebra proposital de aspecto)
-- `Scanlines [DES/LCD/CRT]`: alterna entre
-  - `DES`: sem scanline
-  - `LCD`: scanline clássico (linhas ímpares de destino em 50%)
-  - `CRT`: scanline por paridade da linha fonte MSX (`src_y`), com linhas ímpares em 85%
-- `Debugger ON/OFF`: habilita/desabilita o overlay visual de debug em runtime (quando o build suporta overlay)
-- Controles de flags no Settings:
-  - `Enter`: ciclo/incremento (ex.: `DES->LCD->CRT->DES`, `0->10->...->100->0`, `DES<->LIG`)
-  - `Seta Esquerda/Direita`: decremento/incremento da flag (ou toggle para flags binárias)
-
-Esse preset gera `artifacts/kernel8-fastboot.img` e usa:
-
-- `ENABLE_MMU=1` (MMU + caches)
-- `FMSX_FRONTEND_OPT=1`
-- `FMSX_BOOT_FRAME_SKIP=7`
-- `FMSX_BOOT_FRAME_COUNT=1200`
-- frame pacing por timer ARM (50/60Hz)
-
-Observacao:
-- O frame-skip de fast boot agora e desligado assim que `StartMSX()` termina (antes do loop principal da BIOS/cartucho), evitando persistir por varios segundos apos a tela ja ter subido.
-
-Benchmark observado em hardware (RPi 3B, BIOS Expert 1.1):
-
-- baseline otimizado estavel (`O1 + blit3x`): ~25s ate o BASIC
-- preset `fastboot`: ~17s ate o BASIC
-- atualizado: com MMU+cache+pacing, a velocidade percebida voltou ao patamar correto
-
-Preset alternativo para teste de gameplay/performance ( apresentação em 1/2 taxa apos boot ):
+Com kernel customizado:
 
 ```bash
-make fastplay
+KERNEL_IMG=artifacts/kernel8-default.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
 ```
 
-Esse preset gera `artifacts/kernel8-fastplay.img` e usa `ENABLE_MMU=1` + `FMSX_FRAME_SKIP=1`
-(apresenta 1 a cada 2 frames apos o boot), mantendo o fast boot na inicializacao.
-
-Preset experimental para audio (PSG-only, pipeline/mixagem):
+Dry-run (sem persistencia em disco):
 
 ```bash
-make audio-test
+DRY_RUN=1 ./scripts/prepare-sd.sh
+
+No macOS, o fluxo usa `diskutil`. No Linux, usa `lsblk` para deteccao e `parted` + `mkfs.vfat` + `udisksctl` para formatacao/montagem.
 ```
 
-Esse preset gera `artifacts/kernel8-audio-test.img` e usa:
-
-- `ENABLE_MMU=1`
-- `ENABLE_AUDIO=1`
-- runtime de audio do fMSX em modo `PSG-only`
-- fila PCM (`audio_pcm`) + backend PWM analogico no P2 (sem DMA)
-
-Smoke test da rota analogica P2 (tom direto por PWM, sem depender do core):
+Atualizacao incremental sem formatar SD:
 
 ```bash
-make audio-p2-smoketest
+./scripts/update-sd-incremental.sh
 ```
 
-Gera `artifacts/kernel8-audio-p2-smoketest.img`.
+## Initramfs
 
-Preset estável de audio HDMI (backend funcional):
+Geracao direta do `msx.cpio`:
 
 ```bash
-make audio-hdmi
+./scripts/make-initramfs.sh roms/initramfs sdcard/msx.cpio
 ```
 
-Gera `artifacts/kernel8-audio-hdmi.img`.
-
-- Usa `audio_pcm` como fonte PCM (igual ao P2)
-- Backend HDMI atual e **exclusivo** (ao testar HDMI, o backend P2 nao e usado)
-- Backend HDMI atual usa MAI + DMA ciclico (referencia Circle) e buffers PCM via `audio_pcm`
-- Preset compilado com `ENABLE_MMU=1` e coerencia de cache para buffers/CBs de DMA
-- Neste preset, o reset de audio do `ResetMSX()` segue desabilitado e o PSG e reinicializado no `late init` (workaround estavel)
-- Implementacao real sera baseada em referencia conceitual de:
-  - `third_party/circle/include/circle/sound/hdmisoundbasedevice.h`
-  - `third_party/circle/lib/sound/hdmisoundbasedevice.cpp`
-
-Preset de debug overlay para audio HDMI (diagnostico em runtime):
+Via Makefile:
 
 ```bash
-make audio-hdmi-test
+make initramfs INITRAMFS_IN=roms/initramfs INITRAMFS_OUT=sdcard/msx.cpio
 ```
 
-Gera `artifacts/kernel8-audio-hdmi-test.img` com overlay de diagnostico na HDMI.
+## Empacotamento
 
-Plano da trilha HDMI:
-- `docs/m1-2-audio-hdmi-plan.md`
-
-Preset de diagnostico para audio HDMI (standalone, logs de bring-up):
-
-```bash
-make audio-hdmi-debug
-```
-
-Gera `artifacts/kernel8-audio-hdmi-debug.img` com `DEBUG=1` em modo standalone
-(sem entrar no emulador), para exibir mensagens `[audio][hdmi]` que ajudam a
-localizar a falha (sink sem audio, init MAI, polling etc.).
-
-- Logs sao espelhados em HDMI e UART
-- Inclui pausa curta no boot (5s)
-- Inicializa backend HDMI e injeta tom de teste via `audio_pcm`, sem sobrescrever a tela com o renderer do fMSX
-
-Presets para teste com framebuffer menor (reduz custo de blit):
-
-```bash
-make fastboot-fb960x720
-make fastboot-fb800x600
-```
-
-Geram:
-
-- `artifacts/kernel8-fastboot-fb960x720.img`
-- `artifacts/kernel8-fastboot-fb800x600.img`
-
-Nota sobre `config.txt`:
-- A forma pratica de selecionar variantes em baremetal e via `kernel=...` no `config.txt`.
-- No fluxo atual, `scripts/prepare-sd.sh` com `KERNEL_IMG=...` faz A/B rapido copiando a variante escolhida como `kernel8.img`.
-
-## Saída de vídeo
-
-- O projeto adota HDMI como saída principal.
-- O framebuffer é gerenciado pelo firmware do RPi, e o kernel interage com ele via mailbox (sem acesso direto ao hardware de vídeo).
-- Futuramente, será implementada saída de vídeo composto via GPIO visando compatibilidade com TVs antigas, mas isso é um plano de médio prazo.
-- UART permanece ativa para diagnóstico, mas toda evolução funcional deve considerar exibição em HDMI.
-- A "borda externa" fora da imagem MSX e o preenchimento de letterbox do framebuffer do projeto.
-- A "borda interna" faz parte da imagem gerada pelo VDP/MSX (emulação). Ver o pipeline de viewport/blit em `src/kernel.cpp`.
-
-## Performance no RPi 3B (clock)
-
-- Em baremetal, nao existe governor do Linux para subir clock dinamicamente.
-- Sem `arm_freq` no `config.txt`, o Pi 3B pode ficar em clock baixo (ex.: ~600MHz), causando percepcao de "meia velocidade".
-- O `sdcard/config.txt` do projeto fixa `arm_freq=1200` (clock nominal do Pi 3B) como baseline de testes.
-- Para garantir performance consistente, é recomendado manter essa configuração, especialmente durante o desenvolvimento e testes de otimização.
-
-## Preparar microSD ou USB (macOS)
-
-Script interativo com TUI (`fzf`) e proteções para evitar seleção de disco incorretamente formatado ou com dados importantes ( ex.: disco do sistema ):
-
-```bash
-brew install fzf
-scripts/prepare-sd.sh
-```
-
-Empacotar tudo para SD em um ZIP (kernel + config + cmdline + msx.cpio + firmware):
+Pacote ZIP offline para SD:
 
 ```bash
 make package
 ```
 
-Saída padrão: `artifacts/sdcard-package-YYYYMMDDHHMM.zip`
-
-Flags rápidas de package/build:
-- `DEBUG=0|1`: ativa/desativa debug compilado no kernel (overlay/hotkeys de debug).
-- `OWNER="<nome>"`: injeta identificador no kernel debug e nomeia o ZIP como `artifacts/sdcard-package-<OWNER>.zip`.
-- `FIRMWARE_DIR=<dir>`: diretório de firmware usado no empacotamento.
-
-No `make package`, o conteúdo de `roms/games/` é sempre copiado para a raiz do pacote SD.
-
-Exemplo:
+Com identificacao de owner:
 
 ```bash
-DEBUG=1 OWNER="GustavoLeal" make package
+DEBUG=1 OWNER="BetaUser" FIRMWARE_DIR=./rpi-firmware make package
 ```
+
+Configurar e aplicar `.config` sem abrir UI:
 
 ```bash
-DEBUG=1 OWNER="GustavoLeal" FIRMWARE_DIR=./rpi-firmware make package
+make syncconfig
 ```
 
-Defaults do script:
-- `KERNEL_IMG=artifacts/kernel8-default.img`
-- `FIRMWARE_DIR=rpi-firmware/`
+Arquivos gerados de configuracao:
 
-Opcionalmente, para copiar firmwares alternativos no mesmo passo:
+- `.config`
+- `.config.mk`
+- `build/config.mk`
+
+## Benchmark e regressao
+
+Criar sessao:
 
 ```bash
-FIRMWARE_DIR=/caminho/para/firmware scripts/prepare-sd.sh
+./scripts/perf-regression.sh init --tag baseline --make-target default --make-flags "DEBUG=1"
 ```
 
-Exemplo com preset fastboot:
+Comparar sessoes:
 
 ```bash
-KERNEL_IMG=artifacts/kernel8-fastboot.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
+./scripts/perf-regression.sh compare --base artifacts/benchmarks/<sessao-base> --candidate artifacts/benchmarks/<sessao-candidate>
 ```
 
-Exemplos A/B com framebuffer menor:
+## Politica tecnica (resumo)
 
-```bash
-KERNEL_IMG=artifacts/kernel8-fastboot-fb960x720.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
-KERNEL_IMG=artifacts/kernel8-fastboot-fb800x600.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
-```
-## Suporte a RPMC v9 (Rasperry Pi MSX Clone)
-- O projeto prevê compatíbilidade com a placa de slots do RPMC v9, permitindo o uso de cartuchos físicos de MSX.
-- O suporte a RPMC v9 é um plano de médio prazo, e pode exigir ajustes na implementação do slot e na BIOS para lidar com as peculiaridades do hardware de cartucho real.
+- Alvo: Raspberry Pi 3B, AArch64, `kernel8.img`.
+- Build freestanding/no-libc.
+- HDMI como saida de video obrigatoria; UART como debug auxiliar.
+- Nao modificar diretamente `third_party/circle` e `third_party/fmsx`.
+- Validar integridade de `third_party` antes de build (`make guard-third-party`).
 
+## Third-party
 
-## Spike USB/HID (Circle)
+Inventario e comandos de repovoamento:
 
-Build do sample `08-usbkeyboard` do Circle (RPI3/AArch64) para validar USB host + hub interno + teclado HID fora da pilha USB custom:
+- `third_party/README.md`
 
-```bash
-make circle-usbkeyboard-debug
-KERNEL_IMG=artifacts/kernel8-circle-usbkeyboard-debug.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
-```
+Referencias tecnicas prioritarias para implementacao/correcao:
 
-Referências usadas: `third_party/circle/sample/08-usbkeyboard`, `third_party/circle/include/circle/usb/usbhcidevice.h`, `third_party/circle/include/circle/usb/usbkeyboard.h`.
+- `third_party/fmsx`
+- `third_party/circle`
 
+## Documentacao relacionada
 
-## Spike Circle USB->MSX Input Bridge
-
-Standalone fora de `third_party` usando a pilha USB/HID do Circle e a bridge compartilhada `msx_hid_bridge` (`include/msx_hid_bridge.h`, `src/msx_hid_bridge.c`) para raw HID -> estado de input MSX (`joystick_bits`).
-
-O backend `INPUT_BACKEND=circle` no `msxbare` já consome essa bridge; falta integrar o runtime Circle dentro do binário principal.
-
-```bash
-make circle-usb-msxinput-debug
-KERNEL_IMG=artifacts/kernel8-circle-usb-msxinput-debug.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
-```
-
-Referencias usadas: `third_party/circle/sample/08-usbkeyboard`, `third_party/circle/include/circle/usb/usbkeyboard.h`, `third_party/fmsx/fMSX/MSX.h` (layout `JST_*`).
-
-Preset experimental (msxbare + audio HDMI estavel + runtime Circle input integrado):
-```bash
-make audio-hdmi-no-circle
-KERNEL_IMG=artifacts/kernel8-audio-hdmi-no-circle.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
-```
-
-Preset provisório para seguir desenvolvimento sem o runtime Circle integrado (input Circle desativado por flag de build, vídeo+áudio HDMI mantidos estáveis).
-
-
-```bash
-make audio-hdmi-circle-input
-KERNEL_IMG=artifacts/kernel8-audio-hdmi-circle-input.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
-```
-
-Observacao: integra bibliotecas do Circle com shims de link/runtime locais (fora de `third_party`) e ainda requer validacao funcional em hardware da entrada no binario principal.
+- Fluxo e guardrails operacionais: `AGENTS.md`
+- Ponteiro de contexto de handoff: `CONTEXT.md`
+- Instrucoes canonicass por area: `.github/instructions/*.instructions.md`
+- Documentacao dos scripts: `scripts/README.md`
+- Gestao de projeto: `docs/github-project-management.md`
+- Perfis desacoplados por modelo (MSX1/MSX2/MSX2+): `docs/machine-profiles/README.md`

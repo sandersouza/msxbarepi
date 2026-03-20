@@ -28,7 +28,11 @@ static unsigned g_frame_number = 0;
 #define HiResMode           (InterlaceON && g_hires_mode != HIRES_OFF)
 #define InterlacedMode      (g_hires_mode == HIRES_INTERLACED)
 #define OverscanMode        (g_overscan)
-#define OddPage             (g_frame_number & 1u)
+/*
+ * V9958 odd/even page display follows S#2 bit1, not the host frame counter.
+ * BlueMSX/openMSX interpret EO as active when bit1=0 and R#9 bit2 is set.
+ */
+#define OddPage             (FlipEvenOdd ? ((VDPStatus[2] & 0x02u) ? 0u : 1u) : 0u)
 
 static uint16_t g_image_buffer[(WIDTH << 1) * (HEIGHT << 1)];
 static unsigned g_image_buffer_width = WIDTH;
@@ -45,7 +49,7 @@ static int g_video_tables_ready = 0;
 #define WBuf g_image_buffer
 int LastScanline;
 
-#include "../third_party/fmsx/fMSX/CommonMux.h"
+#include "fmsx_local/CommonMux.h"
 
 static volatile u8 g_bridge_bits = 0;
 static uint8_t g_sram_disk_blob[(64 * 1024) + 1];
@@ -65,6 +69,47 @@ static volatile unsigned g_audio_source_peak = 0;
 static volatile unsigned g_audio_source_nonzero = 0;
 static volatile unsigned g_kbd_last_hid = 0;
 static volatile unsigned g_kbd_last_msx = 0;
+static uint8_t g_kbd_stable_state[16] =
+{
+    0xFFu, 0xFFu, 0xFFu, 0xFFu,
+    0xFFu, 0xFFu, 0xFFu, 0xFFu,
+    0xFFu, 0xFFu, 0xFFu, 0xFFu,
+    0xFFu, 0xFFu, 0xFFu, 0xFFu
+};
+static uint8_t g_kbd_candidate_state[16] =
+{
+    0xFFu, 0xFFu, 0xFFu, 0xFFu,
+    0xFFu, 0xFFu, 0xFFu, 0xFFu,
+    0xFFu, 0xFFu, 0xFFu, 0xFFu,
+    0xFFu, 0xFFu, 0xFFu, 0xFFu
+};
+static uint8_t g_kbd_candidate_seen = 0u;
+
+static int fmsx_keyboard_change_has_new_press(const uint8_t desired_state[16], const uint8_t stable_state[16])
+{
+    for (unsigned i = 0u; i < 16u; ++i)
+    {
+        const uint8_t press_mask = (uint8_t) (stable_state[i] & (uint8_t) ~desired_state[i]); /* 1->0 */
+        if (press_mask != 0u)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int fmsx_keyboard_change_has_release(const uint8_t desired_state[16], const uint8_t stable_state[16])
+{
+    for (unsigned i = 0u; i < 16u; ++i)
+    {
+        const uint8_t release_mask = (uint8_t) (desired_state[i] & (uint8_t) ~stable_state[i]); /* 0->1 */
+        if (release_mask != 0u)
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
 
 static void fmsx_keyboard_clear_all(void)
 {
@@ -74,11 +119,11 @@ static void fmsx_keyboard_clear_all(void)
     }
 }
 
-static void fmsx_keyboard_press_code(unsigned code)
+static void fmsx_keyboard_press_code(uint8_t matrix[16], unsigned code)
 {
     if (code <= 0x88u)
     {
-        KBD_SET(code);
+        matrix[Keys[code][0]] &= (uint8_t) ~Keys[code][1];
     }
 }
 
@@ -220,42 +265,79 @@ void fmsx_video_set_overscan(boolean enabled)
 
 void fmsx_runtime_set_keyboard_raw(u8 modifiers, const unsigned char raw_keys[6])
 {
-    fmsx_keyboard_clear_all();
+    uint8_t desired_state[16];
+    for (unsigned i = 0; i < 16u; ++i)
+    {
+        desired_state[i] = 0xFFu;
+    }
 
     if (modifiers & 0x22u)
     {
-        fmsx_keyboard_press_code(KBD_SHIFT);
+        fmsx_keyboard_press_code(desired_state, KBD_SHIFT);
     }
     if (modifiers & 0x11u)
     {
-        fmsx_keyboard_press_code(KBD_CONTROL);
+        fmsx_keyboard_press_code(desired_state, KBD_CONTROL);
     }
     if (modifiers & 0x44u)
     {
-        fmsx_keyboard_press_code(KBD_GRAPH);
+        fmsx_keyboard_press_code(desired_state, KBD_GRAPH);
     }
 
-    if (!raw_keys)
+    if (raw_keys)
     {
-        return;
-    }
-
-    for (unsigned i = 0; i < 6u; ++i)
-    {
-        const u8 hid = raw_keys[i];
-        if (hid == 0u)
+        for (unsigned i = 0; i < 6u; ++i)
         {
-            continue;
-        }
+            const u8 hid = raw_keys[i];
+            if (hid == 0u)
+            {
+                continue;
+            }
 
-        const unsigned code = fmsx_code_from_hid(hid);
-        if (code != 0u)
-        {
-            fmsx_keyboard_press_code(code);
-            g_kbd_last_hid = hid;
-            g_kbd_last_msx = code;
+            const unsigned code = fmsx_code_from_hid(hid);
+            if (code != 0u)
+            {
+                fmsx_keyboard_press_code(desired_state, code);
+                g_kbd_last_hid = hid;
+                g_kbd_last_msx = code;
+            }
         }
     }
+
+    /*
+     * Keyboard stabilization policy:
+     * - Release transitions are applied immediately (avoid stuck keys/repeat).
+     * - Pure press-only transitions require one confirmation report to suppress
+     *   occasional one-report USB glitches.
+     */
+    if (memcmp(desired_state, g_kbd_stable_state, sizeof desired_state) == 0)
+    {
+        g_kbd_candidate_seen = 0u;
+    }
+    else
+    {
+        const int has_press = fmsx_keyboard_change_has_new_press(desired_state, g_kbd_stable_state);
+        const int has_release = fmsx_keyboard_change_has_release(desired_state, g_kbd_stable_state);
+        const int press_only = has_press && !has_release;
+
+        if (!press_only)
+        {
+            memcpy(g_kbd_stable_state, desired_state, sizeof desired_state);
+            g_kbd_candidate_seen = 0u;
+        }
+        else if (memcmp(desired_state, g_kbd_candidate_state, sizeof desired_state) == 0 && g_kbd_candidate_seen != 0u)
+        {
+            memcpy(g_kbd_stable_state, desired_state, sizeof desired_state);
+            g_kbd_candidate_seen = 0u;
+        }
+        else
+        {
+            memcpy(g_kbd_candidate_state, desired_state, sizeof desired_state);
+            g_kbd_candidate_seen = 1u;
+        }
+    }
+
+    memcpy((void *) KeyState, g_kbd_stable_state, sizeof g_kbd_stable_state);
 }
 
 unsigned int Joystick(void)

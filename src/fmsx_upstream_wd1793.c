@@ -1,1 +1,1 @@
-#include "../third_party/fmsx/EMULib/WD1793.c"
+#include "fmsx_local_wd1793.c"

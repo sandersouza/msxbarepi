@@ -34,6 +34,10 @@
 #define MSXBARE_FMSX_GAME_FAST_FORWARD_STEPS_MSX2P 6u
 #endif
 
+#ifndef MSXBARE_FMSX_Z80_SLICES_PER_FRAME_MAX
+#define MSXBARE_FMSX_Z80_SLICES_PER_FRAME_MAX 4096u
+#endif
+
 #ifndef MSXBARE_FMSX_GAME_VIDEO_SKIP_FRAMES_MSX2
 #define MSXBARE_FMSX_GAME_VIDEO_SKIP_FRAMES_MSX2 192u
 #endif
@@ -47,24 +51,85 @@ extern int ScanLine;
 extern uint8_t UPeriod;
 extern int Mode;
 extern int MasterSwitch;
+extern int HPeriod;
+extern int VPeriod;
 extern int RAMPages;
 extern int VRAMPages;
 extern uint8_t DiskROMLoaded;
+extern uint8_t FmsxMSX2PKanjiBasicLoaded;
+extern uint8_t *FmsxMSX2PKanjiBasicBase;
+extern uint8_t FmsxMSX2PMSXJELoaded;
+extern uint32_t FmsxP1Select31Count;
+extern uint32_t FmsxP1Select03Count;
+extern uint32_t FmsxRTCReadCount;
+extern uint32_t FmsxRTCWriteCount;
+extern uint8_t FmsxRTCLastReg;
+extern uint8_t FmsxRTCLastMode;
+extern uint32_t FmsxVDPFrameCounter;
+extern uint8_t FmsxVDPLinePhase;
+extern uint8_t EnWrite[4];
+extern uint32_t FmsxIE1EventCount;
+extern uint32_t FmsxIE1AckCount;
+extern uint32_t FmsxIE1ArmedCount;
+extern uint32_t FmsxIE1FiredHBlankCount;
+extern uint32_t FmsxVDPPort99ReadCount;
+extern uint32_t FmsxVDPPort99WriteCount;
+extern uint32_t FmsxVDPPort9BWriteCount;
+extern uint32_t FmsxVDPRegWriteCount[64];
+extern uint32_t FmsxVDPStatusReadCount[16];
+extern uint32_t FmsxKanjiReadCount;
+extern uint32_t FmsxKanjiAddrWriteCount;
+extern uint32_t FmsxKanjiNullReadCount;
+extern uint8_t PSL[4];
+extern uint8_t PSLReg;
+extern uint8_t SSL[4];
+extern uint8_t ScrMode;
+extern uint8_t VDP[64];
+extern uint8_t VDPStatus[16];
 extern AY8910 PSG;
 extern YM2413 OPLL;
+extern uint8_t fmsx_vdp_get_status1_live(void);
+extern uint8_t fmsx_vdp_get_status2_live(void);
+extern uint8_t fmsx_vdp_get_ie1_target_line(void);
+extern int fmsx_vdp_get_ie1_target_delta(void);
+extern uint8_t fmsx_vdp_get_effective_odd_page(void);
+extern uint8_t fmsx_vdp_get_render_page(void);
+extern void fmsx_vdp_trace_get_view(const TFmsxVDPTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
 extern void fmsx_cpu_set_turbo_percent(unsigned percent);
 extern unsigned fmsx_video_get_latest(const u16 **pixels, unsigned *width, unsigned *height);
 extern const char *ROMName[];
 extern uint8_t *ROMData[];
+extern uint8_t ROMMapper[][4];
 extern uint8_t ROMMask[];
+extern uint8_t ROMType[];
+extern uint8_t FmsxCartMapperLockedType[];
+extern uint8_t FmsxCartMapperTypeSource[];
+extern uint8_t FmsxCartLastClassifiedSlot;
+extern uint8_t FmsxCartLastClassifiedType;
+extern uint8_t FmsxCartLastClassifiedSource;
+extern uint8_t FmsxManbow2FlashLastOp;
+extern uint8_t FmsxManbow2FlashLastSlot;
+extern uint8_t FmsxManbow2FlashLastValue;
+extern uint8_t FmsxManbow2FlashLastReadValue;
+extern uint8_t FmsxManbow2FlashLastState;
+extern uint8_t FmsxManbow2FlashLastMode;
+extern uint16_t FmsxManbow2FlashLastAddr;
+extern uint32_t FmsxManbow2FlashLastOffset;
+extern uint32_t FmsxManbow2FlashProgramCount;
+extern uint32_t FmsxManbow2FlashEraseCount;
+extern uint32_t FmsxManbow2FlashReadCount;
 extern uint8_t *MemMap[4][4][8];
 extern uint8_t *EmptyRAM;
+extern uint8_t *Kanji;
 extern const char *DSKName[];
 extern FDIDisk FDD[];
+extern WD1793 FDC;
 extern void fmsx_video_set_overscan(boolean enabled);
 extern void fmsx_local_ym2413_set_layer_gain_pct(unsigned pct);
 extern unsigned fmsx_local_ym2413_get_layer_gain_pct(void);
 extern void fmsx_local_ym2413_refresh(YM2413 *D);
+extern unsigned FmsxTurboPercent;
+extern int g_fmsx_quit_after_vblank;
 
 static TFmsxRuntimeStatus g_fmsx_status = { FALSE, FALSE, 0u, 0, 0 };
 static char g_cartridge_path[2][192] = {{0}};
@@ -74,7 +139,6 @@ static const unsigned kFmsxAudioRate = 48000u;
 static unsigned g_boot_warmup_frames_remaining = 0u;
 static boolean g_boot_forced_turbo = FALSE;
 static unsigned g_boot_video_gate_frames_remaining = 0u;
-static unsigned g_refresh_hz = 60u;
 static boolean g_disk_rom_enabled = TRUE;
 static unsigned g_boot_mode = 0u;
 static unsigned g_active_boot_mode = 0u;
@@ -91,6 +155,22 @@ static boolean g_audio_layer2_muted = FALSE; /* FM */
 static boolean g_audio_layer3_muted = FALSE; /* SCC */
 static unsigned g_fm_layer_gain_pct = 100u;
 int g_fmsx_fmpac_enabled = 1;
+static unsigned g_vdp_prev_ce = 0u;
+static unsigned g_vdp_cmd_starts = 0u;
+static unsigned g_vdp_copy_starts = 0u;
+
+static boolean fmsx_runtime_disk_rom_effective(unsigned model_profile)
+{
+    (void) model_profile;
+    return g_disk_rom_enabled ? TRUE : FALSE;
+}
+
+static void fmsx_runtime_reset_vdp_diag_counters(void)
+{
+    g_vdp_prev_ce = 0u;
+    g_vdp_cmd_starts = 0u;
+    g_vdp_copy_starts = 0u;
+}
 
 static unsigned fmsx_runtime_clamp_rammapper_kb(unsigned kb)
 {
@@ -155,14 +235,23 @@ static boolean fmsx_runtime_find_slot_map(unsigned slot, unsigned *out_ps, unsig
     return FALSE;
 }
 
+static unsigned fmsx_runtime_disk_subslot(void)
+{
+    return MODEL(MSX_MSX2P) ? 2u : 1u;
+}
+
 static void fmsx_runtime_force_disk_rom_off_mapping(void)
 {
+    const unsigned disk_subslot = fmsx_runtime_disk_subslot();
     /*
      * fMSX may keep DiskROM mapped even when MSX_PATCHBDOS is toggled off.
-     * Enforce OFF policy by unmapping slot 3:1 pages 2-3 explicitly.
+     * Enforce OFF policy by unmapping slot 3:<disk_subslot> pages 2-3 explicitly.
      */
-    MemMap[3][1][2] = EmptyRAM;
-    MemMap[3][1][3] = EmptyRAM;
+    if (!(MODEL(MSX_MSX2P) && FmsxMSX2PKanjiBasicLoaded && disk_subslot == 1u))
+    {
+        MemMap[3][disk_subslot][2] = EmptyRAM;
+        MemMap[3][disk_subslot][3] = EmptyRAM;
+    }
     DiskROMLoaded = 0u;
     Mode &= ~MSX_PATCHBDOS;
 }
@@ -281,7 +370,7 @@ static unsigned fmsx_runtime_boot_forced_turbo_percent(void)
 
 static unsigned fmsx_runtime_effective_refresh_hz(void)
 {
-    return (g_refresh_hz == 50u) ? 50u : 60u;
+    return 60u;
 }
 
 static unsigned fmsx_runtime_z80_turbo_percent(void)
@@ -292,6 +381,11 @@ static unsigned fmsx_runtime_z80_turbo_percent(void)
     case 2u: return 224u; /* MAX */
     default: return 100u; /* DES */
     }
+}
+
+static unsigned fmsx_runtime_effective_turbo_percent(void)
+{
+    return fmsx_runtime_z80_turbo_percent();
 }
 
 static void fmsx_runtime_apply_game_boot_override(void)
@@ -344,26 +438,29 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     g_fmsx_status.frames = 0u;
     g_fmsx_status.last_pc = 0;
     g_fmsx_status.last_error = 0;
-
+    const boolean game_mode = (g_boot_mode == 2u) ? TRUE : FALSE;
+    const unsigned requested_model_profile = g_model_profile;
+    /* Keep frame-step cadence aligned to full VBlank window for all models. */
+    g_fmsx_quit_after_vblank = 1;
+    const boolean disk_rom_effective = fmsx_runtime_disk_rom_effective(requested_model_profile);
     const int base_mode = (fmsx_runtime_effective_refresh_hz() == 50u ? MSX_PAL : MSX_NTSC) | MSX_JOY1;
     int startup_mode = fmsx_runtime_machine_mode_bits() | base_mode;
-    if (g_disk_rom_enabled)
+    startup_mode &= ~MSX_PATCHBDOS;
+    if (disk_rom_effective)
     {
         /*
          * Keep DISK.ROM loaded but without BDOS patch hooks.
          * We still force a PATCHBDOS transition so ResetMSX() reloads DISK.ROM
          * deterministically, then leaves hooks disabled (WD1793 path).
          */
-        startup_mode &= ~MSX_PATCHBDOS;
         Mode |= MSX_PATCHBDOS;
     }
     else
     {
         /*
-         * Force opposite transition when Disk ROM is OFF as well, so the
-         * disable path is applied deterministically.
+         * Keep PATCHBDOS cleared when DiskROM policy is OFF.
          */
-        Mode |= MSX_PATCHBDOS;
+        Mode &= ~MSX_PATCHBDOS;
     }
     if (g_fmsx_megaram_kb == 0u)
     {
@@ -373,8 +470,6 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     /* Keep internal fMSX autofire disabled. Project handles input explicitly. */
     startup_mode &= ~(MSX_AUTOSPACE | MSX_AUTOFIREA | MSX_AUTOFIREB);
 
-    const boolean game_mode = (g_boot_mode == 2u) ? TRUE : FALSE;
-    const unsigned requested_model_profile = g_model_profile;
     unsigned started_model_profile = requested_model_profile;
     const char *saved_carta = 0;
     const char *saved_cartb = 0;
@@ -465,8 +560,9 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     }
     Mode &= ~(MSX_AUTOSPACE | MSX_AUTOFIREA | MSX_AUTOFIREB);
     g_active_model_profile = started_model_profile;
+    g_fmsx_quit_after_vblank = 1;
 
-    if (!g_disk_rom_enabled)
+    if (!fmsx_runtime_disk_rom_effective(started_model_profile))
     {
         fmsx_runtime_force_disk_rom_off_mapping();
     }
@@ -482,7 +578,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     }
     else
     {
-        fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+        fmsx_cpu_set_turbo_percent(fmsx_runtime_effective_turbo_percent());
     }
     fmsx_runtime_apply_game_boot_override();
 
@@ -491,6 +587,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     fmsx_local_ym2413_refresh(&OPLL);
 
     g_fmsx_status.running = TRUE;
+    fmsx_runtime_reset_vdp_diag_counters();
     return TRUE;
 }
 
@@ -522,16 +619,22 @@ boolean fmsx_runtime_menu_reset(void)
         return FALSE;
     }
 
-    int new_mode = Mode;
-    if (g_disk_rom_enabled)
+    const boolean disk_rom_effective = fmsx_runtime_disk_rom_effective(g_active_model_profile);
+    int new_mode = Mode & ~MSX_PATCHBDOS;
+    if (disk_rom_effective)
     {
         /* Keep behavior aligned with disk-ROM toggle path. */
         Mode |= MSX_PATCHBDOS;
         new_mode = Mode & ~MSX_PATCHBDOS;
     }
+    else
+    {
+        Mode &= ~MSX_PATCHBDOS;
+        new_mode = Mode & ~MSX_PATCHBDOS;
+    }
 
     (void) ResetMSX(new_mode, RAMPages, VRAMPages);
-    if (!g_disk_rom_enabled)
+    if (!disk_rom_effective)
     {
         fmsx_runtime_force_disk_rom_off_mapping();
     }
@@ -539,7 +642,8 @@ boolean fmsx_runtime_menu_reset(void)
     g_boot_warmup_frames_remaining = 0u;
     g_boot_forced_turbo = FALSE;
     g_boot_video_gate_frames_remaining = 0u;
-    fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+    fmsx_runtime_reset_vdp_diag_counters();
+    fmsx_cpu_set_turbo_percent(fmsx_runtime_effective_turbo_percent());
     fmsx_runtime_apply_audio_channels();
     g_fmsx_status.last_pc = (int) CPU.PC.W;
     return TRUE;
@@ -631,19 +735,51 @@ boolean fmsx_runtime_step_frame(void)
             steps = g_boot_warmup_frames_remaining;
         }
     }
-
+    unsigned frames_done = 0u;
     for (unsigned i = 0; i < steps; ++i)
     {
-        ScanLine = 261;
-        g_fmsx_status.last_pc = (int) RunZ80(&CPU);
-        g_fmsx_status.frames++;
+        const unsigned seq_before = fmsx_video_get_latest(0, 0, 0);
+        unsigned slices = 0u;
+        boolean frame_done = FALSE;
+
+        if (g_boot_warmup_frames_remaining > 0u)
+        {
+            /* During FAST/GAME warmup, keep deterministic frame-step entry. */
+            ScanLine = 261;
+        }
+
+        while (slices < MSXBARE_FMSX_Z80_SLICES_PER_FRAME_MAX)
+        {
+            g_fmsx_status.last_pc = (int) RunZ80(&CPU);
+            ++slices;
+
+            if (fmsx_video_get_latest(0, 0, 0) != seq_before)
+            {
+                frame_done = TRUE;
+                break;
+            }
+        }
+
+        if (!frame_done)
+        {
+            /*
+             * Avoid a hard spin if a frame is not produced. Keep runtime alive
+             * and surface the anomaly through last_error.
+             */
+            g_fmsx_status.last_error = 2;
+            break;
+        }
+
+        ++frames_done;
+        ++g_fmsx_status.frames;
+
         if (g_boot_warmup_frames_remaining > 0u)
         {
             g_boot_warmup_frames_remaining--;
             if (g_boot_warmup_frames_remaining == 0u && g_boot_forced_turbo)
             {
                 g_boot_forced_turbo = FALSE;
-                fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+                fmsx_cpu_set_turbo_percent(fmsx_runtime_effective_turbo_percent());
             }
         }
         if (g_boot_video_gate_frames_remaining > 0u)
@@ -652,9 +788,10 @@ boolean fmsx_runtime_step_frame(void)
         }
     }
 
-    if (g_boot_warmup_frames_remaining == 0u)
+    if (g_boot_warmup_frames_remaining == 0u && frames_done > 0u)
     {
-        RenderAndPlayAudio(kFmsxAudioRate / fmsx_runtime_effective_refresh_hz());
+        const unsigned samples_per_frame = kFmsxAudioRate / fmsx_runtime_effective_refresh_hz();
+        RenderAndPlayAudio(samples_per_frame * frames_done);
     }
     return TRUE;
 }
@@ -705,7 +842,8 @@ boolean fmsx_runtime_load_state(const void *src, unsigned size)
     g_boot_warmup_frames_remaining = 0u;
     g_boot_forced_turbo = FALSE;
     g_boot_video_gate_frames_remaining = 0u;
-    fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+    fmsx_runtime_reset_vdp_diag_counters();
+    fmsx_cpu_set_turbo_percent(fmsx_runtime_effective_turbo_percent());
     fmsx_runtime_apply_audio_channels();
     g_fmsx_status.last_pc = (int) CPU.PC.W;
     return TRUE;
@@ -718,7 +856,8 @@ void fmsx_runtime_set_overscan(boolean enabled)
 
 void fmsx_runtime_set_refresh_hz(unsigned hz)
 {
-    g_refresh_hz = (hz == 50u) ? 50u : 60u;
+    (void) hz;
+    /* Fixed video cadence policy: always NTSC 60Hz. */
 }
 
 void fmsx_runtime_set_disk_rom_enabled(boolean enabled)
@@ -738,15 +877,21 @@ void fmsx_runtime_set_disk_rom_enabled(boolean enabled)
         return;
     }
 
+    const boolean disk_rom_effective = fmsx_runtime_disk_rom_effective(g_active_model_profile);
     int new_mode = Mode & ~MSX_PATCHBDOS;
-    if (g_disk_rom_enabled)
+    if (disk_rom_effective)
     {
         /* Force transition so ResetMSX() reloads DISK.ROM with hooks disabled. */
         Mode |= MSX_PATCHBDOS;
         new_mode = Mode & ~MSX_PATCHBDOS;
     }
+    else
+    {
+        Mode &= ~MSX_PATCHBDOS;
+        new_mode = Mode & ~MSX_PATCHBDOS;
+    }
     (void) ResetMSX(new_mode, RAMPages, VRAMPages);
-    if (!g_disk_rom_enabled)
+    if (!disk_rom_effective)
     {
         fmsx_runtime_force_disk_rom_off_mapping();
     }
@@ -834,7 +979,7 @@ void fmsx_runtime_set_z80_turbo_mode(unsigned mode)
     g_z80_turbo_mode = mode;
     if (!g_boot_forced_turbo)
     {
-        fmsx_cpu_set_turbo_percent(fmsx_runtime_z80_turbo_percent());
+        fmsx_cpu_set_turbo_percent(fmsx_runtime_effective_turbo_percent());
     }
 }
 
@@ -1156,6 +1301,217 @@ unsigned fmsx_runtime_get_load_diag(void)
 TFmsxRuntimeStatus fmsx_runtime_get_status(void)
 {
     return g_fmsx_status;
+}
+
+void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
+{
+    unsigned ce;
+    unsigned cmd;
+    unsigned copy_cmd;
+    const uint8_t live_status1 = fmsx_vdp_get_status1_live();
+    const uint8_t live_status2 = fmsx_vdp_get_status2_live();
+
+    if (stats == 0)
+    {
+        return;
+    }
+
+    stats->h_period = (HPeriod > 0) ? (unsigned) HPeriod : 0u;
+    stats->v_period = (VPeriod > 0) ? (unsigned) VPeriod : 0u;
+    stats->i_period = (CPU.IPeriod > 0) ? (unsigned) CPU.IPeriod : 0u;
+    stats->scanline = (ScanLine >= 0) ? (unsigned) ScanLine : 0u;
+    stats->pal_video = PALVideo ? 1u : 0u;
+    stats->lines_212 = ScanLines212 ? 1u : 0u;
+    stats->turbo_percent = FmsxTurboPercent;
+    stats->scr_mode = (unsigned) ScrMode;
+    stats->reg2 = (unsigned) VDP[2];
+    stats->reg25 = (unsigned) VDP[25];
+    stats->reg26 = (unsigned) VDP[26];
+    stats->reg27 = (unsigned) VDP[27];
+    stats->reg19 = (unsigned) VDP[19];
+    stats->reg1 = (unsigned) VDP[1];
+    stats->reg7 = (unsigned) VDP[7];
+    stats->screen_on = (VDP[1] & 0x40u) ? 1u : 0u;
+    stats->ie0_enabled = (VDP[1] & 0x20u) ? 1u : 0u;
+    stats->vblank_flag = (VDPStatus[0] & 0x80u) ? 1u : 0u;
+    stats->ie1_enabled = (VDP[0] & 0x10u) ? 1u : 0u;
+    stats->ie1_flag = (live_status1 & 0x01u) ? 1u : 0u;
+    stats->status2_hr = (live_status2 & 0x20u) ? 1u : 0u;
+    stats->status2_vr = (live_status2 & 0x40u) ? 1u : 0u;
+    stats->line_phase = FmsxVDPLinePhase ? 1u : 0u;
+    stats->ie1_target_line = (unsigned) fmsx_vdp_get_ie1_target_line();
+    stats->ie1_target_delta = fmsx_vdp_get_ie1_target_delta();
+    stats->effective_odd_page = fmsx_vdp_get_effective_odd_page() ? 1u : 0u;
+    stats->render_page = (unsigned) fmsx_vdp_get_render_page();
+    stats->msx2p_kanji_basic = FmsxMSX2PKanjiBasicLoaded ? 1u : 0u;
+    stats->msx2p_kanji_basic_map_ok =
+        (FmsxMSX2PKanjiBasicBase != 0 &&
+         MemMap[3][1][2] == FmsxMSX2PKanjiBasicBase &&
+         MemMap[3][1][3] == (FmsxMSX2PKanjiBasicBase + 0x2000)) ? 1u : 0u;
+    stats->msx2p_kanji_basic_selected_p1 = (PSL[1] == 3u && SSL[1] == 1u) ? 1u : 0u;
+    stats->msx2p_kanji_basic_seen_p1 = (FmsxP1Select31Count > 0u) ? 1u : 0u;
+    stats->p1_ps = (unsigned) PSL[1];
+    stats->p1_ss = (unsigned) SSL[1];
+    stats->disk_rom_enabled = g_disk_rom_enabled ? 1u : 0u;
+    stats->disk_rom_loaded = DiskROMLoaded ? 1u : 0u;
+    stats->msx2p_msxje_loaded = FmsxMSX2PMSXJELoaded ? 1u : 0u;
+    stats->msx2p_msxje_selected_p1 = (PSL[1] == 0u && SSL[1] == 3u) ? 1u : 0u;
+    stats->msx2p_msxje_seen_p1 = (FmsxP1Select03Count > 0u) ? 1u : 0u;
+    stats->rtc_reads = (unsigned) FmsxRTCReadCount;
+    stats->rtc_writes = (unsigned) FmsxRTCWriteCount;
+    stats->rtc_last_reg = (unsigned) FmsxRTCLastReg;
+    stats->rtc_mode = (unsigned) (FmsxRTCLastMode & 0x0Fu);
+    stats->slot_reg = (unsigned) PSLReg;
+    stats->p1_write_enabled = EnWrite[1] ? 1u : 0u;
+    stats->hscroll = (unsigned) HScroll;
+    stats->hscroll512 = HScroll512 ? 1u : 0u;
+    stats->multipage_enabled = ((VDP[25] & 0x01u) && (VDP[2] & 0x20u)) ? 1u : 0u;
+    stats->display_page = (unsigned) ((VDP[2] >> 5) & 0x03u);
+    {
+        unsigned page_slot = 0xFFu;
+        unsigned page_lo = 0xFFu;
+        unsigned page_hi = 0xFFu;
+
+        if (PSL[1] == 1u) page_slot = 0u;
+        else if (PSL[1] == 2u) page_slot = 1u;
+        else if (PSL[1] == 3u && SSL[1] <= 3u) page_slot = 2u + SSL[1];
+        if (page_slot < MAXSLOTS && ROMData[page_slot] != 0 && ROMMask[page_slot] != 0)
+        {
+            page_lo = ROMMapper[page_slot][0];
+            page_hi = ROMMapper[page_slot][1];
+        }
+        stats->cart_slot_p1 = page_slot;
+        stats->cart_bank_p1_lo = page_lo;
+        stats->cart_bank_p1_hi = page_hi;
+        stats->cart_type_p1 = (page_slot < MAXSLOTS) ? (unsigned) ROMType[page_slot] : 0xFFu;
+        stats->cart_type_source_p1 = (page_slot < MAXSLOTS) ? (unsigned) FmsxCartMapperTypeSource[page_slot] : 0u;
+
+        page_slot = 0xFFu;
+        page_lo = 0xFFu;
+        page_hi = 0xFFu;
+        if (PSL[2] == 1u) page_slot = 0u;
+        else if (PSL[2] == 2u) page_slot = 1u;
+        else if (PSL[2] == 3u && SSL[2] <= 3u) page_slot = 2u + SSL[2];
+        if (page_slot < MAXSLOTS && ROMData[page_slot] != 0 && ROMMask[page_slot] != 0)
+        {
+            page_lo = ROMMapper[page_slot][2];
+            page_hi = ROMMapper[page_slot][3];
+        }
+        stats->cart_slot_p2 = page_slot;
+        stats->cart_bank_p2_lo = page_lo;
+        stats->cart_bank_p2_hi = page_hi;
+    }
+    stats->cart_last_type_slot = (unsigned) FmsxCartLastClassifiedSlot;
+    stats->cart_last_type_value = (unsigned) FmsxCartLastClassifiedType;
+    stats->cart_last_type_source = (unsigned) FmsxCartLastClassifiedSource;
+    cmd = (unsigned) ((VDP[46] >> 4) & 0x0Fu);
+    ce = (live_status2 & 0x01u) ? 1u : 0u;
+    copy_cmd = (cmd == 0x09u || cmd == 0x0Du || cmd == 0x0Eu) ? 1u : 0u;
+    if (ce && !g_vdp_prev_ce)
+    {
+        ++g_vdp_cmd_starts;
+        if (copy_cmd)
+        {
+            ++g_vdp_copy_starts;
+        }
+    }
+    g_vdp_prev_ce = ce;
+    stats->vdp_cmd = cmd;
+    stats->vdp_ce = ce;
+    stats->vdp_tr = (live_status2 & 0x80u) ? 1u : 0u;
+    stats->vdp_cmd_starts = g_vdp_cmd_starts;
+    stats->vdp_copy_starts = g_vdp_copy_starts;
+    stats->mode_yjk = ModeYJK ? 1u : 0u;
+    stats->mode_yae = ModeYAE ? 1u : 0u;
+    stats->ie1_events = (unsigned) FmsxIE1EventCount;
+    stats->ie1_acks = (unsigned) FmsxIE1AckCount;
+    stats->ie1_armed = (unsigned) FmsxIE1ArmedCount;
+    stats->ie1_fired_hblank = (unsigned) FmsxIE1FiredHBlankCount;
+    /* VDP trace: per-frame delta (activity since last call, not cumulative) */
+    {
+        static uint32_t s_r9 = 0u, s_r15 = 0u, s_r18 = 0u, s_r19 = 0u;
+        static uint32_t s_r25 = 0u, s_r26 = 0u, s_r27 = 0u;
+        static uint32_t s_s0 = 0u, s_s1 = 0u, s_s2 = 0u;
+        static uint32_t s_p99r = 0u, s_p99w = 0u, s_p9b = 0u;
+#define VDP_DELTA(field, counter, snap) do { \
+    uint32_t _cur = (counter); \
+    (field) = (unsigned)(_cur - (snap)); \
+    (snap) = _cur; \
+} while(0)
+        VDP_DELTA(stats->vdp_r9_writes,    FmsxVDPRegWriteCount[9],    s_r9);
+        VDP_DELTA(stats->vdp_r15_writes,   FmsxVDPRegWriteCount[15],   s_r15);
+        VDP_DELTA(stats->vdp_r18_writes,   FmsxVDPRegWriteCount[18],   s_r18);
+        VDP_DELTA(stats->vdp_r19_writes,   FmsxVDPRegWriteCount[19],   s_r19);
+        VDP_DELTA(stats->vdp_r25_writes,   FmsxVDPRegWriteCount[25],   s_r25);
+        VDP_DELTA(stats->vdp_r26_writes,   FmsxVDPRegWriteCount[26],   s_r26);
+        VDP_DELTA(stats->vdp_r27_writes,   FmsxVDPRegWriteCount[27],   s_r27);
+        VDP_DELTA(stats->vdp_s0_reads,     FmsxVDPStatusReadCount[0],  s_s0);
+        VDP_DELTA(stats->vdp_s1_reads,     FmsxVDPStatusReadCount[1],  s_s1);
+        VDP_DELTA(stats->vdp_s2_reads,     FmsxVDPStatusReadCount[2],  s_s2);
+        VDP_DELTA(stats->vdp_port99_reads, FmsxVDPPort99ReadCount,      s_p99r);
+        VDP_DELTA(stats->vdp_port99_writes,FmsxVDPPort99WriteCount,     s_p99w);
+        VDP_DELTA(stats->vdp_port9b_writes,FmsxVDPPort9BWriteCount,     s_p9b);
+#undef VDP_DELTA
+    }
+    {
+        TFmsxVDPTraceView trace_view;
+        const TFmsxVDPTraceEvent *last_event = 0;
+
+        fmsx_runtime_get_vdp_trace_view(&trace_view);
+        if (trace_view.events != 0 && trace_view.count > 0u && trace_view.capacity > 0u)
+        {
+            const unsigned last_index = (trace_view.head + trace_view.capacity - 1u) % trace_view.capacity;
+            last_event = &trace_view.events[last_index];
+        }
+
+        stats->trace_last_event_type = last_event != 0 ? (unsigned) last_event->event_type : 0u;
+        stats->trace_last_window = last_event != 0 ? (unsigned) last_event->capture_window : 0u;
+        stats->trace_last_pc = last_event != 0 ? (unsigned) last_event->pc : 0u;
+        stats->trace_last_scanline = last_event != 0 ? (unsigned) last_event->scanline : 0u;
+        stats->trace_last_line_phase = last_event != 0 ? (unsigned) last_event->line_phase : 0u;
+        stats->trace_last_reg1 = last_event != 0 ? (unsigned) last_event->reg1 : 0u;
+        stats->trace_last_reg23 = last_event != 0 ? (unsigned) last_event->reg23 : 0u;
+        stats->trace_last_status2 = last_event != 0 ? (unsigned) last_event->status2 : 0u;
+        stats->trace_last_bank_p1_lo = last_event != 0 ? (unsigned) last_event->cart_bank_p1_lo : 0u;
+        stats->trace_last_bank_p2_lo = last_event != 0 ? (unsigned) last_event->cart_bank_p2_lo : 0u;
+    }
+    stats->flash_last_op = (unsigned) FmsxManbow2FlashLastOp;
+    stats->flash_last_slot = (unsigned) FmsxManbow2FlashLastSlot;
+    stats->flash_last_addr = (unsigned) FmsxManbow2FlashLastAddr;
+    stats->flash_last_offset = (unsigned) FmsxManbow2FlashLastOffset;
+    stats->flash_last_value = (unsigned) FmsxManbow2FlashLastValue;
+    stats->flash_last_read_value = (unsigned) FmsxManbow2FlashLastReadValue;
+    stats->flash_last_state = (unsigned) FmsxManbow2FlashLastState;
+    stats->flash_last_mode = (unsigned) FmsxManbow2FlashLastMode;
+    stats->flash_program_count = (unsigned) FmsxManbow2FlashProgramCount;
+    stats->flash_erase_count = (unsigned) FmsxManbow2FlashEraseCount;
+    stats->flash_read_count = (unsigned) FmsxManbow2FlashReadCount;
+    stats->kanji_available = (Kanji != 0) ? 1u : 0u;
+    stats->kanji_reads = (unsigned) FmsxKanjiReadCount;
+    stats->kanji_addr_writes = (unsigned) FmsxKanjiAddrWriteCount;
+    stats->kanji_null_reads = (unsigned) FmsxKanjiNullReadCount;
+    stats->fdc_status = (unsigned) FDC.R[0];
+    stats->fdc_track_reg = (unsigned) FDC.R[1];
+    stats->fdc_sector_reg = (unsigned) FDC.R[2];
+    stats->fdc_drive = (unsigned) FDC.Drive;
+    stats->fdc_side = (unsigned) FDC.Side;
+    stats->fdc_irq = (unsigned) FDC.IRQ;
+    stats->fdc_wait = (unsigned) FDC.Wait;
+}
+
+void fmsx_runtime_get_vdp_trace_view(TFmsxVDPTraceView *view)
+{
+    if (view == 0)
+    {
+        return;
+    }
+
+    view->events = 0;
+    view->capacity = 0u;
+    view->count = 0u;
+    view->head = 0u;
+    view->dropped = 0u;
+    fmsx_vdp_trace_get_view(&view->events, &view->capacity, &view->count, &view->head, &view->dropped);
 }
 
 unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsigned *height)

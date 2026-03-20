@@ -15,8 +15,8 @@ applyTo:
 ## Regras de sincronizacao
 
 - Toda mudanca relevante de codigo deve incluir atualizacao minima em `docs/` quando aplicavel.
-- Ao fim de cada ciclo relevante (build, bug, decisao tecnica, milestone), atualizar `docs/ai-handoff-context.md`.
-- Manter `CONTEXT.md` apontando corretamente para `docs/ai-handoff-context.md`.
+- Ao fim de cada ciclo relevante (build, bug, decisao tecnica, milestone), atualizar `docs/handoff/<nome-da-branch>.md`.
+- Manter `CONTEXT.md` apontando corretamente para o arquivo de handoff ativo da branch.
 - Alteracoes de fluxo/guardrails do projeto devem refletir em `AGENTS.md` quando necessario.
 
 ## Milestones e issues locais

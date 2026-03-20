@@ -1,0 +1,37 @@
+---
+description: "Use quando alterar overlay/debug runtime HDMI, hotkeys, labels de telemetria e comportamento visual de painel/menu de pause."
+name: "MSXBarePi Debug Layer Guardrails"
+applyTo:
+  - "src/combo_debug_overlay*.h"
+  - "src/combo_debug_overlay*.cpp"
+  - "src/kernel.cpp"
+  - "docs/debug-layer.md"
+---
+# MSXBarePi Debug Layer Guardrails
+
+## Objetivo
+
+- Manter consistencia visual e operacional da debug layer HDMI.
+
+## Build e ativacao
+
+- Em desenvolvimento, preferir build com `DEBUG=1`.
+- Usar `DEBUG=0` apenas quando solicitado explicitamente.
+- Hotkeys de debug devem atuar somente quando compilado com debug.
+
+## Regras de runtime/overlay
+
+- Nao misturar `console_puts()` com painel de debug em runtime.
+- Desenhar overlay apos blit do emulador.
+- Usar caixa opaca curta para legibilidade; evitar faixa opaca global sem necessidade.
+- Fazer flush de cache apenas na area do painel, com throttle.
+- Evitar getters de debug que copiam structs grandes; preferir getters escalares.
+
+## Baseline visual
+
+- Reutilizar baseline atual documentado em `docs/debug-layer.md` salvo motivo tecnico concreto.
+- Preservar layout quando legivel e alterar apenas campos/contadores necessarios no ciclo.
+
+## Sincronizacao documental
+
+- Mudou hotkey, label, item de menu, semantica de campo ou fluxo de debug: atualizar `docs/debug-layer.md` na mesma mudanca.

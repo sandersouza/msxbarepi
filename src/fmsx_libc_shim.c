@@ -111,6 +111,8 @@ FILE *stdin = 0;
 FILE *stdout = 0;
 FILE *stderr = 0;
 
+extern unsigned long long msxbare_monotonic_time_us(void);
+
 int chdir(const char *path)
 {
     (void) path;
@@ -152,8 +154,9 @@ char *getcwd(char *buf, size_t size)
 
 time_t time(time_t *tloc)
 {
-    static time_t ticks = 0;
-    ticks++;
+    static const time_t kEpoch1980 = (time_t) 315532800l; /* 1980-01-01 00:00:00 UTC */
+    const unsigned long long now_us = msxbare_monotonic_time_us();
+    time_t ticks = (time_t) (now_us / 1000000ull) + kEpoch1980;
     if (tloc)
     {
         *tloc = ticks;
@@ -169,10 +172,10 @@ struct tm *localtime(const time_t *timer)
     out.tm_sec = (int) (t % 60);
     out.tm_min = (int) ((t / 60) % 60);
     out.tm_hour = (int) ((t / 3600) % 24);
-    out.tm_mday = 1;
-    out.tm_mon = 0;
-    out.tm_year = 80;
-    out.tm_wday = 0;
+    out.tm_mday = 1 + (int) ((t / 86400) % 30);
+    out.tm_mon = (int) ((t / (86400 * 30)) % 12);
+    out.tm_year = 80 + (int) (t / (86400 * 365));
+    out.tm_wday = (int) ((t / 86400) % 7);
     out.tm_yday = 0;
     out.tm_isdst = 0;
 
@@ -258,6 +261,16 @@ int sscanf(const char *str, const char *fmt, ...)
     (void) str;
     (void) fmt;
     return 0;
+}
+
+/*
+ * GCC libgcc for linux-gnu cross toolchains may reference __getauxval()
+ * from lse-init. In bare-metal there is no auxv, so return 0.
+ */
+unsigned long __getauxval(unsigned long type)
+{
+    (void) type;
+    return 0ul;
 }
 
 FILE *fopen(const char *path, const char *mode)
