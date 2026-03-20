@@ -193,6 +193,7 @@ private:
     boolean m_FmMusicEnabled;
     unsigned m_FmLayerGainPct;
     boolean m_SccCartEnabled;
+    boolean m_SccDualCartEnabled;
     u64 m_FrameIntervalUs;
     boolean m_FramePacingResetPending;
     boolean m_FmsxFallbackPattern;

@@ -36,8 +36,8 @@ make DEBUG=0
 - `F12`: pausa/retoma emulacao (menu de pausa).
 - `F6`: mute/unmute `Layer 1` (PSG + ruido).
 - `F7`: mute/unmute `Layer 2` (FM-PAC).
-- `F8`: mute/unmute `Layer 3` (Konami SCC).
-- `F9`: liga/desliga suporte `SCC` (feature/cart).
+- `F8`: mute/unmute `Layer 3` (Konami SCC+).
+- `F9`: liga/desliga o cartucho interno `Konami SCC+`.
 - `F10`: liga/desliga suporte `FM-PAC` (feature/cart).
 
 ## Tag de build na tela
@@ -91,7 +91,7 @@ Diretriz visual (overlay e menu):
 ## Menu relacionado
 - `Settings -> Debugger`: liga/desliga overlay (quando compilado com debug).
 - Itens de audio em `Settings`:
-  - `Konami SCC` (ON/OFF)
+  - `Konami SCC+` (OFF/ON/DUAL)
   - `FM-PAC` (ON/OFF)
   - `Audio Gain` (OFF..100)
 
@@ -108,7 +108,7 @@ Diretriz visual (overlay e menu):
 - `SD2`: mapper/carts/boot model ativos.
 - `AC1`: estado de chips/features e mixer:
   - `FM:x/y`: `x`=setting FM, `y`=mask ativa no mixer.
-  - `SCC:x/y`: `x`=setting SCC, `y`=mask ativa no mixer.
+  - `SCC:x/y`: `x`=setting do `Konami SCC+` interno, `y`=mask ativa no mixer.
   - `AG`: Audio Gain UI.
   - `AE`: ganho efetivo aplicado.
   - `M`: mute efetivo por gain zero.

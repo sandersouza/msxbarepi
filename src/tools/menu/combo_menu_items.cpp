@@ -342,13 +342,15 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
                                                      unsigned rensha_mode,
                                                      boolean fm_music_enabled,
                                                      boolean scc_cart_enabled,
+                                                     boolean scc_dual_cart_enabled,
+                                                     boolean scc_dual_cart_available,
                                                      boolean overlay_enabled,
                                                      boolean overlay_available,
                                                      boolean debug_log_enabled,
                                                      unsigned audio_gain_percent,
                                                      unsigned *count)
 {
-    static TComboMenuItem settings_items[28];
+    static TComboMenuItem settings_items[29];
     static char language_label[32];
     static char resolution_label[32];
     static char scale_label[32];
@@ -426,7 +428,16 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     BuildLabelFlag(rensha_label, sizeof(rensha_label), locale->settings_rensha,
                    rensha_mode == 0u ? locale->flag_off : (rensha_mode == 1u ? "1" : (rensha_mode == 2u ? "2" : "3")));
     BuildLabelFlag(fm_music_label, sizeof(fm_music_label), locale->settings_fm_music, fm_music_enabled ? locale->flag_on : locale->flag_off);
-    BuildLabelFlag(scc_label, sizeof(scc_label), locale->settings_scc_cart, scc_cart_enabled ? locale->flag_on : locale->flag_off);
+    {
+        const char *scc_flag = locale->flag_off;
+        if (scc_cart_enabled)
+        {
+            scc_flag = (scc_dual_cart_enabled && scc_dual_cart_available)
+                ? locale->flag_dual
+                : locale->flag_on;
+        }
+        BuildLabelFlag(scc_label, sizeof(scc_label), locale->settings_scc_cart, scc_flag);
+    }
     BuildLabelFlag(overlay_label, sizeof(overlay_label), locale->settings_debugger,
                    overlay_available ? (overlay_enabled ? locale->flag_on : locale->flag_off) : locale->flag_na);
     if (audio_gain_percent == 0u)

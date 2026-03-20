@@ -80,3 +80,9 @@ Registro de desafios enfrentados por issue, decisão adotada e status da soluç�
 - Solução adotada: Restrição do window SCC do `Manbow2` para `9800h-9FFFh` (sem espelho SCC+ em `B800h-BFFFh`) e separação do latch SCC+ no bank-switch: mantido para `MAP_KONAMI5`, desativado para `MAP_MANBOW2`.
 - Status: Parcial
 - Referência: [201-bug-space-manbow-2-crash-no-gameplay-e-voice-start-ausente.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/201-bug-space-manbow-2-crash-no-gameplay-e-voice-start-ausente.md)
+
+### #219 — fidelidade de render PSG/FM-PAC
+- Desafio: O voicing global do mixer melhorou o balanço, mas `PSG` e `FM-PAC` ainda não tiveram uma trilha própria de fidelidade de render; ambos usam caminhos diferentes do `SND_WAVE` que resolveu o caso crítico do `SCC/SCC+`.
+- Solução adotada: Abrir issue separada em `m17` para comparar `PSG`/`FM-PAC` com `openMSX` e `blueMSX`, fechar gaps por chip e evitar contaminar a milestone ativa de `SCC/SCC+`.
+- Status: Futuro
+- Referência: [219-fidelidade-render-psg-fm-pac.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/219-fidelidade-render-psg-fm-pac.md)

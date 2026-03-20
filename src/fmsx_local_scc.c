@@ -15,7 +15,21 @@
 #include "Sound.h"
 #include <string.h>
 
-static const int kSccBalancePct = 98;
+#ifndef MSXBARE_FMSX_SCC_BALANCE_PCT
+/*
+ * SCC was noticeably hotter than both PSG and FM-PAC in the current fMSX mix.
+ * Use PSG/FM-PAC as the audible reference and keep SCC closer to that range.
+ */
+#define MSXBARE_FMSX_SCC_BALANCE_PCT 60
+#endif
+
+static const int kSccBalancePct = MSXBARE_FMSX_SCC_BALANCE_PCT;
+enum
+{
+  FMSX_SCC_MODE_REAL       = 0u,
+  FMSX_SCC_MODE_COMPATIBLE = 1u,
+  FMSX_SCC_MODE_PLUS       = 2u
+};
 
 static int ApplySccBalancePct(int volume)
 {
@@ -23,6 +37,197 @@ static int ApplySccBalancePct(int volume)
   if(out < 0) out = 0;
   if(out > 255) out = 255;
   return out;
+}
+
+static uint8_t fmsx_scc_get_raw_deform(const SCC *D)
+{
+  return D->R[0xC0];
+}
+
+static uint8_t fmsx_scc_get_effective_deform(const SCC *D,uint8_t mode)
+{
+  uint8_t value = fmsx_scc_get_raw_deform(D);
+  if(mode!=FMSX_SCC_MODE_REAL) value &= ~0x80u;
+  return value;
+}
+
+static void fmsx_scc_set_raw_deform(SCC *D,uint8_t value)
+{
+  int i;
+  for(i=0;i<0x20;++i) D->R[0xC0+i]=value;
+}
+
+static int fmsx_scc_channel_enabled(const SCC *D,unsigned int channel)
+{
+  return channel<SCC_CHANNELS? ((D->R[0xAF]&(1u<<channel))!=0):0;
+}
+
+static int fmsx_scc_channel_read_only(const SCC *D,uint8_t mode,unsigned int channel)
+{
+  switch(fmsx_scc_get_effective_deform(D,mode)&0xC0u)
+  {
+    case 0x00u: return 0;
+    case 0x40u: return 1;
+    case 0x80u: return channel>=3u;
+    case 0xC0u: return 1;
+  }
+
+  return 0;
+}
+
+static int fmsx_scc_get_raw_period(const SCC *D,unsigned int channel)
+{
+  const unsigned int base = 0xA0u + (channel<<1);
+  return ((int)(D->R[base+1u]&0x0Fu)<<8)|D->R[base];
+}
+
+static int fmsx_scc_get_effective_period(const SCC *D,uint8_t mode,unsigned int channel)
+{
+  int period = fmsx_scc_get_raw_period(D,channel);
+  const uint8_t deform = fmsx_scc_get_effective_deform(D,mode);
+
+  if(deform&0x02u) period &= 0x00FF;
+  else if(deform&0x01u) period >>= 8;
+
+  return period;
+}
+
+static int fmsx_scc_get_output_freq(const SCC *D,uint8_t mode,unsigned int channel)
+{
+  const int period = fmsx_scc_get_effective_period(D,mode,channel);
+  return period>8? SCC_BASE/(period+1):0;
+}
+
+static void fmsx_scc_mark_wave_changed(SCC *D,unsigned int channel)
+{
+  if(channel<SCC_CHANNELS) D->WChanged|=1u<<channel;
+}
+
+static void fmsx_scc_refresh_channel_freq(SCC *D,uint8_t mode,unsigned int channel)
+{
+  const int freq = fmsx_scc_channel_enabled(D,channel)?
+    fmsx_scc_get_output_freq(D,mode,channel):0;
+
+  if(freq!=D->Freq[channel])
+  {
+    D->Freq[channel]=freq;
+    D->Changed|=1u<<channel;
+  }
+}
+
+static int fmsx_scc_get_next_volume(const SCC *D,unsigned int channel)
+{
+  return channel<SCC_CHANNELS? 255*(D->R[0xAAu+channel]&0x0Fu)/15:0;
+}
+
+static void fmsx_scc_apply_volume(SCC *D,unsigned int channel)
+{
+  const int volume = fmsx_scc_get_next_volume(D,channel);
+
+  if(channel>=SCC_CHANNELS) return;
+  if(volume==D->Volume[channel]) return;
+
+  D->Volume[channel]=volume;
+  if(fmsx_scc_channel_enabled(D,channel)) D->Changed|=1u<<channel;
+}
+
+static void fmsx_scc_write_wave_value(SCC *D,unsigned int channel,uint8_t index,uint8_t value)
+{
+  const unsigned int offset = (channel<<5)|(index&0x1Fu);
+  if(D->R[offset]==value) return;
+  D->R[offset]=value;
+  fmsx_scc_mark_wave_changed(D,channel);
+}
+
+static void fmsx_scc_write_wave_compatible(SCC *D,uint8_t address,uint8_t value)
+{
+  const unsigned int channel = address>>5;
+  if(fmsx_scc_channel_read_only(D,FMSX_SCC_MODE_COMPATIBLE,channel)) return;
+
+  fmsx_scc_write_wave_value(D,channel,address,value);
+
+  /* Generic SCC mirrors waveform 4 onto waveform 5. */
+  if(channel==3u) fmsx_scc_write_wave_value(D,4u,address,value);
+}
+
+static void fmsx_scc_write_wave_plus(SCC *D,uint8_t address,uint8_t value)
+{
+  const unsigned int channel = address>>5;
+  if(channel>=SCC_CHANNELS) return;
+  if(fmsx_scc_channel_read_only(D,FMSX_SCC_MODE_PLUS,channel)) return;
+  fmsx_scc_write_wave_value(D,channel,address,value);
+}
+
+static void fmsx_scc_write_freq_volume(SCC *D,uint8_t address,uint8_t value,uint8_t mode)
+{
+  uint8_t slot;
+  uint8_t reg;
+  uint8_t prev_enable;
+
+  slot = address&0xEFu;
+  if(slot<0xA0u || slot>=0xC0u) return;
+
+  prev_enable = D->R[0xAF]&0x1Fu;
+  if(value==D->R[slot] && value==D->R[slot+0x10u]) return;
+
+  D->R[slot]       = value;
+  D->R[slot+0x10u] = value;
+  reg              = slot&0x0Fu;
+
+  switch(reg)
+  {
+    case 0: case 1: case 2: case 3: case 4:
+    case 5: case 6: case 7: case 8: case 9:
+    {
+      const unsigned int channel = reg>>1;
+      /*
+       * SCC sample streaming depends on a frequency write restarting the
+       * current waveform byte. Reuse SetWave() in SyncSCC to reset Count
+       * without touching the waveform contents.
+       */
+      fmsx_scc_mark_wave_changed(D,channel);
+      fmsx_scc_refresh_channel_freq(D,mode,channel);
+      break;
+    }
+
+    case 10: case 11: case 12: case 13: case 14:
+      /*
+       * openMSX and blueMSX keep additional state for sample-accurate output,
+       * but this fMSX backend renders directly from channel volume. Applying
+       * volume writes immediately preserves music/SFX channels while the
+       * frequency-write reset above still handles the Manbow2 sample path.
+       */
+      fmsx_scc_apply_volume(D,reg-10u);
+      break;
+
+    case 15:
+    {
+      uint8_t diff = (value^prev_enable)&0x1Fu;
+      unsigned int channel;
+
+      for(channel=0;channel<SCC_CHANNELS;++channel)
+        if(diff&(1u<<channel))
+          fmsx_scc_refresh_channel_freq(D,mode,channel);
+      break;
+    }
+  }
+}
+
+static void fmsx_scc_write_deform(SCC *D,uint8_t value,uint8_t mode)
+{
+  unsigned int channel;
+
+  if(value==fmsx_scc_get_raw_deform(D)) return;
+
+  fmsx_scc_set_raw_deform(D,value);
+
+  for(channel=0;channel<SCC_CHANNELS;++channel)
+    fmsx_scc_refresh_channel_freq(D,mode,channel);
+}
+
+static void fmsx_scc_flush_if_async(SCC *D)
+{
+  if(!D->Sync&&(D->Changed||D->WChanged)) SyncSCC(D,SCC_FLUSH);
 }
 
 /** ResetSCC() ***********************************************/
@@ -55,7 +260,15 @@ void ResetSCC(SCC *D,int First)
 /*************************************************************/
 uint8_t ReadSCC(SCC *D,uint8_t R)
 {
-  return(R<0x80? D->R[R]:0xFF);
+  if(R<0x80u) return D->R[R];
+  if(R<0xA0u) return 0xFF;
+  if(R<0xC0u) return D->R[R-0x20u];
+  if(R<0xE0u)
+  {
+    fmsx_scc_write_deform(D,0xFFu,FMSX_SCC_MODE_COMPATIBLE);
+    fmsx_scc_flush_if_async(D);
+  }
+  return 0xFF;
 }
            
 /** ReadSCCP() ***********************************************/
@@ -64,7 +277,17 @@ uint8_t ReadSCC(SCC *D,uint8_t R)
 /*************************************************************/
 uint8_t ReadSCCP(SCC *D,uint8_t R)
 {
-  return(R<0xA0? D->R[R]:0xFF);
+  if(R<0xA0u) return D->R[R];
+  if(R<0xE0u)
+  {
+    if(R>=0xC0u)
+    {
+      fmsx_scc_write_deform(D,0xFFu,FMSX_SCC_MODE_PLUS);
+      fmsx_scc_flush_if_async(D);
+    }
+    return 0xFF;
+  }
+  return 0xFF;
 }
            
 /** WriteSCC() ***********************************************/
@@ -73,14 +296,18 @@ uint8_t ReadSCCP(SCC *D,uint8_t R)
 /*************************************************************/
 void WriteSCC(SCC *D,uint8_t R,uint8_t V)
 {
-  /* Prevent rollover */
-  if(R>=0xE0) return;
-  /* Generic SCC has one waveform less than SCC+ */
-  if(R>=0x80) { WriteSCCP(D,R+0x20,V);return; }
-  /* The last waveform applies to both channels 3 and 4 */
-  if(R>=0x60) { WriteSCCP(D,R,V);WriteSCCP(D,R+0x20,V);return; }
-  /* Other waveforms are the same */
-  WriteSCCP(D,R,V);
+  if(R<0x80u)
+    fmsx_scc_write_wave_compatible(D,R,V);
+  else if(R<0xA0u)
+    fmsx_scc_write_freq_volume(D,R+0x20u,V,FMSX_SCC_MODE_COMPATIBLE);
+  else if(R<0xC0u)
+  {
+    /* Waveform 5 is read-only in SCC compatible mode. */
+  }
+  else if(R<0xE0u)
+    fmsx_scc_write_deform(D,V,FMSX_SCC_MODE_COMPATIBLE);
+
+  fmsx_scc_flush_if_async(D);
 }
 
 /** WriteSCCP() **********************************************/
@@ -89,92 +316,14 @@ void WriteSCC(SCC *D,uint8_t R,uint8_t V)
 /*************************************************************/
 void WriteSCCP(SCC *D,uint8_t R,uint8_t V)
 {
-  int J;
-  uint8_t I;
+  if(R<0xA0u)
+    fmsx_scc_write_wave_plus(D,R,V);
+  else if(R<0xC0u)
+    fmsx_scc_write_freq_volume(D,R,V,FMSX_SCC_MODE_PLUS);
+  else if(R<0xE0u)
+    fmsx_scc_write_deform(D,V,FMSX_SCC_MODE_PLUS);
 
-  /* Exit if no change */
-  if(V==D->R[R]) return;
-
-  if((R&0xE0)==0xA0)
-  {
-    /* Emulate melodic features */
-
-    /* Save active channel mask in I */
-    I=D->R[0xAF];
-    /* Write to a register */
-    R&=0xEF;
-    D->R[R]=D->R[R+0x10]=V;
-
-    /* Melodic register number 0..15 */
-    R&=0x0F;
-    switch(R)
-    {
-      // set frequency
-      case 0: case 1: case 2: case 3: case 4:
-      case 5: case 6: case 7: case 8: case 9:
-        /* Exit if the channel is silenced */
-        if(!(I&(1<<(R>>1)))) return;
-        /* Go to the first register of the pair */
-        R=(R&0xFE)+0xA0;
-        /* Compute frequency */
-        J=((int)(D->R[R+1]&0x0F)<<8)+D->R[R];
-        /* Compute channel number */
-        R=(R&0x0F)>>1;
-        /* Assign frequency */
-        D->Freq[R]=J? SCC_BASE/J:0;
-        /* Compute changed channels mask */
-        D->Changed|=1<<R;
-        break;
-
-      // set volume
-      case 10: case 11: case 12: case 13: case 14:
-        /* Compute channel number */
-        R-=10;
-        /* Compute and assign new volume */
-        D->Volume[R]=255*(V&0x0F)/15;
-        /* Compute changed channels mask */
-        D->Changed|=(1<<R)&I;
-        break;
-
-      // on/off bitmask
-      case 15:
-        /* Find changed channels */
-        R=(V^I)&0x1F;
-        D->Changed|=R;
-        /* Update frequencies */
-        for(I=0;R&&(I<SCC_CHANNELS);I++,R>>=1,V>>=1)
-          if(R&1)
-          {
-            if(!(V&1)) D->Freq[I]=0;
-            else
-            {
-              J=I*2+0xA0;
-              J=((int)(D->R[J+1]&0x0F)<<8)+D->R[J];
-              D->Freq[I]=J? SCC_BASE/J:0;
-            }
-          }
-        break;
-
-      default:
-        /* Wrong register, do nothing */
-        return;
-    }
-  }
-  else
-  {
-    /* Emulate wave table features */
-
-    /* Write data to SCC */
-    D->R[R]=V;
-    /* Wrong register, do nothing */
-    /* note: fMSX ignores the deform register (98C0-98DF, B8C0-B8DF) */
-    if(R>=0xA0) return;
-    /* Mark channel waveform as changed */
-    D->WChanged|=1<<(R>>5);
-  }
-
-  /* For asynchronous mode, make Sound() calls right away */
-  if(!D->Sync&&(D->Changed||D->WChanged)) SyncSCC(D,SCC_FLUSH);
+  fmsx_scc_flush_if_async(D);
 }
 
 /** SyncSCC() ************************************************/

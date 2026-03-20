@@ -717,6 +717,8 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_RenshaMode(0u),
     m_FmMusicEnabled(TRUE),
     m_SccCartEnabled(TRUE),
+    m_SccDualCartEnabled(FALSE),
+    m_SccDualCartAvailable(TRUE),
     m_OverlayEnabled(FALSE),
     m_OverlayAvailable(FALSE),
     m_DebugLogEnabled(FALSE),
@@ -773,6 +775,8 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnRenshaMode(0u),
     m_LastDrawnFmMusic(TRUE),
     m_LastDrawnSccCart(TRUE),
+    m_LastDrawnSccDualCart(FALSE),
+    m_LastDrawnSccDualCartAvailable(TRUE),
     m_LastDrawnOverlay(FALSE),
     m_LastDrawnOverlayAvailable(FALSE),
     m_LastDrawnDebugLogEnabled(FALSE),
@@ -899,6 +903,8 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnRenshaMode = m_RenshaMode;
     m_LastDrawnFmMusic = m_FmMusicEnabled;
     m_LastDrawnSccCart = m_SccCartEnabled;
+    m_LastDrawnSccDualCart = m_SccDualCartEnabled;
+    m_LastDrawnSccDualCartAvailable = m_SccDualCartAvailable;
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
     m_LastDrawnDebugLogEnabled = m_DebugLogEnabled;
@@ -1194,6 +1200,18 @@ void CComboPauseMenu::SetSccCartEnabled(boolean enabled)
     if (m_SccCartEnabled != enabled)
     {
         m_SccCartEnabled = enabled;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+void CComboPauseMenu::SetSccDualCartState(boolean enabled, boolean available)
+{
+    enabled = enabled ? TRUE : FALSE;
+    available = available ? TRUE : FALSE;
+    if (m_SccDualCartEnabled != enabled || m_SccDualCartAvailable != available)
+    {
+        m_SccDualCartEnabled = enabled;
+        m_SccDualCartAvailable = available;
         m_ForceRedraw = TRUE;
     }
 }
@@ -1595,6 +1613,8 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_RenshaMode,
             m_FmMusicEnabled,
             m_SccCartEnabled,
+            m_SccDualCartEnabled,
+            m_SccDualCartAvailable,
             m_OverlayEnabled,
             m_OverlayAvailable,
             m_DebugLogEnabled,
@@ -2807,6 +2827,8 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnRenshaMode == m_RenshaMode
      && m_LastDrawnFmMusic == m_FmMusicEnabled
      && m_LastDrawnSccCart == m_SccCartEnabled
+     && m_LastDrawnSccDualCart == m_SccDualCartEnabled
+     && m_LastDrawnSccDualCartAvailable == m_SccDualCartAvailable
      && m_LastDrawnOverlay == m_OverlayEnabled
      && m_LastDrawnOverlayAvailable == m_OverlayAvailable
      && m_LastDrawnDebugLogEnabled == m_DebugLogEnabled
@@ -3114,6 +3136,8 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnRenshaMode = m_RenshaMode;
     m_LastDrawnFmMusic = m_FmMusicEnabled;
     m_LastDrawnSccCart = m_SccCartEnabled;
+    m_LastDrawnSccDualCart = m_SccDualCartEnabled;
+    m_LastDrawnSccDualCartAvailable = m_SccDualCartAvailable;
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
     m_LastDrawnDebugLogEnabled = m_DebugLogEnabled;

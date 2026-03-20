@@ -117,6 +117,8 @@ Atualizacao incremental sem formatar SD:
 ./scripts/update-sd-incremental.sh
 ```
 
+O fluxo incremental executa `sync` ao final e tenta desmontar automaticamente o SD; com `EJECT_AT_END=1`, faz ejeção segura quando o disco alvo puder ser identificado.
+
 ## Initramfs
 
 Geracao direta do `msx.cpio`:

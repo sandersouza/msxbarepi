@@ -59,6 +59,62 @@ is_yes() {
   esac
 }
 
+resolve_target_devices() {
+  if [ -n "$SD_DEVICE" ]; then
+    TARGET_DISK_DEVICE="$SD_DEVICE"
+  fi
+
+  if sdcard_is_macos; then
+    local part_id=""
+    local disk_id=""
+    part_id="$(diskutil info -plist "$TARGET_VOLUME" 2>/dev/null | plutil -extract DeviceIdentifier raw -o - - 2>/dev/null || true)"
+    disk_id="$(diskutil info -plist "$TARGET_VOLUME" 2>/dev/null | plutil -extract ParentWholeDisk raw -o - - 2>/dev/null || true)"
+    if [ -n "$part_id" ]; then
+      TARGET_PART_DEVICE="/dev/${part_id}"
+    fi
+    if [ -n "$disk_id" ]; then
+      TARGET_DISK_DEVICE="${TARGET_DISK_DEVICE:-/dev/${disk_id}}"
+    fi
+    return 0
+  fi
+
+  if command -v findmnt >/dev/null 2>&1; then
+    TARGET_PART_DEVICE="$(findmnt -n -o SOURCE --target "$TARGET_VOLUME" 2>/dev/null | head -n1 || true)"
+  fi
+  if [ -z "${TARGET_PART_DEVICE:-}" ]; then
+    TARGET_PART_DEVICE="$(lsblk -pnro NAME,MOUNTPOINT 2>/dev/null | awk -v target=\"$TARGET_VOLUME\" '$2==target{print $1; exit}' || true)"
+  fi
+  if [ -n "${TARGET_PART_DEVICE:-}" ] && [ -z "${TARGET_DISK_DEVICE:-}" ]; then
+    local parent=""
+    parent="$(lsblk -nro PKNAME "$TARGET_PART_DEVICE" 2>/dev/null | head -n1 | tr -d '\n' || true)"
+    if [ -n "$parent" ]; then
+      TARGET_DISK_DEVICE="/dev/${parent}"
+    fi
+  fi
+}
+
+unmount_target_volume() {
+  if [ -n "${TARGET_DISK_DEVICE:-}" ]; then
+    sdcard_unmount_disk "$TARGET_DISK_DEVICE"
+    return 0
+  fi
+
+  if [ -z "${TARGET_PART_DEVICE:-}" ]; then
+    return 1
+  fi
+
+  if sdcard_is_macos; then
+    diskutil unmount "$TARGET_VOLUME" >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  if command -v udisksctl >/dev/null 2>&1; then
+    udisksctl unmount -b "$TARGET_PART_DEVICE" >/dev/null 2>&1 || true
+  else
+    sudo umount "$TARGET_PART_DEVICE" >/dev/null 2>&1 || true
+  fi
+}
+
 set_or_append_config_key() {
   local file="$1"
   local key="$2"
@@ -230,26 +286,31 @@ done
 copy_games_incremental
 cleanup_macos_junk
 
+TARGET_PART_DEVICE=""
+TARGET_DISK_DEVICE=""
+resolve_target_devices
+
 sync
 sleep 1
 
 if is_yes "$EJECT_AT_END"; then
-  if [ -n "$SD_DEVICE" ]; then
-    sdcard_safe_eject_disk "$SD_DEVICE"
-    echo "[OK] SD atualizado e ejetado: ${SD_DEVICE}"
-  elif sdcard_is_macos && command -v diskutil >/dev/null 2>&1; then
-    disk_id="$(diskutil info -plist "$TARGET_VOLUME" 2>/dev/null | plutil -extract ParentWholeDisk raw -o - - 2>/dev/null || true)"
-    if [ -n "$disk_id" ]; then
-      sdcard_safe_eject_disk "/dev/${disk_id}"
-      echo "[OK] SD atualizado e ejetado: /dev/${disk_id}"
-    else
-      echo "[WARN] Nao foi possivel determinar ParentWholeDisk para ejetar."
-    fi
+  if [ -n "${TARGET_DISK_DEVICE:-}" ]; then
+    sdcard_safe_eject_disk "$TARGET_DISK_DEVICE"
+    echo "[OK] SD atualizado, sincronizado e ejetado: ${TARGET_DISK_DEVICE}"
   else
-    echo "[WARN] EJECT_AT_END=1 sem SD_DEVICE; ejecao automatica indisponivel."
+    echo "[WARN] Nao foi possivel determinar o disco para ejecao; tentando apenas desmontar o volume."
+    if unmount_target_volume; then
+      echo "[OK] SD atualizado, sincronizado e desmontado: ${TARGET_VOLUME}"
+    else
+      echo "[WARN] Nao foi possivel desmontar automaticamente o volume: ${TARGET_VOLUME}"
+    fi
   fi
 else
-  echo "[OK] SD atualizado incrementalmente em ${TARGET_VOLUME}"
+  if unmount_target_volume; then
+    echo "[OK] SD atualizado, sincronizado e desmontado: ${TARGET_VOLUME}"
+  else
+    echo "[WARN] SD atualizado e sincronizado, mas nao foi possivel desmontar automaticamente: ${TARGET_VOLUME}"
+  fi
 fi
 
 if [ -n "$config_tmp" ] && [ -f "$config_tmp" ]; then

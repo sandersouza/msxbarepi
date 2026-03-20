@@ -39,6 +39,7 @@ public:
     void SetRenshaMode(unsigned mode);
     void SetFmMusicEnabled(boolean enabled);
     void SetSccCartEnabled(boolean enabled);
+    void SetSccDualCartState(boolean enabled, boolean available);
     void SetOverlayEnabled(boolean enabled, boolean available);
     void SetDebugLogEnabled(boolean enabled);
     void SetAudioGainPercent(unsigned percent);
@@ -120,6 +121,8 @@ private:
     unsigned m_RenshaMode;
     boolean m_FmMusicEnabled;
     boolean m_SccCartEnabled;
+    boolean m_SccDualCartEnabled;
+    boolean m_SccDualCartAvailable;
     boolean m_OverlayEnabled;
     boolean m_OverlayAvailable;
     boolean m_DebugLogEnabled;
@@ -176,6 +179,8 @@ private:
     unsigned m_LastDrawnRenshaMode;
     boolean m_LastDrawnFmMusic;
     boolean m_LastDrawnSccCart;
+    boolean m_LastDrawnSccDualCart;
+    boolean m_LastDrawnSccDualCartAvailable;
     boolean m_LastDrawnOverlay;
     boolean m_LastDrawnOverlayAvailable;
     boolean m_LastDrawnDebugLogEnabled;
