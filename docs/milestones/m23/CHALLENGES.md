@@ -11,8 +11,8 @@ Registro de desafios enfrentados por issue, decisao adotada e status da solucao.
 
 ### #204 - formato canonico de `gamemaster.cht`
 - Desafio: definir um catalogo de cheats rico o bastante para multi-POKE e simples o bastante para parse baremetal sem parser JSON/XML generico.
-- Solucao adotada: planejar um formato texto declarativo de baixo custo, com blocos de jogo/cheat/poke e caminho canonico `SD:/gamemaster.cht`.
-- Status: Futuro
+- Solucao adotada: modulo `src/gamemaster_catalog.{h,c}` com formato texto declarativo (`game`, `rom`, `cheat`, `poke`, `endcheat`, `endgame`), limites fixos, path canonico `SD:/gamemaster.cht` e status/linha de erro explicitos; formato documentado em `docs/game-master-plus-format.md`.
+- Status: Resolvido
 - Referencia: [204-definir-formato-canonico-gamemaster-cht-parser-baremetal.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m23/204-definir-formato-canonico-gamemaster-cht-parser-baremetal.md)
 
 ### #205 - catalogo navegavel de jogos com cheat

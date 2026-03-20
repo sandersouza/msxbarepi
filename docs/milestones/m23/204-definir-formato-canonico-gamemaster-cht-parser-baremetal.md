@@ -7,12 +7,12 @@
 - Labels: `priority:P2`, `type:feature`, `area:storage`, `area:settings`
 
 ## Checklist
-- [ ] Definir gramatica minima e limites do arquivo `gamemaster.cht`
-- [ ] Especificar caminho canonico de carga (`SD:/gamemaster.cht`)
-- [ ] Suportar multiplos `poke` por cheat, com `8-bit` e `16-bit`
-- [ ] Produzir estrutura indexada por jogo/titulo para consumo do menu
-- [ ] Tratar linhas invalidas, duplicidades e catalogo vazio sem travar o runtime
-- [ ] Documentar exemplos validos e erros esperados de parse
+- [x] Definir gramatica minima e limites do arquivo `gamemaster.cht`
+- [x] Especificar caminho canonico de carga (`SD:/gamemaster.cht`)
+- [x] Suportar multiplos `poke` por cheat, com `8-bit` e `16-bit`
+- [x] Produzir estrutura indexada por jogo/titulo para consumo do menu
+- [x] Tratar linhas invalidas, duplicidades e catalogo vazio sem travar o runtime
+- [x] Documentar exemplos validos e erros esperados de parse
 
 ## DoR (sugestao)
 - Formato alvo limitado a parser baremetal simples, sem dependencia de JSON/XML generico.
@@ -27,6 +27,10 @@
 
 ## Status da iteracao atual
 
-- Issue criada para consolidar o contrato do catalogo antes da integracao de browser/UI/runtime.
-- Diretriz inicial definida: evitar parser JSON/XML generico no runtime e preferir formato texto declarativo de baixo custo.
-- Exemplo base planejado modela diretamente `game`, `cheat` e `poke`, com suporte a multi-POKE e tamanhos `8-bit`/`16-bit`.
+- Modulo implementado em `src/gamemaster_catalog.{h,c}` com parser para `game`, `rom`, `cheat`, `poke`, `endcheat` e `endgame`.
+- Estrutura em memoria definida com limites fixos (`games`, `cheats`, `pokes`), path canonico `SD:/gamemaster.cht` e status/linha de erro para consumo futuro pela UI.
+- Documentacao do formato registrada em `docs/game-master-plus-format.md`.
+- Validacao executada:
+  - `scripts/check-third-party-pristine.sh` OK
+  - `make -j4 DEBUG=1` OK
+  - smoke test host do parser com catalogo valido: `status=0`, `games=1`, `cheats=2`, `pokes=3`
