@@ -274,6 +274,7 @@ boolean fmsx_runtime_load_cartridge(unsigned slot_index, const char *path);
 boolean fmsx_runtime_load_disk(unsigned drive_index, const char *path);
 boolean fmsx_runtime_unload_cartridge(unsigned slot_index);
 boolean fmsx_runtime_unload_disk(unsigned drive_index);
+void fmsx_runtime_reset_game_master_session(void);
 boolean fmsx_runtime_apply_game_master_cheat(const TGameMasterPoke *pokes, unsigned poke_count);
 boolean fmsx_runtime_set_game_master_cheat_enabled(const TGameMasterPoke *pokes, unsigned poke_count, boolean enabled);
 boolean fmsx_runtime_set_game_master_cheat_value(const TGameMasterPoke *pokes, unsigned poke_count, uint16_t value);
