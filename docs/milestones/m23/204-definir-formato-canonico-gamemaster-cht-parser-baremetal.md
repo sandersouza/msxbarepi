@@ -34,3 +34,4 @@
   - `scripts/check-third-party-pristine.sh` OK
   - `make -j4 DEBUG=1` OK
   - smoke test host do parser com catalogo valido: `status=0`, `games=1`, `cheats=2`, `pokes=3`
+- PR aberto para review: `#210` `Issue #204: add Game Master+ catalog parser`

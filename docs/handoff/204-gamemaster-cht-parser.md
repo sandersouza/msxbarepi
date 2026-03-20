@@ -37,4 +37,6 @@
     - `cheats=2`
     - `pokes=3`
 - Proximo passo:
-  - sincronizar checklist/corpo remoto da issue `#204`, abrir PR para `main` e compartilhar o link para review antes de avancar para a proxima issue da milestone.
+  - PR aberto: `#210` `Issue #204: add Game Master+ catalog parser`
+  - issue `#204` movida para `In review` no projeto `MSX BarePI`
+  - link para review: https://github.com/sandersouza/msxbarepi/pull/210
