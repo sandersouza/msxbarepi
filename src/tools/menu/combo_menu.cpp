@@ -8,6 +8,15 @@ static const TScreenColor kPauseMenuBgColor = COLOR32(0, 0, 0x9B, 0xFF);
 static const TScreenColor kPauseMenuBgColor = COLOR16(0, 0, 0x9B >> 3);
 #endif
 
+static char ComboToUpperAscii(char ch)
+{
+    if (ch >= 'a' && ch <= 'z')
+    {
+        return (char) (ch - 'a' + 'A');
+    }
+    return ch;
+}
+
 static unsigned ComboStrLen(const char *text)
 {
     if (text == 0)
@@ -113,6 +122,102 @@ static void ComboClearPixels(TScreenColor *buffer, unsigned count)
     }
 }
 
+static void ComboAppendText(char *dst, unsigned dst_size, unsigned *cursor, const char *src)
+{
+    if (dst == 0 || dst_size == 0u || cursor == 0 || src == 0)
+    {
+        return;
+    }
+
+    unsigned pos = *cursor;
+    while (src[0] != '\0' && pos + 1u < dst_size)
+    {
+        dst[pos++] = *src++;
+    }
+    dst[pos] = '\0';
+    *cursor = pos;
+}
+
+static void ComboAppendUnsigned(char *dst, unsigned dst_size, unsigned *cursor, unsigned value)
+{
+    char digits[12];
+    unsigned count = 0u;
+
+    if (dst == 0 || dst_size == 0u || cursor == 0)
+    {
+        return;
+    }
+
+    do
+    {
+        digits[count++] = (char) ('0' + (value % 10u));
+        value /= 10u;
+    } while (value != 0u && count < sizeof(digits));
+
+    while (count > 0u)
+    {
+        char ch[2];
+        ch[0] = digits[--count];
+        ch[1] = '\0';
+        ComboAppendText(dst, dst_size, cursor, ch);
+    }
+}
+
+static void ComboBuildLineLabel(char *dst, unsigned dst_size, const char *prefix, unsigned line)
+{
+    unsigned cursor = 0u;
+
+    if (dst == 0 || dst_size == 0u)
+    {
+        return;
+    }
+
+    dst[0] = '\0';
+    if (prefix == 0 || prefix[0] == '\0' || line == 0u)
+    {
+        return;
+    }
+
+    ComboAppendText(dst, dst_size, &cursor, prefix);
+    ComboAppendText(dst, dst_size, &cursor, " ");
+    ComboAppendUnsigned(dst, dst_size, &cursor, line);
+}
+
+static unsigned ComboFindFirstContaining(const char *const *labels, unsigned count, char letter)
+{
+    const char target = ComboToUpperAscii(letter);
+    unsigned found_contains = count;
+
+    if (target < 'A' || target > 'Z')
+    {
+        return count;
+    }
+
+    for (unsigned i = 0u; i < count; ++i)
+    {
+        const char *label = labels[i];
+        if (label == 0)
+        {
+            continue;
+        }
+
+        for (unsigned j = 0u; label[j] != '\0'; ++j)
+        {
+            const char ch = ComboToUpperAscii(label[j]);
+            if (j == 0u && ch == target)
+            {
+                return i;
+            }
+            if (found_contains == count && ch == target)
+            {
+                found_contains = i;
+            }
+        }
+    }
+
+    return found_contains;
+}
+
 void CComboPauseMenu::CopySmallText(char *dst, unsigned dst_size, const char *src)
 {
     if (dst == 0 || dst_size == 0u)
@@ -181,6 +286,15 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_HasPendingDiskBrowserOpen(FALSE),
     m_PendingDiskBrowserDrive(0u),
     m_PendingDiskBrowserPath{0},
+    m_GameMasterCatalog(0),
+    m_GameMasterLoadStatus((unsigned) GameMasterLoadFileOpenFailed),
+    m_GameMasterErrorLine(0u),
+    m_GameMasterSelectedGame(0u),
+    m_GameMasterCheatSelected(0u),
+    m_GameMasterCheatTop(0u),
+    m_GameMasterCheatEnabled{FALSE},
+    m_GameMasterCheatItems{{0}},
+    m_GameMasterCheatItemLabels{{0}},
     m_LastBackPressed(FALSE),
     m_LastDrawnView(MenuViewRoot),
     m_LastDrawnScalePercent(0u),
@@ -256,6 +370,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_HasPendingDiskBrowserOpen = FALSE;
     m_PendingDiskBrowserDrive = 0u;
     CopySmallText(m_PendingDiskBrowserPath, sizeof(m_PendingDiskBrowserPath), "");
+    ResetGameMasterState();
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), "");
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), "");
     CopySmallText(m_LastDrawnLoadDiskDrive1Name, sizeof(m_LastDrawnLoadDiskDrive1Name), "");
@@ -274,6 +389,28 @@ CComboPauseMenu::~CComboPauseMenu(void)
     m_MenuBackbufferH = 0u;
     m_MenuBackbufferX = 0u;
     m_MenuBackbufferY = 0u;
+}
+
+void CComboPauseMenu::ResetGameMasterState(void)
+{
+    m_GameMasterCatalog = 0;
+    m_GameMasterLoadStatus = (unsigned) GameMasterLoadFileOpenFailed;
+    m_GameMasterErrorLine = 0u;
+    m_GameMasterSelectedGame = 0u;
+    m_GameMasterCheatSelected = 0u;
+    m_GameMasterCheatTop = 0u;
+    for (unsigned i = 0u; i < GAMEMASTER_MAX_CHEATS; ++i)
+    {
+        m_GameMasterCheatEnabled[i] = FALSE;
+    }
+    for (unsigned i = 0u; i < CComboFileBrowser::kVisibleRows + 2u; ++i)
+    {
+        m_GameMasterCheatItems[i].label = m_GameMasterCheatItemLabels[i];
+        m_GameMasterCheatItems[i].action = ComboMenuActionNone;
+        m_GameMasterCheatItems[i].selectable = FALSE;
+        m_GameMasterCheatItems[i].redraw_policy = ComboMenuRedrawMenuOnly;
+        m_GameMasterCheatItemLabels[i][0] = '\0';
+    }
 }
 
 void CComboPauseMenu::Reset(void)
@@ -324,6 +461,7 @@ void CComboPauseMenu::Reset(void)
     m_HasPendingDiskBrowserOpen = FALSE;
     m_PendingDiskBrowserDrive = 0u;
     CopySmallText(m_PendingDiskBrowserPath, sizeof(m_PendingDiskBrowserPath), "");
+    ResetGameMasterState();
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), m_LoadRomSlot1Name);
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), m_LoadRomSlot2Name);
     CopySmallText(m_LastDrawnLoadDiskDrive1Name, sizeof(m_LastDrawnLoadDiskDrive1Name), m_LoadDiskDrive1Name);
@@ -772,6 +910,39 @@ void CComboPauseMenu::OpenFileBrowser(unsigned mode, unsigned slot_index, const 
     m_BrowserWarmupRedraws = 1u;
 }
 
+void CComboPauseMenu::OpenGameMaster(const TGameMasterCatalog *catalog, unsigned load_status, unsigned error_line)
+{
+    ResetGameMasterState();
+    m_GameMasterLoadStatus = load_status;
+    m_GameMasterErrorLine = error_line;
+    m_GameMasterCatalog = (load_status == (unsigned) GameMasterLoadOk) ? catalog : 0;
+
+    m_FileBrowser.Reset();
+    if (m_GameMasterCatalog != 0)
+    {
+        m_FileBrowser.OpenGameMaster(m_GameMasterCatalog);
+        m_Selected = m_FileBrowser.GetSelectedVisibleIndex();
+    }
+    else
+    {
+        m_Selected = 0u;
+    }
+
+    m_View = MenuViewGameMasterBrowser;
+    m_LastDrawnSelected = 0xFFFFFFFFu;
+    m_LastDrawnBrowserTop = 0xFFFFFFFFu;
+    m_LastDrawnBrowserCount = 0xFFFFFFFFu;
+    m_LastDrawnBrowserSelectedAbs = 0xFFFFFFFFu;
+    m_LastDrawnBrowserMode = 0xFFFFFFFFu;
+    m_LastDrawnBrowserSlot = 0xFFFFFFFFu;
+    m_LastDrawnBrowserContentStamp = 0xFFFFFFFFu;
+    m_ForceRedraw = TRUE;
+    m_ForceHighlightRedraw = FALSE;
+    m_ForceContentRedraw = FALSE;
+    m_RequestBackgroundRestore = TRUE;
+    m_BrowserWarmupRedraws = 1u;
+}
+
 boolean CComboPauseMenu::IsInSettings(void) const
 {
     return (m_View != MenuViewRoot) ? TRUE : FALSE;
@@ -852,6 +1023,69 @@ boolean CComboPauseMenu::ConsumeBackgroundRestoreRequest(void)
     return pending;
 }
 
+const TGameMasterGame *CComboPauseMenu::GetSelectedGameMasterGame(void) const
+{
+    if (m_GameMasterLoadStatus != (unsigned) GameMasterLoadOk
+        || m_GameMasterCatalog == 0
+        || m_GameMasterSelectedGame >= m_GameMasterCatalog->game_count)
+    {
+        return 0;
+    }
+
+    return &m_GameMasterCatalog->games[m_GameMasterSelectedGame];
+}
+
+unsigned CComboPauseMenu::GetSelectedGameMasterCheatCount(void) const
+{
+    const TGameMasterGame *game = GetSelectedGameMasterGame();
+    return game != 0 ? game->cheat_count : 0u;
+}
+
+void CComboPauseMenu::SyncGameMasterCheatWindow(void)
+{
+    const unsigned cheat_count = GetSelectedGameMasterCheatCount();
+    const unsigned visible_window = cheat_count < CComboFileBrowser::kVisibleRows
+        ? cheat_count
+        : CComboFileBrowser::kVisibleRows;
+    unsigned max_top = 0u;
+
+    if (cheat_count == 0u)
+    {
+        m_GameMasterCheatSelected = 0u;
+        m_GameMasterCheatTop = 0u;
+        m_Selected = 0u;
+        return;
+    }
+
+    if (m_GameMasterCheatSelected >= cheat_count)
+    {
+        m_GameMasterCheatSelected = cheat_count - 1u;
+    }
+
+    if (cheat_count > visible_window)
+    {
+        max_top = cheat_count - visible_window;
+    }
+    if (m_GameMasterCheatTop > max_top)
+    {
+        m_GameMasterCheatTop = max_top;
+    }
+    if (m_GameMasterCheatSelected < m_GameMasterCheatTop)
+    {
+        m_GameMasterCheatTop = m_GameMasterCheatSelected;
+    }
+    if (visible_window > 0u && m_GameMasterCheatSelected >= m_GameMasterCheatTop + visible_window)
+    {
+        m_GameMasterCheatTop = m_GameMasterCheatSelected + 1u - visible_window;
+    }
+    if (m_GameMasterCheatTop > max_top)
+    {
+        m_GameMasterCheatTop = max_top;
+    }
+
+    m_Selected = m_GameMasterCheatSelected - m_GameMasterCheatTop;
+}
+
 const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
 {
     if (m_View == MenuViewSettings)
@@ -887,31 +1121,137 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
     {
         return combo_menu_load_disk_items_get(m_Language, m_LoadDiskDrive1Name, m_LoadDiskDrive2Name, count);
     }
-    if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser)
+    if (m_View == MenuViewGameMasterCheats)
     {
         const TComboLocaleStrings *locale = combo_locale_get(m_Language);
         if (locale == 0)
         {
             locale = combo_locale_get(ComboLanguageEN);
         }
-        const char *empty = (m_View == MenuViewLoadDiskBrowser) ? locale->load_disk_empty : locale->load_rom_empty;
-        if (empty == 0 || empty[0] == '\0')
-        {
-            empty = "EMPTY";
-        }
 
-        if (m_FileBrowser.GetCount() == 0u)
+        const TGameMasterGame *game = GetSelectedGameMasterGame();
+        if (game == 0 || game->cheat_count == 0u)
         {
-            CopySmallText(m_RomBrowserEmptyLabel, sizeof(m_RomBrowserEmptyLabel), empty);
-            m_RomBrowserItems[0].label = m_RomBrowserEmptyLabel;
-            m_RomBrowserItems[0].action = ComboMenuActionNone;
-            m_RomBrowserItems[0].selectable = FALSE;
-            m_RomBrowserItems[0].redraw_policy = ComboMenuRedrawMenuOnly;
+            CopySmallText(m_GameMasterCheatItemLabels[0], sizeof(m_GameMasterCheatItemLabels[0]), locale->game_master_no_cheats);
+            m_GameMasterCheatItems[0].label = m_GameMasterCheatItemLabels[0];
+            m_GameMasterCheatItems[0].action = ComboMenuActionNone;
+            m_GameMasterCheatItems[0].selectable = FALSE;
+            m_GameMasterCheatItems[0].redraw_policy = ComboMenuRedrawMenuOnly;
             if (count != 0)
             {
                 *count = 1u;
             }
-            return m_RomBrowserItems;
+            return m_GameMasterCheatItems;
+        }
+
+        const unsigned available = game->cheat_count > m_GameMasterCheatTop
+            ? (game->cheat_count - m_GameMasterCheatTop)
+            : 0u;
+        const unsigned visible = available < CComboFileBrowser::kVisibleRows ? available : CComboFileBrowser::kVisibleRows;
+        if (visible == 0u)
+        {
+            CopySmallText(m_GameMasterCheatItemLabels[0], sizeof(m_GameMasterCheatItemLabels[0]), locale->game_master_no_cheats);
+            m_GameMasterCheatItems[0].label = m_GameMasterCheatItemLabels[0];
+            m_GameMasterCheatItems[0].action = ComboMenuActionNone;
+            m_GameMasterCheatItems[0].selectable = FALSE;
+            m_GameMasterCheatItems[0].redraw_policy = ComboMenuRedrawMenuOnly;
+            if (count != 0)
+            {
+                *count = 1u;
+            }
+            return m_GameMasterCheatItems;
+        }
+        for (unsigned i = 0u; i < visible; ++i)
+        {
+            const unsigned cheat_abs = game->cheat_first + m_GameMasterCheatTop + i;
+            const char *cheat_title = m_GameMasterCatalog->cheats[cheat_abs].title;
+            const char *flag = m_GameMasterCheatEnabled[cheat_abs] ? locale->flag_on : locale->flag_off;
+            unsigned cursor = 0u;
+
+            m_GameMasterCheatItemLabels[i][0] = '\0';
+            ComboAppendText(m_GameMasterCheatItemLabels[i], sizeof(m_GameMasterCheatItemLabels[i]), &cursor, cheat_title);
+            ComboAppendText(m_GameMasterCheatItemLabels[i], sizeof(m_GameMasterCheatItemLabels[i]), &cursor, "\t");
+            ComboAppendText(m_GameMasterCheatItemLabels[i], sizeof(m_GameMasterCheatItemLabels[i]), &cursor, flag);
+
+            m_GameMasterCheatItems[i].label = m_GameMasterCheatItemLabels[i];
+            m_GameMasterCheatItems[i].action = ComboMenuActionNone;
+            m_GameMasterCheatItems[i].selectable = TRUE;
+            m_GameMasterCheatItems[i].redraw_policy = ComboMenuRedrawMenuOnly;
+        }
+        if (count != 0)
+        {
+            *count = visible;
+        }
+        return m_GameMasterCheatItems;
+    }
+    if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser)
+    {
+        const TComboLocaleStrings *locale = combo_locale_get(m_Language);
+        if (locale == 0)
+        {
+            locale = combo_locale_get(ComboLanguageEN);
+        }
+
+        if (m_View == MenuViewGameMasterBrowser)
+        {
+            const char *status_label = locale->game_master_empty;
+            unsigned item_count = 1u;
+
+            if (m_GameMasterLoadStatus == (unsigned) GameMasterLoadFileOpenFailed)
+            {
+                status_label = locale->game_master_open_failed;
+            }
+            else if (m_GameMasterLoadStatus != (unsigned) GameMasterLoadOk)
+            {
+                status_label = locale->game_master_invalid;
+            }
+
+            if (m_GameMasterLoadStatus != (unsigned) GameMasterLoadOk || m_FileBrowser.GetCount() == 0u)
+            {
+                CopySmallText(m_RomBrowserItemLabels[0], sizeof(m_RomBrowserItemLabels[0]), status_label);
+                m_RomBrowserItems[0].label = m_RomBrowserItemLabels[0];
+                m_RomBrowserItems[0].action = ComboMenuActionNone;
+                m_RomBrowserItems[0].selectable = FALSE;
+                m_RomBrowserItems[0].redraw_policy = ComboMenuRedrawMenuOnly;
+
+                if (m_GameMasterLoadStatus != (unsigned) GameMasterLoadOk && m_GameMasterErrorLine > 0u)
+                {
+                    ComboBuildLineLabel(m_RomBrowserItemLabels[1], sizeof(m_RomBrowserItemLabels[1]), locale->game_master_line, m_GameMasterErrorLine);
+                    m_RomBrowserItems[1].label = m_RomBrowserItemLabels[1];
+                    m_RomBrowserItems[1].action = ComboMenuActionNone;
+                    m_RomBrowserItems[1].selectable = FALSE;
+                    m_RomBrowserItems[1].redraw_policy = ComboMenuRedrawMenuOnly;
+                    item_count = 2u;
+                }
+
+                if (count != 0)
+                {
+                    *count = item_count;
+                }
+                return m_RomBrowserItems;
+            }
+        }
+        else
+        {
+            const char *empty = (m_View == MenuViewLoadDiskBrowser) ? locale->load_disk_empty : locale->load_rom_empty;
+            if (empty == 0 || empty[0] == '\0')
+            {
+                empty = "EMPTY";
+            }
+
+            if (m_FileBrowser.GetCount() == 0u)
+            {
+                CopySmallText(m_RomBrowserEmptyLabel, sizeof(m_RomBrowserEmptyLabel), empty);
+                m_RomBrowserItems[0].label = m_RomBrowserEmptyLabel;
+                m_RomBrowserItems[0].action = ComboMenuActionNone;
+                m_RomBrowserItems[0].selectable = FALSE;
+                m_RomBrowserItems[0].redraw_policy = ComboMenuRedrawMenuOnly;
+                if (count != 0)
+                {
+                    *count = 1u;
+                }
+                return m_RomBrowserItems;
+            }
         }
 
         const unsigned visible = m_FileBrowser.GetVisibleCount();
@@ -1046,6 +1386,11 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         {
             m_View = MenuViewLoadDisk;
         }
+        else if (m_View == MenuViewGameMasterCheats)
+        {
+            m_View = MenuViewGameMasterBrowser;
+            m_Selected = m_FileBrowser.GetSelectedVisibleIndex();
+        }
         else
         {
             m_View = MenuViewRoot;
@@ -1076,7 +1421,134 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
 
     TComboMenuAction action = ComboMenuActionNone;
 
-    if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser)
+    if (m_View == MenuViewGameMasterCheats)
+    {
+        const TGameMasterGame *game = GetSelectedGameMasterGame();
+        const unsigned cheat_count = game != 0 ? game->cheat_count : 0u;
+        const unsigned visible_window = cheat_count < CComboFileBrowser::kVisibleRows
+            ? cheat_count
+            : CComboFileBrowser::kVisibleRows;
+        const unsigned old_cheat_top = m_GameMasterCheatTop;
+        const unsigned old_cheat_selected = m_GameMasterCheatSelected;
+        const boolean up_edge = (up_pressed && !m_LastUpPressed) ? TRUE : FALSE;
+        const boolean down_edge = (down_pressed && !m_LastDownPressed) ? TRUE : FALSE;
+        const boolean page_up_edge = (page_up_pressed && !m_LastPageUpPressed) ? TRUE : FALSE;
+        const boolean page_down_edge = (page_down_pressed && !m_LastPageDownPressed) ? TRUE : FALSE;
+        const boolean left_edge = (left_pressed && !m_LastLeftPressed) ? TRUE : FALSE;
+        const boolean right_edge = (right_pressed && !m_LastRightPressed) ? TRUE : FALSE;
+        const boolean enter_edge = (enter_pressed && !m_LastEnterPressed) ? TRUE : FALSE;
+        boolean toggled = FALSE;
+
+        if (cheat_count > 0u)
+        {
+            if (up_edge)
+            {
+                m_GameMasterCheatSelected = (m_GameMasterCheatSelected == 0u)
+                    ? (cheat_count - 1u)
+                    : (m_GameMasterCheatSelected - 1u);
+            }
+            if (down_edge)
+            {
+                m_GameMasterCheatSelected = (m_GameMasterCheatSelected + 1u) % cheat_count;
+            }
+            if (page_up_edge)
+            {
+                if (m_GameMasterCheatSelected > visible_window)
+                {
+                    m_GameMasterCheatSelected -= visible_window;
+                }
+                else
+                {
+                    m_GameMasterCheatSelected = 0u;
+                }
+            }
+            if (page_down_edge)
+            {
+                if (m_GameMasterCheatSelected + visible_window < cheat_count)
+                {
+                    m_GameMasterCheatSelected += visible_window;
+                }
+                else
+                {
+                    m_GameMasterCheatSelected = cheat_count - 1u;
+                }
+            }
+            if (jump_letter >= 'A' && jump_letter <= 'Z')
+            {
+                const char *cheat_titles[GAMEMASTER_MAX_CHEATS];
+                unsigned local_count = cheat_count;
+                for (unsigned i = 0u; i < local_count; ++i)
+                {
+                    cheat_titles[i] = m_GameMasterCatalog->cheats[game->cheat_first + i].title;
+                }
+                const unsigned found = ComboFindFirstContaining(cheat_titles, local_count, jump_letter);
+                if (found < local_count)
+                {
+                    m_GameMasterCheatSelected = found;
+                }
+            }
+
+            SyncGameMasterCheatWindow();
+
+            if (enter_edge || left_edge || right_edge)
+            {
+                const unsigned cheat_abs = game->cheat_first + m_GameMasterCheatSelected;
+                boolean next_state = m_GameMasterCheatEnabled[cheat_abs];
+                if (left_edge)
+                {
+                    next_state = FALSE;
+                }
+                else if (right_edge)
+                {
+                    next_state = TRUE;
+                }
+                else
+                {
+                    next_state = next_state ? FALSE : TRUE;
+                }
+
+                if (next_state != m_GameMasterCheatEnabled[cheat_abs])
+                {
+                    m_GameMasterCheatEnabled[cheat_abs] = next_state;
+                    toggled = TRUE;
+                    m_ForceRedraw = TRUE;
+                    m_ForceHighlightRedraw = FALSE;
+                    m_ForceContentRedraw = FALSE;
+                }
+            }
+        }
+        else
+        {
+            m_GameMasterCheatSelected = 0u;
+            m_GameMasterCheatTop = 0u;
+            m_Selected = 0u;
+        }
+
+        if (!toggled
+            && (m_GameMasterCheatTop != old_cheat_top
+                || m_GameMasterCheatSelected != old_cheat_selected
+                || up_edge
+                || down_edge
+                || page_up_edge
+                || page_down_edge
+                || (jump_letter >= 'A' && jump_letter <= 'Z')))
+        {
+            m_ForceContentRedraw = TRUE;
+        }
+
+        m_LastBackPressed = back_pressed;
+        m_LastUpPressed = up_pressed;
+        m_LastDownPressed = down_pressed;
+        m_LastPageUpPressed = page_up_pressed;
+        m_LastPageDownPressed = page_down_pressed;
+        m_LastLeftPressed = left_pressed;
+        m_LastRightPressed = right_pressed;
+        m_LastEnterPressed = enter_pressed;
+        m_LastDeletePressed = delete_pressed;
+        return ComboMenuActionNone;
+    }
+
+    if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser)
     {
         const unsigned old_browser_top = m_FileBrowser.GetTop();
         const unsigned old_browser_abs = m_FileBrowser.GetSelectedAbs();
@@ -1150,7 +1622,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                     CopySmallText(m_PendingRomBrowserPath, sizeof(m_PendingRomBrowserPath), selected_path);
                     action = (m_PendingRomBrowserSlot == 0u) ? ComboMenuActionCartridgeA : ComboMenuActionCartridgeB;
                 }
-                else
+                else if (m_FileBrowser.GetMode() == (unsigned) ComboFileBrowserModeDisk)
                 {
                     m_HasPendingDiskBrowserOpen = TRUE;
                     m_PendingDiskBrowserDrive = m_FileBrowser.GetSlotIndex();
@@ -1205,7 +1677,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                 m_ForceContentRedraw = FALSE;
                 m_RequestBackgroundRestore = TRUE;
             }
-            else
+            else if (m_FileBrowser.GetMode() == (unsigned) ComboFileBrowserModeDisk)
             {
                 m_HasPendingDiskSelection = TRUE;
                 m_PendingDiskDrive = m_FileBrowser.GetSlotIndex();
@@ -1213,6 +1685,18 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                 action = (m_PendingDiskDrive == 0u) ? ComboMenuActionDiskDriveA : ComboMenuActionDiskDriveB;
                 m_View = MenuViewLoadDisk;
                 m_Selected = (m_PendingDiskDrive == 0u) ? 0u : 1u;
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
+                m_ForceContentRedraw = FALSE;
+                m_RequestBackgroundRestore = TRUE;
+            }
+            else
+            {
+                m_GameMasterSelectedGame = m_FileBrowser.GetSelectedSourceIndex();
+                m_GameMasterCheatSelected = 0u;
+                m_GameMasterCheatTop = 0u;
+                SyncGameMasterCheatWindow();
+                m_View = MenuViewGameMasterCheats;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
                 m_ForceContentRedraw = FALSE;
@@ -1230,8 +1714,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_LastEnterPressed = enter_pressed;
         m_LastDeletePressed = delete_pressed;
 
-        const boolean old_browser = (old_view == MenuViewLoadRomBrowser || old_view == MenuViewLoadDiskBrowser) ? TRUE : FALSE;
-        const boolean new_browser = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser) ? TRUE : FALSE;
+        const boolean old_browser = (old_view == MenuViewLoadRomBrowser || old_view == MenuViewLoadDiskBrowser || old_view == MenuViewGameMasterBrowser) ? TRUE : FALSE;
+        const boolean new_browser = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser) ? TRUE : FALSE;
         if (old_browser != new_browser)
         {
             m_RequestBackgroundRestore = TRUE;
@@ -1523,6 +2007,10 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             m_ForceHighlightRedraw = FALSE;
             m_RequestBackgroundRestore = TRUE;
         }
+        else if (m_View == MenuViewRoot && items[m_Selected].action == ComboMenuActionGameMaster)
+        {
+            action = ComboMenuActionGameMaster;
+        }
         else if (m_View == MenuViewLoadRom
               && (items[m_Selected].action == ComboMenuActionCartridgeA || items[m_Selected].action == ComboMenuActionCartridgeB))
         {
@@ -1583,8 +2071,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
     m_LastEnterPressed = enter_pressed;
     m_LastDeletePressed = delete_pressed;
 
-    const boolean old_browser = (old_view == MenuViewLoadRomBrowser || old_view == MenuViewLoadDiskBrowser) ? TRUE : FALSE;
-    const boolean new_browser = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser) ? TRUE : FALSE;
+    const boolean old_browser = (old_view == MenuViewLoadRomBrowser || old_view == MenuViewLoadDiskBrowser || old_view == MenuViewGameMasterBrowser) ? TRUE : FALSE;
+    const boolean new_browser = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser) ? TRUE : FALSE;
     if (old_browser != new_browser)
     {
         m_RequestBackgroundRestore = TRUE;
@@ -1668,6 +2156,14 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     {
         title = locale->title_load_disk;
     }
+    else if (m_View == MenuViewGameMasterBrowser)
+    {
+        title = locale->title_game_master;
+    }
+    else if (m_View == MenuViewGameMasterCheats)
+    {
+        title = locale->title_active_cheats;
+    }
     else if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser)
     {
         const boolean disk_browser = (m_View == MenuViewLoadDiskBrowser) ? TRUE : FALSE;
@@ -1708,7 +2204,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     {
         content_cols = 18u;
     }
-    if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser)
+    if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser)
     {
         /*
          * Browser width rule:
@@ -1749,7 +2245,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         box_y = screen_height > box_h_px ? (screen_height - box_h_px) : 0u;
     }
 
-    const boolean browser_view = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser) ? TRUE : FALSE;
+    const boolean browser_view = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser) ? TRUE : FALSE;
     if (m_ForceHighlightRedraw || m_ForceContentRedraw)
     {
         m_ForceRedraw = TRUE;
@@ -1791,7 +2287,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && ComboTextEquals(m_LastDrawnLoadRomSlot2Name, m_LoadRomSlot2Name)
      && ComboTextEquals(m_LastDrawnLoadDiskDrive1Name, m_LoadDiskDrive1Name)
      && ComboTextEquals(m_LastDrawnLoadDiskDrive2Name, m_LoadDiskDrive2Name)
-     && (m_View != MenuViewLoadRomBrowser && m_View != MenuViewLoadDiskBrowser
+     && (m_View != MenuViewLoadRomBrowser && m_View != MenuViewLoadDiskBrowser && m_View != MenuViewGameMasterBrowser
          ? TRUE
          : (m_LastDrawnBrowserTop == m_FileBrowser.GetTop()
             && m_LastDrawnBrowserCount == m_FileBrowser.GetCount()
@@ -1880,7 +2376,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     renderer->DrawText(title_x, title_y, title, title_style, scale_x, scale_y);
 
     const boolean browser_with_scrollbar =
-        ((m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser)
+        ((m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser)
          && item_count > 0u
          && m_FileBrowser.GetCount() > item_count
          && box_cols > 8u);
@@ -1893,11 +2389,12 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         const unsigned text_len = ComboStrLen(items[i].label);
         const boolean settings_row = (m_View == MenuViewSettings);
         const boolean load_media_row = (m_View == MenuViewLoadRom || m_View == MenuViewLoadDisk);
-        const boolean browser_row = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser);
+        const boolean browser_row = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser);
+        const boolean cheat_list_row = (m_View == MenuViewGameMasterCheats);
         const boolean separator_row = (items[i].action == ComboMenuActionSeparator);
         const boolean selected_row = (items[i].selectable && i == m_Selected) ? TRUE : FALSE;
 
-        if (selected_row && box_cols > 4u && !load_media_row)
+        if (selected_row && box_cols > 4u && !load_media_row && !cheat_list_row)
         {
             unsigned highlight_cols = box_cols - 4u;
             if (browser_row && browser_with_scrollbar && bar_col > 4u)
@@ -1923,11 +2420,11 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
             return;
         }
 
-        if (settings_row || load_media_row)
+        if (settings_row || load_media_row || cheat_list_row)
         {
             const unsigned split = settings_row ? ComboFindFlagStart(items[i].label) : ComboFindTabSplit(items[i].label);
             const unsigned left_len = split < text_len ? split : text_len;
-            const unsigned flag_start = load_media_row && split < text_len ? (split + 1u) : split;
+            const unsigned flag_start = (load_media_row || cheat_list_row) && split < text_len ? (split + 1u) : split;
             const unsigned flag_len = split < text_len ? (text_len - flag_start) : 0u;
             const unsigned inner_left_col = 2u;
             const unsigned inner_right_col = box_cols > 2u ? (box_cols - 3u) : 0u;
@@ -1935,12 +2432,12 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
             const unsigned x_flag = flag_len > 0u
                 ? box_x + ((inner_right_col + 1u - flag_len) * cell_w)
                 : 0u;
-            const TGfxTextStyle left_style = (settings_row && selected_row) ? selected_style : normal_style;
+            const TGfxTextStyle left_style = ((settings_row || cheat_list_row) && selected_row) ? selected_style : normal_style;
             TGfxTextStyle flag_style = left_style;
 
-            if (load_media_row && box_cols > 4u)
+            if ((load_media_row || cheat_list_row) && box_cols > 4u)
             {
-                /* Keep media value area visually stable (16 cols) by clearing row span first. */
+                /* Keep right-aligned value area visually stable by clearing row span first. */
                 renderer->FillRect(box_x + (2u * cell_w), y, (box_cols - 4u) * cell_w, cell_h, kPauseMenuBgColor);
             }
 
@@ -1953,6 +2450,15 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
                     renderer->FillRect(x_sel, y, x_end - x_sel, cell_h, BRIGHT_WHITE_COLOR);
                 }
                 flag_style = selected_style; /* draw value in inverted style over white bar */
+            }
+            else if (cheat_list_row && selected_row)
+            {
+                const unsigned x_end = box_x + ((inner_right_col + 1u) * cell_w);
+                if (x_left < x_end)
+                {
+                    renderer->FillRect(x_left, y, x_end - x_left, cell_h, BRIGHT_WHITE_COLOR);
+                }
+                flag_style = selected_style;
             }
 
             if (flag_len > 0u && x_flag > x_left + cell_w)
@@ -2105,7 +2611,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_ForceRedraw = FALSE;
     m_ForceHighlightRedraw = FALSE;
     m_ForceContentRedraw = FALSE;
-    if ((m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser) && m_BrowserWarmupRedraws > 0u)
+    if ((m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser) && m_BrowserWarmupRedraws > 0u)
     {
         --m_BrowserWarmupRedraws;
         m_ForceRedraw = TRUE;

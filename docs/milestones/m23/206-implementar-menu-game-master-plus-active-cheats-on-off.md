@@ -7,12 +7,12 @@
 - Labels: `priority:P2`, `type:feature`, `area:settings`, `area:emulation`
 
 ## Checklist
-- [ ] Adicionar item `Game Master+` no menu principal
-- [ ] Integrar o fluxo `menu principal -> browser de jogos -> lista de cheats`
-- [ ] Exibir cada cheat com estado `ON/OFF`
-- [ ] Permitir alternar cheats individuais sem sair do menu
-- [ ] Localizar labels e mensagens de erro para `PT`, `EN` e `ES`
-- [ ] Revisar documentacao do menu/debug/browser conforme impacto visual e de UX
+- [x] Adicionar item `Game Master+` no menu principal
+- [x] Integrar o fluxo `menu principal -> browser de jogos -> lista de cheats`
+- [x] Exibir cada cheat com estado `ON/OFF`
+- [x] Permitir alternar cheats individuais sem sair do menu
+- [x] Localizar labels e mensagens de erro para `PT`, `EN` e `ES`
+- [x] Revisar documentacao do menu/debug/browser conforme impacto visual e de UX
 
 ## DoR (sugestao)
 - Catalogo de jogos disponivel para a UI via issue `#205`.
@@ -27,6 +27,12 @@
 
 ## Status da iteracao atual
 
-- Issue criada para concentrar a experiencia do usuario da feature, da entrada no root menu ate a tela de toggles por jogo.
-- A referencia funcional adotada e o fluxo `Active Cheats` do blueMSX, adaptado ao layout e as guardrails atuais do menu.
-- Toda string nova devera entrar no sistema de locale e o fluxo devera evitar regressao visual no menu principal.
+- O menu raiz ganhou a entrada `Game Master+`; ao seleciona-la, o kernel recarrega `SD:/gamemaster.cht` e abre o browser virtual de jogos da issue `#205`.
+- O `CComboPauseMenu` passou a ter duas subviews novas: browser de jogos do `Game Master+` e tela `Active Cheats`, com navegacao independente, `PageUp/PageDown`, jump por letra e retorno por `BACK`.
+- A tela `Active Cheats` lista os cheats do jogo selecionado com estado `ON/OFF`, alinhado a direita, e permite toggle local por `ENTER`, `LEFT` e `RIGHT` sem sair do menu.
+- Estados de erro e vazio do catalogo ficaram legiveis no proprio menu, com mensagens localizadas e linha de erro quando o parser reporta falha sintatica/estrutural.
+- Locales `PT/EN/ES` atualizados com novas labels/titulos do fluxo `Game Master+`.
+- Documentacao do browser atualizada em `docs/file-browser-component.md`.
+- Validacao executada:
+  - `scripts/check-third-party-pristine.sh` OK
+  - `make -j4 DEBUG=1` OK

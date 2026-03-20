@@ -3,6 +3,7 @@
 #include "combo_locale.h"
 #include "viewport_screenshot.h"
 #include "emulator_backend.h"
+#include "gamemaster_catalog.h"
 #include "machine_profile_catalog.h"
 #if MSXBARE_ENABLE_FMSX
 #include "fmsx_runtime.h"
@@ -873,6 +874,7 @@ CComboKernel::CComboKernel(void)
 	m_BlitMapDstW(0),
 	m_BlitMapDstH(0),
 	m_BlitMapValid(FALSE),
+	m_GameMasterCatalog{{0}},
 	m_OverscanPercent(250u),
 	m_Language(ComboLanguagePT),
 	m_ResolutionMode(kResolutionModeAuto),
@@ -3690,6 +3692,38 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 			}
 		}
 	#endif
+		break;
+#endif
+
+	case ComboMenuActionGameMaster:
+#if !MSXBARE_ENABLE_FMSX
+		m_Logger.Write(FromKernel, LogNotice, "Game Master+ indisponivel neste build");
+		break;
+#else
+		{
+			const int load_status = game_master_catalog_load_default(&m_GameMasterCatalog);
+			const unsigned error_line = (unsigned) m_GameMasterCatalog.error_line;
+			m_PauseMenu.OpenGameMaster(
+				load_status == (int) GameMasterLoadOk ? &m_GameMasterCatalog : 0,
+				(unsigned) load_status,
+				error_line);
+			if (load_status == (int) GameMasterLoadOk)
+			{
+				CString line;
+				line.Format("Game Master+ carregado: %u jogos, %u cheats",
+				            (unsigned) m_GameMasterCatalog.game_count,
+				            (unsigned) m_GameMasterCatalog.cheat_count);
+				m_Logger.Write(FromKernel, LogNotice, line);
+			}
+			else
+			{
+				CString line;
+				line.Format("Game Master+ falhou: %s (linha %u)",
+				            game_master_catalog_status_name((unsigned) load_status),
+				            error_line);
+				m_Logger.Write(FromKernel, LogWarning, line);
+			}
+		}
 		break;
 #endif
 

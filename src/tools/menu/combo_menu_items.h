@@ -11,6 +11,7 @@ enum TComboMenuAction {
     ComboMenuActionDiskDriveA,
     ComboMenuActionDiskDriveB,
     ComboMenuActionSettings,
+    ComboMenuActionGameMaster,
     ComboMenuActionCycleLanguage,
     ComboMenuActionCycleLanguagePrev,
     ComboMenuActionCycleResolution,

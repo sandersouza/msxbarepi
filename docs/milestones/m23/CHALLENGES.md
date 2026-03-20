@@ -23,8 +23,8 @@ Registro de desafios enfrentados por issue, decisao adotada e status da solucao.
 
 ### #206 - menu `Game Master+` e tela `Active Cheats`
 - Desafio: encaixar um novo fluxo de UI no menu principal sem regressao visual e mantendo localizacao PT/EN/ES.
-- Solucao adotada: separar browser de jogos e tela de toggles ON/OFF por jogo, inspirada no comportamento do `Active Cheats` do blueMSX.
-- Status: Futuro
+- Solucao adotada: o menu raiz passou a abrir `Game Master+` via carga sob demanda de `gamemaster.cht`; a UI foi separada em browser de jogos e tela `Active Cheats`, com mensagens localizadas de erro/vazio e toggles locais `ON/OFF` por cheat, deixando a aplicacao real no core para a issue `#207`.
+- Status: Resolvido
 - Referencia: [206-implementar-menu-game-master-plus-active-cheats-on-off.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m23/206-implementar-menu-game-master-plus-active-cheats-on-off.md)
 
 ### #207 - sessao de cheats no core fMSX

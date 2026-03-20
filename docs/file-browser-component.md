@@ -35,5 +35,7 @@ Desacoplar a navegação de arquivos do `combo_menu` para permitir reuso em outr
 ## Uso previsto para `Game Master+`
 
 - O parser de `gamemaster.cht` carrega um `TGameMasterCatalog`.
+- O pause menu expõe a entrada raiz `Game Master+` e, ao selecioná-la, o kernel recarrega `SD:/gamemaster.cht` antes de abrir o browser virtual.
 - O browser virtual é aberto via `OpenGameMaster(catalog)`.
 - A camada de menu/UI usa `GetSelectedSourceIndex()` para recuperar o índice do jogo selecionado no catálogo, sem acoplar o menu à lógica de ordenação/navegação.
+- Ao selecionar um jogo, a UI entra na tela `Active Cheats`, que lista os cheats do jogo atual com estado `ON/OFF` e toggle local por item; a aplicação real no runtime fica para a integração da issue `#207`.

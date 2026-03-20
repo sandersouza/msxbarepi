@@ -35,6 +35,9 @@
 #ifndef MSXBARE_ENABLE_DEBUG_OVERLAY
 #define MSXBARE_ENABLE_DEBUG_OVERLAY 0
 #endif
+#ifndef MSXBARE_ENABLE_FMSX
+#define MSXBARE_ENABLE_FMSX 0
+#endif
 #ifndef MSXBARE_PATREON_TAG
 #define MSXBARE_PATREON_TAG ""
 #endif
@@ -135,7 +138,7 @@ static void BuildLabelFlag(char *dst, unsigned dst_size, const char *label, cons
 
 const TComboMenuItem *combo_menu_root_items_get(unsigned language, unsigned boot_mode, unsigned *count)
 {
-    static TComboMenuItem root_items[14];
+    static TComboMenuItem root_items[16];
     static char patreon_label[48];
     static char patreon_tag_line[32];
     const TComboLocaleStrings *locale = combo_locale_get(language);
@@ -161,7 +164,11 @@ const TComboMenuItem *combo_menu_root_items_get(unsigned language, unsigned boot
     {
         ADD_ROOT_ITEM(locale->root_load_disk, ComboMenuActionDiskDriveA, TRUE);
     }
-    if (MSXBARE_FEAT_LOAD_ROM || MSXBARE_FEAT_LOAD_DISK)
+    if (MSXBARE_ENABLE_FMSX)
+    {
+        ADD_ROOT_ITEM(locale->root_game_master, ComboMenuActionGameMaster, TRUE);
+    }
+    if (MSXBARE_FEAT_LOAD_ROM || MSXBARE_FEAT_LOAD_DISK || MSXBARE_ENABLE_FMSX)
     {
         ADD_ROOT_ITEM("", ComboMenuActionSeparator, FALSE);
     }
