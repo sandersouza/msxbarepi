@@ -33,4 +33,5 @@
   - `scripts/check-third-party-pristine.sh` OK
   - `make -j4 DEBUG=1` OK
 - Proximo passo:
-  - abrir PR da `#206`, sincronizar o espelho local/remoto da issue e mover o item para `In review`.
+  - PR aberto: `#212` `Issue #206: add Game Master menu and Active Cheats UI`
+  - sincronizar o espelho local/remoto da issue e mover o item para `In review`.

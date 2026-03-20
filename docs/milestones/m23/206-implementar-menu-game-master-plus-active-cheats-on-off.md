@@ -36,3 +36,4 @@
 - Validacao executada:
   - `scripts/check-third-party-pristine.sh` OK
   - `make -j4 DEBUG=1` OK
+- PR aberto para review: `#212` `Issue #206: add Game Master menu and Active Cheats UI`
