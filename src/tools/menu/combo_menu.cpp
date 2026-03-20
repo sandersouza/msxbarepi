@@ -2207,6 +2207,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                 const int load_status = (m_GameMasterCatalog != 0)
                     ? (ComboBuildTitleFromPath(selected_path, title, sizeof(title)),
                        ComboBuildRomIdFromPath(selected_path, rom_id, sizeof(rom_id)),
+                       fmsx_runtime_reset_game_master_session(),
                        game_master_catalog_load_mcf(m_GameMasterCatalog, selected_path, title, rom_id))
                     : (int) GameMasterLoadSyntaxError;
                 if (load_status == (int) GameMasterLoadOk && m_GameMasterCatalog != 0)

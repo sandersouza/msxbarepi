@@ -31,8 +31,8 @@ Registro de desafios enfrentados por issue, decisao adotada e status da solucao.
 
 ### #207 - sessao de cheats no core fMSX
 - Desafio: transformar a infraestrutura atual de `CHT`/`MCF` em uma sessao interativa com multiplos cheats ativos e restauração segura dos valores originais.
-- Solucao adotada: apos a aplicacao imediata de cheat entregue na `#206`, manter a `#207` focada na sessao persistente com multiplos cheats ativos, ON/OFF individual, restore seguro e gerenciamento de ciclo de vida sem quebrar os helpers legados.
-- Status: Futuro
+- Solucao adotada: a `#207` passou a usar uma sessao propria do `Game Codes` no runtime, com slots ativos por cheat, prioridade pelo ultimo ajuste em casos de sobreposicao, `orig_value` por endereco para restore seguro e limpeza explicita da sessao em reset, reboot, troca de cartucho, load-state e troca de catalogo `.mcf`. As entradas do `Game Codes` em `CheatCodes[]` agora sao marcadas com tag `GM:` para evitar remocao cega de helpers legados.
+- Status: Parcial
 - Referencia: [207-integrar-sessao-cheats-core-fmsx-multi-poke-restore-seguro.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m23/207-integrar-sessao-cheats-core-fmsx-multi-poke-restore-seguro.md)
 
 ### #208 - documentacao e validacao em hardware

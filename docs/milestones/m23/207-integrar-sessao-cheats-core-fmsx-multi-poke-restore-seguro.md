@@ -30,3 +30,23 @@
 - Issue criada para fechar a ponte entre o catalogo `Game Master+` e a infraestrutura existente de cheats no fMSX.
 - O core ja possui `AddCheat()`, `ResetCheats()`, `ApplyCheats()` e suporte a `CHT`/`MCF`, mas ainda nao oferece uma sessao interativa com multiplos toggles independentes.
 - A meta inicial e cobrir cheats RAM-based com multi-POKE e restore seguro, sem quebrar compatibilidade com os helpers atuais.
+
+## Progresso da branch `207-integrar-sessao-cheats-core-fmsx-multi-poke-restore-seguro`
+
+- `src/fmsx_runtime.{h,c}`
+  - sessao propria do `Game Codes` implementada com slots ativos, prioridade por ordem de ativacao e restore por endereco usando `orig_value` capturado na primeira ativacao;
+  - limpeza segura da sessao exposta por `fmsx_runtime_reset_game_master_session()`;
+  - entradas do `Game Codes` em `CheatCodes[]` passam a ser marcadas com tag `GM:` para nao remover indiscriminadamente cheats legados.
+- `src/tools/menu/combo_menu.cpp`
+  - troca de `.mcf` agora limpa explicitamente a sessao anterior antes de recarregar o catalogo.
+- ciclo de vida coberto na rodada:
+  - `reboot_basic`
+  - `menu_reset`
+  - `hard_reset`
+  - `shutdown`
+  - `load_state`
+  - `load_cartridge`
+  - `unload_cartridge`
+- validacao local:
+  - `scripts/check-third-party-pristine.sh` OK
+  - `make -j4 DEBUG=1` OK
