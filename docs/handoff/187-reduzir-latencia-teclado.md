@@ -135,6 +135,12 @@ O que mudou:
 - Artefato: `artifacts/kernel8-issue187.img`
 - `BUILD_HASH`: `e35b064-2e6de2aef96f1bef75f3ea7db09f53d6feb0ac06`
 
+### Revalidacao apos commit
+- `scripts/check-third-party-pristine.sh`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603221330-a969d52`: OK
+- Artefato: `artifacts/kernel8-issue187.img`
+- `BUILD_HASH`: `a969d52-383d0995fd90075e3ebe4d186f145dad9c09885f`
+
 ### Proximo passo
 - Validar em hardware se a fila dual-consumer ja reduz perda de `press/release`.
 - Se ainda houver falha, mover a proxima iteracao para consumo temporal mais fino no core em vez de apenas `1 report/frame`.

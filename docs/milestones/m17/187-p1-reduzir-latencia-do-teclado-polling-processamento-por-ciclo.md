@@ -90,6 +90,8 @@ O filtro de estabilização não pode apagar `release` legítimo nem transformar
 - `make -j4 DEBUG=1 BUILD_BID=202603221300-e35b064`: OK
 - Artefato: `artifacts/kernel8-issue187.img`
 - `BUILD_HASH`: `e35b064-2e6de2aef96f1bef75f3ea7db09f53d6feb0ac06`
+- Revalidação após commit: `make -j4 DEBUG=1 BUILD_BID=202603221330-a969d52` OK
+- `BUILD_HASH` atual da branch: `a969d52-383d0995fd90075e3ebe4d186f145dad9c09885f`
 
 ### Próximo passo
 - Validar em hardware.
