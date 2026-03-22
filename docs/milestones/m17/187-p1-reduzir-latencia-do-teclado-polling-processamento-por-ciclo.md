@@ -28,10 +28,10 @@ Importante: quando falamos em `PRESS UP/DOWN`, estamos nos referindo a transiç�
 - Consolidar a solução em uma tool reutilizável/importável, preparada para uso futuro como base de framework de migração de emuladores.
 
 ## Escopo técnico
-- [ ] Criar uma tool de fila/cache de input em `src/tools/input/`.
-- [ ] Separar explicitamente `capture clock` e `consume clock`.
+- [x] Criar uma tool de fila/cache de input em `src/tools/input/`.
+- [x] Separar explicitamente `capture clock` e `consume clock`.
 - [ ] Armazenar transições/snapshots com semântica temporal suficiente para o core não perder `press` nem `release`.
-- [ ] Integrar a primeira versão ao pipeline de teclado.
+- [x] Integrar a primeira versão ao pipeline de teclado.
 - [ ] Prever joystick no contrato público da tool, mesmo que a primeira validação obrigatória fique focada em teclado.
 - [ ] Evitar novas correções espalhadas em `kernel.cpp`, `fmsx_host_stubs.c` e caminhos ad hoc do backend.
 
@@ -68,6 +68,32 @@ O filtro de estabilização não pode apagar `release` legítimo nem transformar
 - [ ] Menu/F12: `ESC`, `ENTER`, navegação e hotkeys sem regressão.
 - [ ] Stress: bursts de reports HID com fila cheia precisam falhar de forma previsível, com contadores de drop observáveis.
 - [ ] Regressão: callback RAW continua mínimo; `UpdateLEDs()` continua apenas no contexto correto do loop principal.
+
+## Atualização 2026-03-22
+
+### Corte implementado nesta rodada
+- Tool nova `src/tools/input/usb_hid_input_queue.*` com ring buffer fixo e dois consumidores independentes:
+  - `UI`: menu, hotkeys e joystick virtual
+  - `Runtime`: backend/emulador
+- `CUsbHidKeyboard` migrou para essa tool e ganhou `ConsumeForRuntime()`.
+- `kernel.cpp` passou a manter dois snapshots separados:
+  - `m_LastKeyboard*` para a UI
+  - `m_RuntimeKeyboard*` para o backend
+- `PushKeyboardStateToRuntime()` agora consome do cursor `Runtime`, em vez de reutilizar o último snapshot já drenado pela UI.
+
+### Limite atual conhecido
+- O pipeline ainda entrega no máximo um report novo por frame ao backend.
+- Isso já evita o colapso imediato causado pela UI, mas ainda precisa de validação em hardware para confirmar se elimina perdas em `press/release` curtos sob carga.
+
+### Validação local desta rodada
+- `scripts/check-third-party-pristine.sh`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603221300-e35b064`: OK
+- Artefato: `artifacts/kernel8-issue187.img`
+- `BUILD_HASH`: `e35b064-2e6de2aef96f1bef75f3ea7db09f53d6feb0ac06`
+
+### Próximo passo
+- Validar em hardware.
+- Se ainda houver perda de transição, mover a próxima iteração para consumo temporal mais fino no backend, em vez de apenas um snapshot por frame.
 
 ## Referências obrigatórias
 - `src/tools/usb_hid_keyboard.cpp`

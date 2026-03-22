@@ -70,3 +70,71 @@ KERNEL_IMG=artifacts/kernel8-issue187.img FIRMWARE_DIR=./rpi-firmware ./scripts/
 ## Riscos/observações
 - Fila HID reduz perda de evento, mas o pipeline ainda depende do cadence do loop principal.
 - Se ainda houver glitch raro, próximo passo é telemetria de fila (ocupação/overflow) no overlay.
+
+---
+
+## Atualizacao 2026-03-22
+
+### Objetivo desta rodada
+- Separar explicitamente o consumidor da UI/hotkeys do consumidor do core/emulador.
+- Parar de colapsar `press/release` em um unico snapshot final do loop principal.
+
+### Mudancas implementadas
+
+#### 1) Tool nova de fila HID com dois consumidores
+Arquivos:
+- `src/tools/input/usb_hid_input_queue.h`
+- `src/tools/input/usb_hid_input_queue.cpp`
+- `src/Makefile`
+
+O que mudou:
+- Nova tool reutilizavel em `src/tools/input/` com ring buffer fixo de reports HID.
+- A fila mantem dois cursores independentes:
+  - `UI`: consumido pelo loop principal para menu/hotkeys/joystick virtual;
+  - `Runtime`: consumido pelo emulador no passo do frame.
+- Politica atual de overflow:
+  - preserva sempre os reports mais recentes;
+  - avanca o cursor atrasado e contabiliza `drop` por consumidor.
+- A tool ja expoe estatisticas minimas:
+  - `queued_ui`
+  - `queued_runtime`
+  - `dropped_ui`
+  - `dropped_runtime`
+  - `high_watermark`
+
+#### 2) `CUsbHidKeyboard` migrou para a nova tool
+Arquivos:
+- `src/tools/usb_hid_keyboard.h`
+- `src/tools/usb_hid_keyboard.cpp`
+
+O que mudou:
+- O callback raw nao gerencia mais ring buffer manual proprio.
+- Agora ele empilha reports na `CUsbHidInputQueue`.
+- `ConsumeLatest()` passa a drenar o cursor da UI.
+- Novo `ConsumeForRuntime()` drena o cursor do emulador.
+
+#### 3) O backend deixa de usar o ultimo snapshot da UI
+Arquivos:
+- `src/kernel.h`
+- `src/kernel.cpp`
+
+O que mudou:
+- `PushKeyboardStateToRuntime()` agora consome do cursor `Runtime`, nao do estado mais recente da UI.
+- O kernel passa a manter duas copias de estado:
+  - ultima entrada vista pela UI (`m_LastKeyboard*`)
+  - ultima entrada realmente entregue ao backend (`m_RuntimeKeyboard*`)
+- Em detach do teclado USB, os dois estados sao limpos.
+
+### Efeito esperado
+- `press/release` curtos deixam de sumir simplesmente porque a UI drenou varios reports e o backend recebeu apenas o ultimo.
+- O consumo do core fica explicitamente desacoplado do clock de captura USB.
+
+### Build
+- `scripts/check-third-party-pristine.sh`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603221300-e35b064`: OK
+- Artefato: `artifacts/kernel8-issue187.img`
+- `BUILD_HASH`: `e35b064-2e6de2aef96f1bef75f3ea7db09f53d6feb0ac06`
+
+### Proximo passo
+- Validar em hardware se a fila dual-consumer ja reduz perda de `press/release`.
+- Se ainda houver falha, mover a proxima iteracao para consumo temporal mais fino no core em vez de apenas `1 report/frame`.

@@ -908,6 +908,8 @@ CComboKernel::CComboKernel(void)
 	m_RenshaSpaceHeld(FALSE),
 	m_LastKeyboardModifiers(0u),
 	m_LastKeyboardRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
+	m_RuntimeKeyboardModifiers(0u),
+	m_RuntimeKeyboardRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
 	m_FmMusicEnabled(MSXBARE_FEAT_FMPAC ? TRUE : FALSE),
 	m_FmLayerGainPct(100u),
 	m_SccCartEnabled(MSXBARE_FEAT_SCC ? TRUE : FALSE),
@@ -1338,9 +1340,11 @@ TComboShutdownMode CComboKernel::Run(void)
 		if (m_UsbKeyboard.ConsumeRemovedEvent())
 		{
 			m_LastKeyboardModifiers = 0u;
+			m_RuntimeKeyboardModifiers = 0u;
 			for (unsigned i = 0u; i < 6u; ++i)
 			{
 				m_LastKeyboardRawKeys[i] = 0u;
+				m_RuntimeKeyboardRawKeys[i] = 0u;
 			}
 			m_LastPausePressed = FALSE;
 			m_LastMenuBackPressed = FALSE;
@@ -4726,10 +4730,21 @@ void CComboKernel::PushKeyboardStateToRuntime(boolean rensha_fire_on)
 {
 #if MSXBARE_ENABLE_FMSX
 	unsigned char raw_keys[6];
-	u8 modifiers = m_LastKeyboardModifiers;
-	for (unsigned i = 0u; i < 6u; ++i)
+	u8 modifiers = m_RuntimeKeyboardModifiers;
+	if (m_UsbKeyboard.ConsumeForRuntime(&modifiers, raw_keys))
 	{
-		raw_keys[i] = m_LastKeyboardRawKeys[i];
+		m_RuntimeKeyboardModifiers = modifiers;
+		for (unsigned i = 0u; i < 6u; ++i)
+		{
+			m_RuntimeKeyboardRawKeys[i] = raw_keys[i];
+		}
+	}
+	else
+	{
+		for (unsigned i = 0u; i < 6u; ++i)
+		{
+			raw_keys[i] = m_RuntimeKeyboardRawKeys[i];
+		}
 	}
 
 	/* Rensha toggles SPACE key state directly for software that reads keyboard matrix fire. */
