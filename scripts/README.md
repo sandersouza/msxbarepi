@@ -55,6 +55,8 @@ Fluxo de configuracao no frontend real do Kconfig (`mconf`, mesmo usado no Linux
 - `.config` (fonte de verdade)
 - `.config.mk` (consumido pelo `Makefile` mesmo apos `make clean`)
 - `build/config.mk` (consumido automaticamente pelo `Makefile`)
+- Na execucao do `make`, flags da linha de comando vencem a configuracao salva em `.config`; a `.config` vence os defaults do `Makefile`.
+- `OWNER` e `MSXBARE_PATREON_TAG` alimentam o mesmo owner/tag efetivo; `OWNER` tem precedencia quando ambos forem informados.
 
 ### Como usar
 

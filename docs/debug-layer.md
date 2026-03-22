@@ -26,6 +26,10 @@ make DEBUG=1 OWNER="beta@exemplo.com" BUILD_BID="BTID:202603041405-07bf64e-83b0c
 ```bash
 make DEBUG=0
 ```
+- Em `DEBUG=0`, o kernel nao deve emitir log UART:
+  - `CSerialDevice` nao e inicializado para logging;
+  - `CLogger` aponta para `CNullDevice`;
+  - traces UART especificos de debug ficam desarmados.
 
 ## Regra de seguranca
 - Toda tecla/hotkey de debug so atua quando o kernel foi compilado com `DEBUG=1`.
@@ -90,10 +94,11 @@ Diretriz visual (overlay e menu):
 
 ## Menu relacionado
 - `Settings -> Debugger`: liga/desliga overlay (quando compilado com debug).
+- `Refresh` nao e mais um item manual em `Settings`: o runtime inicia em `NTSC` e passa para `PAL` automaticamente quando o software escreve `R#9`.
 - Itens de audio em `Settings`:
   - `Konami SCC+` (OFF/ON/DUAL)
   - `FM-PAC` (ON/OFF)
-  - `Audio Gain` (OFF..100)
+  - `Audio Gain` (0..9)
 
 ## Overlay: linhas e labels
 - `TXTDBG`: estado geral (MMU/cache/pause).
@@ -109,7 +114,7 @@ Diretriz visual (overlay e menu):
 - `AC1`: estado de chips/features e mixer:
   - `FM:x/y`: `x`=setting FM, `y`=mask ativa no mixer.
   - `SCC:x/y`: `x`=setting do `Konami SCC+` interno, `y`=mask ativa no mixer.
-  - `AG`: Audio Gain UI.
+  - `AG`: Audio Gain UI (`0..9`).
   - `AE`: ganho efetivo aplicado.
   - `M`: mute efetivo por gain zero.
   - `P7`: registrador PSG mixer.
@@ -193,6 +198,9 @@ Diretriz visual (overlay e menu):
   - `VDP EVT`: write pontual em `R25/R26/R27` com `PC` da escrita no trace;
   - `VDP LOOP`: snapshot reduzido em degraus de repeticao de PC (`200`, `400`, ...).
   - Observacao: logs de alta frequencia (`VDP CHG/IRQ/RG/IO`) foram removidos por impacto de performance (flood UART) durante gameplay.
+- A trilha UART experimental de audio do `SMANBOW2` (`SCC EVT` / `AUD EVT`) foi congelada para futuro na issue `#220`.
+  - O codigo de instrumentacao foi preservado para reativacao futura.
+  - No estado atual, ela fica desabilitada por compile-time e nao emite logs em runtime.
 
 ## Arquitetura (modular)
 - Renderer da debug layer desacoplado em objeto plugavel:

@@ -83,11 +83,12 @@ Targets atualmente suportados pelo `Makefile`:
 Flags publicas principais:
 
 - `DEBUG=0|1`
-- `OWNER="<nome>"` (nomeia pacote em `make package`)
-- `MSXBARE_PATREON_TAG="<nome>"` (fallback para owner quando `OWNER` nao for informado)
+- `OWNER="<nome>"` (owner/tag efetivo da build; nomeia pacote em `make package`)
+- `MSXBARE_PATREON_TAG="<nome>"` (faz a mesma coisa que `OWNER` quando `OWNER` nao for informado)
 - `FIRMWARE_DIR=<dir>`
 - `EMULATOR_BACKEND=fmsx|bluemsx`
 - `CROSS=<prefixo>`
+- Precedencia no `make`: flags da linha de comando vencem `.config`; `.config` vence os defaults do `Makefile`.
 
 ## Fluxo de SD
 

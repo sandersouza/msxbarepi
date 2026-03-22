@@ -98,6 +98,8 @@ extern int fmsx_vdp_get_ie1_target_delta(void);
 extern uint8_t fmsx_vdp_get_effective_odd_page(void);
 extern uint8_t fmsx_vdp_get_render_page(void);
 extern void fmsx_vdp_trace_get_view(const TFmsxVDPTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
+extern void fmsx_scc_trace_get_view(const TFmsxSCCTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
+extern void fmsx_audio_port_trace_get_view(const TFmsxAudioPortTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
 extern void fmsx_cpu_set_turbo_percent(unsigned percent);
 extern unsigned fmsx_video_get_latest(const u16 **pixels, unsigned *width, unsigned *height);
 extern const char *ROMName[];
@@ -137,6 +139,8 @@ extern unsigned fmsx_local_ym2413_get_layer_gain_pct(void);
 extern void fmsx_local_ym2413_refresh(YM2413 *D);
 extern unsigned FmsxTurboPercent;
 extern int g_fmsx_quit_after_vblank;
+extern void fmsx_audio_begin_frame_render_accounting(void);
+extern unsigned fmsx_audio_end_frame_render_accounting(void);
 
 static TFmsxRuntimeStatus g_fmsx_status = { FALSE, FALSE, 0u, 0, 0 };
 static char g_cartridge_path[2][192] = {{0}};
@@ -162,6 +166,7 @@ static boolean g_audio_layer1_muted = FALSE; /* PSG + noise */
 static boolean g_audio_layer2_muted = FALSE; /* FM */
 static boolean g_audio_layer3_muted = FALSE; /* SCC */
 static unsigned g_fm_layer_gain_pct = 100u;
+static unsigned g_refresh_hz = 60u;
 int g_fmsx_fmpac_enabled = 1;
 uint8_t g_fmsx_scc_internal_slot = 0xFFu;
 uint8_t g_fmsx_scc_dual_slot = 0xFFu;
@@ -783,7 +788,11 @@ static unsigned fmsx_runtime_boot_forced_turbo_percent(void)
 
 static unsigned fmsx_runtime_effective_refresh_hz(void)
 {
-    return 60u;
+    if (PALVideo)
+    {
+        return 50u;
+    }
+    return g_refresh_hz == 50u ? 50u : 60u;
 }
 
 static unsigned fmsx_runtime_z80_turbo_percent(void)
@@ -1159,8 +1168,11 @@ boolean fmsx_runtime_step_frame(void)
     for (unsigned i = 0; i < steps; ++i)
     {
         const unsigned seq_before = fmsx_video_get_latest(0, 0, 0);
+        const boolean audio_enabled_this_frame = fmsx_runtime_audio_render_enabled();
         unsigned slices = 0u;
         boolean frame_done = FALSE;
+
+        fmsx_audio_begin_frame_render_accounting();
 
         if (g_boot_warmup_frames_remaining > 0u)
         {
@@ -1193,6 +1205,12 @@ boolean fmsx_runtime_step_frame(void)
         ++frames_done;
         ++g_fmsx_status.frames;
 
+        if (audio_enabled_this_frame && (fmsx_audio_end_frame_render_accounting() == 0u))
+        {
+            const unsigned samples_per_frame = kFmsxAudioRate / fmsx_runtime_effective_refresh_hz();
+            RenderAndPlayAudio(samples_per_frame);
+        }
+
         if (g_boot_warmup_frames_remaining > 0u)
         {
             g_boot_warmup_frames_remaining--;
@@ -1208,11 +1226,6 @@ boolean fmsx_runtime_step_frame(void)
         }
     }
 
-    if (g_boot_warmup_frames_remaining == 0u && frames_done > 0u)
-    {
-        const unsigned samples_per_frame = kFmsxAudioRate / fmsx_runtime_effective_refresh_hz();
-        RenderAndPlayAudio(samples_per_frame * frames_done);
-    }
     return TRUE;
 }
 
@@ -1279,8 +1292,17 @@ void fmsx_runtime_set_overscan(boolean enabled)
 
 void fmsx_runtime_set_refresh_hz(unsigned hz)
 {
-    (void) hz;
-    /* Fixed video cadence policy: always NTSC 60Hz. */
+    g_refresh_hz = (hz == 50u) ? 50u : 60u;
+}
+
+unsigned fmsx_runtime_get_refresh_hz(void)
+{
+    return fmsx_runtime_effective_refresh_hz();
+}
+
+boolean fmsx_runtime_audio_render_enabled(void)
+{
+    return (g_fmsx_status.running && (g_boot_warmup_frames_remaining == 0u)) ? TRUE : FALSE;
 }
 
 void fmsx_runtime_set_disk_rom_enabled(boolean enabled)
@@ -2171,6 +2193,36 @@ void fmsx_runtime_get_vdp_trace_view(TFmsxVDPTraceView *view)
     view->head = 0u;
     view->dropped = 0u;
     fmsx_vdp_trace_get_view(&view->events, &view->capacity, &view->count, &view->head, &view->dropped);
+}
+
+void fmsx_runtime_get_scc_trace_view(TFmsxSCCTraceView *view)
+{
+    if (view == 0)
+    {
+        return;
+    }
+
+    view->events = 0;
+    view->capacity = 0u;
+    view->count = 0u;
+    view->head = 0u;
+    view->dropped = 0u;
+    fmsx_scc_trace_get_view(&view->events, &view->capacity, &view->count, &view->head, &view->dropped);
+}
+
+void fmsx_runtime_get_audio_port_trace_view(TFmsxAudioPortTraceView *view)
+{
+    if (view == 0)
+    {
+        return;
+    }
+
+    view->events = 0;
+    view->capacity = 0u;
+    view->count = 0u;
+    view->head = 0u;
+    view->dropped = 0u;
+    fmsx_audio_port_trace_get_view(&view->events, &view->capacity, &view->count, &view->head, &view->dropped);
 }
 
 unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsigned *height)
