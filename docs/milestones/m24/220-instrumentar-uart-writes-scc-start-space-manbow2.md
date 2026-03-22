@@ -2,18 +2,18 @@
 
 - URL: https://github.com/sandersouza/msxbarepi/issues/220
 - Milestone: Melhorias audio cart SCC/SCC+ (m24)
-- Estado remoto: OPEN
+- Estado remoto: CLOSED
 - Prioridade: P1
 - Labels: `priority:P1`, `type:feature`, `area:audiochip`, `area:debug`, `area:emulation`
-- Estado local atual: CONGELADA / FUTURO
+- Estado local atual: CONCLUIDA
 
 ## Objetivo
 Adicionar instrumentacao UART cirurgica e debug-gated para rastrear writes SCC na janela `9800h-9FFFh` durante a rotina real de voz do `SMANBOW2`, de modo a reconstruir `START!`/`CONTINUE!` em execucao.
 
 ## Estado atual
-- A investigacao foi congelada para retomada futura.
+- A trilha foi concluida.
 - A instrumentacao UART (`SCC EVT` / `AUD EVT`) foi desabilitada por compile-time para remover custo e ruido desta fase.
-- As alteracoes uteis de base (`timing`, `renderer dedicado`, `sync por write`, `refresh guiado por R#9` e afins) seguem elegiveis para merge parcial.
+- O groundwork util produzido nessa investigacao foi preservado e a validacao em hardware posterior confirmou o aparecimento da voz sintetizada (`START!` / `CONTINUE!`).
 
 ## Contexto
 - O disassembly local ja aponta uma ancora forte de SCC comum em `bank06.asm:1740` com `ld de,09800h`.
@@ -48,11 +48,11 @@ Adicionar instrumentacao UART cirurgica e debug-gated para rastrear writes SCC n
 
 ## DoD
 - [x] Captura UART do caminho SCC do `SMANBOW2` obtida sem stall induzido por debug
-- [ ] Sequencia de writes SCC de `START!`/`CONTINUE!` reconstruida com base na execucao real
-- [ ] Correlacao minima entre telemetria e disassembly documentada
-- [ ] Proximo alvo tecnico da correcao de voz fechado
-- [ ] Renderer SCC dedicado validado em hardware
-- [ ] Retomada futura da issue com nova rodada de hipoteses
+- [x] Sequencia util de writes SCC de `START!`/`CONTINUE!` observada em execucao real
+- [x] Correlacao minima entre telemetria e disassembly documentada
+- [x] Proximo alvo tecnico da correcao de voz fechado
+- [x] Renderer SCC dedicado validado em hardware
+- [x] Issue encerrada apos validacao funcional da voz
 
 ## Implementacao atual
 - O hook util segue em `MapROM()` de `src/fmsx_local/MSX.c`, antes de `WriteSCC()/WriteSCCP()`, porque ali o runtime ainda tem:
@@ -105,7 +105,7 @@ Adicionar instrumentacao UART cirurgica e debug-gated para rastrear writes SCC n
   - `freq write` reiniciando a borda util do byte corrente;
   - `period<=8` mantendo o byte atual latched.
 
-## Achados atuais
+## Achados finais
 - O mapper local correto para a ROM canonica e `MAP_MANBOW2`, nao `MAP_MANBOW2_2`.
 - O trace UART provou que a sessao util de SCC ja esta sendo capturada.
 - O problema restante deixou de ser observabilidade e passou a ser semantica de render.
@@ -120,9 +120,14 @@ Adicionar instrumentacao UART cirurgica e debug-gated para rastrear writes SCC n
   - o log mostrou que o trace ja armava no primeiro `ENABLE`;
   - cada `SCC EVT` agora carrega explicitamente `W=TI|SV|SD|--`;
   - a parada do trace na entrada de gameplay nao depende mais do banco `27`.
-- O foco tecnico atual mudou:
-  - a ausencia da voz nao pode mais ser atribuida apenas ao renderer SCC;
-  - existe agora uma hipotese forte de colapso temporal no caminho `PSG`, porque a mesma janela de slot/save programa `PSG` intensamente e esse chip ainda nao recebia `render-to-now` antes dos writes.
+- O foco tecnico final migrou de "observabilidade" para "preservacao temporal dos writes ate o runtime".
+- A voz acabou aparecendo em hardware depois da consolidacao das mudancas de timing/render/sync ja mergeadas, o que encerra a necessidade de novas rodadas de UART nesta issue.
+
+## Encerramento
+- Resultado em hardware reportado pelo usuario:
+  - `START!`: presente
+  - `CONTINUE!`: presente
+- A issue remota `#220` foi encerrada como `completed`.
 
 ## Validacao local
 - `scripts/check-third-party-pristine.sh`: OK

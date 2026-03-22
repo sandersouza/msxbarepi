@@ -9,9 +9,9 @@ Data: 2026-03-20
 - Baseline funcional a preservar: `SMANBOW2` estavel recuperado na trilha da `#176/#201`, ja mesclado em `main`.
 
 ## Estado atual
-- A issue `#220` foi congelada para retomada futura.
+- A issue `#220` foi concluida e encerrada.
 - A telemetria UART desta trilha (`SCC EVT` / `AUD EVT`) foi desabilitada por compile-time e nao gera mais logs em runtime.
-- O objetivo desta branch passa a ser somente consolidar e mesclar o groundwork util ja produzido:
+- O objetivo final desta branch foi consolidar e mesclar o groundwork util produzido:
   - ajustes de timing/sync por write;
   - renderer dedicado de `SCC` e `PSG`;
   - contrato de refresh (`NTSC` por padrao e troca automatica para `PAL` por `R#9`);
@@ -255,12 +255,8 @@ Data: 2026-03-20
     - `BUILD_HASH`: `ab38eb9-960f705a2d5b33082fa655c8fb0bf9f30d2ea3f5`
     - `BUILD_ID (TXTDBG)`: `FF04`
 
-## Riscos / lacunas abertas
-- O renderer SCC dedicado ainda precisa de validacao em hardware nesta nova semantica `phase/sample/nextVolume`.
-- `START!` e `CONTINUE!` continuam como alvo aberto.
-- O trace UART ja provou a sequencia de writes; o gargalo restante segue em compatibilidade de render/timing.
-- A trilha ficou congelada antes de fechar se `START!`/`CONTINUE!` passam por `SCC`, `PSG` ou ambos.
-
-## Proximo passo imediato
-- Mesclar o groundwork util ja estabilizado nesta branch.
-- Reativar a issue `#220` somente quando houver capacidade de retomar a investigacao de voz com nova hipotese tecnica.
+## Encerramento posterior
+- Validacao de hardware posterior ao merge confirmou:
+  - `START!`: presente
+  - `CONTINUE!`: presente
+- Com isso, a trilha `#220` deixa de ser futura/congelada e passa a historico concluido.

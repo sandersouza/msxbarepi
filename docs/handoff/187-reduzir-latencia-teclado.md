@@ -178,3 +178,11 @@ O que mudou:
 #### Proximo passo
 - Validar em hardware se esse segundo corte elimina perda de `press/release` curto.
 - Se ainda falhar, o proximo alvo deixa de ser fila e passa a ser a politica de estabilizacao do `KeyState[]`.
+
+### Validacao de hardware reportada apos o build
+- A branch anterior de audio/voz pode ser considerada concluida:
+  - `START!`: presente
+  - `CONTINUE!`: presente
+- A `#187` tambem recebeu validacao inicial positiva:
+  - teclado bem mais responsivo
+  - mais testes de hardware ainda pendentes antes de encerrar a issue
