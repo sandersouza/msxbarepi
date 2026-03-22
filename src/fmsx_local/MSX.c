@@ -4320,6 +4320,8 @@ uint16_t LoopZ80(Z80 *R)
 #endif
   }
 
+  fmsx_runtime_keyboard_drain_step();
+
   /* Every few scanlines, update sound */
 #ifndef FMSX_BAREMETAL_SKIP_AUDIO_RUNTIME
   if(!(ScanLine&0x07))

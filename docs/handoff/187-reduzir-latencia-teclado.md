@@ -144,3 +144,37 @@ O que mudou:
 ### Proximo passo
 - Validar em hardware se a fila dual-consumer ja reduz perda de `press/release`.
 - Se ainda houver falha, mover a proxima iteracao para consumo temporal mais fino no core em vez de apenas `1 report/frame`.
+
+### Atualizacao 2026-03-22 - iteracao 2
+
+#### Objetivo desta rodada
+- Parar de colapsar os reports antes do `step_frame()`.
+- Fazer o runtime aplicar reports de teclado ao longo do frame, em vez de receber apenas um estado consolidado antes da emulacao inteira.
+
+#### Mudancas implementadas
+Arquivos:
+- `src/kernel.cpp`
+- `src/fmsx_host_stubs.c`
+- `src/fmsx_runtime.c`
+- `src/fmsx_runtime.h`
+- `src/fmsx_local/MSX.c`
+
+O que mudou:
+- `PushKeyboardStateToRuntime()` agora drena todos os reports pendentes do cursor `Runtime` e os empilha no backend em ordem, em vez de consumir apenas um snapshot novo.
+- `fmsx_runtime_set_keyboard_raw()` deixou de aplicar `KeyState[]` imediatamente; agora ele enfileira reports raw numa fila fixa do runtime.
+- O fMSX passou a drenar essa fila com `fmsx_runtime_keyboard_drain_step()` ao longo dos scanlines.
+- Reset/menu reset/load-state/shutdown agora limpam explicitamente o pipeline de teclado do runtime.
+
+#### Efeito esperado
+- Press/release curtos deixam de ser comprimidos num unico estado final antes do `step_frame()`.
+- O core passa a observar transicoes mais proximas do tempo em que realmente chegaram do USB.
+
+#### Build
+- `scripts/check-third-party-pristine.sh`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603221405-3572e72`: OK
+- Artefato: `artifacts/kernel8-issue187.img`
+- `BUILD_HASH`: `3572e72-13a3a053bcbb762f4b0941e6df0045720034cf46`
+
+#### Proximo passo
+- Validar em hardware se esse segundo corte elimina perda de `press/release` curto.
+- Se ainda falhar, o proximo alvo deixa de ser fila e passa a ser a politica de estabilizacao do `KeyState[]`.

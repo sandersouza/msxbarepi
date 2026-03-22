@@ -59,7 +59,7 @@ Registro de desafios enfrentados por issue, decisão adotada e status da soluç�
 
 ### #187 — fila de captura USB-HID fora do ciclo do Z80
 - Desafio: O pipeline ainda pode perder ou distorcer transições `press/release` por subamostragem entre o clock de captura USB-HID e o clock de consumo do core, gerando falha intermitente ou repetição contínua em gameplay.
-- Solução adotada: issue reaberta com foco arquitetural; a rodada atual criou uma tool importável em `src/tools/input/` com ring buffer HID e dois cursores independentes (`UI` e `Runtime`), migrou `CUsbHidKeyboard` para essa tool e fez o backend deixar de consumir o último snapshot drenado pela UI. Assim, a captura USB fica separada do consumo do core, preservando transições para a primeira validação em hardware.
+- Solução adotada: issue reaberta com foco arquitetural; a primeira rodada criou uma tool importável em `src/tools/input/` com ring buffer HID e dois cursores independentes (`UI` e `Runtime`), migrou `CUsbHidKeyboard` para essa tool e fez o backend deixar de consumir o último snapshot drenado pela UI. A segunda rodada empilhou todos os reports pendentes no backend e adicionou uma fila própria no runtime, drenada ao longo dos scanlines, para evitar colapso dos eventos antes do `step_frame()`.
 - Status: Parcial
 - Referência: [187-p1-reduzir-latencia-do-teclado-polling-processamento-por-ciclo.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/187-p1-reduzir-latencia-do-teclado-polling-processamento-por-ciclo.md)
 

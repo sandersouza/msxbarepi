@@ -97,6 +97,24 @@ O filtro de estabilização não pode apagar `release` legítimo nem transformar
 - Validar em hardware.
 - Se ainda houver perda de transição, mover a próxima iteração para consumo temporal mais fino no backend, em vez de apenas um snapshot por frame.
 
+## Atualização 2026-03-22 - iteração 2
+
+### Corte implementado nesta rodada
+- `kernel.cpp` agora drena todos os reports pendentes do cursor `Runtime` e os empilha no backend em ordem.
+- `fmsx_runtime_set_keyboard_raw()` passou a enfileirar reports raw em vez de aplicar o `KeyState[]` imediatamente.
+- O fMSX agora drena essa fila ao longo dos scanlines com `fmsx_runtime_keyboard_drain_step()`.
+- `fmsx_runtime_init/menu_reset/load_state/shutdown` passaram a resetar explicitamente o pipeline de teclado do runtime.
+
+### Limite atual conhecido
+- A separação temporal agora existe também no runtime, mas ainda não houve validação em hardware.
+- Se ainda houver perda de `press/release`, o próximo alvo fica concentrado na política de estabilização do `KeyState[]`, e não mais no buffer/ordenação dos reports.
+
+### Validação local desta rodada
+- `scripts/check-third-party-pristine.sh`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603221405-3572e72`: OK
+- Artefato: `artifacts/kernel8-issue187.img`
+- `BUILD_HASH`: `3572e72-13a3a053bcbb762f4b0941e6df0045720034cf46`
+
 ## Referências obrigatórias
 - `src/tools/usb_hid_keyboard.cpp`
 - `src/fmsx_host_stubs.c`
