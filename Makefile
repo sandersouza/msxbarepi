@@ -32,48 +32,16 @@ FATFS_COMPAT_INCLUDE := -I$(CURDIR)/src/fatfs_compat
 -include .config.mk
 -include $(BUILD_DIR)/config.mk
 
-ifneq ($(origin DEBUG_CONFIG),undefined)
-override DEBUG := $(DEBUG_CONFIG)
-endif
-ifneq ($(origin MSXBARE_FEAT_SCC_CONFIG),undefined)
-override MSXBARE_FEAT_SCC := $(MSXBARE_FEAT_SCC_CONFIG)
-endif
-ifneq ($(origin MSXBARE_FEAT_FMPAC_CONFIG),undefined)
-override MSXBARE_FEAT_FMPAC := $(MSXBARE_FEAT_FMPAC_CONFIG)
-endif
-ifneq ($(origin MSXBARE_FEAT_DISK_ROM_CONFIG),undefined)
-override MSXBARE_FEAT_DISK_ROM := $(MSXBARE_FEAT_DISK_ROM_CONFIG)
-endif
-ifneq ($(origin MSXBARE_FEAT_MEGARAM_CONFIG),undefined)
-override MSXBARE_FEAT_MEGARAM := $(MSXBARE_FEAT_MEGARAM_CONFIG)
-endif
-ifneq ($(origin MSXBARE_FEAT_MSX2_CONFIG),undefined)
-override MSXBARE_FEAT_MSX2 := $(MSXBARE_FEAT_MSX2_CONFIG)
-endif
-ifneq ($(origin MSXBARE_BOOT_SCREEN_CONFIG),undefined)
-override MSXBARE_BOOT_SCREEN := $(MSXBARE_BOOT_SCREEN_CONFIG)
-endif
-ifneq ($(origin MSXBARE_FEAT_MSX2P_CONFIG),undefined)
-override MSXBARE_FEAT_MSX2P := $(MSXBARE_FEAT_MSX2P_CONFIG)
-endif
-ifneq ($(origin MSXBARE_FEAT_LOAD_ROM_CONFIG),undefined)
-override MSXBARE_FEAT_LOAD_ROM := $(MSXBARE_FEAT_LOAD_ROM_CONFIG)
-endif
-ifneq ($(origin MSXBARE_FEAT_LOAD_DISK_CONFIG),undefined)
-override MSXBARE_FEAT_LOAD_DISK := $(MSXBARE_FEAT_LOAD_DISK_CONFIG)
-endif
-ifneq ($(origin MSXBARE_ONE_ROM_MODE_CONFIG),undefined)
-override MSXBARE_ONE_ROM_MODE := $(MSXBARE_ONE_ROM_MODE_CONFIG)
-endif
-ifneq ($(origin MSXBARE_ONE_ROM_PATH_CONFIG),undefined)
-override MSXBARE_ONE_ROM_PATH := $(MSXBARE_ONE_ROM_PATH_CONFIG)
-endif
-ifneq ($(origin MSXBARE_BOOT_MODE_DEFAULT_CONFIG),undefined)
-override MSXBARE_BOOT_MODE_DEFAULT := $(MSXBARE_BOOT_MODE_DEFAULT_CONFIG)
-endif
-ifneq ($(origin MSXBARE_PATREON_TAG_CONFIG),undefined)
-override MSXBARE_PATREON_TAG := $(MSXBARE_PATREON_TAG_CONFIG)
-endif
+#
+# Precedencia canonica do build:
+#   1. flags passadas na linha de comando do `make`
+#   2. valores persistidos em `.config.mk` / `build/config.mk`
+#   3. defaults definidos neste arquivo
+#
+# Nao reaplicar `*_CONFIG` com `override`, pois isso faria a `.config`
+# vencer a linha de comando. Com os includes acima, o comportamento volta
+# ao padrao do GNU make: `make DEBUG=0 OWNER=...` vence a configuracao salva.
+#
 
 DEBUG_BOOL := 0
 ifeq ($(strip $(DEBUG)),1)
@@ -155,7 +123,7 @@ default: config-header circle-libs
 		MSXBARE_FEAT_LOAD_DISK=$(MSXBARE_FEAT_LOAD_DISK) \
 		MSXBARE_ONE_ROM_MODE=$(MSXBARE_ONE_ROM_MODE) \
 		MSXBARE_ONE_ROM_PATH="$(MSXBARE_ONE_ROM_PATH)" \
-		MSXBARE_PATREON_TAG="$(MSXBARE_PATREON_TAG)" \
+		MSXBARE_PATREON_TAG="$(EFFECTIVE_OWNER)" \
 		MSXBARE_BOOT_MODE_DEFAULT_ENUM=$(MSXBARE_BOOT_MODE_DEFAULT_ENUM) \
 		MSXBARE_BOOT_MODE_LOCKED=$(MSXBARE_BOOT_MODE_LOCKED)
 	@img=$$(ls src/kernel8*.img 2>/dev/null | head -n1); \
@@ -253,7 +221,7 @@ config-header:
 	MSXBARE_BOOT_MODE_DEFAULT="$(MSXBARE_BOOT_MODE_DEFAULT)" \
 	MSXBARE_BOOT_MODE_DEFAULT_ENUM="$(MSXBARE_BOOT_MODE_DEFAULT_ENUM)" \
 	MSXBARE_BOOT_MODE_LOCKED="$(MSXBARE_BOOT_MODE_LOCKED)" \
-	MSXBARE_PATREON_TAG="$(MSXBARE_PATREON_TAG)" \
+	MSXBARE_PATREON_TAG="$(EFFECTIVE_OWNER)" \
 	./scripts/gen-build-header.sh $(BUILD_DIR)/config_build.h
 
 clean:
@@ -319,10 +287,11 @@ help:
 	@echo "Initramfs: make initramfs INITRAMFS_IN=roms/initramfs INITRAMFS_OUT=sdcard/msx.cpio"
 	@echo "SD package zip (via prepare-sd dry-run offline): make package -> artifacts/sdcard-package-YYYYMMDDHHMM.zip"
 	@echo "Flags uteis: make package DEBUG=0|1 OWNER=<nome> FIRMWARE_DIR=./rpi-firmware"
+	@echo "Precedencia: flags da linha de comando vencem .config; .config vence os defaults"
 	@echo "Cross prefix auto: aarch64-none-elf- | aarch64-elf- | aarch64-linux-gnu-"
 	@echo "Override: make CROSS=aarch64-elf-"
 	@echo "Use flags principais: DEBUG=0|1 OWNER=<nome> FIRMWARE_DIR=<dir>"
-	@echo "Owner automatico: se OWNER vazio, usa MSXBARE_PATREON_TAG (menuconfig)"
+	@echo "Owner/tag efetivo: OWNER vence; se vazio, usa MSXBARE_PATREON_TAG (menuconfig)"
 	@echo "Backend do emulador: EMULATOR_BACKEND=fmsx|bluemsx (default: fmsx)"
 	@echo "Boot mode selecionavel em runtime: Settings -> Boot Mode [NORM/FAST/GAME]"
 	@echo "Bypass temporario (nao recomendado): ALLOW_DIRTY_THIRD_PARTY=1 make"

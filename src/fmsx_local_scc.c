@@ -13,6 +13,8 @@
 
 #include "SCC.h"
 #include "Sound.h"
+#include "fmsx_runtime.h"
+#include "fmsx_local_scc_render.h"
 #include <string.h>
 
 #ifndef MSXBARE_FMSX_SCC_BALANCE_PCT
@@ -30,6 +32,176 @@ enum
   FMSX_SCC_MODE_COMPATIBLE = 1u,
   FMSX_SCC_MODE_PLUS       = 2u
 };
+
+extern SCC SCChip[FMSX_SCC_CHIP_COUNT];
+
+static TFmsxLocalSccRenderState g_FmsxSccRender[FMSX_SCC_CHIP_COUNT];
+
+static int ApplySccBalancePct(int volume);
+static uint8_t fmsx_scc_get_raw_deform(const SCC *D);
+static int fmsx_scc_get_raw_period(const SCC *D,unsigned int channel);
+
+static int fmsx_scc_render_chip_index(const SCC *D)
+{
+  const int chip = (D->First - FIRST_SCC_CHANNEL) / SCC_CHANNELS;
+  return ((chip >= 0) && (chip < FMSX_SCC_CHIP_COUNT))
+       ? chip
+       : -1;
+}
+
+static TFmsxLocalSccRenderState *fmsx_scc_render_state_for_scc(const SCC *D)
+{
+  const int chip = fmsx_scc_render_chip_index(D);
+  return (chip >= 0) ? &g_FmsxSccRender[chip] : 0;
+}
+
+static int fmsx_scc_adjust_wave_sample(signed char wav,uint8_t volume_nibble)
+{
+  const int volume = ApplySccBalancePct(255 * (volume_nibble & 0x0Fu) / 15);
+  return (int)wav * volume;
+}
+
+static int fmsx_scc_adjust_ref_volume(int ref_volume)
+{
+  int out = (ref_volume * kSccBalancePct) / 100;
+  if(out < 0) out = 0;
+  return out;
+}
+
+static void fmsx_scc_render_sync_flags(TFmsxLocalSccRenderState *S,uint8_t deform,uint8_t mode)
+{
+  unsigned int channel;
+  uint8_t value = deform;
+
+  if(mode != FMSX_SCC_MODE_REAL) value &= ~0x80u;
+
+  S->Mode   = mode;
+  S->Deform = value;
+
+  switch(value & 0xC0u)
+  {
+    case 0x00u:
+      for(channel=0; channel<SCC_CHANNELS; ++channel)
+      {
+        S->Rotate[channel]   = 0u;
+        S->ReadOnly[channel] = 0u;
+      }
+      break;
+
+    case 0x40u:
+      for(channel=0; channel<SCC_CHANNELS; ++channel)
+      {
+        S->Rotate[channel]   = 1u;
+        S->ReadOnly[channel] = 1u;
+      }
+      break;
+
+    case 0x80u:
+      for(channel=0; channel<3u; ++channel)
+      {
+        S->Rotate[channel]   = 0u;
+        S->ReadOnly[channel] = 0u;
+      }
+      for(channel=3u; channel<SCC_CHANNELS; ++channel)
+      {
+        S->Rotate[channel]   = 1u;
+        S->ReadOnly[channel] = 1u;
+      }
+      break;
+
+    default:
+      for(channel=0; channel<3u; ++channel)
+      {
+        S->Rotate[channel]   = 1u;
+        S->ReadOnly[channel] = 1u;
+      }
+      for(channel=3u; channel<SCC_CHANNELS; ++channel)
+      {
+        S->Rotate[channel]   = 0u;
+        S->ReadOnly[channel] = 1u;
+      }
+      break;
+  }
+}
+
+static void fmsx_scc_render_sync_wave_channel(
+  TFmsxLocalSccRenderState *S,
+  const SCC *D,
+  unsigned int channel,
+  uint8_t mode
+)
+{
+  unsigned int i;
+  const unsigned int source_channel =
+    ((mode != FMSX_SCC_MODE_PLUS) && (channel == 4u)) ? 3u : channel;
+  const unsigned int offset = source_channel << 5;
+
+  for(i=0; i<32u; ++i)
+  {
+    S->Wave[channel][i] = (signed char)D->R[offset + i];
+  }
+}
+
+static void fmsx_scc_render_sync_period_channel(
+  TFmsxLocalSccRenderState *S,
+  const SCC *D,
+  unsigned int channel,
+  uint8_t mode,
+  int reset_waveform
+)
+{
+  const uint16_t org = (uint16_t)fmsx_scc_get_raw_period(D,channel);
+  const unsigned int previous_sample =
+    reset_waveform
+      ? 0u
+      : ((S->Pos[channel] != 0xFFu)
+          ? (unsigned int)(S->Pos[channel] & 0x1Fu)
+          : (unsigned int)((S->Count[channel] >> 23) & 0x1Fu));
+  unsigned int effective = org;
+
+  if(S->Deform & 0x02u) effective &= 0x00FFu;
+  else if(S->Deform & 0x01u) effective >>= 8;
+
+  S->OrgPeriod[channel] = org;
+  S->Period[channel]    = (uint16_t)effective;
+  if(reset_waveform || (S->Deform & 0x20u))
+    S->Count[channel] = 0u;
+  else
+    S->Count[channel] &= (0x1Fu << 23);
+
+  S->VolumeNibble[channel] = S->NextVolumeNibble[channel] & 0x0Fu;
+  S->Pos[channel] = 0xFFu;
+  S->CurWave[channel] = S->Wave[channel][previous_sample & 0x1Fu];
+  S->Out[channel] = fmsx_scc_adjust_wave_sample(
+    (signed char)S->CurWave[channel],
+    S->VolumeNibble[channel]
+  );
+  (void)mode;
+}
+
+static void fmsx_scc_render_rebuild_one(SCC *D,uint8_t mode)
+{
+  TFmsxLocalSccRenderState *S = fmsx_scc_render_state_for_scc(D);
+  unsigned int channel;
+
+  if(!S) return;
+
+  memset(S,0,sizeof(*S));
+  fmsx_scc_render_sync_flags(S,fmsx_scc_get_raw_deform(D),mode);
+  S->Enable = D->R[0xAF] & 0x1Fu;
+
+  for(channel=0; channel<SCC_CHANNELS; ++channel)
+  {
+    S->VolumeNibble[channel] = D->R[0xAAu + channel] & 0x0Fu;
+    S->NextVolumeNibble[channel] = S->VolumeNibble[channel];
+    S->CurWave[channel] = 0;
+    S->DaVolume[channel] = 0;
+    S->DeformSample[channel] = 0;
+    S->Pos[channel] = 0xFFu;
+    fmsx_scc_render_sync_wave_channel(S,D,channel,mode);
+    fmsx_scc_render_sync_period_channel(S,D,channel,mode,1);
+  }
+}
 
 static int ApplySccBalancePct(int volume)
 {
@@ -141,25 +313,34 @@ static void fmsx_scc_write_wave_value(SCC *D,unsigned int channel,uint8_t index,
 
 static void fmsx_scc_write_wave_compatible(SCC *D,uint8_t address,uint8_t value)
 {
+  TFmsxLocalSccRenderState *S = fmsx_scc_render_state_for_scc(D);
   const unsigned int channel = address>>5;
   if(fmsx_scc_channel_read_only(D,FMSX_SCC_MODE_COMPATIBLE,channel)) return;
 
   fmsx_scc_write_wave_value(D,channel,address,value);
+  if(S) fmsx_scc_render_sync_wave_channel(S,D,channel,FMSX_SCC_MODE_COMPATIBLE);
 
   /* Generic SCC mirrors waveform 4 onto waveform 5. */
-  if(channel==3u) fmsx_scc_write_wave_value(D,4u,address,value);
+  if(channel==3u)
+  {
+    fmsx_scc_write_wave_value(D,4u,address,value);
+    if(S) fmsx_scc_render_sync_wave_channel(S,D,4u,FMSX_SCC_MODE_COMPATIBLE);
+  }
 }
 
 static void fmsx_scc_write_wave_plus(SCC *D,uint8_t address,uint8_t value)
 {
+  TFmsxLocalSccRenderState *S = fmsx_scc_render_state_for_scc(D);
   const unsigned int channel = address>>5;
   if(channel>=SCC_CHANNELS) return;
   if(fmsx_scc_channel_read_only(D,FMSX_SCC_MODE_PLUS,channel)) return;
   fmsx_scc_write_wave_value(D,channel,address,value);
+  if(S) fmsx_scc_render_sync_wave_channel(S,D,channel,FMSX_SCC_MODE_PLUS);
 }
 
 static void fmsx_scc_write_freq_volume(SCC *D,uint8_t address,uint8_t value,uint8_t mode)
 {
+  TFmsxLocalSccRenderState *S = fmsx_scc_render_state_for_scc(D);
   uint8_t slot;
   uint8_t reg;
   uint8_t prev_enable;
@@ -181,29 +362,33 @@ static void fmsx_scc_write_freq_volume(SCC *D,uint8_t address,uint8_t value,uint
     {
       const unsigned int channel = reg>>1;
       /*
-       * SCC sample streaming depends on a frequency write restarting the
-       * current waveform byte. Reuse SetWave() in SyncSCC to reset Count
-       * without touching the waveform contents.
+       * blueMSX applies the pending volume on a frequency write, preserves the
+       * current waveform byte and forces the renderer to reload it via
+       * oldSample=0xFF on the next mixed sample.
        */
       fmsx_scc_mark_wave_changed(D,channel);
       fmsx_scc_refresh_channel_freq(D,mode,channel);
+      if(S) fmsx_scc_render_sync_period_channel(S,D,channel,mode,0);
       break;
     }
 
     case 10: case 11: case 12: case 13: case 14:
-      /*
-       * openMSX and blueMSX keep additional state for sample-accurate output,
-       * but this fMSX backend renders directly from channel volume. Applying
-       * volume writes immediately preserves music/SFX channels while the
-       * frequency-write reset above still handles the Manbow2 sample path.
-       */
-      fmsx_scc_apply_volume(D,reg-10u);
+    {
+      const unsigned int channel = reg-10u;
+      fmsx_scc_apply_volume(D,channel);
+      if(S)
+      {
+        S->NextVolumeNibble[channel] = D->R[0xAAu + channel] & 0x0Fu;
+      }
       break;
+    }
 
     case 15:
     {
       uint8_t diff = (value^prev_enable)&0x1Fu;
       unsigned int channel;
+
+      if(S) S->Enable = value & 0x1Fu;
 
       for(channel=0;channel<SCC_CHANNELS;++channel)
         if(diff&(1u<<channel))
@@ -215,14 +400,25 @@ static void fmsx_scc_write_freq_volume(SCC *D,uint8_t address,uint8_t value,uint
 
 static void fmsx_scc_write_deform(SCC *D,uint8_t value,uint8_t mode)
 {
+  TFmsxLocalSccRenderState *S = fmsx_scc_render_state_for_scc(D);
   unsigned int channel;
 
   if(value==fmsx_scc_get_raw_deform(D)) return;
 
   fmsx_scc_set_raw_deform(D,value);
+  if(S)
+  {
+    unsigned int channel;
+    for(channel=0; channel<SCC_CHANNELS; ++channel)
+      S->DeformSample[channel] = S->Pos[channel];
+    fmsx_scc_render_sync_flags(S,value,mode);
+  }
 
   for(channel=0;channel<SCC_CHANNELS;++channel)
+  {
     fmsx_scc_refresh_channel_freq(D,mode,channel);
+    if(S) fmsx_scc_render_sync_period_channel(S,D,channel,mode,0);
+  }
 }
 
 static void fmsx_scc_flush_if_async(SCC *D)
@@ -252,6 +448,8 @@ void ResetSCC(SCC *D,int First)
   D->Sync     = SCC_ASYNC;
   D->Changed  = 0x00;
   D->WChanged = 0x00;
+
+  fmsx_scc_render_rebuild_one(D,FMSX_SCC_MODE_COMPATIBLE);
 }
 
 /** ReadSCC() ************************************************/
@@ -296,6 +494,10 @@ uint8_t ReadSCCP(SCC *D,uint8_t R)
 /*************************************************************/
 void WriteSCC(SCC *D,uint8_t R,uint8_t V)
 {
+  TFmsxLocalSccRenderState *S = fmsx_scc_render_state_for_scc(D);
+  fmsx_audio_render_to_cpu_now();
+  if(S) S->Mode = FMSX_SCC_MODE_COMPATIBLE;
+
   if(R<0x80u)
     fmsx_scc_write_wave_compatible(D,R,V);
   else if(R<0xA0u)
@@ -316,6 +518,10 @@ void WriteSCC(SCC *D,uint8_t R,uint8_t V)
 /*************************************************************/
 void WriteSCCP(SCC *D,uint8_t R,uint8_t V)
 {
+  TFmsxLocalSccRenderState *S = fmsx_scc_render_state_for_scc(D);
+  fmsx_audio_render_to_cpu_now();
+  if(S) S->Mode = FMSX_SCC_MODE_PLUS;
+
   if(R<0xA0u)
     fmsx_scc_write_wave_plus(D,R,V);
   else if(R<0xC0u)
@@ -347,4 +553,21 @@ void SyncSCC(SCC *D,uint8_t Sync)
     if(I&1) Sound(J+D->First,D->Freq[J],ApplySccBalancePct(D->Volume[J]));
 
   D->Changed=D->WChanged=0x00;
+}
+
+TFmsxLocalSccRenderState *fmsx_scc_get_render_state(unsigned chip_index)
+{
+  return chip_index < FMSX_SCC_CHIP_COUNT ? &g_FmsxSccRender[chip_index] : 0;
+}
+
+void fmsx_scc_rebuild_render_state_all(void)
+{
+  unsigned int chip;
+  for(chip=0; chip<FMSX_SCC_CHIP_COUNT; ++chip)
+  {
+    fmsx_scc_render_rebuild_one(
+      &SCChip[chip],
+      g_FmsxSccRender[chip].Mode ? g_FmsxSccRender[chip].Mode : FMSX_SCC_MODE_COMPATIBLE
+    );
+  }
 }

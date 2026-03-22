@@ -162,6 +162,11 @@ static u64 FrameIntervalFromRefreshHz(unsigned hz)
 	return (hz == 50u) ? kFrameInterval50Us : kFrameInterval60Us;
 }
 
+static unsigned ClampRefreshRateHz(unsigned hz)
+{
+	return (hz == 50u) ? 50u : 60u;
+}
+
 static unsigned Z80TurboPercentFromMode(unsigned mode)
 {
 	switch (mode)
@@ -302,6 +307,12 @@ static unsigned AudioGainEffectivePct(unsigned ui_pct)
 	if (ui_pct > 100u) ui_pct = 100u;
 	/* UI gain is now a direct 0..100% scaler in the final audio stage. */
 	return ui_pct;
+}
+
+static unsigned AudioGainUiLevelFromPercent(unsigned ui_pct)
+{
+	if (ui_pct > 100u) ui_pct = 100u;
+	return (ui_pct * 9u + 50u) / 100u;
 }
 
 static char ToUpperAscii(char ch)
@@ -855,6 +866,10 @@ CComboKernel::CComboKernel(void)
 	m_FmsxPcRepeatCount(0),
 	m_FmsxPcLoopLogged(FALSE),
 	m_FmsxVideoSeq(0),
+	m_FmsxSccTraceSeq(0u),
+	m_FmsxSccTraceDropped(0u),
+	m_FmsxAudioPortTraceSeq(0u),
+	m_FmsxAudioPortTraceDropped(0u),
 	m_FmsxFpsWindowStartUs(0),
 	m_LastPauseToggleUs(0),
 	m_LastMenuInputPollUs(0),
@@ -1005,16 +1020,15 @@ boolean CComboKernel::Initialize(void)
 	}
 	if (ok)
 	{
+		CDevice *target = &m_NullLog;
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
 		ok = m_Serial.Initialize(115200);
 		if (ok)
 		{
 			BootTrace("I2");
+			target = &m_Serial;
 		}
-	}
-
-	if (ok)
-	{
-		CDevice *target = &m_Serial;
+#endif
 		ok = m_Logger.Initialize(target);
 	}
 
@@ -1115,7 +1129,8 @@ TComboShutdownMode CComboKernel::Run(void)
 		}
 		if (backend_is_fmsx)
 		{
-			fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
+			m_RefreshRateHz = 60u;
+			fmsx_runtime_set_refresh_hz(60u);
 			fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 			fmsx_runtime_set_boot_mode(m_BootMode);
 			fmsx_runtime_set_model_profile(m_MachineProfile);
@@ -1217,6 +1232,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetResolutionMode(m_ResolutionMode);
 	m_PauseMenu.SetWidescreenEnabled(m_WidescreenEnabled);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
+	m_RefreshRateHz = 60u;
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 	m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
 	m_PauseMenu.SetBootMode(m_BootMode);
@@ -1488,8 +1504,17 @@ TComboShutdownMode CComboKernel::Run(void)
 				{
 					stepped_fmsx = TRUE;
 					const EmulatorBackendRuntimeStatus runtime_status = emulator_backend_get_status();
+					const unsigned runtime_refresh_hz = ClampRefreshRateHz(fmsx_runtime_get_refresh_hz());
 					m_FmsxFrames = runtime_status.frames;
 					m_FmsxLastError = runtime_status.last_error;
+
+					if (runtime_refresh_hz != m_RefreshRateHz)
+					{
+						m_RefreshRateHz = runtime_refresh_hz;
+						m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
+						m_FramePacingResetPending = TRUE;
+						m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
+					}
 
 					if (m_FmsxFpsWindowStartUs == 0u)
 					{
@@ -1539,6 +1564,10 @@ TComboShutdownMode CComboKernel::Run(void)
 
 			if (stepped_fmsx)
 			{
+#if FMSX_SMANBOW_AUDIO_TRACE_ENABLED
+				LogSccTraceUart();
+				LogAudioPortTraceUart();
+#endif
 				const boolean force_viewport_clear = m_ForceViewportFullClearNextFrame;
 				m_ForceViewportFullClearNextFrame = FALSE;
 				BlitFmsxFrame(force_viewport_clear ? TRUE : FALSE);
@@ -1940,6 +1969,166 @@ void CComboKernel::KeyPressedHandler(const char *text)
 	}
 }
 
+void CComboKernel::LogSccTraceUart(void)
+{
+#if !MSXBARE_ENABLE_FMSX || !MSXBARE_ENABLE_DEBUG_OVERLAY || !FMSX_SMANBOW_AUDIO_TRACE_ENABLED
+	return;
+#else
+	TFmsxSCCTraceView trace_view = { 0, 0u, 0u, 0u, 0u };
+	const unsigned kind_none = (unsigned) FMSX_SCC_TRACE_NONE;
+	auto kind_tag = [](unsigned kind) -> const char *
+	{
+		switch (kind)
+		{
+		case FMSX_SCC_TRACE_WAVE:   return "W";
+		case FMSX_SCC_TRACE_FREQ:   return "F";
+		case FMSX_SCC_TRACE_VOLUME: return "V";
+		case FMSX_SCC_TRACE_ENABLE: return "E";
+		case FMSX_SCC_TRACE_DEFORM: return "D";
+		default:                    return "-";
+		}
+	};
+	auto mode_tag = [](unsigned mode) -> const char *
+	{
+		return mode ? "P" : "C";
+	};
+	auto trace_window_tag = [](unsigned window) -> const char *
+	{
+		switch (window)
+		{
+		case FMSX_VDP_TRACE_TITLE:       return "TI";
+		case FMSX_VDP_TRACE_SAVE_SELECT: return "SV";
+		case FMSX_VDP_TRACE_STARDATE:    return "SD";
+		default:                         return "--";
+		}
+	};
+
+	fmsx_runtime_get_scc_trace_view(&trace_view);
+	if (trace_view.dropped != m_FmsxSccTraceDropped)
+	{
+		CString drop_line;
+		drop_line.Format("SCC DROP count=%u", trace_view.dropped);
+		m_Logger.Write(FromKernel, LogWarning, drop_line);
+		m_FmsxSccTraceDropped = trace_view.dropped;
+	}
+	if (trace_view.events == 0 || trace_view.count == 0u || trace_view.capacity == 0u)
+	{
+		return;
+	}
+
+	const unsigned start =
+		(trace_view.head + trace_view.capacity - trace_view.count) % trace_view.capacity;
+	for (unsigned i = 0u; i < trace_view.count; ++i)
+	{
+		const TFmsxSCCTraceEvent &event = trace_view.events[(start + i) % trace_view.capacity];
+		if (event.seq <= m_FmsxSccTraceSeq)
+		{
+			continue;
+		}
+
+		CString line;
+		line.Format("SCC EVT #%lu Q=%u W=%s R=%u PC=%04X B=%02X K=%s N=%u A=%04X-%04X V=%02X/%02X S=%u C=%u P=%u-%u T=%02X M=%s",
+			(unsigned long) event.seq,
+			(unsigned) event.session,
+			trace_window_tag((unsigned) event.capture_window),
+			(unsigned) event.rendered_samples_before,
+			(unsigned) event.pc,
+			(unsigned) event.bank16,
+			(event.kind == kind_none) ? "-" : kind_tag((unsigned) event.kind),
+			(unsigned) event.count,
+			(unsigned) event.addr_first,
+			(unsigned) event.addr_last,
+			(unsigned) event.value_first,
+			(unsigned) event.value_last,
+			(unsigned) event.slot,
+			(unsigned) event.chip,
+			(unsigned) event.ps,
+			(unsigned) event.ss,
+			(unsigned) event.mapper,
+			mode_tag((unsigned) event.mode));
+		m_Logger.Write(FromKernel, LogNotice, line);
+		m_FmsxSccTraceSeq = event.seq;
+	}
+#endif
+}
+
+void CComboKernel::LogAudioPortTraceUart(void)
+{
+#if !MSXBARE_ENABLE_FMSX || !MSXBARE_ENABLE_DEBUG_OVERLAY || !FMSX_SMANBOW_AUDIO_TRACE_ENABLED
+	return;
+#else
+	TFmsxAudioPortTraceView trace_view = { 0, 0u, 0u, 0u, 0u };
+	auto chip_tag = [](unsigned chip) -> const char *
+	{
+		switch (chip)
+		{
+		case FMSX_AUDIO_PORT_TRACE_PSG: return "PSG";
+		case FMSX_AUDIO_PORT_TRACE_FM:  return "FM";
+		default:                        return "--";
+		}
+	};
+	auto op_tag = [](unsigned op) -> const char *
+	{
+		switch (op)
+		{
+		case FMSX_AUDIO_PORT_TRACE_CTRL: return "C";
+		case FMSX_AUDIO_PORT_TRACE_DATA: return "D";
+		default:                         return "-";
+		}
+	};
+	auto trace_window_tag = [](unsigned window) -> const char *
+	{
+		switch (window)
+		{
+		case FMSX_VDP_TRACE_TITLE:       return "TI";
+		case FMSX_VDP_TRACE_SAVE_SELECT: return "SV";
+		case FMSX_VDP_TRACE_STARDATE:    return "SD";
+		default:                         return "--";
+		}
+	};
+
+	fmsx_runtime_get_audio_port_trace_view(&trace_view);
+	if (trace_view.dropped != m_FmsxAudioPortTraceDropped)
+	{
+		CString drop_line;
+		drop_line.Format("AUD DROP count=%u", trace_view.dropped);
+		m_Logger.Write(FromKernel, LogWarning, drop_line);
+		m_FmsxAudioPortTraceDropped = trace_view.dropped;
+	}
+	if (trace_view.events == 0 || trace_view.count == 0u || trace_view.capacity == 0u)
+	{
+		return;
+	}
+
+	const unsigned start =
+		(trace_view.head + trace_view.capacity - trace_view.count) % trace_view.capacity;
+	for (unsigned i = 0u; i < trace_view.count; ++i)
+	{
+		const TFmsxAudioPortTraceEvent &event =
+			trace_view.events[(start + i) % trace_view.capacity];
+		if (event.seq <= m_FmsxAudioPortTraceSeq)
+		{
+			continue;
+		}
+
+		CString line;
+		line.Format("AUD EVT #%lu Q=%u W=%s C=%s O=%s R=%02X N=%u V=%02X/%02X PC=%04X",
+			(unsigned long) event.seq,
+			(unsigned) event.session,
+			trace_window_tag((unsigned) event.capture_window),
+			chip_tag((unsigned) event.chip),
+			op_tag((unsigned) event.op),
+			(unsigned) event.reg,
+			(unsigned) event.count,
+			(unsigned) event.value_first,
+			(unsigned) event.value_last,
+			(unsigned) event.pc);
+		m_Logger.Write(FromKernel, LogNotice, line);
+		m_FmsxAudioPortTraceSeq = event.seq;
+	}
+#endif
+}
+
 void CComboKernel::DrawDebugOverlay(unsigned tick)
 {
 	CString line;
@@ -2069,13 +2258,13 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 	WriteScreenText(line);
 
 	m_FmLayerGainPct = fmsx_runtime_get_fm_layer_gain_pct();
-	line.Format("\x1b[97m\x1b[49m\x1b[9;1HAC1 FM:%u/%u FG:%03u SCC:%u/%u AG:%03u AE:%03u M:%u P7:%02X MS:%05X",
+	line.Format("\x1b[97m\x1b[49m\x1b[9;1HAC1 FM:%u/%u FG:%03u SCC:%u/%u AG:%u AE:%03u M:%u P7:%02X MS:%05X",
 		m_FmMusicEnabled ? 1u : 0u,
 		fmsx_runtime_get_audio_layer_muted(2u) ? 0u : 1u,
 		m_FmLayerGainPct > 999u ? 999u : m_FmLayerGainPct,
 		m_SccCartEnabled ? 1u : 0u,
 		fmsx_runtime_get_audio_layer_muted(3u) ? 0u : 1u,
-		m_AudioOutputGainPct > 999u ? 999u : m_AudioOutputGainPct,
+		AudioGainUiLevelFromPercent(m_AudioOutputGainPct),
 		AudioGainEffectivePct(m_AudioOutputGainPct) > 999u ? 999u : AudioGainEffectivePct(m_AudioOutputGainPct),
 		(m_AudioOutputGainPct == 0u) ? 1u : 0u,
 		fmsx_runtime_get_psg_mixer_reg7() & 0xFFu,
@@ -2577,6 +2766,10 @@ void CComboKernel::ResetEmulationRuntimeState(void)
 	m_FmsxLastPC = -1;
 	m_FmsxPcRepeatCount = 0;
 	m_FmsxPcLoopLogged = FALSE;
+	m_FmsxSccTraceSeq = 0u;
+	m_FmsxSccTraceDropped = 0u;
+	m_FmsxAudioPortTraceSeq = 0u;
+	m_FmsxAudioPortTraceDropped = 0u;
 	m_EmulationPaused = FALSE;
 	m_ForceViewportFullClearNextFrame = FALSE;
 	m_PauseRenderSuppressed = FALSE;
@@ -2600,7 +2793,6 @@ void CComboKernel::ApplyRuntimeSettingsToFmsx(void)
 		return;
 	}
 	fmsx_runtime_set_overscan(m_OverscanPercent > kScalePercentMin ? TRUE : FALSE);
-	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
 	fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 	fmsx_runtime_set_boot_mode(m_BootMode);
 	fmsx_runtime_set_model_profile(m_MachineProfile);
@@ -2778,12 +2970,6 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			{
 				m_ScanlineMode = value > 2u ? 2u : value;
 			}
-			else if (SettingsKeyEquals(line, key_len, "refresh"))
-			{
-				/* Legacy key kept for backward compatibility; refresh is fixed at 60Hz. */
-				m_RefreshRateHz = 60u;
-				m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
-			}
 			else if (SettingsKeyEquals(line, key_len, "disk_rom"))
 			{
 				m_DiskRomEnabled = value ? TRUE : FALSE;
@@ -2880,6 +3066,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 
 	NormalizeSettingsForBuild();
 
+	m_RefreshRateHz = 60u;
 	m_PauseMenu.SetScalePercent(m_OverscanPercent);
 	m_PauseMenu.SetLanguage(m_Language);
 	m_PauseMenu.SetResolutionMode(m_ResolutionMode);
@@ -2910,7 +3097,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	}
 #if MSXBARE_ENABLE_FMSX
 	fmsx_runtime_set_overscan(m_OverscanPercent > kScalePercentMin ? TRUE : FALSE);
-	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
+	fmsx_runtime_set_refresh_hz(60u);
 	fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 	fmsx_runtime_set_boot_mode(m_BootMode);
 	fmsx_runtime_set_model_profile(m_MachineProfile);
@@ -4007,30 +4194,6 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		}
 		break;
 
-	case ComboMenuActionCycleRefreshRate:
-		m_RefreshRateHz = 60u;
-		m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
-		m_FramePacingResetPending = TRUE;
-		m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
-		RefreshSettingsUiAfterAction();
-	#if MSXBARE_ENABLE_FMSX
-		fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
-	#endif
-		m_Logger.Write(FromKernel, LogNotice, "Settings: Refresh fixed at 60Hz");
-		break;
-
-	case ComboMenuActionCycleRefreshRatePrev:
-		m_RefreshRateHz = 60u;
-		m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
-		m_FramePacingResetPending = TRUE;
-		m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
-		RefreshSettingsUiAfterAction();
-	#if MSXBARE_ENABLE_FMSX
-		fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
-	#endif
-		m_Logger.Write(FromKernel, LogNotice, "Settings: Refresh fixed at 60Hz");
-		break;
-
 	case ComboMenuActionToggleDiskRom:
 #if !MSXBARE_FEAT_DISK_ROM
 		m_Logger.Write(FromKernel, LogNotice, "Disk ROM indisponivel neste build");
@@ -4269,14 +4432,9 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		RefreshSettingsUiAfterAction();
 		{
 			CString line;
-			if (m_AudioOutputGainPct == 0u)
-			{
-				line.Format("Settings: Audio gain OFF");
-			}
-			else
-			{
-				line.Format("Settings: Audio gain %u%%", m_AudioOutputGainPct);
-			}
+			line.Format("Settings: Audio gain %u (%u%%)",
+				AudioGainUiLevelFromPercent(m_AudioOutputGainPct),
+				m_AudioOutputGainPct);
 			m_Logger.Write(FromKernel, LogNotice, line);
 		}
 		break;

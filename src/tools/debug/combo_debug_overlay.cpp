@@ -113,7 +113,7 @@ void CComboDebugOverlay::Render(const TComboDebugOverlayData &d)
         d.mapper_a, d.mapper_b, d.cart_a_loaded, d.cart_b_loaded, d.active_boot_mode, d.active_model_profile);
     Write(line);
 
-    line.Format("\x1b[97m\x1b[49m\x1b[9;1HAC1 FM:%u/%u SCC:%u/%u AG:%03u AE:%03u M:%u P7:%02X MS:%05X",
+    line.Format("\x1b[97m\x1b[49m\x1b[9;1HAC1 FM:%u/%u SCC:%u/%u AG:%u AE:%03u M:%u P7:%02X MS:%05X",
         d.fm_music_enabled, d.fm_mix_enabled, d.scc_cart_enabled, d.scc_mix_enabled,
         d.audio_gain_ui, d.audio_gain_effective, d.audio_muted, d.psg_mixer & 0xFFu,
         d.master_switch & 0xFFFFFu);

@@ -33,6 +33,9 @@ typedef struct {
 } TFmsxKeyboardDebug;
 
 #define FMSX_VDP_TRACE_CAPACITY 128u
+#define FMSX_SMANBOW_AUDIO_TRACE_ENABLED 0
+#define FMSX_SCC_TRACE_CAPACITY 4096u
+#define FMSX_AUDIO_PORT_TRACE_CAPACITY 1024u
 
 typedef enum {
     FMSX_VDP_TRACE_NONE = 0,
@@ -103,6 +106,78 @@ typedef struct {
     unsigned head;
     unsigned dropped;
 } TFmsxVDPTraceView;
+
+typedef enum {
+    FMSX_SCC_TRACE_NONE = 0,
+    FMSX_SCC_TRACE_WAVE = 1,
+    FMSX_SCC_TRACE_FREQ = 2,
+    FMSX_SCC_TRACE_VOLUME = 3,
+    FMSX_SCC_TRACE_ENABLE = 4,
+    FMSX_SCC_TRACE_DEFORM = 5
+} TFmsxSCCTraceKind;
+
+typedef struct {
+    uint32_t seq;
+    uint32_t frame;
+    uint16_t pc;
+    uint16_t addr_first;
+    uint16_t addr_last;
+    uint16_t count;
+    uint16_t rendered_samples_before;
+    uint8_t value_first;
+    uint8_t value_last;
+    uint8_t slot;
+    uint8_t chip;
+    uint8_t ps;
+    uint8_t ss;
+    uint8_t bank16;
+    uint8_t kind;
+    uint8_t mode;
+    uint8_t mapper;
+    uint8_t capture_window;
+    uint8_t session;
+} TFmsxSCCTraceEvent;
+
+typedef struct {
+    const TFmsxSCCTraceEvent *events;
+    unsigned capacity;
+    unsigned count;
+    unsigned head;
+    unsigned dropped;
+} TFmsxSCCTraceView;
+
+typedef enum {
+    FMSX_AUDIO_PORT_TRACE_NONE = 0,
+    FMSX_AUDIO_PORT_TRACE_PSG = 1,
+    FMSX_AUDIO_PORT_TRACE_FM = 2
+} TFmsxAudioPortTraceChip;
+
+typedef enum {
+    FMSX_AUDIO_PORT_TRACE_CTRL = 1,
+    FMSX_AUDIO_PORT_TRACE_DATA = 2
+} TFmsxAudioPortTraceOp;
+
+typedef struct {
+    uint32_t seq;
+    uint32_t frame;
+    uint16_t pc;
+    uint16_t count;
+    uint8_t reg;
+    uint8_t value_first;
+    uint8_t value_last;
+    uint8_t chip;
+    uint8_t op;
+    uint8_t capture_window;
+    uint8_t session;
+} TFmsxAudioPortTraceEvent;
+
+typedef struct {
+    const TFmsxAudioPortTraceEvent *events;
+    unsigned capacity;
+    unsigned count;
+    unsigned head;
+    unsigned dropped;
+} TFmsxAudioPortTraceView;
 
 typedef struct {
     unsigned h_period;
@@ -241,6 +316,13 @@ void fmsx_runtime_set_joystick_bits(u8 bridge_bits);
 void fmsx_runtime_set_keyboard_raw(u8 modifiers, const unsigned char raw_keys[6]);
 void fmsx_runtime_set_overscan(boolean enabled);
 void fmsx_runtime_set_refresh_hz(unsigned hz);
+unsigned fmsx_runtime_get_refresh_hz(void);
+boolean fmsx_runtime_audio_render_enabled(void);
+void fmsx_audio_begin_frame_render_accounting(void);
+unsigned fmsx_audio_end_frame_render_accounting(void);
+uint64_t fmsx_audio_cpu_cycles_now(void);
+void fmsx_audio_render_to_cpu_now(void);
+unsigned fmsx_audio_last_sync_rendered_samples(void);
 void fmsx_runtime_set_disk_rom_enabled(boolean enabled);
 boolean fmsx_runtime_get_disk_rom_enabled(void);
 void fmsx_runtime_set_boot_mode(unsigned mode);
@@ -300,6 +382,8 @@ void fmsx_audio_get_stats(TFmsxAudioStats *stats);
 void fmsx_keyboard_get_debug(TFmsxKeyboardDebug *stats);
 void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats);
 void fmsx_runtime_get_vdp_trace_view(TFmsxVDPTraceView *view);
+void fmsx_runtime_get_scc_trace_view(TFmsxSCCTraceView *view);
+void fmsx_runtime_get_audio_port_trace_view(TFmsxAudioPortTraceView *view);
 
 #ifdef __cplusplus
 }

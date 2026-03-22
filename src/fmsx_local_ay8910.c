@@ -16,6 +16,8 @@
 #include "Sound.h"
 #include <string.h>
 
+extern void fmsx_psg_render_reset_state(void);
+
 #ifndef MSXBARE_FMSX_PSG_MELODIC_BALANCE_PCT
 #define MSXBARE_FMSX_PSG_MELODIC_BALANCE_PCT 102
 #endif
@@ -99,6 +101,8 @@ void Reset8910(AY8910 *D,int ClockHz,int First)
     D->Freq[J]=D->Volume[J]=0;
     Sound(J+First,0,0);
   }
+
+  fmsx_psg_render_reset_state();
 }
 
 /** WrCtrl8910() *********************************************/

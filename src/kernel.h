@@ -12,6 +12,7 @@
 #include <circle/interrupt.h>
 #include <circle/koptions.h>
 #include <circle/logger.h>
+#include <circle/nulldevice.h>
 #include <circle/sched/scheduler.h>
 #include <circle/screen.h>
 #include <circle/serial.h>
@@ -49,6 +50,8 @@ private:
     void ClearDebugOverlay(void);
     void BootTrace(const char *tag);
     void WriteScreenText(const char *text);
+    void LogSccTraceUart(void);
+    void LogAudioPortTraceUart(void);
     void ComputeViewportBox(unsigned src_width, unsigned src_height,
                             unsigned *out_x, unsigned *out_y,
                             unsigned *out_w, unsigned *out_h) const;
@@ -86,6 +89,7 @@ private:
     CScreenDevice m_Screen;
     CGfxTextBoxRenderer m_GfxText;
     CSerialDevice m_Serial;
+    CNullDevice m_NullLog;
     CExceptionHandler m_ExceptionHandler;
     CInterruptSystem m_Interrupt;
     CTimer m_Timer;
@@ -149,6 +153,10 @@ private:
     unsigned m_FmsxPcRepeatCount;
     boolean m_FmsxPcLoopLogged;
     unsigned m_FmsxVideoSeq;
+    unsigned m_FmsxSccTraceSeq;
+    unsigned m_FmsxSccTraceDropped;
+    unsigned m_FmsxAudioPortTraceSeq;
+    unsigned m_FmsxAudioPortTraceDropped;
     u64 m_FmsxFpsWindowStartUs;
     u64 m_LastPauseToggleUs;
     u64 m_LastMenuInputPollUs;

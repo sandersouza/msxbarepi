@@ -112,6 +112,24 @@ static unsigned ComboFindTabSplit(const char *label)
     return len;
 }
 
+static unsigned AudioGainUiLevelFromPercent(unsigned percent)
+{
+    if (percent > 100u)
+    {
+        percent = 100u;
+    }
+    return (percent * 9u + 50u) / 100u;
+}
+
+static unsigned AudioGainPercentFromUiLevel(unsigned level)
+{
+    if (level > 9u)
+    {
+        level = 9u;
+    }
+    return (level * 100u + 4u) / 9u;
+}
+
 static void ComboClearPixels(TScreenColor *buffer, unsigned count)
 {
     if (buffer == 0 || count == 0u)
@@ -1048,8 +1066,7 @@ void CComboPauseMenu::SetScanlineMode(unsigned mode)
 
 void CComboPauseMenu::SetRefreshRateHz(unsigned hz)
 {
-    (void) hz;
-    hz = 60u;
+    hz = (hz == 50u) ? 50u : 60u;
 
     if (m_RefreshRateHz != hz)
     {
@@ -2328,22 +2345,6 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
-        else if (items[m_Selected].action == ComboMenuActionCycleRefreshRate)
-        {
-            if (left_edge)
-            {
-                action = ComboMenuActionCycleRefreshRatePrev;
-                m_ForceRedraw = TRUE;
-                m_ForceHighlightRedraw = FALSE;
-            }
-            else if (right_edge || enter_edge)
-            {
-                action = ComboMenuActionCycleRefreshRate;
-                m_ForceRedraw = TRUE;
-                m_ForceHighlightRedraw = FALSE;
-            }
-            handled_settings_input = enter_edge || left_edge || right_edge;
-        }
         else if (items[m_Selected].action == ComboMenuActionCycleBootMode)
         {
             if (left_edge)
@@ -2469,19 +2470,16 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         }
         else if (items[m_Selected].action == ComboMenuActionAudioGainChanged)
         {
-            unsigned next_value = m_AudioGainPercent;
+            unsigned next_level = AudioGainUiLevelFromPercent(m_AudioGainPercent);
             if (left_edge)
             {
-                next_value = (next_value == 0u) ? 100u : (next_value - 10u);
+                next_level = (next_level == 0u) ? 9u : (next_level - 1u);
             }
             if (right_edge || enter_edge)
             {
-                next_value = (next_value >= 100u) ? 0u : (next_value + 10u);
-                if (next_value > 100u)
-                {
-                    next_value = 100u;
-                }
+                next_level = (next_level >= 9u) ? 0u : (next_level + 1u);
             }
+            const unsigned next_value = AudioGainPercentFromUiLevel(next_level);
             if (next_value != m_AudioGainPercent)
             {
                 m_AudioGainPercent = next_value;

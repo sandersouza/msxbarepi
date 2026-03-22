@@ -1,0 +1,266 @@
+# Handoff - branch `220-uart-scc-start-space-manbow2`
+
+Data: 2026-03-20
+
+## Contexto atual
+- Milestone ativa: `#24 - Melhorias audio cart SCC/SCC+`
+- Branch ativa: `220-uart-scc-start-space-manbow2`
+- Issue ativa: `#220 - [P1] Instrumentar UART para rastrear writes SCC do START!/CONTINUE! em Space Manbow 2`
+- Baseline funcional a preservar: `SMANBOW2` estavel recuperado na trilha da `#176/#201`, ja mesclado em `main`.
+
+## Estado atual
+- A issue `#220` foi congelada para retomada futura.
+- A telemetria UART desta trilha (`SCC EVT` / `AUD EVT`) foi desabilitada por compile-time e nao gera mais logs em runtime.
+- O objetivo desta branch passa a ser somente consolidar e mesclar o groundwork util ja produzido:
+  - ajustes de timing/sync por write;
+  - renderer dedicado de `SCC` e `PSG`;
+  - contrato de refresh (`NTSC` por padrao e troca automatica para `PAL` por `R#9`);
+  - correcoes auxiliares de build/UI feitas no mesmo ciclo.
+
+## Implementacao aplicada
+- Nova rodada de instrumentacao:
+  - alem de `SCC EVT`, o kernel agora emite `AUD EVT`/`AUD DROP` para writes de portas `PSG` e `FM-PAC` no mesmo recorte temporal do trace SCC;
+  - o gate e o mesmo da trilha SCC: so `Manbow2`, iniciando no primeiro `ENABLE` util do SCC e cortando ao sair do fluxo `SAVE_SELECT/STARDATE`;
+  - `CTRL` sai bruto; `DATA` agrega apenas por `frame+PC+chip+reg+janela+sessao`, para evitar flood sem perder correlacao.
+- Desvio rapido fechado:
+  - quando `DEBUG=0`, o kernel nao inicializa mais a UART serial para log;
+  - o `CLogger` passa a usar `CNullDevice`;
+  - o trace SCC UART (`LogSccTraceUart`) fica desarmado por compile-time.
+- Nova hipotese/rodada:
+  - o trace UART ja provou que o `SMANBOW2` reprograma `wave/freq/volume` no fluxo do slot de save, mas a fala ainda nao sai;
+  - a divergencia mais forte restante frente a `openMSX/blueMSX` e temporal: ambos sincronizam o mixer no instante do write SCC, enquanto o host local ainda renderizava audio em blocos de scanline;
+  - isso colapsava muitos writes SCC do pseudo-sample dentro do mesmo chunk de audio.
+- Confirmacao de referencia externa:
+  - o `openMSX` classifica o `SMANBOW2.ROM` canonico (`SHA1 00a81872d548a7278b8901608bf12e8f79009bee`) como `Manbow2`, nao `Manbow2_2`;
+  - o `TM6C`/UART local tambem mostra `T=09`, isto e, `MAP_MANBOW2`.
+  - conclusao: para esta ROM, insistir em `Manbow2_2` estaria errado; o gargalo segue no core SCC/render.
+- `src/fmsx_local/MSX.c`
+  - `VDPOut()` recalcula `VPeriod` dinamicamente quando `R#9` muda, usando `PALVideo`.
+  - `LoadState()` agora chama `fmsx_scc_rebuild_render_state_all()` para recompor o estado lateral do renderer SCC.
+  - o trace SCC permanece restrito ao caminho `Manbow2`.
+  - a politica do trace SCC foi simplificada:
+    - inicia no primeiro `ENABLE!=0` do SCC;
+    - atravessa quantas sessoes SCC forem necessarias;
+    - agrega apenas bursts contiguos de `volume`;
+    - cada evento carrega a janela VDP atual (`W=TI|SV|SD|--`);
+    - para automaticamente no primeiro write SCC ja fora do fluxo `SAVE_SELECT/STARDATE`, isto e, na entrada de gameplay, sem depender mais de `bank16`.
+- `src/fmsx_runtime.c` / `src/fmsx_runtime.h`
+  - `fmsx_runtime_effective_refresh_hz()` devolve `50Hz` quando `PALVideo` esta ativo, independentemente do default base.
+  - `fmsx_runtime_set_refresh_hz()` ficou apenas como base default (`50/60`), nao como escolha persistente de UI.
+  - fallback de audio por frame permanece ativo quando `PlayAllSound()` nao renderiza nada no frame.
+- `src/kernel.cpp`
+  - o runtime continua inicializado sempre em `60Hz` (`NTSC`) por padrao.
+  - o loop principal sincroniza `m_RefreshRateHz` e `m_FrameIntervalUs` com `fmsx_runtime_get_refresh_hz()`, refletindo a troca real por `R#9`.
+- `src/tools/menu/combo_menu.cpp` / `src/tools/menu/combo_menu_items.cpp`
+  - a opcao manual `Refresh` nao existe mais no menu `Settings`.
+- `src/fmsx_host_stubs.c`
+  - `PlayAllSound(uSec)` deixa de usar acumulacao por microssegundo e passa a renderizar ate o timestamp atual do Z80, usando um carimbo monotono de ciclos da CPU.
+  - novo helper `fmsx_audio_render_to_cpu_now()` converte delta de ciclos do Z80 em amostras no dominio de `48kHz`.
+- `src/fmsx_local_scc_render.h`
+  - o estado lateral do renderer SCC evoluiu para o modelo necessario ao pseudo-sample:
+    - `wave[5][32]`
+    - `orgPeriod/period`
+    - `count` como acumulador de fase
+    - `pos` como ultimo indice de sample observado
+    - `out`
+    - `volumeNibble` ativo
+    - `nextVolumeNibble`
+    - `enable/deform/rotate/readOnly/mode`
+- `src/fmsx_local_scc.c`
+  - `WriteSCC()` / `WriteSCCP()` agora atualizam o estado lateral do SCC a cada write relevante:
+    - waveform
+    - freq
+    - volume
+    - enable
+    - deform
+  - antes de cada write SCC, o host agora renderiza audio ate o timestamp atual do Z80; isso aproxima o comportamento conceitual de `updateStream(time)` / `mixerSync()` usados por `openMSX` e `blueMSX`.
+  - `ResetSCC()` recompõe o estado inicial do renderer dedicado.
+  - `freq write` agora aplica a semantica-alvo do pseudo-sample:
+    - atualiza `period`;
+    - promove `nextVolumeNibble` para volume ativo;
+    - reinicia a borda util do byte corrente;
+    - invalida o sample atual para recarga no render seguinte.
+  - `volume write` deixa de alterar a saida imediatamente e passa a atualizar apenas `nextVolumeNibble`.
+- `src/fmsx_local/MSX.c`
+  - novo carimbo monotono de ciclos do Z80 para audio:
+    - `fmsx_audio_cpu_cycles_now()`
+    - controle por fase em `LoopZ80()`
+  - a base de ciclos e resetada em `ResetMSX()`.
+- `src/fmsx_local_sound.c`
+  - os canais SCC deixaram de passar pelo renderer generico de `SND_WAVE`.
+  - a primeira versao do renderer dedicado corrigiu a lentidao do SCC, mas ainda nao recuperou `START!`/`CONTINUE!`.
+  - nesta rodada, o passo do SCC foi trocado para um modelo mais proximo do `blueMSX`:
+    - acumulador de fase `Q28`;
+    - `4x` substeps por sample de saida;
+    - indice de waveform vindo de `phase>>23`;
+    - `nextVolumeNibble` promovido apenas na troca de indice;
+    - `period<=8` mantendo o byte corrente.
+  - o bus voicing/equalizacao existente do SCC foi preservado; a mudanca ficou restrita a semantica do renderer.
+  - `PSG` e `FM-PAC` continuam no caminho atual; a troca foi restrita ao SCC para isolar o problema de `START!`/`CONTINUE!`.
+  - rodada mais recente:
+    - o renderer dedicado abandona o modelo simplificado anterior e passa a seguir mais literalmente o `blueMSX`:
+      - `oldSample` por canal;
+      - `curWave` latched;
+      - `daVolume` por canal;
+      - promocao de `nextVolume` apenas na troca efetiva de indice;
+      - soma em `4x` substeps por sample de saida;
+    - o voicing Harman do bus SCC foi preservado.
+
+## Leitura do log mais recente
+- O trace SCC ja deixou de ser o gargalo:
+  - comeca na primeira ativacao real do SCC (`ENABLE!=0`);
+  - atravessa o fluxo de slot de save;
+  - chega ao bloco dinamico `13FF..143D`;
+  - nao ha `DROP`.
+- O log mais recente mostrou que o trace ja arma no primeiro `ENABLE` util; o problema deixou de ser "capturar tarde".
+- A ambiguidade estava na correlacao com a fase do jogo, porque o log nao carregava a janela `SAVE_SELECT/STARDATE/gameplay`.
+- A rodada atual fecha isso:
+  - cada `SCC EVT` passa a exibir `W=TI|SV|SD|--`;
+  - bursts agregados de `volume` nao atravessam mudanca de janela;
+  - a parada do trace nao depende mais do banco `27`.
+- Rodada atual:
+  - cada `SCC EVT` passa a carregar tambem `R=<samples>`, isto e, quantas amostras o host realmente renderizou no `mixer sync` imediatamente anterior ao write SCC;
+  - objetivo: provar ou refutar a hipotese de colapso temporal do host quando a fala deveria sair no fluxo de slot/save.
+- O padrao observado continua compativel com pseudo-sample SCC:
+  - init SCC (`0B32/0B37`);
+  - carga de `wave RAM` (`0BB9`);
+  - frequencias (`1346/1349`);
+  - bursts de `volume` (`137C`);
+  - reprogramacao seletiva de waveform em runtime (`13FF..143D`).
+- O log mais recente mudou a conclusao tecnica:
+  - o mapper continua correto (`MAP_MANBOW2`);
+  - a observabilidade de `SCC` ja esta suficiente;
+  - `AUD EVT` mostrou trafego real de `PSG` em `R0..R10` na mesma janela do slot de save, nao apenas `R0E/R0F`;
+  - portanto, `START!/CONTINUE!` podem depender total ou parcialmente de sintese rapida por registradores do `PSG`, e nao apenas do `SCC`.
+- Lacuna objetiva encontrada no host:
+  - apenas o `SCC` chamava `fmsx_audio_render_to_cpu_now()` antes de cada write;
+  - `PSG` e `FM-PAC` ainda eram programados "a seco" em `OutZ80()`, com risco real de colapsar writes rapidos no mesmo bloco de scanline/frame.
+- A rodada atual fecha esse desvio:
+  - `OutZ80()` agora chama `fmsx_audio_render_to_cpu_now()` antes de writes em `0xA0/0xA1` (`PSG`) e `0x7C/0x7D` (`FM-PAC/OPLL`);
+  - isso iguala o tratamento temporal dos tres chips principais no host local.
+- O log mais recente ainda mostrou um segundo gap no `PSG`:
+  - mesmo com `render-to-now`, o `AY8910` local continuava acumulando `Changed` e so fazia `Sync8910(AY8910_FLUSH)` a cada 8 scanlines em `LoopZ80()`;
+  - isso ainda colapsava writes rapidos do `PSG` dentro da mesma janela de voz.
+- A rodada atual fecha esse segundo desvio:
+  - `OutZ80()` agora chama `Sync8910(&PSG,AY8910_FLUSH)` imediatamente apos `WrData8910()`;
+  - o `PSG` passa a atualizar os canais de audio no instante do write, alinhando o fluxo com a estrategia ja aplicada ao `SCC`.
+- A rodada atual sobe o nivel da correcao do `PSG`:
+  - o `AY8910` deixa de depender do renderer generico `SND_MELODIC/SND_NOISE` do fMSX no mixer local;
+  - `src/fmsx_local_sound.c` agora tem um renderer dedicado `blueMSX-like` para o bus `PSG`, com:
+    - `16x` oversampling por sample;
+    - geracao propria de `tone/noise/envelope`;
+    - filtro de DC e low-pass simples como no caminho mono do `blueMSX`;
+  - os canais `AY8910` passam a ser ignorados no loop generico de `RenderAudio()` e entram no bus `PSG` so por esse renderer dedicado;
+  - `Reset8910()` agora reseta explicitamente o estado lateral desse renderer.
+
+## Validacao local
+- `scripts/check-third-party-pristine.sh`: OK
+- `make clean && make -j4 DEBUG=1 MSXBARE_BUILD_BID=202603211030-ab38eb9`: OK
+- `make clean && make -j4 DEBUG=0 MSXBARE_BUILD_BID=202603211045-ab38eb9`: OK
+- `make clean && make -j4 DEBUG=1 MSXBARE_BUILD_BID=202603211046-ab38eb9`: OK
+- Resultado em hardware da rodada anterior:
+  - audio geral: OK
+  - musica/SFX SCC: OK
+  - `START!`: ausente
+  - `CONTINUE!`: ausente
+- Esta rodada fecha a troca para o renderer `phase/sample/nextVolume`; a build abaixo e a primeira com esse caminho embutido:
+  - `BUILD_BID`: `202603211030-ab38eb9`
+  - `BUILD_HASH`: `ab38eb9-0199db29d2ff05dab9f13b94b110f845e9194498`
+  - `BUILD_ID (TXTDBG)`: `1F22`
+- Build de validacao do desvio de UART:
+  - `DEBUG=0`
+  - `BUILD_BID`: `202603211045-ab38eb9`
+  - `BUILD_HASH`: `ab38eb9-8e1c915bb594f4e470462e04b8cff6cfb50977d8`
+  - `BUILD_ID (TXTDBG)`: `714F`
+- Build de validacao da branch debug:
+  - `DEBUG=1`
+  - `BUILD_BID`: `202603211046-ab38eb9`
+  - `BUILD_HASH`: `ab38eb9-8e1c915bb594f4e470462e04b8cff6cfb50977d8`
+  - `BUILD_ID (TXTDBG)`: `1617`
+- Build da rodada atual:
+  - `DEBUG=1`
+  - `BUILD_BID`: `202603211120-ab38eb9`
+  - `BUILD_HASH`: `ab38eb9-9d2da78db8fbcc6ba4725600190ace9aea3619ad`
+  - `BUILD_ID (TXTDBG)`: `16DA`
+  - mudanca central: `freq write` no renderer SCC dedicado deixa de zerar `Out`/`Pos` e passa a manter o byte corrente ativo imediatamente, alinhando o comportamento com `openMSX/blueMSX` para o caso de `period<=8` e para writes de frequencia normais.
+- Build de UI do `Audio Gain`:
+  - `DEBUG=1`
+  - `BUILD_BID`: `202603211140-ab38eb9`
+  - `BUILD_HASH`: `ab38eb9-12cc2c464f05dc226d6825ea9bae7485a747f12c`
+  - `BUILD_ID (TXTDBG)`: `6995`
+  - `Audio Gain` no menu e em `AG` do overlay passa a usar escala visual `0..9`, mantendo `audio_gain` salvo/aplicado internamente em `0..100%`.
+- Build da rodada atual de SCC:
+  - `DEBUG=1`
+  - `BUILD_BID`: `202603211300-ab38eb9`
+  - `BUILD_HASH`: `ab38eb9-829d6b8fc9604578b8918f8c5d7a3d914c838f09`
+  - `BUILD_ID (TXTDBG)`: `E896`
+  - mudanca central: port parcial mais literal do loop do `blueMSX` para o renderer SCC dedicado, com `oldSample/curWave/daVolume/nextVolume` no estado lateral e soma em `4x` substeps, preservando o voicing Harman do bus SCC.
+- Build da rodada atual de instrumentacao:
+  - `DEBUG=1`
+  - `BUILD_BID`: `202603211345-ab38eb9`
+  - `BUILD_HASH`: `ab38eb9-cdb056009713f25248d25020e3d80e116f25ec5a`
+  - `BUILD_ID (TXTDBG)`: pendente de validacao em hardware
+  - mudanca central: `SCC EVT` passa a exibir `W=TI|SV|SD|--`; a agregacao de `volume` respeita troca de janela; o corte do trace na entrada de gameplay nao depende mais de `bank16`.
+- Build da rodada atual de correlacao `PSG/FM`:
+  - `DEBUG=1`
+  - `BUILD_BID`: `202603211430-ab38eb9`
+  - `BUILD_HASH`: `39c2193e7bbd25673d199ab1d9146636a97a152b`
+  - `BUILD_ID (TXTDBG)`: `54A0`
+  - mudanca central: `AUD EVT`/`AUD DROP` ligados no kernel, consumindo o ring buffer de portas de audio (`PSG/FM`) para comparar diretamente contra `SCC EVT` na selecao do slot.
+- Build da rodada atual de telemetria interna de sync:
+  - `DEBUG=1`
+  - `BUILD_BID`: `202603211520-ab38eb9`
+  - `BUILD_HASH`: `ab38eb9-62c4a435ad318a53fc2f2e64778d0f49486852d7`
+  - `BUILD_ID (TXTDBG)`: `1F7F`
+  - mudanca central: `SCC EVT` passa a exibir `R=<samples>` para mostrar quantas amostras foram realmente renderizadas antes de cada write SCC.
+- Build da rodada atual de sync por write para `PSG/FM`:
+  - `DEBUG=1`
+  - `BUILD_BID`: `202603221030-ab38eb9`
+  - `BUILD_ID (TXTDBG)`: `EED4`
+  - mudanca central: `OutZ80()` passa a sincronizar audio ate o timestamp atual do Z80 antes de writes em `PSG` (`0xA0/0xA1`) e `FM-PAC` (`0x7C/0x7D`), evitando colapso temporal de sintese rapida por registradores.
+- Build da rodada atual de flush imediato do `PSG`:
+  - `DEBUG=1`
+  - `BUILD_BID`: `202603221100-ab38eb9`
+  - `BUILD_HASH`: `ab38eb9-a62e2308de46b28f18a098bd04c19f9a36d45084`
+  - `BUILD_ID (TXTDBG)`: `C6D8`
+  - mudanca central: `OutZ80()` passa a chamar `Sync8910(AY8910_FLUSH)` logo apos `WrData8910()`, eliminando o atraso de ate 8 scanlines no commit das mudancas do AY-8910 para o mixer.
+- Build da rodada atual de renderer dedicado do `PSG`:
+  - `DEBUG=1`
+  - `BUILD_BID`: `202603221145-ab38eb9`
+  - `BUILD_HASH`: `ab38eb9-77c92597282d481a7a4d359a9b5b6c226b164e4f`
+  - `BUILD_ID (TXTDBG)`: `B461`
+  - mudanca central: o `PSG` passa a ser renderizado por um caminho dedicado `blueMSX-like` no bus `PSG`, retirando a voz do `SMANBOW2` da dependencia do renderer generico `SND_MELODIC/SND_NOISE`.
+- Build de congelamento da issue / telemetria desabilitada:
+  - `DEBUG=1`
+  - `BUILD_BID`: `202603221230-ab38eb9`
+  - `BUILD_HASH`: `ab38eb9-2a7c93a50bbf9c6f656e589b62770ec3cd9bb0ba`
+  - observacao: validacao local de merge parcial com `SCC EVT` / `AUD EVT` desabilitados por compile-time.
+- Build complementar de validacao em `DEBUG=0`:
+  - `DEBUG=0`
+  - `BUILD_BID`: `202603221231-ab38eb9`
+  - `BUILD_HASH`: `ab38eb9-2a7c93a50bbf9c6f656e589b62770ec3cd9bb0ba`
+- Desvio rapido de build/config:
+  - o `Makefile` raiz nao reaplica mais `*_CONFIG` com `override`;
+  - a precedencia volta a ser a canonica do GNU make:
+    - flags da linha de comando vencem `.config`;
+    - `.config` vence os defaults do `Makefile`;
+  - `OWNER` e `MSXBARE_PATREON_TAG` agora alimentam o mesmo owner/tag efetivo em todo o build; `OWNER` vence quando ambos forem informados.
+  - validacao feita com dry-run de `default/package` e build real via `make -j4 DEBUG=0 OWNER="abc@xyz.com.br"` (OK).
+  - evidencias:
+    - com `OWNER="abc@xyz.com.br"`, o build propaga `MSXBARE_BUILD_OWNER="abc@xyz.com.br"` e `MSXBARE_PATREON_TAG="abc@xyz.com.br"` tanto para o `src/Makefile` quanto para `build/config_build.h`;
+    - com apenas `MSXBARE_PATREON_TAG="fallback-user"`, ambos os caminhos passam a usar `fallback-user`.
+  - build de validacao do owner/tag efetivo:
+    - `DEBUG=0`
+    - `BUILD_BID`: `202603211110-ab38eb9`
+    - `BUILD_HASH`: `ab38eb9-960f705a2d5b33082fa655c8fb0bf9f30d2ea3f5`
+    - `BUILD_ID (TXTDBG)`: `FF04`
+
+## Riscos / lacunas abertas
+- O renderer SCC dedicado ainda precisa de validacao em hardware nesta nova semantica `phase/sample/nextVolume`.
+- `START!` e `CONTINUE!` continuam como alvo aberto.
+- O trace UART ja provou a sequencia de writes; o gargalo restante segue em compatibilidade de render/timing.
+- A trilha ficou congelada antes de fechar se `START!`/`CONTINUE!` passam por `SCC`, `PSG` ou ambos.
+
+## Proximo passo imediato
+- Mesclar o groundwork util ja estabilizado nesta branch.
+- Reativar a issue `#220` somente quando houver capacidade de retomar a investigacao de voz com nova hipotese tecnica.

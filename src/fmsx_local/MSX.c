@@ -16,6 +16,7 @@
 #include "MSX.h"
 #include "../fmsx_runtime.h"
 #include "../fmsx_audio_layout.h"
+#include "../fmsx_local_scc_render.h"
 #include "Sound.h"
 #include "Floppy.h"
 #include "SHA1.h"
@@ -112,6 +113,9 @@ int  VRAMPages   = 2;              /* Number of VRAM pages   */
 int  VRAMPageMask = 0x01;          /* VRAM page mask */
 uint8_t ExitNow     = 0;           /* 1 = Exit the emulator  */
 unsigned FmsxTurboPercent = 100u;  /* Effective Z80 clock scale (%) */
+static uint64_t g_fmsx_audio_cycle_base = 0u;
+static int g_fmsx_audio_phase_cycles = 0;
+static uint8_t g_fmsx_audio_cycle_valid = 0u;
 
 static int fmsx_scale_cycles(int cycles)
 {
@@ -139,6 +143,37 @@ void fmsx_cpu_set_turbo_percent(unsigned percent)
   VPeriod = fmsx_scale_cycles(base_vperiod);
   HPeriod = fmsx_scale_cycles(HPERIOD/6);
   CPU.IPeriod = fmsx_scale_cycles(CPU_H240);
+}
+
+uint64_t fmsx_audio_cpu_cycles_now(void)
+{
+  int elapsed;
+
+  if(!g_fmsx_audio_cycle_valid) return 0u;
+
+  elapsed = g_fmsx_audio_phase_cycles - CPU.ICount;
+  if(elapsed < 0) elapsed = 0;
+  if(elapsed > g_fmsx_audio_phase_cycles) elapsed = g_fmsx_audio_phase_cycles;
+
+  return g_fmsx_audio_cycle_base + (uint64_t)(unsigned)elapsed;
+}
+
+static void fmsx_audio_cycle_commit_phase(void)
+{
+  if(g_fmsx_audio_cycle_valid) g_fmsx_audio_cycle_base += (uint64_t)(unsigned)g_fmsx_audio_phase_cycles;
+  else g_fmsx_audio_cycle_valid = 1u;
+}
+
+static void fmsx_audio_cycle_open_phase(int phase_cycles)
+{
+  g_fmsx_audio_phase_cycles = phase_cycles > 0 ? phase_cycles : 0;
+}
+
+static void fmsx_audio_cycle_reset(void)
+{
+  g_fmsx_audio_cycle_base = 0u;
+  g_fmsx_audio_phase_cycles = 0;
+  g_fmsx_audio_cycle_valid = 0u;
 }
 
 /** Main hardware: CPU, RAM, VRAM, mappers *******************/
@@ -211,6 +246,28 @@ static unsigned g_fmsx_vdp_trace_head = 0;
 static unsigned g_fmsx_vdp_trace_count = 0;
 static unsigned g_fmsx_vdp_trace_dropped = 0;
 static uint32_t g_fmsx_vdp_trace_seq = 0;
+#if FMSX_SMANBOW_AUDIO_TRACE_ENABLED
+static TFmsxSCCTraceEvent g_fmsx_scc_trace[FMSX_SCC_TRACE_CAPACITY];
+static TFmsxSCCTraceEvent g_fmsx_scc_trace_active;
+static unsigned g_fmsx_scc_trace_head = 0;
+static unsigned g_fmsx_scc_trace_count = 0;
+static unsigned g_fmsx_scc_trace_dropped = 0;
+static uint32_t g_fmsx_scc_trace_seq = 0;
+static uint8_t g_fmsx_scc_trace_active_valid = 0;
+static uint8_t g_fmsx_scc_trace_started = 0;
+static uint8_t g_fmsx_scc_trace_capture_done = 0;
+static uint8_t g_fmsx_scc_trace_seen_slot_flow = 0;
+static uint8_t g_fmsx_scc_trace_session = 0;
+static uint8_t g_fmsx_scc_trace_session_open = 0;
+static uint16_t g_fmsx_scc_trace_events_in_session = 0;
+static TFmsxAudioPortTraceEvent g_fmsx_audio_port_trace[FMSX_AUDIO_PORT_TRACE_CAPACITY];
+static TFmsxAudioPortTraceEvent g_fmsx_audio_port_trace_active;
+static unsigned g_fmsx_audio_port_trace_head = 0;
+static unsigned g_fmsx_audio_port_trace_count = 0;
+static unsigned g_fmsx_audio_port_trace_dropped = 0;
+static uint32_t g_fmsx_audio_port_trace_seq = 0;
+static uint8_t g_fmsx_audio_port_trace_active_valid = 0;
+#endif
 uint32_t FmsxVDPPort99ReadCount = 0;  /* Reads from VDP status port 99h */
 uint32_t FmsxVDPPort99WriteCount = 0; /* Writes to VDP address/control port 99h */
 uint32_t FmsxVDPPort9BWriteCount = 0; /* Writes to indirect VDP register port 9Bh */
@@ -1127,6 +1184,372 @@ void fmsx_vdp_trace_get_view(const TFmsxVDPTraceEvent **events,unsigned *capacit
   if(head)     *head = g_fmsx_vdp_trace_head;
   if(dropped)  *dropped = g_fmsx_vdp_trace_dropped;
 }
+
+#if FMSX_SMANBOW_AUDIO_TRACE_ENABLED
+static uint8_t fmsx_scc_trace_kind(uint16_t addr,uint8_t plus_mode)
+{
+  uint8_t reg;
+
+  reg = (uint8_t)(addr & 0x00FFu);
+  if(plus_mode)
+  {
+    if(reg<0xA0u) return FMSX_SCC_TRACE_WAVE;
+    if(reg<0xC0u)
+    {
+      switch(reg&0x0Fu)
+      {
+        case 0u: case 1u: case 2u: case 3u: case 4u:
+        case 5u: case 6u: case 7u: case 8u: case 9u:
+          return FMSX_SCC_TRACE_FREQ;
+        case 10u: case 11u: case 12u: case 13u: case 14u:
+          return FMSX_SCC_TRACE_VOLUME;
+        case 15u:
+          return FMSX_SCC_TRACE_ENABLE;
+      }
+    }
+    if(reg<0xE0u) return FMSX_SCC_TRACE_DEFORM;
+    return FMSX_SCC_TRACE_NONE;
+  }
+
+  if(reg<0x80u) return FMSX_SCC_TRACE_WAVE;
+  if(reg<0xA0u)
+  {
+    reg = (uint8_t)(((reg+0x20u)&0xEFu)&0x0Fu);
+    switch(reg)
+    {
+      case 0u: case 1u: case 2u: case 3u: case 4u:
+      case 5u: case 6u: case 7u: case 8u: case 9u:
+        return FMSX_SCC_TRACE_FREQ;
+      case 10u: case 11u: case 12u: case 13u: case 14u:
+        return FMSX_SCC_TRACE_VOLUME;
+      case 15u:
+        return FMSX_SCC_TRACE_ENABLE;
+    }
+  }
+  if(reg<0xE0u) return FMSX_SCC_TRACE_DEFORM;
+  return FMSX_SCC_TRACE_NONE;
+}
+
+static void fmsx_scc_trace_commit_active(void)
+{
+  TFmsxSCCTraceEvent *event;
+
+  if(!g_fmsx_scc_trace_active_valid || !g_fmsx_scc_trace_active.count) return;
+
+  event = &g_fmsx_scc_trace[g_fmsx_scc_trace_head];
+  *event = g_fmsx_scc_trace_active;
+  event->seq = ++g_fmsx_scc_trace_seq;
+
+  g_fmsx_scc_trace_head = (g_fmsx_scc_trace_head+1u)%FMSX_SCC_TRACE_CAPACITY;
+  if(g_fmsx_scc_trace_count<FMSX_SCC_TRACE_CAPACITY) ++g_fmsx_scc_trace_count;
+  else ++g_fmsx_scc_trace_dropped;
+
+  memset(&g_fmsx_scc_trace_active,0,sizeof(g_fmsx_scc_trace_active));
+  g_fmsx_scc_trace_active_valid = 0;
+}
+
+static void fmsx_scc_trace_flush_frame_boundary(void)
+{
+  if(!g_fmsx_scc_trace_active_valid) return;
+  if(g_fmsx_scc_trace_active.frame==FmsxVDPFrameCounter) return;
+  fmsx_scc_trace_commit_active();
+}
+
+static void fmsx_scc_trace_begin_active(uint32_t frame,uint16_t pc,uint16_t addr,uint8_t value,uint8_t slot,uint8_t chip,uint8_t ps,uint8_t ss,uint8_t bank16,uint8_t kind,uint8_t plus_mode,uint8_t mapper,uint8_t capture_window,uint8_t session)
+{
+  memset(&g_fmsx_scc_trace_active,0,sizeof(g_fmsx_scc_trace_active));
+  g_fmsx_scc_trace_active.frame = frame;
+  g_fmsx_scc_trace_active.pc = pc;
+  g_fmsx_scc_trace_active.addr_first = addr;
+  g_fmsx_scc_trace_active.addr_last = addr;
+  g_fmsx_scc_trace_active.count = 1u;
+  g_fmsx_scc_trace_active.rendered_samples_before = (uint16_t)fmsx_audio_last_sync_rendered_samples();
+  g_fmsx_scc_trace_active.value_first = value;
+  g_fmsx_scc_trace_active.value_last = value;
+  g_fmsx_scc_trace_active.slot = slot;
+  g_fmsx_scc_trace_active.chip = chip;
+  g_fmsx_scc_trace_active.ps = ps;
+  g_fmsx_scc_trace_active.ss = ss;
+  g_fmsx_scc_trace_active.bank16 = bank16;
+  g_fmsx_scc_trace_active.kind = kind;
+  g_fmsx_scc_trace_active.mode = plus_mode;
+  g_fmsx_scc_trace_active.mapper = mapper;
+  g_fmsx_scc_trace_active.capture_window = capture_window;
+  g_fmsx_scc_trace_active.session = session;
+  g_fmsx_scc_trace_active_valid = 1u;
+}
+
+static void fmsx_audio_port_trace_commit_active(void)
+{
+  TFmsxAudioPortTraceEvent *event;
+
+  if(!g_fmsx_audio_port_trace_active_valid || !g_fmsx_audio_port_trace_active.count) return;
+
+  event = &g_fmsx_audio_port_trace[g_fmsx_audio_port_trace_head];
+  *event = g_fmsx_audio_port_trace_active;
+  event->seq = ++g_fmsx_audio_port_trace_seq;
+
+  g_fmsx_audio_port_trace_head = (g_fmsx_audio_port_trace_head+1u)%FMSX_AUDIO_PORT_TRACE_CAPACITY;
+  if(g_fmsx_audio_port_trace_count<FMSX_AUDIO_PORT_TRACE_CAPACITY) ++g_fmsx_audio_port_trace_count;
+  else ++g_fmsx_audio_port_trace_dropped;
+
+  memset(&g_fmsx_audio_port_trace_active,0,sizeof(g_fmsx_audio_port_trace_active));
+  g_fmsx_audio_port_trace_active_valid = 0u;
+}
+
+static void fmsx_audio_port_trace_flush_frame_boundary(void)
+{
+  if(!g_fmsx_audio_port_trace_active_valid) return;
+  if(g_fmsx_audio_port_trace_active.frame==FmsxVDPFrameCounter) return;
+  fmsx_audio_port_trace_commit_active();
+}
+
+static void fmsx_audio_port_trace_begin_active(uint32_t frame,uint16_t pc,uint8_t chip,uint8_t op,uint8_t reg,uint8_t value,uint8_t capture_window,uint8_t session)
+{
+  memset(&g_fmsx_audio_port_trace_active,0,sizeof(g_fmsx_audio_port_trace_active));
+  g_fmsx_audio_port_trace_active.frame = frame;
+  g_fmsx_audio_port_trace_active.pc = pc;
+  g_fmsx_audio_port_trace_active.count = 1u;
+  g_fmsx_audio_port_trace_active.reg = reg;
+  g_fmsx_audio_port_trace_active.value_first = value;
+  g_fmsx_audio_port_trace_active.value_last = value;
+  g_fmsx_audio_port_trace_active.chip = chip;
+  g_fmsx_audio_port_trace_active.op = op;
+  g_fmsx_audio_port_trace_active.capture_window = capture_window;
+  g_fmsx_audio_port_trace_active.session = session;
+  g_fmsx_audio_port_trace_active_valid = 1u;
+}
+
+static void fmsx_audio_port_trace_push_direct(uint8_t chip,uint8_t op,uint8_t reg,uint8_t value,uint8_t capture_window,uint8_t session)
+{
+  TFmsxAudioPortTraceEvent *event;
+
+  event = &g_fmsx_audio_port_trace[g_fmsx_audio_port_trace_head];
+  memset(event,0,sizeof(*event));
+  event->seq = ++g_fmsx_audio_port_trace_seq;
+  event->frame = FmsxVDPFrameCounter;
+  event->pc = CPU.PC.W;
+  event->count = 1u;
+  event->reg = reg;
+  event->value_first = value;
+  event->value_last = value;
+  event->chip = chip;
+  event->op = op;
+  event->capture_window = capture_window;
+  event->session = session;
+
+  g_fmsx_audio_port_trace_head = (g_fmsx_audio_port_trace_head+1u)%FMSX_AUDIO_PORT_TRACE_CAPACITY;
+  if(g_fmsx_audio_port_trace_count<FMSX_AUDIO_PORT_TRACE_CAPACITY) ++g_fmsx_audio_port_trace_count;
+  else ++g_fmsx_audio_port_trace_dropped;
+}
+
+static void fmsx_audio_port_trace_log(uint8_t chip,uint8_t op,uint8_t reg,uint8_t value)
+{
+  const uint8_t capture_window = fmsx_vdp_trace_window();
+
+  if(!(fmsx_rom_type_is_manbow2(ROMType[0]) || fmsx_rom_type_is_manbow2(ROMType[1]))) return;
+  if(!g_fmsx_scc_trace_started || g_fmsx_scc_trace_capture_done) return;
+  if(g_fmsx_scc_trace_seen_slot_flow
+  && (capture_window==FMSX_VDP_TRACE_NONE)
+  && (g_fmsx_scc_trace_session>0u)) return;
+
+  fmsx_audio_port_trace_flush_frame_boundary();
+
+  if(op==FMSX_AUDIO_PORT_TRACE_CTRL)
+  {
+    fmsx_audio_port_trace_commit_active();
+    fmsx_audio_port_trace_push_direct(chip,op,reg,value,capture_window,g_fmsx_scc_trace_session);
+    return;
+  }
+
+  if(g_fmsx_audio_port_trace_active_valid
+  && g_fmsx_audio_port_trace_active.frame==FmsxVDPFrameCounter
+  && g_fmsx_audio_port_trace_active.pc==CPU.PC.W
+  && g_fmsx_audio_port_trace_active.chip==chip
+  && g_fmsx_audio_port_trace_active.op==op
+  && g_fmsx_audio_port_trace_active.reg==reg
+  && g_fmsx_audio_port_trace_active.capture_window==capture_window
+  && g_fmsx_audio_port_trace_active.session==g_fmsx_scc_trace_session
+  && g_fmsx_audio_port_trace_active.count<0xFFFFu)
+  {
+    g_fmsx_audio_port_trace_active.value_last = value;
+    ++g_fmsx_audio_port_trace_active.count;
+    return;
+  }
+
+  fmsx_audio_port_trace_commit_active();
+  fmsx_audio_port_trace_begin_active(FmsxVDPFrameCounter,CPU.PC.W,chip,op,reg,value,capture_window,g_fmsx_scc_trace_session);
+}
+
+static void fmsx_scc_trace_log(uint8_t slot,uint8_t ps,uint8_t ss,uint8_t mapper,uint16_t addr,uint8_t value)
+{
+  uint8_t bank16;
+  uint8_t kind;
+  uint8_t plus_mode;
+  uint8_t chip;
+  uint8_t capture_window;
+  int have_bank16;
+  uint16_t pc;
+  TFmsxSCCTraceEvent *event;
+
+  if(!fmsx_rom_type_is_manbow2(mapper)) return;
+
+  plus_mode = (addr&0x2000u)? 1u:0u;
+  kind = fmsx_scc_trace_kind(addr,plus_mode);
+  if(kind==FMSX_SCC_TRACE_NONE) return;
+
+  pc = CPU.PC.W;
+  bank16 = 0xFFu;
+  have_bank16 = fmsx_pc_bank16(&bank16);
+  capture_window = fmsx_vdp_trace_window();
+  chip = (uint8_t)(fmsx_scc_chip_index_for_slot(slot)<0? 0xFFu:fmsx_scc_chip_index_for_slot(slot));
+
+  if((capture_window==FMSX_VDP_TRACE_SAVE_SELECT)||(capture_window==FMSX_VDP_TRACE_STARDATE))
+    g_fmsx_scc_trace_seen_slot_flow = 1u;
+
+  if(!g_fmsx_scc_trace_started)
+  {
+    if((kind!=FMSX_SCC_TRACE_ENABLE) || (value==0u)) return;
+    g_fmsx_scc_trace_started = 1u;
+  }
+
+  if(g_fmsx_scc_trace_capture_done) return;
+
+  /*
+   * Keep the trace live from the first SCC activation until the code leaves
+   * the save-select/stardate flow and starts issuing SCC writes from gameplay.
+   * This matches the debugging need for START!/CONTINUE! without cutting early.
+   */
+  if(g_fmsx_scc_trace_seen_slot_flow
+  && (capture_window==FMSX_VDP_TRACE_NONE)
+  && (g_fmsx_scc_trace_session>0u))
+  {
+    fmsx_scc_trace_commit_active();
+    g_fmsx_scc_trace_capture_done = 1u;
+    g_fmsx_scc_trace_session_open = 0u;
+    return;
+  }
+
+  if((kind==FMSX_SCC_TRACE_ENABLE) && (value!=0u) && !g_fmsx_scc_trace_session_open)
+  {
+    ++g_fmsx_scc_trace_session;
+    g_fmsx_scc_trace_session_open = 1u;
+    g_fmsx_scc_trace_events_in_session = 0u;
+  }
+  else if(!g_fmsx_scc_trace_session_open)
+  {
+    return;
+  }
+
+  fmsx_scc_trace_flush_frame_boundary();
+
+  if(kind==FMSX_SCC_TRACE_VOLUME)
+  {
+    if(g_fmsx_scc_trace_active_valid
+    && g_fmsx_scc_trace_active.kind==kind
+    && g_fmsx_scc_trace_active.frame==FmsxVDPFrameCounter
+    && g_fmsx_scc_trace_active.pc==pc
+    && g_fmsx_scc_trace_active.slot==slot
+    && g_fmsx_scc_trace_active.chip==chip
+    && g_fmsx_scc_trace_active.ps==ps
+    && g_fmsx_scc_trace_active.ss==ss
+    && g_fmsx_scc_trace_active.bank16==bank16
+    && g_fmsx_scc_trace_active.mode==plus_mode
+    && g_fmsx_scc_trace_active.mapper==mapper
+    && g_fmsx_scc_trace_active.capture_window==capture_window
+    && g_fmsx_scc_trace_active.session==g_fmsx_scc_trace_session
+    && (uint16_t)(g_fmsx_scc_trace_active.addr_last+1u)==addr
+    && g_fmsx_scc_trace_active.count<0xFFFFu)
+    {
+      g_fmsx_scc_trace_active.addr_last = addr;
+      g_fmsx_scc_trace_active.value_last = value;
+      ++g_fmsx_scc_trace_active.count;
+      ++g_fmsx_scc_trace_events_in_session;
+      return;
+    }
+
+    fmsx_scc_trace_commit_active();
+    fmsx_scc_trace_begin_active(FmsxVDPFrameCounter,pc,addr,value,slot,chip,ps,ss,bank16,kind,plus_mode,mapper,capture_window,g_fmsx_scc_trace_session);
+    ++g_fmsx_scc_trace_events_in_session;
+    return;
+  }
+
+  fmsx_scc_trace_commit_active();
+
+  event = &g_fmsx_scc_trace[g_fmsx_scc_trace_head];
+  memset(event,0,sizeof(*event));
+  event->seq = ++g_fmsx_scc_trace_seq;
+  event->frame = FmsxVDPFrameCounter;
+  event->pc = pc;
+  event->addr_first = addr;
+  event->addr_last = addr;
+  event->count = 1u;
+  event->rendered_samples_before = (uint16_t)fmsx_audio_last_sync_rendered_samples();
+  event->value_first = value;
+  event->value_last = value;
+  event->slot = slot;
+  event->chip = chip;
+  event->ps = ps;
+  event->ss = ss;
+  event->bank16 = bank16;
+  event->kind = kind;
+  event->mode = plus_mode;
+  event->mapper = mapper;
+  event->capture_window = capture_window;
+  event->session = g_fmsx_scc_trace_session;
+
+  g_fmsx_scc_trace_head = (g_fmsx_scc_trace_head+1u)%FMSX_SCC_TRACE_CAPACITY;
+  if(g_fmsx_scc_trace_count<FMSX_SCC_TRACE_CAPACITY) ++g_fmsx_scc_trace_count;
+  else ++g_fmsx_scc_trace_dropped;
+  ++g_fmsx_scc_trace_events_in_session;
+
+  if((kind==FMSX_SCC_TRACE_ENABLE) && (value==0u))
+  {
+    fmsx_scc_trace_commit_active();
+    g_fmsx_scc_trace_session_open = 0u;
+  }
+}
+
+void fmsx_scc_trace_get_view(const TFmsxSCCTraceEvent **events,unsigned *capacity,unsigned *count,unsigned *head,unsigned *dropped)
+{
+  fmsx_scc_trace_flush_frame_boundary();
+  if(events)   *events = g_fmsx_scc_trace;
+  if(capacity) *capacity = FMSX_SCC_TRACE_CAPACITY;
+  if(count)    *count = g_fmsx_scc_trace_count;
+  if(head)     *head = g_fmsx_scc_trace_head;
+  if(dropped)  *dropped = g_fmsx_scc_trace_dropped;
+}
+
+void fmsx_audio_port_trace_get_view(const TFmsxAudioPortTraceEvent **events,unsigned *capacity,unsigned *count,unsigned *head,unsigned *dropped)
+{
+  fmsx_audio_port_trace_flush_frame_boundary();
+  if(events)   *events = g_fmsx_audio_port_trace;
+  if(capacity) *capacity = FMSX_AUDIO_PORT_TRACE_CAPACITY;
+  if(count)    *count = g_fmsx_audio_port_trace_count;
+  if(head)     *head = g_fmsx_audio_port_trace_head;
+  if(dropped)  *dropped = g_fmsx_audio_port_trace_dropped;
+}
+#else
+void fmsx_scc_trace_get_view(const TFmsxSCCTraceEvent **events,unsigned *capacity,unsigned *count,unsigned *head,unsigned *dropped)
+{
+  if(events)   *events = 0;
+  if(capacity) *capacity = 0u;
+  if(count)    *count = 0u;
+  if(head)     *head = 0u;
+  if(dropped)  *dropped = 0u;
+}
+
+void fmsx_audio_port_trace_get_view(const TFmsxAudioPortTraceEvent **events,unsigned *capacity,unsigned *count,unsigned *head,unsigned *dropped)
+{
+  if(events)   *events = 0;
+  if(capacity) *capacity = 0u;
+  if(count)    *count = 0u;
+  if(head)     *head = 0u;
+  if(dropped)  *dropped = 0u;
+}
+#define fmsx_audio_port_trace_log(chip,op,reg,value) ((void)0)
+#define fmsx_scc_trace_log(slot,ps,ss,mapper,addr,value) ((void)0)
+#endif
 
 void fmsx_vdp_trace_command_transition(uint8_t active)
 {
@@ -2093,6 +2516,7 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   HPeriod        = fmsx_scale_cycles(HPERIOD/6);
   CPU.IPeriod    = fmsx_scale_cycles(CPU_H240);
   CPU.IAutoReset = 0;
+  fmsx_audio_cycle_reset();
 
   /* Numbers of RAM pages should be power of 2 */
   for(J=1;J<NewRAMPages;J<<=1);
@@ -2293,6 +2717,28 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   FmsxVDPPort9BWriteCount = 0;
   memset(FmsxVDPRegWriteCount,0,sizeof(FmsxVDPRegWriteCount));
   memset(FmsxVDPStatusReadCount,0,sizeof(FmsxVDPStatusReadCount));
+#if FMSX_SMANBOW_AUDIO_TRACE_ENABLED
+  memset(g_fmsx_scc_trace,0,sizeof(g_fmsx_scc_trace));
+  memset(&g_fmsx_scc_trace_active,0,sizeof(g_fmsx_scc_trace_active));
+  g_fmsx_scc_trace_head = 0;
+  g_fmsx_scc_trace_count = 0;
+  g_fmsx_scc_trace_dropped = 0;
+  g_fmsx_scc_trace_seq = 0;
+  g_fmsx_scc_trace_active_valid = 0;
+  g_fmsx_scc_trace_started = 0;
+  g_fmsx_scc_trace_capture_done = 0;
+  g_fmsx_scc_trace_seen_slot_flow = 0;
+  g_fmsx_scc_trace_session = 0;
+  g_fmsx_scc_trace_session_open = 0;
+  g_fmsx_scc_trace_events_in_session = 0u;
+  memset(g_fmsx_audio_port_trace,0,sizeof(g_fmsx_audio_port_trace));
+  memset(&g_fmsx_audio_port_trace_active,0,sizeof(g_fmsx_audio_port_trace_active));
+  g_fmsx_audio_port_trace_head = 0;
+  g_fmsx_audio_port_trace_count = 0;
+  g_fmsx_audio_port_trace_dropped = 0;
+  g_fmsx_audio_port_trace_seq = 0;
+  g_fmsx_audio_port_trace_active_valid = 0u;
+#endif
   FmsxKanjiReadCount = 0;
   FmsxKanjiAddrWriteCount = 0;
   FmsxKanjiNullReadCount = 0;
@@ -2668,19 +3114,25 @@ void OutZ80(uint16_t Port,uint8_t Value)
 case 0x7C:
   /* OPLL Register# */
 #ifdef FMSX_BAREMETAL_HARD_DISABLE_AUDIO
+  fmsx_audio_port_trace_log(FMSX_AUDIO_PORT_TRACE_FM,FMSX_AUDIO_PORT_TRACE_CTRL,Value&0x3Fu,Value);
   return;
 #else
+  fmsx_audio_render_to_cpu_now();
   WrCtrl2413(&OPLL,Value);
   NukeYKT_WritePort2413(&OPLL_NukeYKT,NUKEYKT_REGISTER_PORT,Value);
+  fmsx_audio_port_trace_log(FMSX_AUDIO_PORT_TRACE_FM,FMSX_AUDIO_PORT_TRACE_CTRL,OPLL.Latch,Value);
   return;
 #endif
 case 0x7D:
   /* OPLL Data      */
 #ifdef FMSX_BAREMETAL_HARD_DISABLE_AUDIO
+  fmsx_audio_port_trace_log(FMSX_AUDIO_PORT_TRACE_FM,FMSX_AUDIO_PORT_TRACE_DATA,OPLL.Latch,Value);
   return;
 #else
+  fmsx_audio_render_to_cpu_now();
   WrData2413(&OPLL,Value);
   NukeYKT_WritePort2413(&OPLL_NukeYKT,NUKEYKT_DATA_PORT,Value);
+  fmsx_audio_port_trace_log(FMSX_AUDIO_PORT_TRACE_FM,FMSX_AUDIO_PORT_TRACE_DATA,OPLL.Latch,Value);
   return;
 #endif
 case 0x91: Printer(Value);return;                 /* Printer Data   */
@@ -2709,9 +3161,12 @@ case 0x4F:
 case 0xA0:
 #ifdef FMSX_BAREMETAL_HARD_DISABLE_AUDIO
   PSG.Latch=Value&0x0F;
+  fmsx_audio_port_trace_log(FMSX_AUDIO_PORT_TRACE_PSG,FMSX_AUDIO_PORT_TRACE_CTRL,PSG.Latch,Value);
   return;
 #else
+  fmsx_audio_render_to_cpu_now();
   WrCtrl8910(&PSG,Value);
+  fmsx_audio_port_trace_log(FMSX_AUDIO_PORT_TRACE_PSG,FMSX_AUDIO_PORT_TRACE_CTRL,PSG.Latch,Value);
   return;
 #endif
 case 0xB4:
@@ -2855,8 +3310,11 @@ case 0xA1: /* PSG Data */
 #ifdef FMSX_BAREMETAL_HARD_DISABLE_AUDIO
   PSG.R[PSG.Latch&0x0F]=Value;
 #else
+  fmsx_audio_render_to_cpu_now();
   WrData8910(&PSG,Value);
+  Sync8910(&PSG,AY8910_FLUSH);
 #endif
+  fmsx_audio_port_trace_log(FMSX_AUDIO_PORT_TRACE_PSG,FMSX_AUDIO_PORT_TRACE_DATA,PSG.Latch&0x0F,Value);
   return;
 
 case 0xA8: /* Primary slot state   */
@@ -2995,6 +3453,7 @@ void MapROM(uint16_t A,uint8_t V)
     SCC *chip = fmsx_scc_chip_for_slot(I);
     /* Compute SCC register number */
     J=A&0x00FF;
+    fmsx_scc_trace_log(I,PS,SS,ROMType[I],A,V);
 
     /* If using SCC+... */
     if(A&0x2000)
@@ -3552,7 +4011,11 @@ void VDPOut(uint8_t R,uint8_t V)
 
   /* Write value into a register */
   VDP[R]=V;
-  if(R==9) fmsx_sync_bios_vdp_r9_shadow();
+  if(R==9)
+  {
+    VPeriod=fmsx_scale_cycles((PALVideo? VPERIOD_PAL:VPERIOD_NTSC)/6);
+    fmsx_sync_bios_vdp_r9_shadow();
+  }
 }
 
 /** Printer() ************************************************/
@@ -3650,6 +4113,8 @@ uint16_t LoopZ80(Z80 *R)
   const int pal_timing = PALVideo ? 1 : 0;
   int J;
 
+  fmsx_audio_cycle_commit_phase();
+
   if(!LoggedLoop)
   {
     if(log_cb) log_cb(1,"LoopZ80: first call\n");
@@ -3665,6 +4130,7 @@ uint16_t LoopZ80(Z80 *R)
   {
     /* HRefresh takes most of the scanline */
     R->IPeriod=fmsx_scale_cycles(!ScrMode||(ScrMode==MAXSCREEN+1)? CPU_H240:CPU_H256);
+    fmsx_audio_cycle_open_phase(R->IPeriod);
 
     /* New scanline */
     ScanLine=ScanLine<(pal_timing? 312:261)? ScanLine+1:0;
@@ -3755,6 +4221,7 @@ uint16_t LoopZ80(Z80 *R)
   /* HBlank takes HPeriod-HRefresh */
   R->IPeriod=fmsx_scale_cycles(!ScrMode||(ScrMode==MAXSCREEN+1)? CPU_H240:CPU_H256);
   R->IPeriod=HPeriod-R->IPeriod;
+  fmsx_audio_cycle_open_phase(R->IPeriod);
 
   /* If last scanline of VBlank, see if we need to wait more */
   J=pal_timing? 313:262;
@@ -5302,6 +5769,7 @@ unsigned int LoadState(unsigned char *Buf,unsigned int MaxSize)
   LoadSTRUCT(PSG);
   LoadSTRUCT(OPLL);
   LoadSTRUCT(SCChip);
+  fmsx_scc_rebuild_render_state_all();
   LoadARRAY(State);
   LoadDATA(RAMData,RAMPages*0x4000);
   LoadDATA(VRAM,VRAMPages*0x4000);
@@ -5409,6 +5877,28 @@ unsigned int LoadState(unsigned char *Buf,unsigned int MaxSize)
   PSG.Changed     = (1<<AY8910_CHANNELS)-1;
   fmsx_mark_scc_chips_dirty();
   OPLL.Changed    = (1<<YM2413_CHANNELS)-1;
+#if FMSX_SMANBOW_AUDIO_TRACE_ENABLED
+  memset(g_fmsx_scc_trace,0,sizeof(g_fmsx_scc_trace));
+  memset(&g_fmsx_scc_trace_active,0,sizeof(g_fmsx_scc_trace_active));
+  g_fmsx_scc_trace_head = 0;
+  g_fmsx_scc_trace_count = 0;
+  g_fmsx_scc_trace_dropped = 0;
+  g_fmsx_scc_trace_seq = 0;
+  g_fmsx_scc_trace_active_valid = 0;
+  g_fmsx_scc_trace_started = 0;
+  g_fmsx_scc_trace_capture_done = 0;
+  g_fmsx_scc_trace_seen_slot_flow = 0;
+  g_fmsx_scc_trace_session = 0;
+  g_fmsx_scc_trace_session_open = 0;
+  g_fmsx_scc_trace_events_in_session = 0u;
+  memset(g_fmsx_audio_port_trace,0,sizeof(g_fmsx_audio_port_trace));
+  memset(&g_fmsx_audio_port_trace_active,0,sizeof(g_fmsx_audio_port_trace_active));
+  g_fmsx_audio_port_trace_head = 0;
+  g_fmsx_audio_port_trace_count = 0;
+  g_fmsx_audio_port_trace_dropped = 0;
+  g_fmsx_audio_port_trace_seq = 0;
+  g_fmsx_audio_port_trace_active_valid = 0u;
+#endif
 
   /* Return amount of data read */
   return(Size);

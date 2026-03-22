@@ -105,6 +105,15 @@ static unsigned MenuSupportedProfileCount(void)
     return supported;
 }
 
+static unsigned AudioGainUiLevelFromPercent(unsigned percent)
+{
+    if (percent > 100u)
+    {
+        percent = 100u;
+    }
+    return (percent * 9u + 50u) / 100u;
+}
+
 static void BuildLabelFlag(char *dst, unsigned dst_size, const char *label, const char *flag)
 {
     if (dst == 0 || dst_size == 0u)
@@ -350,7 +359,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
                                                      unsigned audio_gain_percent,
                                                      unsigned *count)
 {
-    static TComboMenuItem settings_items[29];
+    static TComboMenuItem settings_items[32];
     static char language_label[32];
     static char resolution_label[32];
     static char scale_label[32];
@@ -381,7 +390,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     if (scale_percent > max_scale_percent) scale_percent = max_scale_percent;
     if (resolution_mode > 3u) resolution_mode = 0u;
     if (scanline_mode > 2u) scanline_mode = 2u;
-    (void) refresh_rate_hz;
     machine_profile = machine_profile_clamp(machine_profile);
     if (rammapper_kb != 256u && rammapper_kb != 512u && rammapper_kb != 1024u) rammapper_kb = 256u;
     if (megaram_kb != 0u && megaram_kb != 256u && megaram_kb != 512u && megaram_kb != 1024u) megaram_kb = 0u;
@@ -440,17 +448,11 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     }
     BuildLabelFlag(overlay_label, sizeof(overlay_label), locale->settings_debugger,
                    overlay_available ? (overlay_enabled ? locale->flag_on : locale->flag_off) : locale->flag_na);
-    if (audio_gain_percent == 0u)
     {
-        BuildLabelFlag(audio_gain_label, sizeof(audio_gain_label), locale->settings_audio_gain, locale->flag_off);
-    }
-    else
-    {
-        char audio_gain_flag[4];
-        audio_gain_flag[0] = (char) ('0' + ((audio_gain_percent / 100u) % 10u));
-        audio_gain_flag[1] = (char) ('0' + ((audio_gain_percent / 10u) % 10u));
-        audio_gain_flag[2] = (char) ('0' + (audio_gain_percent % 10u));
-        audio_gain_flag[3] = '\0';
+        const unsigned audio_gain_ui = AudioGainUiLevelFromPercent(audio_gain_percent);
+        char audio_gain_flag[2];
+        audio_gain_flag[0] = (char) ('0' + (audio_gain_ui % 10u));
+        audio_gain_flag[1] = '\0';
         BuildLabelFlag(audio_gain_label, sizeof(audio_gain_label), locale->settings_audio_gain, audio_gain_flag);
     }
 
@@ -475,7 +477,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     ADD_SETTING_ITEM(scale_label, ComboMenuActionOverscanChanged, ComboMenuRedrawMenuAndViewport, TRUE);
     ADD_SETTING_ITEM(widescreen_label, ComboMenuActionToggleWidescreen, ComboMenuRedrawMenuAndViewport, TRUE);
     ADD_SETTING_ITEM(scanline_label, ComboMenuActionCycleScanlines, ComboMenuRedrawMenuAndViewport, TRUE);
-
     if (MSXBARE_FEAT_FMPAC || MSXBARE_FEAT_SCC)
     {
         ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);

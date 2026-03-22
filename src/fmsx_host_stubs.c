@@ -6,6 +6,7 @@
 #include "../third_party/fmsx/EMULib/Floppy.h"
 #include "../third_party/fmsx/EMULib/MCF.h"
 #include "../third_party/fmsx/libretro.h"
+#include "fmsx_compat/Sound.h"
 #include "fmsx_compat/string.h"
 
 retro_log_printf_t log_cb = 0;
@@ -56,6 +57,7 @@ static uint8_t g_sram_disk_blob[(64 * 1024) + 1];
 uint8_t *sram_disk_ptr = &g_sram_disk_blob[1];
 
 #define FMSX_AUDIO_RING_SAMPLES (48000u * 2u)
+#define FMSX_AUDIO_RATE 48000u
 #define FMSX_AUDIO_MAX_LATENCY_SAMPLES 6000u
 #define FMSX_AUDIO_MAX_TRIM_PER_PULL   800u
 static int16_t g_audio_ring[FMSX_AUDIO_RING_SAMPLES];
@@ -67,6 +69,8 @@ static volatile unsigned g_audio_samples_pulled = 0;
 static volatile unsigned g_audio_drop_count = 0;
 static volatile unsigned g_audio_source_peak = 0;
 static volatile unsigned g_audio_source_nonzero = 0;
+static unsigned g_audio_frame_rendered_samples = 0u;
+static volatile unsigned g_audio_last_sync_rendered_samples = 0u;
 static volatile unsigned g_kbd_last_hid = 0;
 static volatile unsigned g_kbd_last_msx = 0;
 static uint8_t g_kbd_stable_state[16] =
@@ -385,6 +389,61 @@ uint8_t DiskWrite(uint8_t ID, const uint8_t *Buf, int N)
 void PlayAllSound(int uSec)
 {
     (void) uSec;
+    fmsx_audio_render_to_cpu_now();
+}
+
+void fmsx_audio_begin_frame_render_accounting(void)
+{
+    g_audio_frame_rendered_samples = 0u;
+}
+
+unsigned fmsx_audio_end_frame_render_accounting(void)
+{
+    const unsigned samples = g_audio_frame_rendered_samples;
+    g_audio_frame_rendered_samples = 0u;
+    return samples;
+}
+
+void fmsx_audio_render_to_cpu_now(void)
+{
+    static uint64_t g_audio_cycle_carry = 0u;
+    static uint64_t g_audio_last_cycle_stamp = 0u;
+    const uint64_t now = fmsx_audio_cpu_cycles_now();
+
+    if (!fmsx_runtime_audio_render_enabled())
+    {
+        g_audio_last_sync_rendered_samples = 0u;
+        return;
+    }
+
+    if (now < g_audio_last_cycle_stamp)
+    {
+        g_audio_last_cycle_stamp = now;
+        g_audio_cycle_carry = 0u;
+        g_audio_last_sync_rendered_samples = 0u;
+        return;
+    }
+
+    g_audio_cycle_carry += (now - g_audio_last_cycle_stamp) * (uint64_t) FMSX_AUDIO_RATE;
+    g_audio_last_cycle_stamp = now;
+    g_audio_last_sync_rendered_samples = 0u;
+
+    if (g_audio_cycle_carry >= (uint64_t) CPU_CLOCK)
+    {
+        const unsigned samples = (unsigned) (g_audio_cycle_carry / (uint64_t) CPU_CLOCK);
+        g_audio_cycle_carry %= (uint64_t) CPU_CLOCK;
+        if (samples != 0u)
+        {
+            RenderAndPlayAudio(samples);
+            g_audio_frame_rendered_samples += samples;
+            g_audio_last_sync_rendered_samples = samples;
+        }
+    }
+}
+
+unsigned fmsx_audio_last_sync_rendered_samples(void)
+{
+    return g_audio_last_sync_rendered_samples;
 }
 
 unsigned fmsx_audio_pull_samples(int16_t *dst, unsigned max_samples)
