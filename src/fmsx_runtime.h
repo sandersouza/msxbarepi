@@ -22,9 +22,22 @@ typedef struct {
     unsigned samples_written;
     unsigned samples_pulled;
     unsigned ring_level;
+    unsigned ring_peak;
     unsigned drop_count;
+    unsigned overwrite_samples;
+    unsigned trim_events;
+    unsigned trim_samples;
+    unsigned short_pulls;
+    unsigned underrun_samples;
     unsigned source_peak;
     unsigned source_nonzero;
+    unsigned last_pull_requested;
+    unsigned last_pull_returned;
+    unsigned last_level_before_pull;
+    unsigned last_level_after_pull;
+    unsigned last_trim_samples;
+    unsigned last_render_batch;
+    unsigned max_render_batch;
 } TFmsxAudioStats;
 
 typedef struct {
@@ -32,16 +45,18 @@ typedef struct {
     unsigned last_msx;
 } TFmsxKeyboardDebug;
 
-#define FMSX_VDP_TRACE_CAPACITY 128u
+#define FMSX_VDP_TRACE_CAPACITY 1024u
 #define FMSX_SMANBOW_AUDIO_TRACE_ENABLED 0
 #define FMSX_SCC_TRACE_CAPACITY 4096u
 #define FMSX_AUDIO_PORT_TRACE_CAPACITY 1024u
+#define FMSX_KMG_TRACE_CAPACITY 64u
 
 typedef enum {
     FMSX_VDP_TRACE_NONE = 0,
     FMSX_VDP_TRACE_TITLE = 1,
     FMSX_VDP_TRACE_SAVE_SELECT = 2,
-    FMSX_VDP_TRACE_STARDATE = 3
+    FMSX_VDP_TRACE_STARDATE = 3,
+    FMSX_VDP_TRACE_KMG = 4
 } TFmsxVDPTraceWindow;
 
 typedef enum {
@@ -54,7 +69,10 @@ typedef enum {
     FMSX_VDP_EVENT_S1_READ = 6,
     FMSX_VDP_EVENT_S2_READ = 7,
     FMSX_VDP_EVENT_CMD_START = 8,
-    FMSX_VDP_EVENT_CMD_END = 9
+    FMSX_VDP_EVENT_CMD_END = 9,
+    FMSX_VDP_EVENT_PORT98_WRITE = 10,
+    FMSX_VDP_EVENT_PORT99_ADDR = 11,
+    FMSX_VDP_EVENT_PORT99_REG = 12
 } TFmsxVDPTraceEventType;
 
 typedef struct {
@@ -97,6 +115,11 @@ typedef struct {
     uint8_t cart_bank_p2_hi;
     uint8_t vdp_cmd;
     uint8_t vdp_ce;
+    uint8_t aux_reg;
+    uint8_t aux_value;
+    uint8_t aux_ctrl;
+    uint8_t reserved0;
+    uint32_t aux_addr;
 } TFmsxVDPTraceEvent;
 
 typedef struct {
@@ -178,6 +201,26 @@ typedef struct {
     unsigned head;
     unsigned dropped;
 } TFmsxAudioPortTraceView;
+
+typedef struct {
+    uint32_t seq;
+    uint32_t frame;
+    uint16_t pc;
+    uint16_t addr;
+    uint8_t value;
+    uint8_t l220e;
+    uint8_t l220f;
+    uint8_t l2212;
+    uint8_t l2219;
+} TFmsxKmgTraceEvent;
+
+typedef struct {
+    const TFmsxKmgTraceEvent *events;
+    unsigned capacity;
+    unsigned count;
+    unsigned head;
+    unsigned dropped;
+} TFmsxKmgTraceView;
 
 typedef struct {
     unsigned h_period;
@@ -319,11 +362,17 @@ void fmsx_runtime_keyboard_reset_pipeline(void);
 void fmsx_runtime_set_overscan(boolean enabled);
 void fmsx_runtime_set_refresh_hz(unsigned hz);
 unsigned fmsx_runtime_get_refresh_hz(void);
+unsigned fmsx_runtime_get_z80_turbo_percent(void);
+void fmsx_runtime_set_real_clock_enabled(boolean enabled);
+boolean fmsx_runtime_get_real_clock_enabled(void);
+unsigned fmsx_runtime_get_base_cpu_clock_hz(void);
 boolean fmsx_runtime_audio_render_enabled(void);
 void fmsx_audio_begin_frame_render_accounting(void);
 unsigned fmsx_audio_end_frame_render_accounting(void);
 uint64_t fmsx_audio_cpu_cycles_now(void);
+unsigned fmsx_audio_effective_cpu_clock_hz(void);
 void fmsx_audio_render_to_cpu_now(void);
+void fmsx_audio_reset_stream_timing(void);
 unsigned fmsx_audio_last_sync_rendered_samples(void);
 void fmsx_runtime_set_disk_rom_enabled(boolean enabled);
 boolean fmsx_runtime_get_disk_rom_enabled(void);
@@ -341,6 +390,8 @@ boolean fmsx_runtime_use_embedded_bios(void);
 void fmsx_runtime_notify_media_probe(void);
 void fmsx_runtime_set_z80_turbo_mode(unsigned mode);
 unsigned fmsx_runtime_get_z80_turbo_mode(void);
+void fmsx_runtime_set_panasonic_turbo_enabled(boolean enabled);
+boolean fmsx_runtime_get_panasonic_turbo_enabled(void);
 void fmsx_runtime_set_fm_music_enabled(boolean enabled);
 boolean fmsx_runtime_get_fm_music_enabled(void);
 void fmsx_runtime_set_scc_plus_enabled(boolean enabled);
@@ -386,6 +437,7 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats);
 void fmsx_runtime_get_vdp_trace_view(TFmsxVDPTraceView *view);
 void fmsx_runtime_get_scc_trace_view(TFmsxSCCTraceView *view);
 void fmsx_runtime_get_audio_port_trace_view(TFmsxAudioPortTraceView *view);
+void fmsx_runtime_get_kmg_trace_view(TFmsxKmgTraceView *view);
 
 #ifdef __cplusplus
 }

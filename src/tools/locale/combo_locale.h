@@ -55,6 +55,7 @@ typedef struct {
     const char *settings_fm_music;
     const char *settings_scc_cart;
     const char *settings_debugger;
+    const char *settings_real_clock;
     const char *settings_sd_log;
     const char *settings_audio_gain;
     const char *settings_save;

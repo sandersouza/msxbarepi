@@ -67,10 +67,25 @@ static volatile unsigned g_audio_write_calls = 0;
 static volatile unsigned g_audio_samples_written = 0;
 static volatile unsigned g_audio_samples_pulled = 0;
 static volatile unsigned g_audio_drop_count = 0;
+static volatile unsigned g_audio_overwrite_samples = 0;
+static volatile unsigned g_audio_trim_events = 0;
+static volatile unsigned g_audio_trim_samples = 0;
+static volatile unsigned g_audio_short_pulls = 0;
+static volatile unsigned g_audio_underrun_samples = 0;
 static volatile unsigned g_audio_source_peak = 0;
 static volatile unsigned g_audio_source_nonzero = 0;
+static volatile unsigned g_audio_ring_peak = 0;
+static volatile unsigned g_audio_last_pull_requested = 0;
+static volatile unsigned g_audio_last_pull_returned = 0;
+static volatile unsigned g_audio_last_level_before_pull = 0;
+static volatile unsigned g_audio_last_level_after_pull = 0;
+static volatile unsigned g_audio_last_trim_samples = 0;
 static unsigned g_audio_frame_rendered_samples = 0u;
 static volatile unsigned g_audio_last_sync_rendered_samples = 0u;
+static volatile unsigned g_audio_last_render_batch = 0u;
+static volatile unsigned g_audio_max_render_batch = 0u;
+static uint64_t g_audio_cycle_carry = 0u;
+static uint64_t g_audio_last_cycle_stamp = 0u;
 static volatile unsigned g_kbd_last_hid = 0;
 static volatile unsigned g_kbd_last_msx = 0;
 typedef struct
@@ -134,6 +149,15 @@ static int fmsx_keyboard_change_has_release(const uint8_t desired_state[16], con
         }
     }
     return 0;
+}
+
+static unsigned fmsx_audio_ring_level_current(void)
+{
+    if (g_audio_wpos >= g_audio_rpos)
+    {
+        return g_audio_wpos - g_audio_rpos;
+    }
+    return (FMSX_AUDIO_RING_SAMPLES - g_audio_rpos) + g_audio_wpos;
 }
 
 static void fmsx_keyboard_clear_all(void)
@@ -589,13 +613,13 @@ unsigned fmsx_audio_end_frame_render_accounting(void)
 
 void fmsx_audio_render_to_cpu_now(void)
 {
-    static uint64_t g_audio_cycle_carry = 0u;
-    static uint64_t g_audio_last_cycle_stamp = 0u;
     const uint64_t now = fmsx_audio_cpu_cycles_now();
+    const uint64_t cpu_hz = (uint64_t) fmsx_audio_effective_cpu_clock_hz();
 
     if (!fmsx_runtime_audio_render_enabled())
     {
         g_audio_last_sync_rendered_samples = 0u;
+        g_audio_last_render_batch = 0u;
         return;
     }
 
@@ -604,24 +628,49 @@ void fmsx_audio_render_to_cpu_now(void)
         g_audio_last_cycle_stamp = now;
         g_audio_cycle_carry = 0u;
         g_audio_last_sync_rendered_samples = 0u;
+        g_audio_last_render_batch = 0u;
         return;
     }
 
     g_audio_cycle_carry += (now - g_audio_last_cycle_stamp) * (uint64_t) FMSX_AUDIO_RATE;
     g_audio_last_cycle_stamp = now;
     g_audio_last_sync_rendered_samples = 0u;
+    g_audio_last_render_batch = 0u;
 
-    if (g_audio_cycle_carry >= (uint64_t) CPU_CLOCK)
+    if (g_audio_cycle_carry >= cpu_hz)
     {
-        const unsigned samples = (unsigned) (g_audio_cycle_carry / (uint64_t) CPU_CLOCK);
-        g_audio_cycle_carry %= (uint64_t) CPU_CLOCK;
+        const unsigned samples = (unsigned) (g_audio_cycle_carry / cpu_hz);
+        g_audio_cycle_carry %= cpu_hz;
         if (samples != 0u)
         {
             RenderAndPlayAudio(samples);
             g_audio_frame_rendered_samples += samples;
             g_audio_last_sync_rendered_samples = samples;
+            g_audio_last_render_batch = samples;
+            if (samples > g_audio_max_render_batch)
+            {
+                g_audio_max_render_batch = samples;
+            }
         }
     }
+}
+
+void fmsx_audio_reset_stream_timing(void)
+{
+    g_audio_cycle_carry = 0u;
+    g_audio_last_cycle_stamp = 0u;
+    g_audio_wpos = 0u;
+    g_audio_rpos = 0u;
+    g_audio_ring_peak = 0u;
+    g_audio_last_pull_requested = 0u;
+    g_audio_last_pull_returned = 0u;
+    g_audio_last_level_before_pull = 0u;
+    g_audio_last_level_after_pull = 0u;
+    g_audio_last_trim_samples = 0u;
+    g_audio_last_sync_rendered_samples = 0u;
+    g_audio_last_render_batch = 0u;
+    g_audio_max_render_batch = 0u;
+    g_audio_frame_rendered_samples = 0u;
 }
 
 unsigned fmsx_audio_last_sync_rendered_samples(void)
@@ -638,9 +687,10 @@ unsigned fmsx_audio_pull_samples(int16_t *dst, unsigned max_samples)
         return 0;
     }
 
-    unsigned level = g_audio_wpos >= g_audio_rpos
-        ? (g_audio_wpos - g_audio_rpos)
-        : ((FMSX_AUDIO_RING_SAMPLES - g_audio_rpos) + g_audio_wpos);
+    unsigned level = fmsx_audio_ring_level_current();
+    g_audio_last_pull_requested = max_samples;
+    g_audio_last_level_before_pull = level;
+    g_audio_last_trim_samples = 0u;
     if (level > FMSX_AUDIO_MAX_LATENCY_SAMPLES)
     {
         unsigned drop = level - FMSX_AUDIO_MAX_LATENCY_SAMPLES;
@@ -649,6 +699,9 @@ unsigned fmsx_audio_pull_samples(int16_t *dst, unsigned max_samples)
             drop = FMSX_AUDIO_MAX_TRIM_PER_PULL;
         }
         g_audio_rpos = (g_audio_rpos + drop) % FMSX_AUDIO_RING_SAMPLES;
+        g_audio_trim_events++;
+        g_audio_trim_samples += drop;
+        g_audio_last_trim_samples = drop;
         g_audio_drop_count += drop;
     }
 
@@ -665,6 +718,13 @@ unsigned fmsx_audio_pull_samples(int16_t *dst, unsigned max_samples)
     }
 
     g_audio_samples_pulled += count;
+    g_audio_last_pull_returned = count;
+    if (count < max_samples)
+    {
+        g_audio_short_pulls++;
+        g_audio_underrun_samples += (max_samples - count);
+    }
+    g_audio_last_level_after_pull = fmsx_audio_ring_level_current();
     return count;
 }
 
@@ -678,17 +738,23 @@ void fmsx_audio_get_stats(TFmsxAudioStats *stats)
     stats->write_calls = g_audio_write_calls;
     stats->samples_written = g_audio_samples_written;
     stats->samples_pulled = g_audio_samples_pulled;
+    stats->ring_peak = g_audio_ring_peak;
     stats->drop_count = g_audio_drop_count;
+    stats->overwrite_samples = g_audio_overwrite_samples;
+    stats->trim_events = g_audio_trim_events;
+    stats->trim_samples = g_audio_trim_samples;
+    stats->short_pulls = g_audio_short_pulls;
+    stats->underrun_samples = g_audio_underrun_samples;
     stats->source_peak = g_audio_source_peak;
     stats->source_nonzero = g_audio_source_nonzero;
-    if (g_audio_wpos >= g_audio_rpos)
-    {
-        stats->ring_level = g_audio_wpos - g_audio_rpos;
-    }
-    else
-    {
-        stats->ring_level = (FMSX_AUDIO_RING_SAMPLES - g_audio_rpos) + g_audio_wpos;
-    }
+    stats->last_pull_requested = g_audio_last_pull_requested;
+    stats->last_pull_returned = g_audio_last_pull_returned;
+    stats->last_level_before_pull = g_audio_last_level_before_pull;
+    stats->last_level_after_pull = g_audio_last_level_after_pull;
+    stats->last_trim_samples = g_audio_last_trim_samples;
+    stats->last_render_batch = g_audio_last_render_batch;
+    stats->max_render_batch = g_audio_max_render_batch;
+    stats->ring_level = fmsx_audio_ring_level_current();
 }
 
 void fmsx_keyboard_get_debug(TFmsxKeyboardDebug *stats)
@@ -761,6 +827,7 @@ unsigned int WriteAudio(int16_t *Data, unsigned int Length)
         if (next == g_audio_rpos)
         {
             g_audio_rpos = (g_audio_rpos + 1u) % FMSX_AUDIO_RING_SAMPLES;
+            g_audio_overwrite_samples++;
             g_audio_drop_count++;
         }
 
@@ -771,6 +838,13 @@ unsigned int WriteAudio(int16_t *Data, unsigned int Length)
     g_audio_source_peak = peak;
     g_audio_source_nonzero = nonzero;
     g_audio_samples_written += i;
+    {
+        const unsigned level = fmsx_audio_ring_level_current();
+        if (level > g_audio_ring_peak)
+        {
+            g_audio_ring_peak = level;
+        }
+    }
     return i;
 }
 

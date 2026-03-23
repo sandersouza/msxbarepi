@@ -1,1 +1,2 @@
-sounddev=sndhdmi
+sounddev=sndvchiq
+fast=true

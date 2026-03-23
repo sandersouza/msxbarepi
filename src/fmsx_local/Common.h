@@ -14,6 +14,7 @@
 /*************************************************************/
 
 static int FirstLine = 10 + BORDER;/* First scanline in XBuf */
+extern uint8_t FmsxVDPVScrollLatched;
 
 static void  Sprites(uint8_t Y,uint16_t *Line);
 static void  ColorSprites(uint8_t Y,uint8_t *ZBuf);
@@ -25,6 +26,7 @@ extern void PutImage(void);
 extern uint8_t FmsxVDPScreenOnLatched;
 
 #define FMSX_SCREEN_ON (FmsxVDPScreenOnLatched)
+#define FMSX_RENDER_VSCROLL (FmsxVDPVScrollLatched)
 
 /* V9958 horizontal scroll helpers:
  * R26 = coarse scroll blocks
@@ -74,6 +76,12 @@ INLINE unsigned V9958VirtualWidth256(void)
   return (MODEL(MSX_MSX2P) && (VDP[25] & 0x01u) && (VDP[2] & 0x20u)) ? 512u : 256u;
 }
 
+INLINE unsigned V9958ScrollActive256(void)
+{
+  return MODEL(MSX_MSX2P)
+      && ((VDP[25] & 0x03u) || (VDP[26] != 0u) || ((VDP[27] & 0x07u) != 0u));
+}
+
 INLINE unsigned V9958VirtualWidth512(void)
 {
   return (MODEL(MSX_MSX2P) && (VDP[25] & 0x01u) && (VDP[2] & 0x20u)) ? 1024u : 512u;
@@ -112,7 +120,7 @@ INLINE uint8_t *V9958BitmapLinePtr(uint8_t *Base,uint8_t Y)
   int Pos;
 
   BasePos=(int)(Base-VRAM);
-  LinePos=(((int)(Y+VScroll)<<7)&ChrTabM&0x7FFF);
+  LinePos=(((int)(Y+FMSX_RENDER_VSCROLL)<<7)&ChrTabM&0x7FFF);
   Pos=(BasePos&~0x7FFF)|LinePos;
 
   /* fMSX flips even/odd display pages by subtracting 0x8000 on bitmap pages. */
@@ -335,7 +343,7 @@ void Sprites(uint8_t Y,uint16_t *Line)
   OH = SprHeights[VDP[1]&0x03];
   IH = SprHeights[VDP[1]&0x02];
   AT = SprTab-4;
-  Y += VScroll;
+  Y += FMSX_RENDER_VSCROLL;
   C  = MAXSPRITE1+1;
   M  = 0;
 
@@ -498,7 +506,7 @@ void ColorSprites(uint8_t Y,uint8_t *ZBuf)
     M<<=1;AT+=4;              /* Iterating through SprTab      */
     K=AT[0];                  /* Read Y from SprTab            */
     if(K==216) break;         /* Iteration terminates if Y=216 */
-    K=(uint8_t)(K-VScroll);      /* Sprite's actual Y coordinate  */
+    K=(uint8_t)(K-FMSX_RENDER_VSCROLL);      /* Sprite's actual Y coordinate  */
     if(K>256-IH) K-=256;       /* Y coordinate may be negative  */
 
     /* Mark all valid sprites with 1s, break at MAXSPRITE2 sprites */
@@ -525,7 +533,7 @@ void ColorSprites(uint8_t Y,uint8_t *ZBuf)
   for(;M;M>>=1,AT-=4)
     if(M&1)
     {
-      K=(uint8_t)(AT[0]-VScroll); /* K = sprite Y coordinate */
+      K=(uint8_t)(AT[0]-FMSX_RENDER_VSCROLL); /* K = sprite Y coordinate */
       if(K>256-IH) K-=256;        /* Y coordinate may be negative */
 
       J=Y-K-1;
@@ -671,7 +679,7 @@ void RefreshLine0(uint8_t Y)
     LastScanline = Y + FirstLine;
     P[0]=P[1]=P[2]=P[3]=P[4]=P[5]=P[6]=P[7]=P[8]=BC;
 
-    G=(FontBuf&&(Mode&MSX_FIXEDFONT)? FontBuf:ChrGen)+((Y+VScroll)&0x07);
+    G=(FontBuf&&(Mode&MSX_FIXEDFONT)? FontBuf:ChrGen)+((Y+FMSX_RENDER_VSCROLL)&0x07);
     T=ChrTab+40*(Y>>3);
     FC=XPal[FGColor];
     P+=9;
@@ -705,7 +713,7 @@ void RefreshLine1(uint8_t Y)
   else
   {
     LastScanline = Y + FirstLine;
-    Y+=VScroll;
+    Y+=FMSX_RENDER_VSCROLL;
     G=(FontBuf&&(Mode&MSX_FIXEDFONT)? FontBuf:ChrGen)+(Y&0x07);
     T=ChrTab+((int)(Y&0xF8)<<2);
 
@@ -749,7 +757,7 @@ void RefreshLine2(uint8_t Y)
   else
   {
     LastScanline = Y + FirstLine;
-    Y+=VScroll;
+    Y+=FMSX_RENDER_VSCROLL;
     T=ChrTab+((int)(Y&0xF8)<<2);
     I=((int)(Y&0xC0)<<5)+(Y&0x07);
     Coarse = V9958CoarseScroll256();
@@ -828,7 +836,7 @@ void RefreshLine3(uint8_t Y)
   else
   {
     LastScanline = Y + FirstLine;
-    Y+=VScroll;
+    Y+=FMSX_RENDER_VSCROLL;
     T=ChrTab+((int)(Y&0xF8)<<2);
     G=ChrGen+((Y&0x1C)>>2);
 
@@ -871,11 +879,40 @@ void RefreshLine4(uint8_t Y)
     LastScanline = Y + FirstLine;
     ColorSprites(Y,ZBuf);
     R=ZBuf+32;
-    R0=R;
-    P0=P;
-    Y+=VScroll;
+    Y+=FMSX_RENDER_VSCROLL;
     T=ChrTab+((int)(Y&0xF8)<<2);
     I=((int)(Y&0xC0)<<5)+(Y&0x07);
+
+    /*
+     * Keep the plain SCREEN 4 path identical to upstream fMSX unless the
+     * V9958 horizontal-scroll registers are really in use. This avoids
+     * dragging the wider multipage compositor into title-specific raster
+     * hacks such as Knightmare Gold's vertical smooth-scroll patches.
+     */
+    if(!V9958ScrollActive256())
+    {
+      for(X=0;X<32;X++,R+=8,P+=8,T++)
+      {
+        J=(int)*T<<3;
+        K=ColTab[(I+J)&ColTabM];
+        FC=XPal[K>>4];
+        BC=XPal[K&0x0F];
+        K=ChrGen[(I+J)&ChrGenM];
+
+        C=R[0];P[0]=C? XPal[C]:(K&0x80)? FC:BC;
+        C=R[1];P[1]=C? XPal[C]:(K&0x40)? FC:BC;
+        C=R[2];P[2]=C? XPal[C]:(K&0x20)? FC:BC;
+        C=R[3];P[3]=C? XPal[C]:(K&0x10)? FC:BC;
+        C=R[4];P[4]=C? XPal[C]:(K&0x08)? FC:BC;
+        C=R[5];P[5]=C? XPal[C]:(K&0x04)? FC:BC;
+        C=R[6];P[6]=C? XPal[C]:(K&0x02)? FC:BC;
+        C=R[7];P[7]=C? XPal[C]:(K&0x01)? FC:BC;
+      }
+      return;
+    }
+
+    R0=R;
+    P0=P;
     Coarse = V9958CoarseScroll256();
     Fine = V9958FineScroll256();
     LeftMask = V9958MaskLeft256();
@@ -1424,7 +1461,7 @@ void RefreshLineTx80(uint8_t Y)
   {
     LastScanline = Y + FirstLine;
     P[0]=P[1]=P[2]=P[3]=P[4]=P[5]=P[6]=P[7]=P[8]=BC;
-    G=(FontBuf&&(Mode&MSX_FIXEDFONT)? FontBuf:ChrGen)+((Y+VScroll)&0x07);
+    G=(FontBuf&&(Mode&MSX_FIXEDFONT)? FontBuf:ChrGen)+((Y+FMSX_RENDER_VSCROLL)&0x07);
     T=ChrTab+((80*(Y>>3))&ChrTabM);
     C=ColTab+((10*(Y>>3))&ColTabM);
     P+=9;

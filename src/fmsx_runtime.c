@@ -7,6 +7,7 @@
 #include "fmsx_compat/stdio.h"
 #include "fmsx_virtual_fs.h"
 #include "fmsx_initramfs.h"
+#include <ctype.h>
 #include <string.h>
 
 #ifndef MSXBARE_FMSX_FAST_CUTOFF_FRAMES_MSX1
@@ -98,6 +99,7 @@ extern int fmsx_vdp_get_ie1_target_delta(void);
 extern uint8_t fmsx_vdp_get_effective_odd_page(void);
 extern uint8_t fmsx_vdp_get_render_page(void);
 extern void fmsx_vdp_trace_get_view(const TFmsxVDPTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
+extern void fmsx_kmg_trace_get_view(const TFmsxKmgTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
 extern void fmsx_scc_trace_get_view(const TFmsxSCCTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
 extern void fmsx_audio_port_trace_get_view(const TFmsxAudioPortTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
 extern void fmsx_cpu_set_turbo_percent(unsigned percent);
@@ -160,6 +162,8 @@ static unsigned g_rammapper_kb = 256u;
 unsigned g_fmsx_megaram_kb = 0u;
 static boolean g_use_embedded_bios = FALSE;
 static unsigned g_z80_turbo_mode = 0u;
+static boolean g_panasonic_turbo_enabled = FALSE;
+static boolean g_real_clock_enabled = TRUE;
 static boolean g_fm_music_enabled = TRUE;
 static boolean g_scc_plus_enabled = TRUE;
 static boolean g_scc_dual_cart_enabled = FALSE;
@@ -782,7 +786,7 @@ static unsigned fmsx_runtime_boot_forced_turbo_percent(void)
     /* MSX2/MSX2+ firmwares are more timing-sensitive during early boot. */
     if (g_model_profile == FMSX_MODEL_PROFILE_MSX1)
     {
-        return 224u; /* MAX */
+        return 200u; /* MAX */
     }
     return 150u; /* PAN-like */
 }
@@ -801,14 +805,31 @@ static unsigned fmsx_runtime_z80_turbo_percent(void)
     switch (g_z80_turbo_mode)
     {
     case 1u: return 150u; /* PAN */
-    case 2u: return 224u; /* MAX */
+    case 2u: return 200u; /* MAX */
     default: return 100u; /* DES */
     }
 }
 
+static unsigned fmsx_runtime_panasonic_turbo_percent(void)
+{
+    /* Match Matsushita/Panasonic high-speed mode used by openMSX:
+     * 3.579545MHz -> 5.369318MHz (3/2), i.e. 150%.
+     * Keep this path faithful; game-specific benchmark calibration must
+     * not distort global runtime pacing/audio. */
+    return g_panasonic_turbo_enabled ? 150u : 100u;
+}
+
 static unsigned fmsx_runtime_effective_turbo_percent(void)
 {
-    return fmsx_runtime_z80_turbo_percent();
+    const unsigned menu_pct = fmsx_runtime_z80_turbo_percent();
+    const unsigned hw_pct = fmsx_runtime_panasonic_turbo_percent();
+    return menu_pct > hw_pct ? menu_pct : hw_pct;
+}
+
+static void fmsx_runtime_apply_turbo_percent(unsigned percent)
+{
+    fmsx_cpu_set_turbo_percent(percent);
+    fmsx_audio_reset_stream_timing();
 }
 
 static void fmsx_runtime_apply_game_boot_override(void)
@@ -863,7 +884,8 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     /* Keep frame-step cadence aligned to full VBlank window for all models. */
     g_fmsx_quit_after_vblank = 1;
     const boolean disk_rom_effective = fmsx_runtime_disk_rom_effective(requested_model_profile);
-    const int base_mode = (fmsx_runtime_effective_refresh_hz() == 50u ? MSX_PAL : MSX_NTSC) | MSX_JOY1;
+    const unsigned startup_refresh_hz = fmsx_runtime_effective_refresh_hz();
+    const int base_mode = (startup_refresh_hz == 50u ? MSX_PAL : MSX_NTSC) | MSX_JOY1;
     int startup_mode = fmsx_runtime_machine_mode_bits() | base_mode;
     startup_mode &= ~MSX_PATCHBDOS;
     if (disk_rom_effective)
@@ -1000,11 +1022,11 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     if (g_boot_forced_turbo)
     {
         /* FAST/GAME force model-safe turbo only during bootstrap warmup window. */
-        fmsx_cpu_set_turbo_percent(fmsx_runtime_boot_forced_turbo_percent());
+        fmsx_runtime_apply_turbo_percent(fmsx_runtime_boot_forced_turbo_percent());
     }
     else
     {
-        fmsx_cpu_set_turbo_percent(fmsx_runtime_effective_turbo_percent());
+        fmsx_runtime_apply_turbo_percent(fmsx_runtime_effective_turbo_percent());
     }
     fmsx_runtime_apply_game_boot_override();
 
@@ -1074,7 +1096,7 @@ boolean fmsx_runtime_menu_reset(void)
     g_boot_video_gate_frames_remaining = 0u;
     fmsx_runtime_keyboard_reset_pipeline();
     fmsx_runtime_reset_vdp_diag_counters();
-    fmsx_cpu_set_turbo_percent(fmsx_runtime_effective_turbo_percent());
+    fmsx_runtime_apply_turbo_percent(fmsx_runtime_effective_turbo_percent());
     fmsx_runtime_apply_audio_channels();
     g_fmsx_status.last_pc = (int) CPU.PC.W;
     return TRUE;
@@ -1220,7 +1242,7 @@ boolean fmsx_runtime_step_frame(void)
             if (g_boot_warmup_frames_remaining == 0u && g_boot_forced_turbo)
             {
                 g_boot_forced_turbo = FALSE;
-                fmsx_cpu_set_turbo_percent(fmsx_runtime_effective_turbo_percent());
+                fmsx_runtime_apply_turbo_percent(fmsx_runtime_effective_turbo_percent());
             }
         }
         if (g_boot_video_gate_frames_remaining > 0u)
@@ -1284,7 +1306,7 @@ boolean fmsx_runtime_load_state(const void *src, unsigned size)
     g_boot_video_gate_frames_remaining = 0u;
     fmsx_runtime_keyboard_reset_pipeline();
     fmsx_runtime_reset_vdp_diag_counters();
-    fmsx_cpu_set_turbo_percent(fmsx_runtime_effective_turbo_percent());
+    fmsx_runtime_apply_turbo_percent(fmsx_runtime_effective_turbo_percent());
     fmsx_runtime_apply_audio_channels();
     g_fmsx_status.last_pc = (int) CPU.PC.W;
     return TRUE;
@@ -1297,12 +1319,44 @@ void fmsx_runtime_set_overscan(boolean enabled)
 
 void fmsx_runtime_set_refresh_hz(unsigned hz)
 {
-    g_refresh_hz = (hz == 50u) ? 50u : 60u;
+    const unsigned clamped = (hz == 50u) ? 50u : 60u;
+    if (g_refresh_hz == clamped)
+    {
+        return;
+    }
+    g_refresh_hz = clamped;
+    fmsx_audio_reset_stream_timing();
 }
 
 unsigned fmsx_runtime_get_refresh_hz(void)
 {
     return fmsx_runtime_effective_refresh_hz();
+}
+
+unsigned fmsx_runtime_get_z80_turbo_percent(void)
+{
+    return fmsx_runtime_z80_turbo_percent();
+}
+
+void fmsx_runtime_set_real_clock_enabled(boolean enabled)
+{
+    const boolean desired = enabled ? TRUE : FALSE;
+    if (g_real_clock_enabled == desired)
+    {
+        return;
+    }
+    g_real_clock_enabled = desired;
+    fmsx_audio_reset_stream_timing();
+}
+
+boolean fmsx_runtime_get_real_clock_enabled(void)
+{
+    return g_real_clock_enabled ? TRUE : FALSE;
+}
+
+unsigned fmsx_runtime_get_base_cpu_clock_hz(void)
+{
+    return g_real_clock_enabled ? 3579545u : 3580000u;
 }
 
 boolean fmsx_runtime_audio_render_enabled(void)
@@ -1426,16 +1480,39 @@ void fmsx_runtime_set_z80_turbo_mode(unsigned mode)
     {
         mode = 0u;
     }
+    if (g_z80_turbo_mode == mode)
+    {
+        return;
+    }
     g_z80_turbo_mode = mode;
     if (!g_boot_forced_turbo)
     {
-        fmsx_cpu_set_turbo_percent(fmsx_runtime_effective_turbo_percent());
+        fmsx_runtime_apply_turbo_percent(fmsx_runtime_effective_turbo_percent());
     }
 }
 
 unsigned fmsx_runtime_get_z80_turbo_mode(void)
 {
     return g_z80_turbo_mode;
+}
+
+void fmsx_runtime_set_panasonic_turbo_enabled(boolean enabled)
+{
+    const boolean desired = enabled ? TRUE : FALSE;
+    if (g_panasonic_turbo_enabled == desired)
+    {
+        return;
+    }
+    g_panasonic_turbo_enabled = desired;
+    if (!g_boot_forced_turbo)
+    {
+        fmsx_runtime_apply_turbo_percent(fmsx_runtime_effective_turbo_percent());
+    }
+}
+
+boolean fmsx_runtime_get_panasonic_turbo_enabled(void)
+{
+    return g_panasonic_turbo_enabled ? TRUE : FALSE;
 }
 
 void fmsx_runtime_set_scc_plus_enabled(boolean enabled)
@@ -2008,7 +2085,7 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
     stats->scanline = (ScanLine >= 0) ? (unsigned) ScanLine : 0u;
     stats->pal_video = PALVideo ? 1u : 0u;
     stats->lines_212 = ScanLines212 ? 1u : 0u;
-    stats->turbo_percent = FmsxTurboPercent;
+    stats->turbo_percent = fmsx_runtime_z80_turbo_percent();
     stats->scr_mode = (unsigned) ScrMode;
     stats->reg2 = (unsigned) VDP[2];
     stats->reg25 = (unsigned) VDP[25];
@@ -2228,6 +2305,21 @@ void fmsx_runtime_get_audio_port_trace_view(TFmsxAudioPortTraceView *view)
     view->head = 0u;
     view->dropped = 0u;
     fmsx_audio_port_trace_get_view(&view->events, &view->capacity, &view->count, &view->head, &view->dropped);
+}
+
+void fmsx_runtime_get_kmg_trace_view(TFmsxKmgTraceView *view)
+{
+    if (view == 0)
+    {
+        return;
+    }
+
+    view->events = 0;
+    view->capacity = 0u;
+    view->count = 0u;
+    view->head = 0u;
+    view->dropped = 0u;
+    fmsx_kmg_trace_get_view(&view->events, &view->capacity, &view->count, &view->head, &view->dropped);
 }
 
 unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsigned *height)

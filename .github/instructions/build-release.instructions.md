@@ -30,6 +30,8 @@ applyTo:
 - Preservar expectativa de artefatos: `artifacts/kernel8-default.img`.
 - Em branch de issue (`<numero>-...`), garantir tambem `artifacts/kernel8-issue<numero>.img` e prioriza-lo para a issue ativa.
 - Ao entregar build para teste, informar identificador curto `BUILD_HASH:<git>-<sha1>`.
+- Ao entregar build para teste, informar tambem o `BUILD_BID` usado na compilacao.
+- Ao entregar build para teste, informar sempre o `BUILD_ID` exato de 4 digitos (`TXTDBG BUILD:XXXX`), mesmo antes do teste em hardware; quando ainda nao houver boot em campo, calcular o valor com o mesmo algoritmo usado no kernel a partir de `MSXBARE_BUILD_BID`.
 - Em validacao de hardware, sempre informar tambem o `BUILD_ID` de 4 digitos exibido no overlay (`TXTDBG BUILD:XXXX`), pois esse e o identificador visual canonico em campo.
 
 ## SD e empacotamento

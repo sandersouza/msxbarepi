@@ -16,6 +16,7 @@
 #include "Sound.h"
 #include "MSX.h"
 #include "fmsx_audio_layout.h"
+#include "fmsx_runtime.h"
 #include "fmsx_local_scc_render.h"
 
 #include "../third_party/fmsx/NukeYKT/WrapNukeYKT.h"
@@ -206,7 +207,7 @@ void fmsx_psg_render_reset_state(void)
 static uint32_t fmsx_psg_base_phase_step(void)
 {
   if(!SndRate) return 0u;
-  return (uint32_t)(((1ull<<28) * 3579545ull) / 32ull / (uint64_t)SndRate);
+  return (uint32_t)(((1ull<<28) * (uint64_t)fmsx_runtime_get_base_cpu_clock_hz()) / 32ull / (uint64_t)SndRate);
 }
 
 static void fmsx_psg_render_update_register(fmsx_psg_render_state_t *S,uint8_t regIndex,uint8_t data)

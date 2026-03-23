@@ -355,6 +355,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
                                                      boolean scc_dual_cart_available,
                                                      boolean overlay_enabled,
                                                      boolean overlay_available,
+                                                     boolean real_clock_enabled,
                                                      boolean debug_log_enabled,
                                                      unsigned audio_gain_percent,
                                                      unsigned *count)
@@ -365,6 +366,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     static char scale_label[32];
     static char widescreen_label[32];
     static char scanline_label[32];
+    static char refresh_label[32];
     static char disk_rom_label[32];
     static char boot_label[32];
     static char machine_label[32];
@@ -375,6 +377,8 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     static char fm_music_label[32];
     static char scc_label[32];
     static char overlay_label[32];
+    static char real_clock_label[32];
+    static char debug_log_label[32];
     static char audio_gain_label[32];
 
     const TComboLocaleStrings *locale = combo_locale_get(language);
@@ -416,6 +420,8 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     BuildLabelFlag(widescreen_label, sizeof(widescreen_label), locale->settings_widescreen, widescreen_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(scanline_label, sizeof(scanline_label), locale->settings_scanlines,
                    scanline_mode == 0u ? locale->scan_des : (scanline_mode == 1u ? locale->scan_lcd : locale->scan_crt));
+    BuildLabelFlag(refresh_label, sizeof(refresh_label), locale->settings_refresh,
+                   refresh_rate_hz == 50u ? locale->refresh_pal : locale->refresh_ntsc);
     BuildLabelFlag(disk_rom_label, sizeof(disk_rom_label), locale->settings_disk_rom, disk_rom_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(boot_label, sizeof(boot_label), locale->settings_boot_mode,
                    boot_mode == 0u ? "NORM" : (boot_mode == 1u ? "FAST" : "GAME"));
@@ -448,6 +454,10 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     }
     BuildLabelFlag(overlay_label, sizeof(overlay_label), locale->settings_debugger,
                    overlay_available ? (overlay_enabled ? locale->flag_on : locale->flag_off) : locale->flag_na);
+    BuildLabelFlag(real_clock_label, sizeof(real_clock_label), locale->settings_real_clock,
+                   real_clock_enabled ? locale->flag_on : locale->flag_off);
+    BuildLabelFlag(debug_log_label, sizeof(debug_log_label), locale->settings_sd_log,
+                   debug_log_enabled ? locale->flag_on : locale->flag_off);
     {
         const unsigned audio_gain_ui = AudioGainUiLevelFromPercent(audio_gain_percent);
         char audio_gain_flag[2];
@@ -470,6 +480,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     const boolean mapper_selectable = (MenuProfileSupported(machine_profile) && machine_profile != 0u) ? TRUE : FALSE;
     const boolean show_boot_mode = (MSXBARE_ONE_ROM_MODE == 0 && MSXBARE_BOOT_MODE_LOCKED == 0) ? TRUE : FALSE;
     const boolean show_disk_rom_setting = (MSXBARE_FEAT_DISK_ROM && MSXBARE_ENABLE_DEBUG_OVERLAY) ? TRUE : FALSE;
+    const boolean show_refresh_setting = MSXBARE_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE;
 
     ADD_SETTING_ITEM(language_label, ComboMenuActionCycleLanguage, ComboMenuRedrawMenuOnly, TRUE);
     ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
@@ -517,16 +528,25 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     ADD_SETTING_ITEM(turbo_label, ComboMenuActionCycleZ80Turbo, ComboMenuRedrawMenuOnly, TRUE);
     ADD_SETTING_ITEM(rensha_label, ComboMenuActionCycleRensha, ComboMenuRedrawMenuOnly, TRUE);
 
-    if (overlay_available || show_disk_rom_setting)
+    if (overlay_available || show_disk_rom_setting || show_refresh_setting)
     {
         ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
         if (overlay_available)
         {
             ADD_SETTING_ITEM(overlay_label, ComboMenuActionToggleOverlay, ComboMenuRedrawMenuOnly, TRUE);
         }
+        if (MSXBARE_ENABLE_DEBUG_OVERLAY)
+        {
+            ADD_SETTING_ITEM(real_clock_label, ComboMenuActionToggleRealClock, ComboMenuRedrawMenuOnly, TRUE);
+            ADD_SETTING_ITEM(debug_log_label, ComboMenuActionToggleDebugLog, ComboMenuRedrawMenuOnly, TRUE);
+        }
         if (show_disk_rom_setting)
         {
             ADD_SETTING_ITEM(disk_rom_label, ComboMenuActionToggleDiskRom, ComboMenuRedrawMenuOnly, TRUE);
+        }
+        if (show_refresh_setting)
+        {
+            ADD_SETTING_ITEM(refresh_label, ComboMenuActionCycleRefreshRate, ComboMenuRedrawMenuOnly, TRUE);
         }
     }
     settings_items[item_count].label = "";
