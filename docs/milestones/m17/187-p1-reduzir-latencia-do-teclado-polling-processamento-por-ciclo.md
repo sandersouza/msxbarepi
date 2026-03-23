@@ -115,6 +115,45 @@ O filtro de estabilização não pode apagar `release` legítimo nem transformar
 - Artefato: `artifacts/kernel8-issue187.img`
 - `BUILD_HASH`: `3572e72-13a3a053bcbb762f4b0941e6df0045720034cf46`
 
+## Atualização 2026-03-22 - iterações 3 e 4
+
+### Sintoma observado em hardware
+- A responsividade geral melhorou bastante, mas o problema residual mais importante passou a ser `key release` tardio ou perdido.
+- Em gameplay, isso aparecia como tecla "presa", mesmo quando o `keypress` já parecia rápido.
+
+### Corte implementado na iteração 3
+- `src/fmsx_host_stubs.c` passou a deduplicar snapshots idênticos ainda pendentes na fila interna do runtime do fMSX.
+- Objetivo: impedir que um `release` ficasse preso atrás de uma cauda de reports redundantes de "tecla ainda pressionada".
+
+### Corte implementado na iteração 4
+- `src/fmsx_host_stubs.c` passou a canonicalizar `raw_keys[6]` antes de comparar/enfileirar:
+  - remove zeros intermediários
+  - ordena teclas não-zero
+  - recompacta o vetor
+- Isso evita backlog artificial causado por reordenação do report HID USB.
+
+### Regressão descartada
+- A variante que também deduplicava contra o "último report já aplicado" foi removida.
+- Motivo: ela quebrava a segunda confirmação do caso `press-only`, e as teclas deixavam de entrar no emulador.
+
+### Estado atual
+- UI e emulador voltaram a funcionar normalmente.
+- O usuário reportou melhora clara de precisão e ausência aparente de tecla presa nos testes mais recentes.
+- Ainda cabem mais testes prolongados antes de encerrar a issue definitivamente.
+
+### Validação local das iterações 3 e 4
+- `scripts/check-third-party-pristine.sh`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603221455-issue187-ab38eb9`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603221510-issue187-ab38eb9`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603221530-issue187-ab38eb9`: OK
+- Artefato atual: `artifacts/kernel8-issue187.img`
+
+### Critério prático restante
+- Consolidar mais uma rodada de hardware focada especificamente em:
+  - direção + tiro simultâneos
+  - solta/pressiona rápido
+  - ausência de tecla "presa" após alguns minutos de gameplay
+
 ## Referências obrigatórias
 - `src/tools/usb_hid_keyboard.cpp`
 - `src/fmsx_host_stubs.c`

@@ -186,3 +186,119 @@ O que mudou:
 - A `#187` tambem recebeu validacao inicial positiva:
   - teclado bem mais responsivo
   - mais testes de hardware ainda pendentes antes de encerrar a issue
+
+### Atualizacao 2026-03-22 - iteracao 3
+
+#### Problema observado em hardware
+- A questao principal deixou de ser apenas latencia media.
+- O problema dominante eh falha perceptivel de `key release`:
+  - `keypress` atrasado ainda e jogavel;
+  - `key release` perdido ou tardio deixa tecla "presa" e atrapalha fortemente o gameplay.
+
+#### Hipotese atacada
+- O pipeline ainda reenfileirava snapshots repetidos do mesmo estado de teclado no runtime do fMSX.
+- Quando uma tecla ficava pressionada por alguns frames, o runtime podia acumular varios reports identicos de "tecla ainda pressionada".
+- O `release` real entrava no fim dessa fila e passava a parecer falha ou atraso severo.
+
+#### Mudancas implementadas
+Arquivo:
+- `src/fmsx_host_stubs.c`
+
+O que mudou:
+- A fila interna do runtime do fMSX agora deduplica reports identicos antes de enfileirar.
+- A deduplicacao cobre dois casos:
+  - report igual ao ultimo ainda pendente na fila;
+  - report igual ao ultimo report efetivamente aplicado em `KeyState[]` quando a fila esta vazia.
+- O runtime continua aceitando transicoes reais imediatamente; so snapshots redundantes sao descartados.
+
+#### Efeito esperado
+- `release` deixa de ficar preso atras de uma cauda de estados repetidos "tecla ainda pressionada".
+- Menor risco de tecla "presa" em gameplay continuo.
+- Sem mudar a semantica de `KeyState[]` nem a politica de prioridade de release imediato.
+
+#### Build
+- `scripts/check-third-party-pristine.sh`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603221455-issue187-ab38eb9`: OK
+- Artefato: `artifacts/kernel8-issue187.img`
+- `kernel8.img`: `659544` bytes
+
+### Atualizacao 2026-03-22 - iteracao 4
+
+#### Problema residual
+- A deduplicacao de snapshots identicos melhorou a precisao, mas ainda havia poucos casos residuais de tecla presa.
+- Uma causa plausivel restante era a ordem arbitraria dos `raw_keys[6]` no report HID USB.
+- Dois reports logicamente identicos podiam entrar com ordem diferente e escapar da deduplicacao.
+
+#### Mudancas implementadas
+Arquivo:
+- `src/fmsx_host_stubs.c`
+
+O que mudou:
+- Antes de comparar/enfileirar no runtime do fMSX, os `raw_keys[6]` agora sao canonicalizados:
+  - remove zeros intermediarios
+  - ordena as teclas nao-zero
+  - recompacta o vetor
+- Com isso, reports logicamente equivalentes passam a ser de fato iguais para a deduplicacao do runtime queue.
+
+#### Efeito esperado
+- Menos backlog artificial gerado por reordenacao do report HID.
+- Menor chance de `release` ficar atras de snapshots redundantes.
+- Menos casos residuais de tecla "presa" sem alterar a matriz MSX nem a politica de release imediato.
+
+#### Build
+- `scripts/check-third-party-pristine.sh`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603221510-issue187-ab38eb9`: OK
+- Artefato: `artifacts/kernel8-issue187.img`
+- `kernel8.img`: `661592` bytes
+
+#### Correcao imediata apos regressao
+- A primeira versao dessa iteracao tambem deduplicava contra o "ultimo report ja aplicado".
+- Isso quebrou a segunda confirmacao do caso `press-only`, e as teclas deixaram de entrar no emulador.
+- O ajuste seguro final ficou assim:
+  - manter canonicalizacao do report HID;
+  - manter deduplicacao apenas contra o ultimo report ainda pendente na fila;
+  - nao deduplicar contra o ultimo report ja aplicado.
+
+#### Revalidacao apos correcao
+- `scripts/check-third-party-pristine.sh`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603221530-issue187-ab38eb9`: OK
+- Artefato: `artifacts/kernel8-issue187.img`
+- `kernel8.img`: `659544` bytes
+
+### Atualizacao 2026-03-22 - rodada de otimizacao de boot/kernel
+
+#### Objetivo desta rodada
+- Reduzir custo do boot do Raspberry Pi.
+- Trazer o primeiro frame do emulador para mais cedo.
+- Enxugar o footprint efetivo do kernel e reduzir o teto de `KERNEL_MAX_SIZE` usado pelo Circle.
+
+#### Mudancas implementadas
+Arquivos:
+- `Makefile`
+- `src/Makefile`
+- `src/kernel.cpp`
+
+O que mudou:
+- O `Makefile` raiz continua propagando explicitamente `MSXBARE_KERNEL_MAX_SIZE=$(CIRCLE_KERNEL_MAX_SIZE)` para o submake de `src`, mantendo a configuracao coerente entre Circle e kernel.
+- O dimming de scanline do modo LCD deixou de usar LUT estatica de `128 KiB`:
+  - agora usa operacao inline `((sample & 0xF7DEu) >> 1)`;
+  - a LUT de CRT continua existindo, mas passou a ser lazy e so eh alocada quando o modo CRT realmente for usado.
+
+#### Impacto esperado
+- Menor ocupacao estatica de memoria.
+
+#### Medicoes locais
+- `scripts/check-third-party-pristine.sh`: OK
+- `make -j4 DEBUG=0 BUILD_BID=202603221215-bootsafe-ab38eb9`: OK
+- `make -C src DEBUG=1 MSXBARE_BUILD_BID=202603221216-bootsafe-ab38eb9`: OK
+- `kernel8.img` (`DEBUG=0`, fluxo raiz): `659544` bytes
+- `kernel8.img` (`DEBUG=1`, build direto em `src`): `659544` bytes
+
+#### Observacoes
+- A tentativa de otimizar o boot real adiando `initramfs_mount_remaining()` e a inicializacao de USB, junto com a reducao agressiva de `KERNEL_MAX_SIZE`, foi revertida porque falhou em hardware.
+- O estado atual seguro voltou para:
+  - `KERNEL_MAX_SIZE=0x400000`
+  - montagem completa do initramfs no caminho original
+  - inicializacao de USB no caminho original
+- A otimizacao mantida desta rodada eh a reducao de memoria estatica do dimming LCD/CRT em `kernel.cpp`.
+- O alvo prático agora eh medir no Raspberry Pi quanto a deferencia de initramfs e USB encurtou o tempo ate a tela util.

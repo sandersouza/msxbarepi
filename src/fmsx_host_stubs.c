@@ -106,6 +106,9 @@ static uint8_t g_kbd_candidate_seen = 0u;
 
 static void fmsx_keyboard_press_code(uint8_t matrix[16], unsigned code);
 static unsigned fmsx_code_from_hid(u8 hid);
+static void fmsx_keyboard_canonicalize_raw(unsigned char raw_keys[6]);
+static int fmsx_keyboard_report_equals(u8 modifiers_a, const unsigned char raw_a[6],
+                                       u8 modifiers_b, const unsigned char raw_b[6]);
 
 static int fmsx_keyboard_change_has_new_press(const uint8_t desired_state[16], const uint8_t stable_state[16])
 {
@@ -151,13 +154,34 @@ static unsigned fmsx_runtime_keyboard_queue_oldest_seq(void)
 
 static void fmsx_runtime_keyboard_queue_push(u8 modifiers, const unsigned char raw_keys[6])
 {
+    unsigned char canonical_raw[6];
+    for (unsigned i = 0u; i < 6u; ++i)
+    {
+        canonical_raw[i] = raw_keys ? raw_keys[i] : 0u;
+    }
+    fmsx_keyboard_canonicalize_raw(canonical_raw);
+
+    const unsigned write_seq_before = g_kbd_runtime_write_seq;
+    const unsigned read_seq_before = g_kbd_runtime_read_seq;
+
+    if (write_seq_before > read_seq_before)
+    {
+        const unsigned newest_seq = write_seq_before - 1u;
+        const unsigned newest_slot = newest_seq % FMSX_KBD_RUNTIME_QUEUE_CAPACITY;
+        if (fmsx_keyboard_report_equals(modifiers, canonical_raw,
+                                        g_kbd_runtime_queue[newest_slot].modifiers,
+                                        g_kbd_runtime_queue[newest_slot].raw_keys))
+        {
+            return;
+        }
+    }
     const unsigned write_seq = g_kbd_runtime_write_seq;
     const unsigned slot = write_seq % FMSX_KBD_RUNTIME_QUEUE_CAPACITY;
 
     g_kbd_runtime_queue[slot].modifiers = modifiers;
     for (unsigned i = 0u; i < 6u; ++i)
     {
-        g_kbd_runtime_queue[slot].raw_keys[i] = raw_keys ? raw_keys[i] : 0u;
+        g_kbd_runtime_queue[slot].raw_keys[i] = canonical_raw[i];
     }
 
     g_kbd_runtime_write_seq = write_seq + 1u;
@@ -243,7 +267,6 @@ static void fmsx_runtime_apply_keyboard_raw(u8 modifiers, const unsigned char ra
             g_kbd_candidate_seen = 1u;
         }
     }
-
     memcpy((void *) KeyState, g_kbd_stable_state, sizeof g_kbd_stable_state);
 }
 
@@ -275,6 +298,68 @@ static void fmsx_keyboard_press_code(uint8_t matrix[16], unsigned code)
     {
         matrix[Keys[code][0]] &= (uint8_t) ~Keys[code][1];
     }
+}
+
+static void fmsx_keyboard_canonicalize_raw(unsigned char raw_keys[6])
+{
+    if (raw_keys == 0)
+    {
+        return;
+    }
+
+    unsigned n = 0u;
+    unsigned char compact[6];
+    for (unsigned i = 0u; i < 6u; ++i)
+    {
+        const unsigned char key = raw_keys[i];
+        if (key != 0u)
+        {
+            compact[n++] = key;
+        }
+    }
+
+    for (unsigned i = 0u; i < n; ++i)
+    {
+        for (unsigned j = i + 1u; j < n; ++j)
+        {
+            if (compact[j] < compact[i])
+            {
+                const unsigned char tmp = compact[i];
+                compact[i] = compact[j];
+                compact[j] = tmp;
+            }
+        }
+    }
+
+    for (unsigned i = 0u; i < n; ++i)
+    {
+        raw_keys[i] = compact[i];
+    }
+    for (unsigned i = n; i < 6u; ++i)
+    {
+        raw_keys[i] = 0u;
+    }
+}
+
+static int fmsx_keyboard_report_equals(u8 modifiers_a, const unsigned char raw_a[6],
+                                       u8 modifiers_b, const unsigned char raw_b[6])
+{
+    if (modifiers_a != modifiers_b)
+    {
+        return 0;
+    }
+
+    for (unsigned i = 0u; i < 6u; ++i)
+    {
+        const unsigned char a = raw_a ? raw_a[i] : 0u;
+        const unsigned char b = raw_b ? raw_b[i] : 0u;
+        if (a != b)
+        {
+            return 0;
+        }
+    }
+
+    return 1;
 }
 
 static unsigned fmsx_code_from_hid(u8 hid)
