@@ -198,6 +198,8 @@ private:
     boolean m_RenshaSpaceHeld;
     unsigned char m_LastKeyboardModifiers;
     unsigned char m_LastKeyboardRawKeys[6];
+    unsigned char m_RuntimeKeyboardModifiers;
+    unsigned char m_RuntimeKeyboardRawKeys[6];
     boolean m_FmMusicEnabled;
     unsigned m_FmLayerGainPct;
     boolean m_SccCartEnabled;

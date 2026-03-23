@@ -314,6 +314,8 @@ boolean fmsx_runtime_save_state(void *dst, unsigned capacity, unsigned *saved_si
 boolean fmsx_runtime_load_state(const void *src, unsigned size);
 void fmsx_runtime_set_joystick_bits(u8 bridge_bits);
 void fmsx_runtime_set_keyboard_raw(u8 modifiers, const unsigned char raw_keys[6]);
+void fmsx_runtime_keyboard_drain_step(void);
+void fmsx_runtime_keyboard_reset_pipeline(void);
 void fmsx_runtime_set_overscan(boolean enabled);
 void fmsx_runtime_set_refresh_hz(unsigned hz);
 unsigned fmsx_runtime_get_refresh_hz(void);

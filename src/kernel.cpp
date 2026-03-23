@@ -908,6 +908,8 @@ CComboKernel::CComboKernel(void)
 	m_RenshaSpaceHeld(FALSE),
 	m_LastKeyboardModifiers(0u),
 	m_LastKeyboardRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
+	m_RuntimeKeyboardModifiers(0u),
+	m_RuntimeKeyboardRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
 	m_FmMusicEnabled(MSXBARE_FEAT_FMPAC ? TRUE : FALSE),
 	m_FmLayerGainPct(100u),
 	m_SccCartEnabled(MSXBARE_FEAT_SCC ? TRUE : FALSE),
@@ -1338,9 +1340,11 @@ TComboShutdownMode CComboKernel::Run(void)
 		if (m_UsbKeyboard.ConsumeRemovedEvent())
 		{
 			m_LastKeyboardModifiers = 0u;
+			m_RuntimeKeyboardModifiers = 0u;
 			for (unsigned i = 0u; i < 6u; ++i)
 			{
 				m_LastKeyboardRawKeys[i] = 0u;
+				m_RuntimeKeyboardRawKeys[i] = 0u;
 			}
 			m_LastPausePressed = FALSE;
 			m_LastMenuBackPressed = FALSE;
@@ -4725,25 +4729,55 @@ void CComboKernel::BootTrace(const char *tag)
 void CComboKernel::PushKeyboardStateToRuntime(boolean rensha_fire_on)
 {
 #if MSXBARE_ENABLE_FMSX
+	boolean pushed_report = FALSE;
+	u8 modifiers = 0u;
 	unsigned char raw_keys[6];
-	u8 modifiers = m_LastKeyboardModifiers;
-	for (unsigned i = 0u; i < 6u; ++i)
+	unsigned char pushed_raw[6];
+
+	while (m_UsbKeyboard.ConsumeForRuntime(&modifiers, raw_keys))
 	{
-		raw_keys[i] = m_LastKeyboardRawKeys[i];
+		m_RuntimeKeyboardModifiers = modifiers;
+		for (unsigned i = 0u; i < 6u; ++i)
+		{
+			m_RuntimeKeyboardRawKeys[i] = raw_keys[i];
+			pushed_raw[i] = raw_keys[i];
+		}
+
+		if (!rensha_fire_on)
+		{
+			for (unsigned i = 0u; i < 6u; ++i)
+			{
+				if (pushed_raw[i] == 0x2Cu) /* HID SPACE */
+				{
+					pushed_raw[i] = 0u;
+				}
+			}
+		}
+
+		emulator_backend_input_push_keyboard(modifiers, pushed_raw);
+		pushed_report = TRUE;
 	}
 
-	/* Rensha toggles SPACE key state directly for software that reads keyboard matrix fire. */
-	if (!rensha_fire_on)
+	if (!pushed_report)
 	{
 		for (unsigned i = 0u; i < 6u; ++i)
 		{
-			if (raw_keys[i] == 0x2Cu) /* HID SPACE */
+			pushed_raw[i] = m_RuntimeKeyboardRawKeys[i];
+		}
+
+		if (!rensha_fire_on)
+		{
+			for (unsigned i = 0u; i < 6u; ++i)
 			{
-				raw_keys[i] = 0u;
+				if (pushed_raw[i] == 0x2Cu) /* HID SPACE */
+				{
+					pushed_raw[i] = 0u;
+				}
 			}
 		}
+
+		emulator_backend_input_push_keyboard(m_RuntimeKeyboardModifiers, pushed_raw);
 	}
-	emulator_backend_input_push_keyboard(modifiers, raw_keys);
 #else
 	(void) rensha_fire_on;
 #endif

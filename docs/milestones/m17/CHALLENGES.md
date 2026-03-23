@@ -58,9 +58,9 @@ Registro de desafios enfrentados por issue, decisão adotada e status da soluç�
 - Referência: [186-p1-bug-rensha-turbo-auto-fire-space-parou-de-funcionar.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/186-p1-bug-rensha-turbo-auto-fire-space-parou-de-funcionar.md)
 
 ### #187 — fila de captura USB-HID fora do ciclo do Z80
-- Desafio: O pipeline ainda pode perder ou distorcer transições `press/release` por subamostragem entre o clock de captura USB-HID e o clock de consumo do core, gerando falha intermitente ou repetição contínua em gameplay.
-- Solução adotada: Issue reaberta com foco arquitetural; criar tool importável de fila/cache de input em `src/tools/input/`, desacoplando captura e consumo e preservando transições antes da integração definitiva no core.
-- Status: Futuro
+- Desafio: O pipeline ainda podia perder ou distorcer transições `press/release` por subamostragem entre o clock de captura USB-HID e o clock de consumo do core, gerando falha intermitente ou repetição contínua em gameplay.
+- Solução adotada: a trilha evoluiu em quatro cortes: (1) tool importável em `src/tools/input/` com ring buffer HID e dois cursores independentes (`UI` e `Runtime`); (2) fila própria no runtime do fMSX, drenada ao longo dos scanlines; (3) deduplicação de snapshots ainda pendentes na fila interna do runtime; (4) canonicalização de `raw_keys[6]` para neutralizar reordenação do report HID USB. A variante que deduplicava também contra o "último aplicado" foi descartada por quebrar a confirmação do `press-only`.
+- Status: Parcial
 - Referência: [187-p1-reduzir-latencia-do-teclado-polling-processamento-por-ciclo.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/187-p1-reduzir-latencia-do-teclado-polling-processamento-por-ciclo.md)
 
 ### #188 — GRADIUS2E: glitch na 1ª linha do placar (scroll fino V9958)

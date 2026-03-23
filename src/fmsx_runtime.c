@@ -141,6 +141,7 @@ extern unsigned FmsxTurboPercent;
 extern int g_fmsx_quit_after_vblank;
 extern void fmsx_audio_begin_frame_render_accounting(void);
 extern unsigned fmsx_audio_end_frame_render_accounting(void);
+extern void fmsx_runtime_keyboard_reset_pipeline(void);
 
 static TFmsxRuntimeStatus g_fmsx_status = { FALSE, FALSE, 0u, 0, 0 };
 static char g_cartridge_path[2][192] = {{0}};
@@ -1008,6 +1009,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     fmsx_runtime_apply_game_boot_override();
 
     InitSound(kFmsxAudioRate);
+    fmsx_runtime_keyboard_reset_pipeline();
     fmsx_runtime_apply_audio_channels();
     fmsx_local_ym2413_refresh(&OPLL);
 
@@ -1070,6 +1072,7 @@ boolean fmsx_runtime_menu_reset(void)
     g_boot_warmup_frames_remaining = 0u;
     g_boot_forced_turbo = FALSE;
     g_boot_video_gate_frames_remaining = 0u;
+    fmsx_runtime_keyboard_reset_pipeline();
     fmsx_runtime_reset_vdp_diag_counters();
     fmsx_cpu_set_turbo_percent(fmsx_runtime_effective_turbo_percent());
     fmsx_runtime_apply_audio_channels();
@@ -1239,6 +1242,7 @@ void fmsx_runtime_shutdown(void)
 
     g_fmsx_status.running = FALSE;
     g_boot_video_gate_frames_remaining = 0u;
+    fmsx_runtime_keyboard_reset_pipeline();
 }
 
 boolean fmsx_runtime_save_state(void *dst, unsigned capacity, unsigned *saved_size)
@@ -1278,6 +1282,7 @@ boolean fmsx_runtime_load_state(const void *src, unsigned size)
     g_boot_warmup_frames_remaining = 0u;
     g_boot_forced_turbo = FALSE;
     g_boot_video_gate_frames_remaining = 0u;
+    fmsx_runtime_keyboard_reset_pipeline();
     fmsx_runtime_reset_vdp_diag_counters();
     fmsx_cpu_set_turbo_percent(fmsx_runtime_effective_turbo_percent());
     fmsx_runtime_apply_audio_channels();

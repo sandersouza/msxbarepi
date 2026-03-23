@@ -28,10 +28,10 @@ Importante: quando falamos em `PRESS UP/DOWN`, estamos nos referindo a transiç�
 - Consolidar a solução em uma tool reutilizável/importável, preparada para uso futuro como base de framework de migração de emuladores.
 
 ## Escopo técnico
-- [ ] Criar uma tool de fila/cache de input em `src/tools/input/`.
-- [ ] Separar explicitamente `capture clock` e `consume clock`.
+- [x] Criar uma tool de fila/cache de input em `src/tools/input/`.
+- [x] Separar explicitamente `capture clock` e `consume clock`.
 - [ ] Armazenar transições/snapshots com semântica temporal suficiente para o core não perder `press` nem `release`.
-- [ ] Integrar a primeira versão ao pipeline de teclado.
+- [x] Integrar a primeira versão ao pipeline de teclado.
 - [ ] Prever joystick no contrato público da tool, mesmo que a primeira validação obrigatória fique focada em teclado.
 - [ ] Evitar novas correções espalhadas em `kernel.cpp`, `fmsx_host_stubs.c` e caminhos ad hoc do backend.
 
@@ -68,6 +68,91 @@ O filtro de estabilização não pode apagar `release` legítimo nem transformar
 - [ ] Menu/F12: `ESC`, `ENTER`, navegação e hotkeys sem regressão.
 - [ ] Stress: bursts de reports HID com fila cheia precisam falhar de forma previsível, com contadores de drop observáveis.
 - [ ] Regressão: callback RAW continua mínimo; `UpdateLEDs()` continua apenas no contexto correto do loop principal.
+
+## Atualização 2026-03-22
+
+### Corte implementado nesta rodada
+- Tool nova `src/tools/input/usb_hid_input_queue.*` com ring buffer fixo e dois consumidores independentes:
+  - `UI`: menu, hotkeys e joystick virtual
+  - `Runtime`: backend/emulador
+- `CUsbHidKeyboard` migrou para essa tool e ganhou `ConsumeForRuntime()`.
+- `kernel.cpp` passou a manter dois snapshots separados:
+  - `m_LastKeyboard*` para a UI
+  - `m_RuntimeKeyboard*` para o backend
+- `PushKeyboardStateToRuntime()` agora consome do cursor `Runtime`, em vez de reutilizar o último snapshot já drenado pela UI.
+
+### Limite atual conhecido
+- O pipeline ainda entrega no máximo um report novo por frame ao backend.
+- Isso já evita o colapso imediato causado pela UI, mas ainda precisa de validação em hardware para confirmar se elimina perdas em `press/release` curtos sob carga.
+
+### Validação local desta rodada
+- `scripts/check-third-party-pristine.sh`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603221300-e35b064`: OK
+- Artefato: `artifacts/kernel8-issue187.img`
+- `BUILD_HASH`: `e35b064-2e6de2aef96f1bef75f3ea7db09f53d6feb0ac06`
+- Revalidação após commit: `make -j4 DEBUG=1 BUILD_BID=202603221330-a969d52` OK
+- `BUILD_HASH` atual da branch: `a969d52-383d0995fd90075e3ebe4d186f145dad9c09885f`
+
+### Próximo passo
+- Validar em hardware.
+- Se ainda houver perda de transição, mover a próxima iteração para consumo temporal mais fino no backend, em vez de apenas um snapshot por frame.
+
+## Atualização 2026-03-22 - iteração 2
+
+### Corte implementado nesta rodada
+- `kernel.cpp` agora drena todos os reports pendentes do cursor `Runtime` e os empilha no backend em ordem.
+- `fmsx_runtime_set_keyboard_raw()` passou a enfileirar reports raw em vez de aplicar o `KeyState[]` imediatamente.
+- O fMSX agora drena essa fila ao longo dos scanlines com `fmsx_runtime_keyboard_drain_step()`.
+- `fmsx_runtime_init/menu_reset/load_state/shutdown` passaram a resetar explicitamente o pipeline de teclado do runtime.
+
+### Limite atual conhecido
+- A separação temporal agora existe também no runtime, mas ainda não houve validação em hardware.
+- Se ainda houver perda de `press/release`, o próximo alvo fica concentrado na política de estabilização do `KeyState[]`, e não mais no buffer/ordenação dos reports.
+
+### Validação local desta rodada
+- `scripts/check-third-party-pristine.sh`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603221405-3572e72`: OK
+- Artefato: `artifacts/kernel8-issue187.img`
+- `BUILD_HASH`: `3572e72-13a3a053bcbb762f4b0941e6df0045720034cf46`
+
+## Atualização 2026-03-22 - iterações 3 e 4
+
+### Sintoma observado em hardware
+- A responsividade geral melhorou bastante, mas o problema residual mais importante passou a ser `key release` tardio ou perdido.
+- Em gameplay, isso aparecia como tecla "presa", mesmo quando o `keypress` já parecia rápido.
+
+### Corte implementado na iteração 3
+- `src/fmsx_host_stubs.c` passou a deduplicar snapshots idênticos ainda pendentes na fila interna do runtime do fMSX.
+- Objetivo: impedir que um `release` ficasse preso atrás de uma cauda de reports redundantes de "tecla ainda pressionada".
+
+### Corte implementado na iteração 4
+- `src/fmsx_host_stubs.c` passou a canonicalizar `raw_keys[6]` antes de comparar/enfileirar:
+  - remove zeros intermediários
+  - ordena teclas não-zero
+  - recompacta o vetor
+- Isso evita backlog artificial causado por reordenação do report HID USB.
+
+### Regressão descartada
+- A variante que também deduplicava contra o "último report já aplicado" foi removida.
+- Motivo: ela quebrava a segunda confirmação do caso `press-only`, e as teclas deixavam de entrar no emulador.
+
+### Estado atual
+- UI e emulador voltaram a funcionar normalmente.
+- O usuário reportou melhora clara de precisão e ausência aparente de tecla presa nos testes mais recentes.
+- Ainda cabem mais testes prolongados antes de encerrar a issue definitivamente.
+
+### Validação local das iterações 3 e 4
+- `scripts/check-third-party-pristine.sh`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603221455-issue187-ab38eb9`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603221510-issue187-ab38eb9`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603221530-issue187-ab38eb9`: OK
+- Artefato atual: `artifacts/kernel8-issue187.img`
+
+### Critério prático restante
+- Consolidar mais uma rodada de hardware focada especificamente em:
+  - direção + tiro simultâneos
+  - solta/pressiona rápido
+  - ausência de tecla "presa" após alguns minutos de gameplay
 
 ## Referências obrigatórias
 - `src/tools/usb_hid_keyboard.cpp`

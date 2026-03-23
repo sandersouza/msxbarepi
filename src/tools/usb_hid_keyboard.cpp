@@ -5,9 +5,7 @@ static const char FromUsbHidKeyboard[] = "usb-hid-kbd";
 CUsbHidKeyboard::CUsbHidKeyboard(void)
 :	m_Keyboard(0),
 	m_KeyboardRemovedHandle(0),
-	m_ReportWritePos(0u),
-	m_ReportReadPos(0u),
-	m_ReportQueue{},
+	m_InputQueue(),
 	m_RemovedEvent(FALSE)
 {
 }
@@ -55,27 +53,12 @@ void CUsbHidKeyboard::UpdateLEDs(void)
 
 boolean CUsbHidKeyboard::ConsumeLatest(unsigned char *modifiers, unsigned char raw_keys[6])
 {
-	if (modifiers == 0 || raw_keys == 0)
-	{
-		return FALSE;
-	}
+	return m_InputQueue.DrainUiReport(modifiers, raw_keys);
+}
 
-	const unsigned read_pos = m_ReportReadPos;
-	const unsigned write_pos = m_ReportWritePos;
-	if (read_pos == write_pos)
-	{
-		return FALSE;
-	}
-
-	*modifiers = m_ReportQueue[read_pos].modifiers;
-	for (unsigned i = 0u; i < 6u; ++i)
-	{
-		raw_keys[i] = m_ReportQueue[read_pos].raw_keys[i];
-	}
-
-	const unsigned next_read = (read_pos + 1u) % kReportQueueSize;
-	m_ReportReadPos = next_read;
-	return TRUE;
+boolean CUsbHidKeyboard::ConsumeForRuntime(unsigned char *modifiers, unsigned char raw_keys[6])
+{
+	return m_InputQueue.DrainRuntimeReport(modifiers, raw_keys);
 }
 
 boolean CUsbHidKeyboard::ConsumeRemovedEvent(void)
@@ -100,8 +83,7 @@ void CUsbHidKeyboard::KeyboardRemovedHandler(CDevice *device, void *context)
 
 	self->m_Keyboard = 0;
 	self->m_KeyboardRemovedHandle = 0;
-	self->m_ReportReadPos = 0u;
-	self->m_ReportWritePos = 0u;
+	self->m_InputQueue.Reset();
 	self->m_RemovedEvent = TRUE;
 }
 
@@ -115,19 +97,5 @@ void CUsbHidKeyboard::KeyStatusRawHandler(unsigned char modifiers,
 	}
 
 	CUsbHidKeyboard *self = (CUsbHidKeyboard *) context;
-	const unsigned write_pos = self->m_ReportWritePos;
-	const unsigned next_write = (write_pos + 1u) % kReportQueueSize;
-
-	/* Full queue: drop the oldest report to keep latest transitions flowing. */
-	if (next_write == self->m_ReportReadPos)
-	{
-		self->m_ReportReadPos = (self->m_ReportReadPos + 1u) % kReportQueueSize;
-	}
-
-	self->m_ReportQueue[write_pos].modifiers = modifiers;
-	for (unsigned i = 0u; i < 6u; ++i)
-	{
-		self->m_ReportQueue[write_pos].raw_keys[i] = raw_keys[i];
-	}
-	self->m_ReportWritePos = next_write;
+	self->m_InputQueue.PushKeyboardReport(modifiers, raw_keys);
 }

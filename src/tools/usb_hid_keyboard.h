@@ -5,6 +5,7 @@
 #include <circle/logger.h>
 #include <circle/types.h>
 #include <circle/usb/usbkeyboard.h>
+#include "input/usb_hid_input_queue.h"
 
 class CUsbHidKeyboard
 {
@@ -19,6 +20,7 @@ public:
 	void UpdateLEDs(void);
 
 	boolean ConsumeLatest(unsigned char *modifiers, unsigned char raw_keys[6]);
+	boolean ConsumeForRuntime(unsigned char *modifiers, unsigned char raw_keys[6]);
 	boolean ConsumeRemovedEvent(void);
 
 private:
@@ -28,20 +30,9 @@ private:
 	static void KeyboardRemovedHandler(CDevice *device, void *context);
 
 private:
-	struct THidRawReport
-	{
-		unsigned char modifiers;
-		unsigned char raw_keys[6];
-	};
-
-	static const unsigned kReportQueueSize = 16u;
-
 	CUSBKeyboardDevice *m_Keyboard;
 	void *m_KeyboardRemovedHandle;
-
-	volatile unsigned m_ReportWritePos;
-	volatile unsigned m_ReportReadPos;
-	volatile THidRawReport m_ReportQueue[kReportQueueSize];
+	CUsbHidInputQueue m_InputQueue;
 	volatile boolean m_RemovedEvent;
 };
 

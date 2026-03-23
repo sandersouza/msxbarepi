@@ -73,6 +73,21 @@ static unsigned g_audio_frame_rendered_samples = 0u;
 static volatile unsigned g_audio_last_sync_rendered_samples = 0u;
 static volatile unsigned g_kbd_last_hid = 0;
 static volatile unsigned g_kbd_last_msx = 0;
+typedef struct
+{
+    u8 modifiers;
+    unsigned char raw_keys[6];
+} TFmsxQueuedKeyboardReport;
+
+enum
+{
+    FMSX_KBD_RUNTIME_QUEUE_CAPACITY = 64u
+};
+
+static volatile unsigned g_kbd_runtime_write_seq = 0u;
+static volatile unsigned g_kbd_runtime_read_seq = 0u;
+static volatile unsigned g_kbd_runtime_dropped = 0u;
+static TFmsxQueuedKeyboardReport g_kbd_runtime_queue[FMSX_KBD_RUNTIME_QUEUE_CAPACITY];
 static uint8_t g_kbd_stable_state[16] =
 {
     0xFFu, 0xFFu, 0xFFu, 0xFFu,
@@ -88,6 +103,12 @@ static uint8_t g_kbd_candidate_state[16] =
     0xFFu, 0xFFu, 0xFFu, 0xFFu
 };
 static uint8_t g_kbd_candidate_seen = 0u;
+
+static void fmsx_keyboard_press_code(uint8_t matrix[16], unsigned code);
+static unsigned fmsx_code_from_hid(u8 hid);
+static void fmsx_keyboard_canonicalize_raw(unsigned char raw_keys[6]);
+static int fmsx_keyboard_report_equals(u8 modifiers_a, const unsigned char raw_a[6],
+                                       u8 modifiers_b, const unsigned char raw_b[6]);
 
 static int fmsx_keyboard_change_has_new_press(const uint8_t desired_state[16], const uint8_t stable_state[16])
 {
@@ -123,12 +144,222 @@ static void fmsx_keyboard_clear_all(void)
     }
 }
 
+static unsigned fmsx_runtime_keyboard_queue_oldest_seq(void)
+{
+    const unsigned write_seq = g_kbd_runtime_write_seq;
+    return (write_seq > FMSX_KBD_RUNTIME_QUEUE_CAPACITY)
+        ? (write_seq - FMSX_KBD_RUNTIME_QUEUE_CAPACITY)
+        : 0u;
+}
+
+static void fmsx_runtime_keyboard_queue_push(u8 modifiers, const unsigned char raw_keys[6])
+{
+    unsigned char canonical_raw[6];
+    for (unsigned i = 0u; i < 6u; ++i)
+    {
+        canonical_raw[i] = raw_keys ? raw_keys[i] : 0u;
+    }
+    fmsx_keyboard_canonicalize_raw(canonical_raw);
+
+    const unsigned write_seq_before = g_kbd_runtime_write_seq;
+    const unsigned read_seq_before = g_kbd_runtime_read_seq;
+
+    if (write_seq_before > read_seq_before)
+    {
+        const unsigned newest_seq = write_seq_before - 1u;
+        const unsigned newest_slot = newest_seq % FMSX_KBD_RUNTIME_QUEUE_CAPACITY;
+        if (fmsx_keyboard_report_equals(modifiers, canonical_raw,
+                                        g_kbd_runtime_queue[newest_slot].modifiers,
+                                        g_kbd_runtime_queue[newest_slot].raw_keys))
+        {
+            return;
+        }
+    }
+    const unsigned write_seq = g_kbd_runtime_write_seq;
+    const unsigned slot = write_seq % FMSX_KBD_RUNTIME_QUEUE_CAPACITY;
+
+    g_kbd_runtime_queue[slot].modifiers = modifiers;
+    for (unsigned i = 0u; i < 6u; ++i)
+    {
+        g_kbd_runtime_queue[slot].raw_keys[i] = canonical_raw[i];
+    }
+
+    g_kbd_runtime_write_seq = write_seq + 1u;
+
+    const unsigned oldest_seq = fmsx_runtime_keyboard_queue_oldest_seq();
+    if (g_kbd_runtime_read_seq < oldest_seq)
+    {
+        g_kbd_runtime_dropped += oldest_seq - g_kbd_runtime_read_seq;
+        g_kbd_runtime_read_seq = oldest_seq;
+    }
+}
+
+static void fmsx_runtime_apply_keyboard_raw(u8 modifiers, const unsigned char raw_keys[6])
+{
+    uint8_t desired_state[16];
+    for (unsigned i = 0; i < 16u; ++i)
+    {
+        desired_state[i] = 0xFFu;
+    }
+
+    if (modifiers & 0x22u)
+    {
+        fmsx_keyboard_press_code(desired_state, KBD_SHIFT);
+    }
+    if (modifiers & 0x11u)
+    {
+        fmsx_keyboard_press_code(desired_state, KBD_CONTROL);
+    }
+    if (modifiers & 0x44u)
+    {
+        fmsx_keyboard_press_code(desired_state, KBD_GRAPH);
+    }
+
+    if (raw_keys)
+    {
+        for (unsigned i = 0u; i < 6u; ++i)
+        {
+            const u8 hid = raw_keys[i];
+            if (hid == 0u)
+            {
+                continue;
+            }
+
+            const unsigned code = fmsx_code_from_hid(hid);
+            if (code != 0u)
+            {
+                fmsx_keyboard_press_code(desired_state, code);
+                g_kbd_last_hid = hid;
+                g_kbd_last_msx = code;
+            }
+        }
+    }
+
+    /*
+     * Keyboard stabilization policy:
+     * - Release transitions are applied immediately (avoid stuck keys/repeat).
+     * - Pure press-only transitions require one confirmation report to suppress
+     *   occasional one-report USB glitches.
+     */
+    if (memcmp(desired_state, g_kbd_stable_state, sizeof desired_state) == 0)
+    {
+        g_kbd_candidate_seen = 0u;
+    }
+    else
+    {
+        const int has_press = fmsx_keyboard_change_has_new_press(desired_state, g_kbd_stable_state);
+        const int has_release = fmsx_keyboard_change_has_release(desired_state, g_kbd_stable_state);
+        const int press_only = has_press && !has_release;
+
+        if (!press_only)
+        {
+            memcpy(g_kbd_stable_state, desired_state, sizeof desired_state);
+            g_kbd_candidate_seen = 0u;
+        }
+        else if (memcmp(desired_state, g_kbd_candidate_state, sizeof desired_state) == 0 && g_kbd_candidate_seen != 0u)
+        {
+            memcpy(g_kbd_stable_state, desired_state, sizeof desired_state);
+            g_kbd_candidate_seen = 0u;
+        }
+        else
+        {
+            memcpy(g_kbd_candidate_state, desired_state, sizeof desired_state);
+            g_kbd_candidate_seen = 1u;
+        }
+    }
+    memcpy((void *) KeyState, g_kbd_stable_state, sizeof g_kbd_stable_state);
+}
+
+void fmsx_runtime_keyboard_reset_pipeline(void)
+{
+    g_kbd_runtime_write_seq = 0u;
+    g_kbd_runtime_read_seq = 0u;
+    g_kbd_runtime_dropped = 0u;
+    g_kbd_candidate_seen = 0u;
+    for (unsigned i = 0u; i < 16u; ++i)
+    {
+        g_kbd_stable_state[i] = 0xFFu;
+        g_kbd_candidate_state[i] = 0xFFu;
+    }
+    for (unsigned i = 0u; i < FMSX_KBD_RUNTIME_QUEUE_CAPACITY; ++i)
+    {
+        g_kbd_runtime_queue[i].modifiers = 0u;
+        for (unsigned j = 0u; j < 6u; ++j)
+        {
+            g_kbd_runtime_queue[i].raw_keys[j] = 0u;
+        }
+    }
+    fmsx_keyboard_clear_all();
+}
+
 static void fmsx_keyboard_press_code(uint8_t matrix[16], unsigned code)
 {
     if (code <= 0x88u)
     {
         matrix[Keys[code][0]] &= (uint8_t) ~Keys[code][1];
     }
+}
+
+static void fmsx_keyboard_canonicalize_raw(unsigned char raw_keys[6])
+{
+    if (raw_keys == 0)
+    {
+        return;
+    }
+
+    unsigned n = 0u;
+    unsigned char compact[6];
+    for (unsigned i = 0u; i < 6u; ++i)
+    {
+        const unsigned char key = raw_keys[i];
+        if (key != 0u)
+        {
+            compact[n++] = key;
+        }
+    }
+
+    for (unsigned i = 0u; i < n; ++i)
+    {
+        for (unsigned j = i + 1u; j < n; ++j)
+        {
+            if (compact[j] < compact[i])
+            {
+                const unsigned char tmp = compact[i];
+                compact[i] = compact[j];
+                compact[j] = tmp;
+            }
+        }
+    }
+
+    for (unsigned i = 0u; i < n; ++i)
+    {
+        raw_keys[i] = compact[i];
+    }
+    for (unsigned i = n; i < 6u; ++i)
+    {
+        raw_keys[i] = 0u;
+    }
+}
+
+static int fmsx_keyboard_report_equals(u8 modifiers_a, const unsigned char raw_a[6],
+                                       u8 modifiers_b, const unsigned char raw_b[6])
+{
+    if (modifiers_a != modifiers_b)
+    {
+        return 0;
+    }
+
+    for (unsigned i = 0u; i < 6u; ++i)
+    {
+        const unsigned char a = raw_a ? raw_a[i] : 0u;
+        const unsigned char b = raw_b ? raw_b[i] : 0u;
+        if (a != b)
+        {
+            return 0;
+        }
+    }
+
+    return 1;
 }
 
 static unsigned fmsx_code_from_hid(u8 hid)
@@ -269,79 +500,31 @@ void fmsx_video_set_overscan(boolean enabled)
 
 void fmsx_runtime_set_keyboard_raw(u8 modifiers, const unsigned char raw_keys[6])
 {
-    uint8_t desired_state[16];
-    for (unsigned i = 0; i < 16u; ++i)
+    fmsx_runtime_keyboard_queue_push(modifiers, raw_keys);
+}
+
+void fmsx_runtime_keyboard_drain_step(void)
+{
+    const unsigned write_seq = g_kbd_runtime_write_seq;
+    const unsigned oldest_seq = fmsx_runtime_keyboard_queue_oldest_seq();
+    unsigned read_seq = g_kbd_runtime_read_seq;
+
+    if (read_seq < oldest_seq)
     {
-        desired_state[i] = 0xFFu;
+        g_kbd_runtime_dropped += oldest_seq - read_seq;
+        read_seq = oldest_seq;
+        g_kbd_runtime_read_seq = read_seq;
     }
 
-    if (modifiers & 0x22u)
+    if (read_seq >= write_seq)
     {
-        fmsx_keyboard_press_code(desired_state, KBD_SHIFT);
-    }
-    if (modifiers & 0x11u)
-    {
-        fmsx_keyboard_press_code(desired_state, KBD_CONTROL);
-    }
-    if (modifiers & 0x44u)
-    {
-        fmsx_keyboard_press_code(desired_state, KBD_GRAPH);
+        return;
     }
 
-    if (raw_keys)
-    {
-        for (unsigned i = 0; i < 6u; ++i)
-        {
-            const u8 hid = raw_keys[i];
-            if (hid == 0u)
-            {
-                continue;
-            }
-
-            const unsigned code = fmsx_code_from_hid(hid);
-            if (code != 0u)
-            {
-                fmsx_keyboard_press_code(desired_state, code);
-                g_kbd_last_hid = hid;
-                g_kbd_last_msx = code;
-            }
-        }
-    }
-
-    /*
-     * Keyboard stabilization policy:
-     * - Release transitions are applied immediately (avoid stuck keys/repeat).
-     * - Pure press-only transitions require one confirmation report to suppress
-     *   occasional one-report USB glitches.
-     */
-    if (memcmp(desired_state, g_kbd_stable_state, sizeof desired_state) == 0)
-    {
-        g_kbd_candidate_seen = 0u;
-    }
-    else
-    {
-        const int has_press = fmsx_keyboard_change_has_new_press(desired_state, g_kbd_stable_state);
-        const int has_release = fmsx_keyboard_change_has_release(desired_state, g_kbd_stable_state);
-        const int press_only = has_press && !has_release;
-
-        if (!press_only)
-        {
-            memcpy(g_kbd_stable_state, desired_state, sizeof desired_state);
-            g_kbd_candidate_seen = 0u;
-        }
-        else if (memcmp(desired_state, g_kbd_candidate_state, sizeof desired_state) == 0 && g_kbd_candidate_seen != 0u)
-        {
-            memcpy(g_kbd_stable_state, desired_state, sizeof desired_state);
-            g_kbd_candidate_seen = 0u;
-        }
-        else
-        {
-            memcpy(g_kbd_candidate_state, desired_state, sizeof desired_state);
-            g_kbd_candidate_seen = 1u;
-        }
-    }
-
-    memcpy((void *) KeyState, g_kbd_stable_state, sizeof g_kbd_stable_state);
+    const unsigned slot = read_seq % FMSX_KBD_RUNTIME_QUEUE_CAPACITY;
+    g_kbd_runtime_read_seq = read_seq + 1u;
+    fmsx_runtime_apply_keyboard_raw(g_kbd_runtime_queue[slot].modifiers,
+                                    g_kbd_runtime_queue[slot].raw_keys);
 }
 
 unsigned int Joystick(void)
