@@ -114,7 +114,7 @@ static int fmsx_slot_has_virtual_sccplus(uint8_t slot)
 #endif
 
 /** User-defined parameters for fMSX *************************/
-int  Mode        = MSX_MSX2|MSX_NTSC|MSX_MSXDOS2|MSX_GUESSA|MSX_GUESSB;
+int  Mode        = MSX_MSX2|MSX_NTSC|MSX_MSXDOS2|MSX_GUESSA|MSX_GUESSB|MSX_NUKEYKT;
 uint8_t UPeriod  = 75;             /* % of frames to draw    */
 int  VPeriod     = CPU_VPERIOD;    /* CPU cycles per VBlank  */
 int  HPeriod     = CPU_HPERIOD;    /* CPU cycles per HBlank  */

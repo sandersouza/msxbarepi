@@ -39,14 +39,22 @@ Abrir uma trilha separada para melhorar a fidelidade de render do `PSG` e do `FM
 
 ## DoR
 - [ ] Capturas A/B ou baseline auditivo definidos para `PSG` e `FM-PAC`
-- [ ] Referências `openMSX` / `blueMSX` mapeadas para os chips alvo
-- [ ] Escopo da primeira iteração fechado sem conflitar com a milestone `SCC/SCC+`
+- [x] Referências `openMSX` / `blueMSX` mapeadas para os chips alvo
+- [x] Escopo da primeira iteração fechado sem conflitar com a milestone `SCC/SCC+`
 
 ## DoD
-- [ ] Gaps de fidelidade documentados por chip (`PSG` e `FM-PAC`)
-- [ ] Plano técnico da primeira iteração fechado com alvo claro de implementação
+- [x] Gaps de fidelidade documentados por chip (`PSG` e `FM-PAC`)
+- [x] Plano técnico da primeira iteração fechado com alvo claro de implementação
 - [ ] Sem regressão no mix aprovado atual de `SCC/SCC+`
 - [ ] Espelho local e issue remota sincronizados
+
+## Rodada atual
+- Diagnóstico inicial fechado com `Xevious` como caso reprodutor de `PSG + FM-PAC`.
+- Conclusão: o problema principal não estava no `PSG`; o `FM-PAC` default ainda seguia o core simples do `fMSX`, que ignora instrumentos e `user tone`.
+- Primeiro corte escolhido:
+  - ativar `NukeYKT` por padrão no backend local;
+  - preservar mixer/voicing aprovados;
+  - deixar a análise fina do `PSG` para a próxima rodada, se ainda houver gap audível após o corte do `FM-PAC`.
 
 ## Referências iniciais
 - `src/fmsx_local_sound.c`
