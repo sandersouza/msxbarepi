@@ -41,8 +41,8 @@ make DEBUG=0
 - `F6`: mute/unmute `Layer 1` (PSG + ruido).
 - `F7`: mute/unmute `Layer 2` (FM-PAC).
 - `F8`: mute/unmute `Layer 3` (Konami SCC+).
-- `F9`: liga/desliga o cartucho interno `Konami SCC+`.
-- `F10`: liga/desliga suporte `FM-PAC` (feature/cart).
+- `F10`: liga/desliga as telemetrias UART frequentes ainda ativas (`SCC EVT`, `AUD EVT`, `KMG EVT`, `VDP EVT`).
+- `F9`: sem uso na build atual.
 
 ## Tag de build na tela
 - No preset atual de diagnostico MSX2+, a `linha 14` foi reservada para `TM4` (telemetria adicional de boot/VDP/KANJI).
@@ -93,22 +93,38 @@ Diretriz visual (overlay e menu):
 - Anti-flicker: redesenhar menu apenas em mudanca de estado (mostrar/ocultar, selecao, reposicionamento).
 
 ## Menu relacionado
-- `Settings -> Debugger`: liga/desliga overlay (quando compilado com debug).
-- `Refresh` nao e mais um item manual em `Settings`: o runtime inicia em `NTSC` e passa para `PAL` automaticamente quando o software escreve `R#9`.
+- `Settings -> Debugger`: sempre aparece em builds `DEBUG=1` e opera diretamente como `ON/OFF`.
+- Em builds com `DEBUG=1`, `Settings` volta a mostrar `Refresh [NTSC/PAL]` logo abaixo de `Disk ROM` para diagnostico.
+- Fora de debug, `Refresh` continua oculto.
+- O runtime inicia em `NTSC` e continua podendo passar para `PAL` automaticamente quando o software escreve `R#9`.
 - Itens de audio em `Settings`:
   - `Konami SCC+` (OFF/ON/DUAL)
   - `FM-PAC` (ON/OFF)
   - `Audio Gain` (0..9)
+- Em `DEBUG=1`, `Settings` tambem mostra:
+  - `Debugger [ON/OFF]`
+  - `UART Log [ON/OFF]`
+- `UART Log` usa o mesmo estado operacional da tecla `F10`.
 
 ## Overlay: linhas e labels
 - `TXTDBG`: estado geral (MMU/cache/pause).
   - `BUILD`: hash de 16 bits calculado a partir de `MSXBARE_BUILD_BID` para rastreio visual da build em teste.
   - `OS`: contador com largura fixa `000..999` (modulo 1000) para evitar jitter visual na linha.
 - `CI`: contadores de fila/audio/teclado e tentativas de init.
-- `EV1`: estatistica de escrita de audio e pico de origem.
-- `EV2`: pico/clip/gain/fps e ultimo HID/MSX keycode.
+- `EV1`: diagnostico de perdas na fila de audio:
+  - `Q/E`: writes e erros no write para a fila HDMI do `m_Sound`.
+  - `O`: samples sobrescritos na ring interna do host (`overwrite`).
+  - `T`: samples descartados por trim de latencia excessiva.
+  - `U:a/b`: pulls curtos (`a`) e samples faltantes acumulados (`b`) ao alimentar a HDMI.
+- `EV2`: diagnostico de producao/consumo da ring de audio:
+  - `B:a/b`: ultimo batch renderizado pelo core e maior batch visto.
+  - `P:a/b`: ultimo pull retornado / ultimo pull solicitado pela HDMI.
+  - `R:a/b`: nivel atual da ring interna / pico historico observado.
+  - `V`: fps do emulador.
 - `JY1`: joystick bridge/mapeado + estado runtime.
 - `JY2`: frame/PC/repeticao/ring/pacing.
+  - `L`: nivel atual da ring interna.
+  - `D:a/b`: ultimo trim aplicado (`a`) e drops acumulados totais (`b`, overwrite + trim).
 - `SD1`: telemetria de save/load/carga (SV/C/A/LD/BT).
 - `SD2`: mapper/carts/boot model ativos.
 - `AC1`: estado de chips/features e mixer:
@@ -123,6 +139,12 @@ Diretriz visual (overlay e menu):
   - `L1` + `PSG`: mute layer 1 e atividade de canais PSG.
   - `L2` + `FM`: mute layer 2 e atividade de canais FM.
   - `L3` + `SCC`: mute layer 3 e atividade de canais SCC.
+- `TM1`: timing base do core:
+  - `HP/VP/IP`: periodos inteiros atualmente em uso no scheduler.
+  - `SL`: scanline atual.
+  - `PAL/NTSC`: modo efetivo do VDP.
+  - `L212`: flag de 212 linhas.
+  - `T`: turbo configurado no menu (`OFF=100`, `PAN=150`, `MAX=200`); nao reflete o turbo Panasonic virtual ligado por software.
 - `TM2`: telemetria VDP/timing útil para MSX2+ (parte 1):
   - `SM`: screen mode atual.
   - `R2`: registrador da nametable/página de display.
@@ -157,13 +179,12 @@ Diretriz visual (overlay e menu):
   - `TL/TD`: linha-alvo de `IE1` e delta assinado entre o compare atual e a scanline corrente.
   - `EO`: odd/even efetivo derivado de `S#2 bit1`.
   - `RP`: página efetiva atualmente selecionada para render.
-- `TM5`: diagnostico de FDC/WD1793 (especialmente para `Disk I/O error`):
-  - `ST`: `FDC.R[0]` (status WD1793).
-  - `TR`: `FDC.R[1]` (track register).
-  - `SC`: `FDC.R[2]` (sector register).
-  - `DR/SD`: drive e side ativos.
-  - `IQ`: latch de `IRQ/DRQ` (`FDC.IRQ`).
-  - `WT`: watchdog interno (`FDC.Wait`).
+- `TM5`: diagnostico do pipeline de teclado runtime:
+  - `KQ:a/b`: profundidade atual da fila runtime e `high-water`.
+  - `KD`: drops acumulados da fila runtime.
+  - `KC:a/b/c`: candidatos `press-only` criados, promovidos e descartados.
+  - `KR`: releases aplicados imediatamente.
+  - `KP`: presses de gameplay aplicados imediatamente.
 - `TM6A`: trace de writes em registradores VDP — exibe **delta por frame** (variacao desde a ultima leitura, nao acumulado):
   - `W9/W15/W18/W19/W25/W26/W27`: writes por frame em cada registrador VDP (cap 9999).
 - `TM6B`: ultimo evento capturado no trace VDP/IRQ das janelas do `SMANBOW2`:
@@ -190,17 +211,19 @@ Diretriz visual (overlay e menu):
   - `R#1/R#2/R#8/R#9/R#15/R#19/R#23/R#25/R#26/R#27`;
   - `S#0/S#1/S#2`, `IRQPending`, `ScreenON`, `IE0`, `IE1`;
   - odd/even efetivo, página efetiva de render e bancos MegaROM ativos em `4000h-7FFFh` e `8000h-BFFFh`;
-  - eventos de `IE0`, `IE1`, writes em `R#19/R#23`, reads de `S#1/S#2` e início/fim de comando VDP.
+  - eventos de `IE0`, `IE1`, writes em `R#19/R#23`, reads de `S#1/S#2`, writes em `0x98`, endereço/registrador via `0x99` e início/fim de comando VDP.
 - O overlay agora exibe apenas o **ultimo** evento relevante dessa trilha em `TM6B`, para facilitar captura por screenshot em hardware.
 - Para o freeze do `SMANBOW2` em `PC:C698/C699`, `TM6C` e a linha de maior valor diagnostico: ela mostra se a pagina `4000h` continua apontando para o cart, quais bancos estao ativos e se a Flash realmente recebeu/programou/leu o offset esperado (`0x70000+`).
 - Em paralelo, o kernel emite telemetria UART adicional focada em VDP:
-  - `VDP ST`: transicao compacta de estado (`R25`, slot/tipo do cart em `P1`, `A8`, `P1 PS/SS`), incluindo alerta quando mapper entra em estado invalido (`C:255`/`T:FF`).
-  - `VDP EVT`: write pontual em `R25/R26/R27` com `PC` da escrita no trace;
-  - `VDP LOOP`: snapshot reduzido em degraus de repeticao de PC (`200`, `400`, ...).
-  - Observacao: logs de alta frequencia (`VDP CHG/IRQ/RG/IO`) foram removidos por impacto de performance (flood UART) durante gameplay.
+  - `VDP EVT`: eventos da janela rastreada com `PC`, scanline, fase de linha, alvo de `IE1`, `R#19/R#23` e I/O de VDP (`0x98`, `0x99` address/register). Em `Knightmare Gold`, a janela aparece como `W=KG` e fica ativa durante a gameplay em `screen mode 4` quando o disco carregado contem `kmaregold`/`kmare`.
+  - Observacao: `AUDQ` foi removido da UART; o diagnostico de audio permanece apenas no overlay.
 - A trilha UART experimental de audio do `SMANBOW2` (`SCC EVT` / `AUD EVT`) foi congelada para futuro na issue `#220`.
   - O codigo de instrumentacao foi preservado para reativacao futura.
+  - `F10` agora controla apenas a emissao dessas telemetrias UART frequentes.
+  - O fluxo antigo de snapshot manual/telemetry view por `F9/F10` foi removido.
   - No estado atual, ela fica desabilitada por compile-time e nao emite logs em runtime.
+- A telemetria `AUDQ ...` da UART foi desativada depois que o diagnostico da fila de audio foi fechado.
+- Os contadores de audio continuam visiveis no overlay (`EV1/EV2/JY2`) para consulta local sem flood de UART.
 
 ## Arquitetura (modular)
 - Renderer da debug layer desacoplado em objeto plugavel:
@@ -213,7 +236,7 @@ Diretriz visual (overlay e menu):
 - Para testar audio por chip:
   1. habilite overlay (`F11`);
   2. observe `AC1/AC2`;
-  3. use `F6/F7/F8/F9/F10` para isolamento por camada/feature.
+  3. use `F6/F7/F8` para isolamento por camada e `F10` para silenciar a UART.
 - Em investigacoes de SD/boot, priorize `SD1/SD2` e correlacione com logs do kernel.
 
 ## Referencias

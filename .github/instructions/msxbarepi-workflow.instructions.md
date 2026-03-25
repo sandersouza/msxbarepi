@@ -40,6 +40,7 @@ applyTo: "**"
 - Em gates de milestone ou antes de avancos maiores, preferir build limpo (`make clean && make`) e validacao em hardware.
 - Manter expectativa de artefatos alinhada: `artifacts/kernel8-default.img` e imagem especifica da issue em branches de issue (`artifacts/kernel8-issue<numero>.img`).
 - Ao entregar build para teste, informar id curto de rastreio (`BUILD_HASH:<git>-<sha1>`) e incluir o comando `make sdcard`.
+- Ao entregar build para teste, informar sempre tambem o `BUILD_BID` e o `BUILD_ID` exato de 4 digitos (`TXTDBG BUILD:XXXX`); se a build ainda nao tiver sido testada em hardware, calcular o `BUILD_ID` com o mesmo algoritmo do kernel a partir de `MSXBARE_BUILD_BID`.
 - Em testes de hardware, registrar tambem o `BUILD_ID` de 4 digitos mostrado no overlay (`TXTDBG BUILD:XXXX`).
 
 ## Fluxo de SD e assets de runtime

@@ -35,6 +35,7 @@
 #include <unistd.h>
 #endif
 #include <time.h>
+#include <stdio.h>
 
 #include <compat/strl.h>
 #include <streams/file_stream_transforms.h>
@@ -79,6 +80,15 @@ static unsigned fmsx_megaram_mask(void)
   return fmsx_megaram_pages_from_kb() - 1u;
 }
 
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+static uint8_t fmsx_debug_peek_ram_byte(uint16_t addr)
+{
+  return RAM[addr >> 13][addr & 0x1FFF];
+}
+
+static void fmsx_log_kmg_detection_write(uint16_t addr, uint8_t value);
+#endif
+
 static int fmsx_slot_has_virtual_sccplus(uint8_t slot)
 {
   return (slot<MAXSLOTS)
@@ -112,10 +122,14 @@ int  RAMPages    = 4;              /* Number of RAM pages    */
 int  VRAMPages   = 2;              /* Number of VRAM pages   */
 int  VRAMPageMask = 0x01;          /* VRAM page mask */
 uint8_t ExitNow     = 0;           /* 1 = Exit the emulator  */
+
 unsigned FmsxTurboPercent = 100u;  /* Effective Z80 clock scale (%) */
 static uint64_t g_fmsx_audio_cycle_base = 0u;
 static int g_fmsx_audio_phase_cycles = 0;
 static uint8_t g_fmsx_audio_cycle_valid = 0u;
+static unsigned g_fmsx_hrefresh_frac_acc_240 = 0u;
+static unsigned g_fmsx_hrefresh_frac_acc_256 = 0u;
+static int g_fmsx_active_cpu_cycles_current_line = CPU_H240;
 
 static int fmsx_scale_cycles(int cycles)
 {
@@ -131,6 +145,30 @@ static int fmsx_scale_cycles(int cycles)
   return (int)scaled;
 }
 
+static int fmsx_hrefresh_cpu_cycles_exact(int active_vdp_ticks)
+{
+  const unsigned denom = 600u; /* 6 VDP clocks per CPU clock, scaled by percent */
+  const unsigned percent = FmsxTurboPercent < 100u ? 100u : (FmsxTurboPercent > 300u ? 300u : FmsxTurboPercent);
+  const unsigned numer = (unsigned)active_vdp_ticks * percent;
+  unsigned *acc;
+  unsigned whole;
+  unsigned rem;
+
+  acc = (active_vdp_ticks == HREFRESH_240) ? &g_fmsx_hrefresh_frac_acc_240 : &g_fmsx_hrefresh_frac_acc_256;
+  whole = numer / denom;
+  rem = numer % denom;
+  *acc += rem;
+  if(*acc >= denom)
+  {
+    whole += 1u;
+    *acc -= denom;
+  }
+
+  if(whole < 1u) whole = 1u;
+  if(whole > 0x7FFFFFFFu) whole = 0x7FFFFFFFu;
+  return (int)whole;
+}
+
 void fmsx_cpu_set_turbo_percent(unsigned percent)
 {
   int base_vperiod;
@@ -138,6 +176,8 @@ void fmsx_cpu_set_turbo_percent(unsigned percent)
   if(percent < 100u) percent = 100u;
   if(percent > 300u) percent = 300u;
   FmsxTurboPercent = percent;
+  g_fmsx_hrefresh_frac_acc_240 = 0u;
+  g_fmsx_hrefresh_frac_acc_256 = 0u;
 
   base_vperiod = (VIDEO(MSX_PAL)? VPERIOD_PAL:VPERIOD_NTSC)/6;
   VPeriod = fmsx_scale_cycles(base_vperiod);
@@ -158,6 +198,17 @@ uint64_t fmsx_audio_cpu_cycles_now(void)
   return g_fmsx_audio_cycle_base + (uint64_t)(unsigned)elapsed;
 }
 
+unsigned fmsx_audio_effective_cpu_clock_hz(void)
+{
+  uint64_t hz;
+  const uint64_t base_hz = (uint64_t)fmsx_runtime_get_base_cpu_clock_hz();
+
+  hz = (base_hz * (uint64_t)FmsxTurboPercent + 50u) / 100u;
+  if(hz < 1u) hz = 1u;
+  if(hz > 0xFFFFFFFFu) hz = 0xFFFFFFFFu;
+  return (unsigned)hz;
+}
+
 static void fmsx_audio_cycle_commit_phase(void)
 {
   if(g_fmsx_audio_cycle_valid) g_fmsx_audio_cycle_base += (uint64_t)(unsigned)g_fmsx_audio_phase_cycles;
@@ -174,6 +225,9 @@ static void fmsx_audio_cycle_reset(void)
   g_fmsx_audio_cycle_base = 0u;
   g_fmsx_audio_phase_cycles = 0;
   g_fmsx_audio_cycle_valid = 0u;
+  g_fmsx_hrefresh_frac_acc_240 = 0u;
+  g_fmsx_hrefresh_frac_acc_256 = 0u;
+  g_fmsx_active_cpu_cycles_current_line = CPU_H240;
 }
 
 /** Main hardware: CPU, RAM, VRAM, mappers *******************/
@@ -235,6 +289,12 @@ uint8_t FmsxP1LastSS = 0xFF;          /* Last observed secondary slot on page 1 
 uint32_t FmsxVDPFrameCounter = 0;     /* Number of VDP frame starts observed */
 uint8_t FmsxVDPLinePhase = 0;         /* 0=active scan, 1=HBlank */
 uint8_t FmsxVDPScreenOnLatched = 0;   /* Display enable latched per scanline */
+int FmsxVDPRenderVScrollOverride = -1;/* Optional per-line VScroll override for renderer */
+static uint8_t FmsxVDPLineVScrollLatched = 0; /* VScroll captured at scanline start */
+static int FmsxVDPUCountLatched = 0;  /* Frame visibility accumulator for current scanline */
+static uint8_t FmsxVDPDrawingLatched = 0; /* Drawing state for current scanline */
+static uint8_t FmsxVDPLineRendered = 0;   /* Current scanline already composed before HBlank */
+static uint8_t FmsxVDPLineChunkEnd = 0;   /* Screen 4 partial render end column (0..32) */
 uint32_t FmsxIE1EventCount = 0;       /* Number of VDP line-coincidence events */
 uint32_t FmsxIE1AckCount = 0;         /* Number of S#1 reads that clear IE1 flag */
 uint32_t FmsxIE1ArmedCount = 0;       /* Number of times IE1 was armed on active line */
@@ -246,6 +306,52 @@ static unsigned g_fmsx_vdp_trace_head = 0;
 static unsigned g_fmsx_vdp_trace_count = 0;
 static unsigned g_fmsx_vdp_trace_dropped = 0;
 static uint32_t g_fmsx_vdp_trace_seq = 0;
+static TFmsxKmgTraceEvent g_fmsx_kmg_trace[FMSX_KMG_TRACE_CAPACITY];
+static unsigned g_fmsx_kmg_trace_head = 0;
+static unsigned g_fmsx_kmg_trace_count = 0;
+static unsigned g_fmsx_kmg_trace_dropped = 0;
+static uint32_t g_fmsx_kmg_trace_seq = 0;
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+static void fmsx_log_kmg_detection_write(uint16_t addr, uint8_t value)
+{
+  TFmsxKmgTraceEvent *event;
+  uint8_t l220e;
+  uint8_t l220f;
+  uint8_t l2212;
+  uint8_t l2219;
+
+  if((addr!=0x220Eu)&&(addr!=0x220Fu)&&(addr!=0x2212u)&&(addr!=0x2219u)) return;
+
+  l220e = fmsx_debug_peek_ram_byte(0x220Eu);
+  l220f = fmsx_debug_peek_ram_byte(0x220Fu);
+  l2212 = fmsx_debug_peek_ram_byte(0x2212u);
+  l2219 = fmsx_debug_peek_ram_byte(0x2219u);
+
+  switch(addr)
+  {
+    case 0x220Eu: l220e = value; break;
+    case 0x220Fu: l220f = value; break;
+    case 0x2212u: l2212 = value; break;
+    case 0x2219u: l2219 = value; break;
+  }
+
+  event = &g_fmsx_kmg_trace[g_fmsx_kmg_trace_head];
+  memset(event,0,sizeof(*event));
+  event->seq = ++g_fmsx_kmg_trace_seq;
+  event->frame = FmsxVDPFrameCounter;
+  event->pc = CPU.PC.W;
+  event->addr = addr;
+  event->value = value;
+  event->l220e = l220e;
+  event->l220f = l220f;
+  event->l2212 = l2212;
+  event->l2219 = l2219;
+
+  g_fmsx_kmg_trace_head = (g_fmsx_kmg_trace_head+1u)%FMSX_KMG_TRACE_CAPACITY;
+  if(g_fmsx_kmg_trace_count<FMSX_KMG_TRACE_CAPACITY) ++g_fmsx_kmg_trace_count;
+  else ++g_fmsx_kmg_trace_dropped;
+}
+#endif
 #if FMSX_SMANBOW_AUDIO_TRACE_ENABLED
 static TFmsxSCCTraceEvent g_fmsx_scc_trace[FMSX_SCC_TRACE_CAPACITY];
 static TFmsxSCCTraceEvent g_fmsx_scc_trace_active;
@@ -277,11 +383,13 @@ uint32_t FmsxKanjiReadCount = 0;      /* Reads from Kanji data port D9h */
 uint32_t FmsxKanjiAddrWriteCount = 0; /* Writes to Kanji address ports D8h/D9h */
 uint32_t FmsxKanjiNullReadCount = 0;  /* D9h reads while Kanji ROM pointer is null */
 uint8_t FmsxResetStatus = 0xFF;       /* Port F4h: reset status register stub */
-uint8_t FmsxS1985Addr = 0;
+uint8_t FmsxSwitchedIODeviceId = 0xFF;
+uint8_t FmsxS1985TurboLatched = 0u;
+uint16_t FmsxS1985Addr = 0;
 uint8_t FmsxS1985Color1 = 0;
 uint8_t FmsxS1985Color2 = 0;
 uint8_t FmsxS1985Pattern = 0;
-uint8_t FmsxS1985RAM[16];
+uint8_t FmsxS1985RAM[0x800];
 uint8_t FmsxS1985InitDone = 0;
 
 /** Fixed font used by fMSX **********************************/
@@ -442,6 +550,31 @@ static void fmsx_apply_vdp_io_wait(int cycles)
   else CPU.ICount = 0;
 }
 
+static int fmsx_panasonic_vdp_io_wait_cycles(void)
+{
+  /*
+   * blueMSX models Matsushita turbo by changing CPU frequency only, without
+   * injecting extra fixed delay into VDP port accesses. Knightmare Gold's
+   * smooth-scroll patch streams VRAM rectangles in tight bursts and this
+   * fixed 46-cycle penalty was the strongest remaining delta versus the
+   * working blueMSX behavior.
+   *
+   * Keep the explicit S#0 polling delay below for diagnostics such as
+   * MSXDIAG, but do not slow down normal 0x98/0x99 traffic here.
+   */
+  return 0;
+}
+
+static int fmsx_vdp_write_wait_cycles(void)
+{
+  return kVDPIOWaitCyclesData + fmsx_panasonic_vdp_io_wait_cycles();
+}
+
+static int fmsx_vdp_read_wait_cycles(void)
+{
+  return kVDPIOWaitCyclesData + fmsx_panasonic_vdp_io_wait_cycles();
+}
+
 static int fmsx_vdp_status_wait_cycles(void)
 {
   int cycles = kVDPIOWaitCyclesStatusBase;
@@ -484,8 +617,14 @@ static uint8_t fmsx_vdp_status1_live(void);
 static uint8_t fmsx_vdp_ie1_target_line(void);
 static int fmsx_vdp_ie1_target_delta(void);
 static uint8_t fmsx_vdp_effective_odd_page(void);
+static int fmsx_vdp_hscroll_active256_local(void);
+void RefreshLine4PlainRange(uint8_t Y,unsigned X0,unsigned X1);
 static uint8_t fmsx_vdp_render_page(void);
+static void fmsx_vdp_render_scanline(uint8_t scanline,uint8_t drawing,int ucount);
+static void fmsx_vdp_render_screen4_partial(uint8_t scanline,unsigned end_column);
 static void fmsx_vdp_trace_log(uint8_t event_type);
+static void fmsx_vdp_trace_log_io(uint8_t event_type,uint32_t aux_addr,uint8_t aux_value,uint8_t aux_reg,uint8_t aux_ctrl);
+static void fmsx_vdp_sync_before_cpu_write(void);
 
 static int fmsx_string_contains(const char *text,const char *needle)
 {
@@ -961,12 +1100,92 @@ static int fmsx_pc_bank16(uint8_t *bank16)
   return 0;
 }
 
+static int fmsx_kmg_disk_active(void)
+{
+  unsigned drive;
+
+  for(drive=0u; drive<MAXDRIVES; ++drive)
+  {
+    const char *name = DSKName[drive];
+    if(!name || !*name) continue;
+    if(fmsx_string_contains(name,"kmaregold")) return 1;
+    if(fmsx_string_contains(name,"KMAREGOLD")) return 1;
+    if(fmsx_string_contains(name,"kmare")) return 1;
+    if(fmsx_string_contains(name,"KMARE")) return 1;
+  }
+
+  return 0;
+}
+
+static uint8_t fmsx_peek_linear_byte(uint16_t addr)
+{
+  return RAM[addr >> 13][addr & 0x1FFF];
+}
+
+static int fmsx_kmg_smooth_scroll_allowed(void)
+{
+  const unsigned refresh_hz = fmsx_runtime_get_refresh_hz();
+  const unsigned turbo_percent = fmsx_runtime_get_z80_turbo_percent();
+
+  /*
+   * Knightmare Gold documents only two legal smooth-scroll combinations:
+   *  - 3.579545MHz at 50Hz
+   *  - 7MHz-class at 60Hz
+   * Any other effective runtime speed must fall back to ORIGINAL scroll.
+   */
+  if((refresh_hz == 50u) && (turbo_percent == 100u)) return 1;
+  if((refresh_hz == 60u) && (turbo_percent >= 200u)) return 1;
+  return 0;
+}
+
+static int fmsx_kmg_block_panasonic_runtime_turbo(void)
+{
+  return fmsx_kmg_disk_active()
+      && (fmsx_runtime_get_refresh_hz() == 50u)
+      && (fmsx_runtime_get_z80_turbo_mode() == 0u);
+}
+
+static void fmsx_kmg_apply_panasonic_turbo_gate(void)
+{
+  const boolean runtime_enabled =
+      (FmsxS1985TurboLatched && !fmsx_kmg_block_panasonic_runtime_turbo()) ? TRUE : FALSE;
+  fmsx_runtime_set_panasonic_turbo_enabled(runtime_enabled);
+}
+
+static void fmsx_kmg_apply_scroll_gate(void)
+{
+  uint8_t *page;
+
+  if(!fmsx_kmg_disk_active()) return;
+
+  page = RAM[0x2212u >> 13];
+  if(!page || (page == EmptyRAM)) return;
+
+  if(fmsx_kmg_smooth_scroll_allowed())
+  {
+    if(page[0x2212u & 0x1FFF] == 0x00u)
+      page[0x2212u & 0x1FFF] = 0x01u;
+    if(page[0x220Eu & 0x1FFF] < 0x05u)
+      page[0x220Eu & 0x1FFF] = 0x05u;
+  }
+  else
+  {
+    page[0x2212u & 0x1FFF] = 0x00u;
+    if(page[0x220Eu & 0x1FFF] >= 0x05u)
+      page[0x220Eu & 0x1FFF] = 0x04u;
+  }
+
+  fmsx_kmg_apply_panasonic_turbo_gate();
+}
+
 static uint8_t fmsx_vdp_trace_window(void)
 {
   uint8_t bank16;
   const uint16_t pc = CPU.PC.W;
 
   if(!fmsx_vdp_trace_enabled_now()) return FMSX_VDP_TRACE_NONE;
+  if(fmsx_kmg_disk_active() && (ScrMode==4))
+    return FMSX_VDP_TRACE_KMG;
   if(!fmsx_pc_bank16(&bank16) || (bank16!=27u)) return FMSX_VDP_TRACE_NONE;
 
   if(((pc>=0x51D4u)&&(pc<=0x5403u))||((pc>=0x523Fu)&&(pc<=0x5297u)))
@@ -979,6 +1198,11 @@ static uint8_t fmsx_vdp_trace_window(void)
   return FMSX_VDP_TRACE_NONE;
 }
 
+static int fmsx_vdp_kmg_sync_window_active(void)
+{
+  return fmsx_kmg_disk_active() && (ScrMode==4);
+}
+
 uint16_t SetIRQ(uint8_t IRQ);            /* Set/Reset IRQ                   */
 uint8_t SetScreen(void);                 /* Change screen mode              */
 
@@ -988,13 +1212,84 @@ static int fmsx_vdp_vblank_start(void)
                   : (ScanLines212? (212+18):(192+28));
 }
 
+static int fmsx_vdp_active_cpu_cycles(void)
+{
+  return g_fmsx_active_cpu_cycles_current_line;
+}
+
+static int fmsx_vdp_active_vdp_ticks(void)
+{
+  return !ScrMode||(ScrMode==MAXSCREEN+1)? HREFRESH_240:HREFRESH_256;
+}
+
+static int fmsx_vdp_phase_elapsed_cycles(void)
+{
+  int elapsed;
+
+  elapsed = g_fmsx_audio_phase_cycles - CPU.ICount;
+  if(elapsed < 0) elapsed = 0;
+  if(elapsed > g_fmsx_audio_phase_cycles) elapsed = g_fmsx_audio_phase_cycles;
+  return elapsed;
+}
+
+static unsigned fmsx_vdp_line_ticks_now(void)
+{
+  const int active_cpu = fmsx_vdp_active_cpu_cycles();
+  const int active_vdp = fmsx_vdp_active_vdp_ticks();
+  const int hblank_cpu = HPeriod - active_cpu;
+  const int hblank_vdp = HPERIOD - active_vdp;
+  const int elapsed_cpu = fmsx_vdp_phase_elapsed_cycles();
+  unsigned ticks;
+
+  if(!FmsxVDPLinePhase)
+  {
+    ticks = active_cpu > 0
+      ? (unsigned)(((long long)elapsed_cpu * (long long)active_vdp + (active_cpu / 2)) / active_cpu)
+      : 0u;
+  }
+  else
+  {
+    ticks = (unsigned)active_vdp;
+    if(hblank_cpu > 0)
+    {
+      ticks += (unsigned)(((long long)elapsed_cpu * (long long)hblank_vdp + (hblank_cpu / 2)) / hblank_cpu);
+    }
+  }
+
+  if(ticks >= (unsigned)HPERIOD) ticks = (unsigned)HPERIOD - 1u;
+  return ticks;
+}
+
 static uint8_t fmsx_vdp_status2_hr(void)
 {
-  return FmsxVDPLinePhase ? 1u : 0u;
+  /*
+   * Knightmare Gold polls S#2 bit5 in tight loops around its VRAM blitter
+   * hooks. openMSX/blueMSX keep HR low through the visible region and raise
+   * it only inside the final horizontal blank/border window near the end of
+   * the scanline. A simple "active vs HBlank phase" split is too early.
+   *
+   * The local scheduler counts line ticks from the start of the visible area,
+   * not from the start of the full scanline like openMSX/blueMSX. Translated
+   * to this local coordinate system, the HR=1 window starts exactly at the end
+   * of the visible span and lasts for 312 ticks in graphics modes (404 in
+   * text modes). The remaining tail of the coarse HBlank phase stays HR=0.
+   *
+   * This preserves the stable IE1 baseline while tightening the S#2 bit5 edge
+   * used by Knightmare Gold's low->high polling loop.
+   */
+  const unsigned line_ticks = fmsx_vdp_line_ticks_now();
+  const unsigned display_ticks = (unsigned)fmsx_vdp_active_vdp_ticks();
+  const unsigned hblank_ticks = (!ScrMode || (ScrMode == MAXSCREEN + 1)) ? 404u : 312u;
+  return (line_ticks >= display_ticks) && (line_ticks < (display_ticks + hblank_ticks));
 }
 
 static uint8_t fmsx_vdp_status2_vr(void)
 {
+  /*
+   * Keep VR tied to the effective vertical display window. The draw area
+   * remains active up to the first VBlank line; outside that window S#2 bit6
+   * must stay high.
+   */
   return (ScanLine>=fmsx_vdp_vblank_start())? 1u:0u;
 }
 
@@ -1015,6 +1310,12 @@ static void fmsx_vdp_clear_ie1_status(void)
 {
   VDPStatus[1]&=0xFEu;
   SetIRQ(~INT_IE1);
+}
+
+static void fmsx_vdp_cancel_ie1_edge_only(void)
+{
+  FmsxIE1PendingHBlank=0;
+  if(!(VDPStatus[1]&0x01u)) SetIRQ(~INT_IE1);
 }
 
 static void fmsx_vdp_cancel_ie1(void)
@@ -1041,6 +1342,116 @@ static void fmsx_vdp_commit_line_display_state(void)
   FmsxVDPScreenOnLatched=(VDP[1]&0x40u)? 1u:0u;
 }
 
+static void fmsx_vdp_sync_before_cpu_write(void)
+{
+  /*
+   * blueMSX/openMSX synchronize the VDP before CPU-side VRAM/register writes.
+   * Our renderer is line-based rather than sub-line, so in the narrow KMG
+   * smooth-scroll window we preserve the current line by composing it once
+   * before the first CPU-side VDP mutation of that scanline, regardless of
+   * whether the write lands in the active span or in HBlank. HBlank matters
+   * here because KMG's VRAM blitter can cross the tile-row boundary exactly at
+   * the end of the line; if the line is still composed later in HBlank, those
+   * writes bleed backwards into the line that just finished scanning out.
+   */
+  if(!fmsx_vdp_kmg_sync_window_active()) return;
+  if(!FmsxVDPDrawingLatched) return;
+  if(FmsxVDPUCountLatched<100) return;
+  if((ScanLine<0)||(ScanLine>=256)) return;
+  if(FmsxVDPLineRendered) return;
+
+  /*
+   * Knightmare Gold's smooth-scroll hook rewrites VRAM rectangles while the
+   * current scanline is already in flight. Rendering only the columns already
+   * scanned reintroduces an 8px transient exactly when the tile row rolls
+   * over. For this title, freeze the whole line on the first VDP-side CPU
+   * mutation and expose the new VRAM contents only from the next line.
+   */
+  if((ScrMode==4) && !fmsx_vdp_hscroll_active256_local())
+  {
+    fmsx_vdp_render_scanline((uint8_t)ScanLine,FmsxVDPDrawingLatched,FmsxVDPUCountLatched);
+    FmsxVDPLineRendered=1;
+    FmsxVDPLineChunkEnd=32u;
+    return;
+  }
+
+  fmsx_vdp_render_scanline((uint8_t)ScanLine,FmsxVDPDrawingLatched,FmsxVDPUCountLatched);
+  FmsxVDPLineRendered=1;
+}
+
+static void fmsx_vdp_render_screen4_partial(uint8_t scanline,unsigned end_column)
+{
+  if(end_column>32u) end_column=32u;
+  if(end_column<=FmsxVDPLineChunkEnd) return;
+  FmsxVDPRenderVScrollOverride = (int)FmsxVDPLineVScrollLatched;
+  RefreshLine4PlainRange(scanline,(unsigned)FmsxVDPLineChunkEnd,end_column);
+  FmsxVDPRenderVScrollOverride = -1;
+  FmsxVDPLineChunkEnd=(uint8_t)end_column;
+  if(FmsxVDPLineChunkEnd>=32u) FmsxVDPLineRendered=1;
+}
+
+static void fmsx_vdp_render_scanline(uint8_t scanline,uint8_t drawing,int ucount)
+{
+  if((ucount<100)||!drawing||(scanline>=256u)) return;
+
+  if(log_cb)
+  {
+    static uint8_t LoggedLineRefresh=0;
+    static uint8_t LoggedLineMeta=0;
+    if(!LoggedLineRefresh && log_cb) { log_cb(1,"LoopZ80: RefreshLine begin\n"); LoggedLineRefresh=1; }
+    if(!LoggedLineMeta)
+    {
+      if(log_cb) log_cb(1,"LoopZ80: RefreshLine meta begin\n");
+      if(log_cb)
+      {
+        switch(ScrMode)
+        {
+          case 0:  log_cb(1,"LoopZ80: ScrMode=0\n"); break;
+          case 1:  log_cb(1,"LoopZ80: ScrMode=1\n"); break;
+          case 2:  log_cb(1,"LoopZ80: ScrMode=2\n"); break;
+          case 3:  log_cb(1,"LoopZ80: ScrMode=3\n"); break;
+          case 4:  log_cb(1,"LoopZ80: ScrMode=4\n"); break;
+          case 5:  log_cb(1,"LoopZ80: ScrMode=5\n"); break;
+          case 6:  log_cb(1,"LoopZ80: ScrMode=6\n"); break;
+          case 7:  log_cb(1,"LoopZ80: ScrMode=7\n"); break;
+          case 8:  log_cb(1,"LoopZ80: ScrMode=8\n"); break;
+          default: log_cb(1,"LoopZ80: ScrMode=other\n"); break;
+        }
+      }
+      if(log_cb && !scanline) log_cb(1,"LoopZ80: ScanLine=0\n");
+      LoggedLineMeta=1;
+    }
+  }
+#if defined(FMSX_BAREMETAL_SKIP_LINE_RENDER)
+  if(log_cb)
+  {
+    static uint8_t LoggedLineSkip=0;
+    if(!LoggedLineSkip && log_cb) { log_cb(1,"LoopZ80: RefreshLine skipped (baremetal)\n"); LoggedLineSkip=1; }
+  }
+#elif defined(FMSX_BAREMETAL_RENDER_TEXT0_ONLY)
+  if(log_cb)
+  {
+    static uint8_t LoggedText0Only=0;
+    if(!LoggedText0Only && log_cb) { log_cb(1,"LoopZ80: RefreshLine text0-only mode\n"); LoggedText0Only=1; }
+  }
+  if(ScrMode==0 || ScrMode==(MAXSCREEN+1))
+    (RefreshLine[0])(scanline);
+  else
+    (RefreshLine[MAXSCREEN+1])(scanline);
+#else
+  if(!ModeYJK||(ScrMode<7)||(ScrMode>8))
+  {
+    if(fmsx_vdp_kmg_sync_window_active() && (ScrMode==4) && !fmsx_vdp_hscroll_active256_local())
+      FmsxVDPRenderVScrollOverride = (int)FmsxVDPLineVScrollLatched;
+    (RefreshLine[ScrMode])(scanline);
+    FmsxVDPRenderVScrollOverride = -1;
+  }
+  else
+    if(ModeYAE) RefreshLine10(scanline);
+    else RefreshLine12(scanline);
+#endif
+}
+
 static uint8_t fmsx_vdp_status1_live(void)
 {
   /*
@@ -1053,7 +1464,35 @@ static uint8_t fmsx_vdp_status1_live(void)
 
 static uint8_t fmsx_vdp_ie1_target_line(void)
 {
+  /*
+   * The stable split-raster baseline for the project uses the direct
+   * coincidence target derived from R#19 and current vertical scroll.
+   * Moving this globally by +2 reintroduced the old Gradius2E regression:
+   * the top two HUD lines start scrolling with the gameplay area.
+   *
+   * Knightmare Gold's remaining glitch must be chased via the VDP polling/
+   * status path, not by shifting IE1 for every title.
+   */
   return (uint8_t)((VDP[19]-VScroll)&0xFFu);
+}
+
+static void fmsx_vdp_reschedule_ie1_compare(void)
+{
+  const int limit = PALVideo ? 256 : (ScanLines212 ? 245 : 235);
+
+  if((ScanLine<0)||(ScanLine>=limit)) return;
+  if(FmsxVDPLinePhase) return;
+  if(VDPStatus[1]&0x01u) return;
+
+  if((uint8_t)ScanLine==fmsx_vdp_ie1_target_line())
+  {
+    if(!FmsxIE1PendingHBlank)
+    {
+      FmsxIE1PendingHBlank=1;
+      FmsxIE1ArmedCount++;
+      fmsx_vdp_trace_log(FMSX_VDP_EVENT_IE1_ARM);
+    }
+  }
 }
 
 static int fmsx_vdp_ie1_target_delta(void)
@@ -1073,6 +1512,12 @@ static uint8_t fmsx_vdp_effective_odd_page(void)
    * Bit1=0 selects the alternate ("odd") page when EO is enabled.
    */
   return (VDPStatus[2]&0x02u)? 0u:1u;
+}
+
+static int fmsx_vdp_hscroll_active256_local(void)
+{
+  return MODEL(MSX_MSX2P)
+      && ((VDP[25] & 0x03u) || (VDP[26] != 0u) || ((VDP[27] & 0x07u) != 0u));
 }
 
 static uint8_t fmsx_vdp_render_page(void)
@@ -1116,11 +1561,21 @@ static void fmsx_vdp_cpu_port_write_next(uint8_t value)
 
 static void fmsx_vdp_trace_log(uint8_t event_type)
 {
+  fmsx_vdp_trace_log_io(event_type,0u,0u,0u,0u);
+}
+
+static void fmsx_vdp_trace_log_io(uint8_t event_type,uint32_t aux_addr,uint8_t aux_value,uint8_t aux_reg,uint8_t aux_ctrl)
+{
 #if FMSX_VDP_TRACE_ENABLED
   TFmsxVDPTraceEvent *event;
   uint8_t slot_p1,slot_p2,bank_p1_lo,bank_p1_hi,bank_p2_lo,bank_p2_hi;
 
   if(!fmsx_vdp_trace_enabled_now()) return;
+  if(((event_type==FMSX_VDP_EVENT_PORT98_WRITE)||
+      (event_type==FMSX_VDP_EVENT_PORT99_ADDR)||
+      (event_type==FMSX_VDP_EVENT_PORT99_REG)) &&
+     (fmsx_vdp_trace_window()==FMSX_VDP_TRACE_NONE))
+    return;
 
   event = &g_fmsx_vdp_trace[g_fmsx_vdp_trace_head];
   memset(event,0,sizeof(*event));
@@ -1167,12 +1622,20 @@ static void fmsx_vdp_trace_log(uint8_t event_type)
   event->cart_bank_p2_hi = bank_p2_hi;
   event->vdp_cmd = (VDP[46]>>4)&0x0Fu;
   event->vdp_ce = (VDPStatus[2]&0x01u)? 1u:0u;
+  event->aux_reg = aux_reg;
+  event->aux_value = aux_value;
+  event->aux_ctrl = aux_ctrl;
+  event->aux_addr = aux_addr;
 
   g_fmsx_vdp_trace_head = (g_fmsx_vdp_trace_head+1u)%FMSX_VDP_TRACE_CAPACITY;
   if(g_fmsx_vdp_trace_count<FMSX_VDP_TRACE_CAPACITY) ++g_fmsx_vdp_trace_count;
   else ++g_fmsx_vdp_trace_dropped;
 #else
   (void)event_type;
+  (void)aux_addr;
+  (void)aux_value;
+  (void)aux_reg;
+  (void)aux_ctrl;
 #endif
 }
 
@@ -1183,6 +1646,15 @@ void fmsx_vdp_trace_get_view(const TFmsxVDPTraceEvent **events,unsigned *capacit
   if(count)    *count = g_fmsx_vdp_trace_count;
   if(head)     *head = g_fmsx_vdp_trace_head;
   if(dropped)  *dropped = g_fmsx_vdp_trace_dropped;
+}
+
+void fmsx_kmg_trace_get_view(const TFmsxKmgTraceEvent **events,unsigned *capacity,unsigned *count,unsigned *head,unsigned *dropped)
+{
+  if(events)   *events = g_fmsx_kmg_trace;
+  if(capacity) *capacity = FMSX_KMG_TRACE_CAPACITY;
+  if(count)    *count = g_fmsx_kmg_trace_count;
+  if(head)     *head = g_fmsx_kmg_trace_head;
+  if(dropped)  *dropped = g_fmsx_kmg_trace_dropped;
 }
 
 #if FMSX_SMANBOW_AUDIO_TRACE_ENABLED
@@ -1606,11 +2078,29 @@ static void fmsx_sync_bios_vdp_r9_shadow(void)
     RAM[Addr>>13][Addr&0x1FFF] = VDP[9];
 }
 
+static void fmsx_sync_bios_region_flag(int pal)
+{
+  /*
+   * KMG.COM reads BIOS byte 002Bh via RDSLT and uses bit7 as part of the
+   * gate that unlocks the smooth-scroll option. Keep this ROM byte coherent
+   * with the active PAL/NTSC state of the emulated machine.
+   */
+  const uint16_t Addr = 0x002Bu;
+  uint8_t *const bios_page0 = MemMap[0][0][0];
+
+  if(!bios_page0 || (bios_page0 == EmptyRAM)) return;
+
+  if(pal) bios_page0[Addr] |= 0x80u;
+  else    bios_page0[Addr] &= (uint8_t)~0x80u;
+}
+
 static void fmsx_s1985_init_once(void)
 {
   if(!FmsxS1985InitDone)
   {
     memset(FmsxS1985RAM,0xFF,sizeof(FmsxS1985RAM));
+    FmsxSwitchedIODeviceId = 0xFF;
+    FmsxS1985TurboLatched = 0u;
     FmsxS1985Addr = 0;
     FmsxS1985Color1 = 0;
     FmsxS1985Color2 = 0;
@@ -1619,19 +2109,40 @@ static void fmsx_s1985_init_once(void)
   }
 }
 
+static int fmsx_s1985_device_active(void)
+{
+  return FmsxSwitchedIODeviceId == 0x08u;
+}
+
 static uint8_t fmsx_s1985_read(uint8_t reg, int advance_pattern)
 {
+  if(!fmsx_s1985_device_active() && ((reg&0x0Fu)!=0x00u))
+    return 0xFFu;
+
   switch(reg&0x0F)
   {
     case 0x00:
-      return (uint8_t)~0xFEu;
-    case 0x02:
-      return FmsxS1985RAM[FmsxS1985Addr&0x0F];
-    case 0x07:
+      return (FmsxSwitchedIODeviceId==0x08u)? (uint8_t)~0x08u:0xFFu;
+    case 0x01:
     {
-      const uint8_t value = (FmsxS1985Pattern&0x80u)? FmsxS1985Color2:FmsxS1985Color1;
+      uint8_t value = 0xFFu;
+      if(FmsxS1985TurboLatched) value &= (uint8_t)~0x01u;
+      value &= (uint8_t)~0x04u;
+      return value;
+    }
+    case 0x03:
+    {
+      const uint8_t value = (uint8_t)((((FmsxS1985Pattern&0x80u)? FmsxS1985Color2:FmsxS1985Color1) << 4)
+                                    | (((FmsxS1985Pattern&0x40u)? FmsxS1985Color2:FmsxS1985Color1) << 0));
       if(advance_pattern)
-        FmsxS1985Pattern = (uint8_t)((FmsxS1985Pattern<<1)|(FmsxS1985Pattern>>7));
+        FmsxS1985Pattern = (uint8_t)((FmsxS1985Pattern<<2)|(FmsxS1985Pattern>>6));
+      return value;
+    }
+    case 0x09:
+    {
+      const uint8_t value = (FmsxS1985Addr < 0x800u)? FmsxS1985RAM[FmsxS1985Addr]:0xFFu;
+      if(advance_pattern)
+        FmsxS1985Addr = (uint16_t)((FmsxS1985Addr+1u)&0x1FFFu);
       return value;
     }
     default:
@@ -1643,18 +2154,35 @@ static void fmsx_s1985_write(uint8_t reg, uint8_t value)
 {
   switch(reg&0x0F)
   {
+    case 0x00:
+      FmsxSwitchedIODeviceId = value;
+      break;
     case 0x01:
-      FmsxS1985Addr = value&0x0F;
+      if(!fmsx_s1985_device_active()) break;
+      FmsxS1985TurboLatched = (value&0x01u) ? 0u : 1u;
+      fmsx_kmg_apply_panasonic_turbo_gate();
       break;
-    case 0x02:
-      FmsxS1985RAM[FmsxS1985Addr&0x0F] = value;
+    case 0x03:
+      if(!fmsx_s1985_device_active()) break;
+      FmsxS1985Color2 = (uint8_t)((value>>4)&0x0Fu);
+      FmsxS1985Color1 = (uint8_t)(value&0x0Fu);
       break;
-    case 0x06:
-      FmsxS1985Color2 = FmsxS1985Color1;
-      FmsxS1985Color1 = value;
+    case 0x04:
+      if(!fmsx_s1985_device_active()) break;
+      FmsxS1985Pattern = value;
       break;
     case 0x07:
-      FmsxS1985Pattern = value;
+      if(!fmsx_s1985_device_active()) break;
+      FmsxS1985Addr = (uint16_t)((FmsxS1985Addr&0x1F00u)|value);
+      break;
+    case 0x08:
+      if(!fmsx_s1985_device_active()) break;
+      FmsxS1985Addr = (uint16_t)((FmsxS1985Addr&0x00FFu)|((value&0x1Fu)<<8));
+      break;
+    case 0x09:
+      if(!fmsx_s1985_device_active()) break;
+      if(FmsxS1985Addr < 0x800u) FmsxS1985RAM[FmsxS1985Addr] = value;
+      FmsxS1985Addr = (uint16_t)((FmsxS1985Addr+1u)&0x1FFFu);
       break;
   }
 }
@@ -2058,14 +2586,6 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
        memcpy(RTC[2],RTCInitMSX2P,sizeof(RTCInitMSX2P));
      }
   }
-  if(MODEL(MSX_MSX2P))
-  {
-    /*
-     * Project policy: fixed NTSC 60Hz.
-     * Keep RTC setup byte in 60Hz mode to match diagnostics that query RTC config.
-     */
-    RTC[2][3] = 0x00;
-  }
   if(log_cb) log_cb(1,"StartMSX: CMOS done\n");
 
   /* Try loading Kanji alphabet ROM */
@@ -2262,9 +2782,6 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   if(log_cb) log_cb(1,"ResetMSX: begin\n");
 
   fmsx_s1985_init_once();
-
-  /* Project policy: fixed NTSC 60Hz. */
-  NewMode &= ~MSX_PAL;
 
   /* If changing hardware model, load new system ROMs */
   if((Mode^NewMode)&MSX_MODEL)
@@ -2501,8 +3018,11 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   }
 
   /* Assign new modes */
-  Mode           = NewMode & ~MSX_PAL;
+  Mode           = NewMode;
   FmsxResetStatus = MODEL(MSX_MSX2P)? 0x00:0xFF;
+  FmsxSwitchedIODeviceId = 0xFFu;
+  FmsxS1985TurboLatched = 0u;
+  fmsx_runtime_set_panasonic_turbo_enabled(FALSE);
   if(log_cb) log_cb(1,"ResetMSX: mode assigned\n");
 
   /* Set ROM types for cartridges A/B */
@@ -2662,6 +3182,7 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   memcpy(VDPStatus,VDPSInit,sizeof(VDPStatus));
   if(VIDEO(MSX_PAL)) VDP[9]|=0x02;
   else               VDP[9]&=~0x02;
+  fmsx_sync_bios_region_flag(VIDEO(MSX_PAL)? 1:0);
   fmsx_sync_bios_vdp_r9_shadow();
   if(log_cb) log_cb(1,"ResetMSX: VDP reset\n");
 
@@ -2717,6 +3238,11 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   FmsxVDPPort9BWriteCount = 0;
   memset(FmsxVDPRegWriteCount,0,sizeof(FmsxVDPRegWriteCount));
   memset(FmsxVDPStatusReadCount,0,sizeof(FmsxVDPStatusReadCount));
+  memset(g_fmsx_kmg_trace,0,sizeof(g_fmsx_kmg_trace));
+  g_fmsx_kmg_trace_head = 0;
+  g_fmsx_kmg_trace_count = 0;
+  g_fmsx_kmg_trace_dropped = 0;
+  g_fmsx_kmg_trace_seq = 0;
 #if FMSX_SMANBOW_AUDIO_TRACE_ENABLED
   memset(g_fmsx_scc_trace,0,sizeof(g_fmsx_scc_trace));
   memset(&g_fmsx_scc_trace_active,0,sizeof(g_fmsx_scc_trace_active));
@@ -2885,7 +3411,14 @@ void WrZ80(uint16_t A,uint8_t V)
     }
 
   /* Write to RAM, if enabled */
-  if(EnWrite[A>>14]) { RAM[A>>13][A&0x1FFF]=V;return; }
+  if(EnWrite[A>>14])
+  {
+    RAM[A>>13][A&0x1FFF]=V;
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+    fmsx_log_kmg_detection_write(A, V);
+#endif
+    return;
+  }
 
   J  = A>>14;
   PS = PSL[J];
@@ -2977,7 +3510,7 @@ case 0x87:
   /*return(Rd8251(&SIO,Port&0x07));*/
 
 case 0x98: /* VRAM read port */
-  fmsx_apply_vdp_io_wait(kVDPIOWaitCyclesData);
+  fmsx_apply_vdp_io_wait(fmsx_vdp_read_wait_cycles());
   /* Read from VRAM data buffer */
   Port=VDPData;
   /* Reset VAddr latch sequencer */
@@ -2996,10 +3529,10 @@ case 0x98: /* VRAM read port */
 
 case 0x99: /* VDP status registers */
 {
+  fmsx_apply_vdp_io_wait(fmsx_vdp_status_wait_cycles());
   const uint8_t status_reg = MODEL(MSX_MSX1)? 0u:(uint8_t)(VDP[15]&0x0Fu);
   const uint8_t live_status1 = fmsx_vdp_status1_live();
   const uint8_t live_status2 = fmsx_vdp_status2_live();
-  fmsx_apply_vdp_io_wait(fmsx_vdp_status_wait_cycles());
   FmsxVDPPort99ReadCount++;
   FmsxVDPStatusReadCount[status_reg]++;
   /* MSX1/TMS9918 exposes only status register #0. */
@@ -3207,9 +3740,17 @@ case 0x87:
   return;*/
 
 case 0x98: /* VDP Data */
-  fmsx_apply_vdp_io_wait(kVDPIOWaitCyclesData);
+  fmsx_apply_vdp_io_wait(fmsx_vdp_write_wait_cycles());
+  fmsx_vdp_sync_before_cpu_write();
   VKey=1;
   VDPData=Value;
+  fmsx_vdp_trace_log_io(
+    FMSX_VDP_EVENT_PORT98_WRITE,
+    (((uint32_t)VDP[14])<<14) | (uint32_t)(VAddr&0x3FFFu),
+    Value,
+    0u,
+    0x98u
+  );
   fmsx_vdp_cpu_port_write_next(Value);
   VAddr=(VAddr+1)&0x3FFF;
   /* If VAddr rolled over, modify VRAM page# */
@@ -3222,10 +3763,11 @@ case 0x98: /* VDP Data */
 
 case 0x99: /* VDP Address Latch */
   FmsxVDPPort99WriteCount++;
-  fmsx_apply_vdp_io_wait(kVDPIOWaitCyclesData);
+  fmsx_apply_vdp_io_wait(fmsx_vdp_write_wait_cycles());
   if(VKey) { ALatch=Value;VKey=0; }
   else
   {
+    fmsx_vdp_sync_before_cpu_write();
     VKey=1;
     switch(Value&0xC0)
     {
@@ -3235,13 +3777,23 @@ case 0x99: /* VDP Address Latch */
         const uint8_t reg = Value&0x3F;
         /* MSX1/TMS9918 has only R#0..R#7. Ignore higher registers. */
         if(!MODEL(MSX_MSX1) || (reg<=7))
+        {
+          fmsx_vdp_trace_log_io(FMSX_VDP_EVENT_PORT99_REG,0u,ALatch,reg,Value);
           VDPOut(reg,ALatch);
+        }
         break;
       }
       case 0x00:
       case 0x40:
         /* Set the VRAM access address */
         VAddr=(((uint16_t)Value<<8)+ALatch)&0x3FFF;
+        fmsx_vdp_trace_log_io(
+          FMSX_VDP_EVENT_PORT99_ADDR,
+          (((uint32_t)VDP[14])<<14) | (uint32_t)(VAddr&0x3FFFu),
+          ALatch,
+          0u,
+          Value
+        );
         /* When set for reading, perform first read */
         if(!(Value&0x40))
         {
@@ -3259,13 +3811,14 @@ case 0x99: /* VDP Address Latch */
   return;
 
 case 0x9A: /* VDP Palette Latch */
-  fmsx_apply_vdp_io_wait(kVDPIOWaitCyclesData);
+  fmsx_apply_vdp_io_wait(fmsx_vdp_write_wait_cycles());
   if(MODEL(MSX_MSX1)) return;
   if(PKey) { PLatch=Value;PKey=0; }
   else
   {
     uint8_t R,G,B;
     /* New palette entry written */
+    fmsx_vdp_sync_before_cpu_write();
     PKey=1;
     J=VDP[16];
     /* Compute new color components */
@@ -3282,10 +3835,14 @@ case 0x9A: /* VDP Palette Latch */
 
 case 0x9B: /* VDP Register Access */
   FmsxVDPPort9BWriteCount++;
-  fmsx_apply_vdp_io_wait(kVDPIOWaitCyclesData);
+  fmsx_apply_vdp_io_wait(fmsx_vdp_write_wait_cycles());
   if(MODEL(MSX_MSX1)) return;
   J=VDP[17]&0x3F;
-  if(J!=17) VDPOut(J,Value);
+  if(J!=17)
+  {
+    fmsx_vdp_sync_before_cpu_write();
+    VDPOut(J,Value);
+  }
   if(!(VDP[17]&0x80)) VDP[17]=(J+1)&0x3F;
   return;
 
@@ -3994,13 +4551,11 @@ void VDPOut(uint8_t R,uint8_t V)
     case 17: V&=0xBF;break;
     case 18: if(VDP[18]!=V) FmsxVDPDisplayStateDirty=1;
              break;
-    case 19: if((VDPStatus[1]&0x01u)||FmsxIE1PendingHBlank||(IRQPending&INT_IE1))
-               fmsx_vdp_cancel_ie1();
-             if(VDP[19]!=V) fmsx_vdp_trace_log(FMSX_VDP_EVENT_R19_WRITE);
+    case 19: if(VDP[19]!=V) fmsx_vdp_trace_log_io(FMSX_VDP_EVENT_R19_WRITE,0u,V,19u,0u);
              break;
     case 23: if(VDP[23]!=V)
              {
-               fmsx_vdp_trace_log(FMSX_VDP_EVENT_R23_WRITE);
+               fmsx_vdp_trace_log_io(FMSX_VDP_EVENT_R23_WRITE,0u,V,23u,0u);
              }
              break;
     case 25: if(VDP[25]!=V) { VDP[25]=V;FmsxVDPDisplayStateDirty=1; }
@@ -4011,9 +4566,16 @@ void VDPOut(uint8_t R,uint8_t V)
 
   /* Write value into a register */
   VDP[R]=V;
+  if((R==19)||(R==23))
+  {
+    if(FmsxIE1PendingHBlank||(!(VDPStatus[1]&0x01u)&&(IRQPending&INT_IE1)))
+      fmsx_vdp_cancel_ie1_edge_only();
+    fmsx_vdp_reschedule_ie1_compare();
+  }
   if(R==9)
   {
     VPeriod=fmsx_scale_cycles((PALVideo? VPERIOD_PAL:VPERIOD_NTSC)/6);
+    fmsx_sync_bios_region_flag(PALVideo? 1:0);
     fmsx_sync_bios_vdp_r9_shadow();
   }
 }
@@ -4121,6 +4683,8 @@ uint16_t LoopZ80(Z80 *R)
     LoggedLoop = 1;
   }
 
+  fmsx_kmg_apply_scroll_gate();
+
   /* Flip HRefresh bit */
   VDPStatus[2]^=0x20;
   FmsxVDPLinePhase = (VDPStatus[2]&0x20)? 1u:0u;
@@ -4129,11 +4693,15 @@ uint16_t LoopZ80(Z80 *R)
   if(!FmsxVDPLinePhase)
   {
     /* HRefresh takes most of the scanline */
-    R->IPeriod=fmsx_scale_cycles(!ScrMode||(ScrMode==MAXSCREEN+1)? CPU_H240:CPU_H256);
+    g_fmsx_active_cpu_cycles_current_line =
+      fmsx_hrefresh_cpu_cycles_exact(!ScrMode||(ScrMode==MAXSCREEN+1)? HREFRESH_240:HREFRESH_256);
+    R->IPeriod=fmsx_vdp_active_cpu_cycles();
     fmsx_audio_cycle_open_phase(R->IPeriod);
 
     /* New scanline */
     ScanLine=ScanLine<(pal_timing? 312:261)? ScanLine+1:0;
+    FmsxVDPLineRendered=0;
+    FmsxVDPLineChunkEnd=0;
 
     /* If first scanline of the screen... */
     if(!ScanLine)
@@ -4178,20 +4746,32 @@ uint16_t LoopZ80(Z80 *R)
       }
     }
 
-    /*
-     * BlueMSX and the OCM-PLD V9938 both avoid mid-scanline mode/display
-     * tearing by effecting key display bits per scanline, not immediately.
-     */
+    /* Border/visible state for the current scanline must be decided at the
+     * start of the line, before mid-line VDP writes can prepare the next one. */
+    if(ScanLine==(ScanLines212? 212:192)) Drawing=0;
+
     fmsx_vdp_commit_line_display_state();
+    FmsxVDPLineVScrollLatched=VDP[23];
+    FmsxVDPDrawingLatched=Drawing;
+    FmsxVDPUCountLatched=UCount;
 
     /* Line coincidence is active at 0..255 */
     /* in PAL and 0..234/244 in NTSC        */
     J=pal_timing? 256:ScanLines212? 245:235;
 
+    /* Upstream fMSX clears the line coincidence latch when the active line
+     * window closes. Keep that behavior to avoid stale IE1 state carrying
+     * into the next frame/tile update sequence. */
+    if(ScanLine==J)
+    {
+      if((VDPStatus[1]&0x01u)||FmsxIE1PendingHBlank||(IRQPending&INT_IE1))
+        fmsx_vdp_cancel_ie1();
+    }
+
     /* Arm line interrupt when the logical target line is reached */
     if(ScanLine<J)
     {
-      const uint8_t IE1TargetLine = (uint8_t)((VDP[19]-VScroll)&0xFF);
+      const uint8_t IE1TargetLine = fmsx_vdp_ie1_target_line();
       if(((uint8_t)ScanLine==IE1TargetLine)&&!FmsxIE1PendingHBlank&&!(VDPStatus[1]&0x01u))
       {
         FmsxIE1PendingHBlank=1;
@@ -4219,7 +4799,7 @@ uint16_t LoopZ80(Z80 *R)
   }
 
   /* HBlank takes HPeriod-HRefresh */
-  R->IPeriod=fmsx_scale_cycles(!ScrMode||(ScrMode==MAXSCREEN+1)? CPU_H240:CPU_H256);
+  R->IPeriod=fmsx_vdp_active_cpu_cycles();
   R->IPeriod=HPeriod-R->IPeriod;
   fmsx_audio_cycle_open_phase(R->IPeriod);
 
@@ -4230,9 +4810,6 @@ uint16_t LoopZ80(Z80 *R)
     J*=HPeriod;
     if(VPeriod>J) R->IPeriod+=VPeriod-J;
   }
-
-  /* If first scanline of the bottom border... */
-  if(ScanLine==(ScanLines212? 212:192)) Drawing=0;
 
   /* If first scanline of VBlank... */
   J=pal_timing? (ScanLines212? 212+42:192+52):(ScanLines212? 212+18:192+28);
@@ -4264,60 +4841,14 @@ uint16_t LoopZ80(Z80 *R)
     LoggedLoopVDPAfter = 1;
   }
 
-  /* Refresh scanline, possibly with the overscan */
-  if((UCount>=100)&&Drawing&&(ScanLine<256))
+  /* Refresh scanline, possibly with the overscan. If the CPU already forced
+   * a sync during the active phase, do not redraw the same line in HBlank. */
+  if(!FmsxVDPLineRendered)
   {
-    if(log_cb)
-    {
-      static uint8_t LoggedLineRefresh=0;
-      if(!LoggedLineRefresh && log_cb) { log_cb(1,"LoopZ80: RefreshLine begin\n"); LoggedLineRefresh=1; }
-      static uint8_t LoggedLineMeta=0;
-      if(!LoggedLineMeta)
-      {
-        if(log_cb) log_cb(1,"LoopZ80: RefreshLine meta begin\n");
-        if(log_cb)
-        {
-          switch(ScrMode)
-          {
-            case 0:  log_cb(1,"LoopZ80: ScrMode=0\n"); break;
-            case 1:  log_cb(1,"LoopZ80: ScrMode=1\n"); break;
-            case 2:  log_cb(1,"LoopZ80: ScrMode=2\n"); break;
-            case 3:  log_cb(1,"LoopZ80: ScrMode=3\n"); break;
-            case 4:  log_cb(1,"LoopZ80: ScrMode=4\n"); break;
-            case 5:  log_cb(1,"LoopZ80: ScrMode=5\n"); break;
-            case 6:  log_cb(1,"LoopZ80: ScrMode=6\n"); break;
-            case 7:  log_cb(1,"LoopZ80: ScrMode=7\n"); break;
-            case 8:  log_cb(1,"LoopZ80: ScrMode=8\n"); break;
-            default: log_cb(1,"LoopZ80: ScrMode=other\n"); break;
-          }
-        }
-        if(log_cb && ScanLine==0) log_cb(1,"LoopZ80: ScanLine=0\n");
-        LoggedLineMeta=1;
-      }
-    }
-#if defined(FMSX_BAREMETAL_SKIP_LINE_RENDER)
-    if(log_cb)
-    {
-      static uint8_t LoggedLineSkip=0;
-      if(!LoggedLineSkip && log_cb) { log_cb(1,"LoopZ80: RefreshLine skipped (baremetal)\n"); LoggedLineSkip=1; }
-    }
-#elif defined(FMSX_BAREMETAL_RENDER_TEXT0_ONLY)
-    if(log_cb)
-    {
-      static uint8_t LoggedText0Only=0;
-      if(!LoggedText0Only && log_cb) { log_cb(1,"LoopZ80: RefreshLine text0-only mode\n"); LoggedText0Only=1; }
-    }
-    if(ScrMode==0 || ScrMode==(MAXSCREEN+1))
-      (RefreshLine[0])(ScanLine);
+    if((ScrMode==4) && !fmsx_vdp_hscroll_active256_local() && FmsxVDPLineChunkEnd)
+      fmsx_vdp_render_screen4_partial((uint8_t)ScanLine,32u);
     else
-      (RefreshLine[MAXSCREEN+1])(ScanLine);
-#else
-    if(!ModeYJK||(ScrMode<7)||(ScrMode>8))
-      (RefreshLine[ScrMode])(ScanLine);
-    else
-      if(ModeYAE) RefreshLine10(ScanLine);
-      else RefreshLine12(ScanLine);
-#endif
+      fmsx_vdp_render_scanline((uint8_t)ScanLine,FmsxVDPDrawingLatched,FmsxVDPUCountLatched);
   }
 
   fmsx_runtime_keyboard_drain_step();
@@ -4326,8 +4857,9 @@ uint16_t LoopZ80(Z80 *R)
 #ifndef FMSX_BAREMETAL_SKIP_AUDIO_RUNTIME
   if(!(ScanLine&0x07))
   {
+    const unsigned base_clock_hz = fmsx_runtime_get_base_cpu_clock_hz();
     /* Compute number of microseconds */
-    J = (int)(1000000L*(CPU_HPERIOD<<3)/CPU_CLOCK);
+    J = (int)(1000000L*(CPU_HPERIOD<<3)/base_clock_hz);
 
     /* Update AY8910 state */
     Loop8910(&PSG,J);
@@ -5879,6 +6411,11 @@ unsigned int LoadState(unsigned char *Buf,unsigned int MaxSize)
   PSG.Changed     = (1<<AY8910_CHANNELS)-1;
   fmsx_mark_scc_chips_dirty();
   OPLL.Changed    = (1<<YM2413_CHANNELS)-1;
+  memset(g_fmsx_kmg_trace,0,sizeof(g_fmsx_kmg_trace));
+  g_fmsx_kmg_trace_head = 0;
+  g_fmsx_kmg_trace_count = 0;
+  g_fmsx_kmg_trace_dropped = 0;
+  g_fmsx_kmg_trace_seq = 0;
 #if FMSX_SMANBOW_AUDIO_TRACE_ENABLED
   memset(g_fmsx_scc_trace,0,sizeof(g_fmsx_scc_trace));
   memset(&g_fmsx_scc_trace_active,0,sizeof(g_fmsx_scc_trace_active));

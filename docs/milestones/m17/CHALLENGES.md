@@ -59,7 +59,7 @@ Registro de desafios enfrentados por issue, decisão adotada e status da soluç�
 
 ### #187 — fila de captura USB-HID fora do ciclo do Z80
 - Desafio: O pipeline ainda podia perder ou distorcer transições `press/release` por subamostragem entre o clock de captura USB-HID e o clock de consumo do core, gerando falha intermitente ou repetição contínua em gameplay.
-- Solução adotada: a trilha evoluiu em quatro cortes: (1) tool importável em `src/tools/input/` com ring buffer HID e dois cursores independentes (`UI` e `Runtime`); (2) fila própria no runtime do fMSX, drenada ao longo dos scanlines; (3) deduplicação de snapshots ainda pendentes na fila interna do runtime; (4) canonicalização de `raw_keys[6]` para neutralizar reordenação do report HID USB. A variante que deduplicava também contra o "último aplicado" foi descartada por quebrar a confirmação do `press-only`.
+- Solução adotada: a trilha evoluiu em cinco cortes: (1) tool importável em `src/tools/input/` com ring buffer HID e dois cursores independentes (`UI` e `Runtime`); (2) fila própria no runtime do fMSX, drenada ao longo dos scanlines; (3) deduplicação de snapshots ainda pendentes na fila interna do runtime; (4) canonicalização de `raw_keys[6]` para neutralizar reordenação do report HID USB; (5) produtor do kernel orientado a evento, fila runtime ampliada para `128`, deduplicação por matriz MSX desejada, `release` imediato e `press` imediato para teclas críticas de gameplay. Na rodada seguinte, foi restaurado um bridge mínimo `teclado -> joystick` (`arrows + SPACE`) para atender ROMs que leem joystick em vez de matriz de teclado. A variante que deduplicava também contra o "último aplicado" foi descartada por quebrar a confirmação do `press-only`.
 - Status: Parcial
 - Referência: [187-p1-reduzir-latencia-do-teclado-polling-processamento-por-ciclo.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/187-p1-reduzir-latencia-do-teclado-polling-processamento-por-ciclo.md)
 
@@ -86,3 +86,16 @@ Registro de desafios enfrentados por issue, decisão adotada e status da soluç�
 - Solução adotada: Abrir issue separada em `m17` para comparar `PSG`/`FM-PAC` com `openMSX` e `blueMSX`, fechar gaps por chip e evitar contaminar a milestone ativa de `SCC/SCC+`.
 - Status: Futuro
 - Referência: [219-fidelidade-render-psg-fm-pac.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/219-fidelidade-render-psg-fm-pac.md)
+
+
+### #225 — Knightmare Gold: pacing e scroll fino em `50Hz + Turbo OFF`
+- Desafio: após corrigir o gate de detecção do `SCROLL SMOOTH`, o `Knightmare Gold` continua com defeitos de pacing no cenário suportado `50Hz + Turbo OFF`: áudio com cortes, flicker forte na primeira faixa de `8px` e salto visual de `-8px` no rollover do scroll fino.
+- Solução adotada: abrir trilha separada para atacar apenas pacing/timing do gameplay em `PAL/50Hz`, preservando as invariantes já fechadas (`GRADIUS2E` sem regressão, `IE1 = R#19 - VScroll` e gate do menu do `KMG`).
+- Status: Futuro
+- Referência: [225-bug-knightmare-gold-pacing-pal50-sem-turbo.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/225-bug-knightmare-gold-pacing-pal50-sem-turbo.md)
+
+### #224 — Knightmare Gold: falha na detecção de MSX2+
+- Desafio: `Knightmare Gold` detectava `HighSpeed VDP`, `128KB of videoRAM` e `SCC+`, mas ainda caia no menu com `MODE MSX2` e `SCROLL ORIGINAL`, sem liberar o caminho esperado de `SCROLL SMOOTH`.
+- Solução adotada: a trilha foi integrada ao fluxo normal da branch `#187`, adicionando o bloco Panasonic/S1985 no runtime fMSX, trace `KMG EVT` via kernel UART e a opcao de diagnostico `Refresh [NTSC/PAL]` apenas em `DEBUG=1`, abaixo de `Disk ROM`, sem quebrar o chaveamento legitimo por `R#9` do VDP.
+- Status: Parcial
+- Referência: [224-bug-knightmare-gold-falha-deteccao-msx2plus-scroll-fino.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/224-bug-knightmare-gold-falha-deteccao-msx2plus-scroll-fino.md)

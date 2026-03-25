@@ -2505,9 +2505,26 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             }
             handled_settings_input = enter_edge || left_edge || right_edge;
         }
+        else if (items[m_Selected].action == ComboMenuActionCycleRefreshRate)
+        {
+            if (left_edge)
+            {
+                action = ComboMenuActionCycleRefreshRatePrev;
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
+            }
+            else if (right_edge || enter_edge)
+            {
+                action = ComboMenuActionCycleRefreshRate;
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
+            }
+            handled_settings_input = enter_edge || left_edge || right_edge;
+        }
         else if ((items[m_Selected].action == ComboMenuActionToggleWidescreen)
               || (items[m_Selected].action == ComboMenuActionToggleDiskRom)
-              || (items[m_Selected].action == ComboMenuActionToggleOverlay))
+              || (items[m_Selected].action == ComboMenuActionToggleOverlay)
+              || (items[m_Selected].action == ComboMenuActionToggleDebugLog))
         {
             if (enter_edge || left_edge || right_edge)
             {

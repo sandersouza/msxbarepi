@@ -67,10 +67,25 @@ static volatile unsigned g_audio_write_calls = 0;
 static volatile unsigned g_audio_samples_written = 0;
 static volatile unsigned g_audio_samples_pulled = 0;
 static volatile unsigned g_audio_drop_count = 0;
+static volatile unsigned g_audio_overwrite_samples = 0;
+static volatile unsigned g_audio_trim_events = 0;
+static volatile unsigned g_audio_trim_samples = 0;
+static volatile unsigned g_audio_short_pulls = 0;
+static volatile unsigned g_audio_underrun_samples = 0;
 static volatile unsigned g_audio_source_peak = 0;
 static volatile unsigned g_audio_source_nonzero = 0;
+static volatile unsigned g_audio_ring_peak = 0;
+static volatile unsigned g_audio_last_pull_requested = 0;
+static volatile unsigned g_audio_last_pull_returned = 0;
+static volatile unsigned g_audio_last_level_before_pull = 0;
+static volatile unsigned g_audio_last_level_after_pull = 0;
+static volatile unsigned g_audio_last_trim_samples = 0;
 static unsigned g_audio_frame_rendered_samples = 0u;
 static volatile unsigned g_audio_last_sync_rendered_samples = 0u;
+static volatile unsigned g_audio_last_render_batch = 0u;
+static volatile unsigned g_audio_max_render_batch = 0u;
+static uint64_t g_audio_cycle_carry = 0u;
+static uint64_t g_audio_last_cycle_stamp = 0u;
 static volatile unsigned g_kbd_last_hid = 0;
 static volatile unsigned g_kbd_last_msx = 0;
 typedef struct
@@ -105,6 +120,10 @@ static uint8_t g_kbd_candidate_state[16] =
 static uint8_t g_kbd_candidate_seen = 0u;
 
 static void fmsx_keyboard_press_code(uint8_t matrix[16], unsigned code);
+static void fmsx_keyboard_build_desired_state(u8 modifiers, const unsigned char raw_keys[6], uint8_t desired_state[16]);
+static unsigned fmsx_keyboard_report_last_msx_code(const unsigned char raw_keys[6], unsigned *last_hid);
+static int fmsx_keyboard_code_is_new_press(const uint8_t desired_state[16], const uint8_t stable_state[16], unsigned code);
+static int fmsx_keyboard_change_has_gameplay_press(const uint8_t desired_state[16], const uint8_t stable_state[16]);
 static unsigned fmsx_code_from_hid(u8 hid);
 static void fmsx_keyboard_canonicalize_raw(unsigned char raw_keys[6]);
 static int fmsx_keyboard_report_equals(u8 modifiers_a, const unsigned char raw_a[6],
@@ -134,6 +153,15 @@ static int fmsx_keyboard_change_has_release(const uint8_t desired_state[16], con
         }
     }
     return 0;
+}
+
+static unsigned fmsx_audio_ring_level_current(void)
+{
+    if (g_audio_wpos >= g_audio_rpos)
+    {
+        return g_audio_wpos - g_audio_rpos;
+    }
+    return (FMSX_AUDIO_RING_SAMPLES - g_audio_rpos) + g_audio_wpos;
 }
 
 static void fmsx_keyboard_clear_all(void)
@@ -192,6 +220,7 @@ static void fmsx_runtime_keyboard_queue_push(u8 modifiers, const unsigned char r
         g_kbd_runtime_dropped += oldest_seq - g_kbd_runtime_read_seq;
         g_kbd_runtime_read_seq = oldest_seq;
     }
+
 }
 
 static void fmsx_runtime_apply_keyboard_raw(u8 modifiers, const unsigned char raw_keys[6])
@@ -298,6 +327,95 @@ static void fmsx_keyboard_press_code(uint8_t matrix[16], unsigned code)
     {
         matrix[Keys[code][0]] &= (uint8_t) ~Keys[code][1];
     }
+}
+
+static void fmsx_keyboard_build_desired_state(u8 modifiers, const unsigned char raw_keys[6], uint8_t desired_state[16])
+{
+    for (unsigned i = 0u; i < 16u; ++i)
+    {
+        desired_state[i] = 0xFFu;
+    }
+
+    if (modifiers & 0x22u)
+    {
+        fmsx_keyboard_press_code(desired_state, KBD_SHIFT);
+    }
+    if (modifiers & 0x11u)
+    {
+        fmsx_keyboard_press_code(desired_state, KBD_CONTROL);
+    }
+    if (modifiers & 0x44u)
+    {
+        fmsx_keyboard_press_code(desired_state, KBD_GRAPH);
+    }
+
+    if (raw_keys)
+    {
+        for (unsigned i = 0u; i < 6u; ++i)
+        {
+            const unsigned code = fmsx_code_from_hid(raw_keys[i]);
+            if (code != 0u)
+            {
+                fmsx_keyboard_press_code(desired_state, code);
+            }
+        }
+    }
+}
+
+static unsigned fmsx_keyboard_report_last_msx_code(const unsigned char raw_keys[6], unsigned *last_hid)
+{
+    unsigned found_hid = 0u;
+    unsigned found_msx = 0u;
+
+    if (raw_keys)
+    {
+        for (unsigned i = 0u; i < 6u; ++i)
+        {
+            const u8 hid = raw_keys[i];
+            const unsigned code = fmsx_code_from_hid(hid);
+            if (code != 0u)
+            {
+                found_hid = hid;
+                found_msx = code;
+            }
+        }
+    }
+
+    if (last_hid)
+    {
+        *last_hid = found_hid;
+    }
+    return found_msx;
+}
+
+static int fmsx_keyboard_code_is_new_press(const uint8_t desired_state[16], const uint8_t stable_state[16], unsigned code)
+{
+    if (code > 0x88u)
+    {
+        return 0;
+    }
+
+    const unsigned row = Keys[code][0];
+    const uint8_t mask = (uint8_t) Keys[code][1];
+    return ((stable_state[row] & mask) != 0u) && ((desired_state[row] & mask) == 0u);
+}
+
+static int fmsx_keyboard_change_has_gameplay_press(const uint8_t desired_state[16], const uint8_t stable_state[16])
+{
+    static const unsigned kGameplayCodes[] =
+    {
+        KBD_LEFT, KBD_UP, KBD_RIGHT, KBD_DOWN,
+        KBD_SHIFT, KBD_CONTROL, KBD_GRAPH, KBD_SPACE
+    };
+
+    for (unsigned i = 0u; i < sizeof(kGameplayCodes) / sizeof(kGameplayCodes[0]); ++i)
+    {
+        if (fmsx_keyboard_code_is_new_press(desired_state, stable_state, kGameplayCodes[i]))
+        {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static void fmsx_keyboard_canonicalize_raw(unsigned char raw_keys[6])
@@ -589,13 +707,13 @@ unsigned fmsx_audio_end_frame_render_accounting(void)
 
 void fmsx_audio_render_to_cpu_now(void)
 {
-    static uint64_t g_audio_cycle_carry = 0u;
-    static uint64_t g_audio_last_cycle_stamp = 0u;
     const uint64_t now = fmsx_audio_cpu_cycles_now();
+    const uint64_t cpu_hz = (uint64_t) fmsx_audio_effective_cpu_clock_hz();
 
     if (!fmsx_runtime_audio_render_enabled())
     {
         g_audio_last_sync_rendered_samples = 0u;
+        g_audio_last_render_batch = 0u;
         return;
     }
 
@@ -604,24 +722,60 @@ void fmsx_audio_render_to_cpu_now(void)
         g_audio_last_cycle_stamp = now;
         g_audio_cycle_carry = 0u;
         g_audio_last_sync_rendered_samples = 0u;
+        g_audio_last_render_batch = 0u;
         return;
     }
 
     g_audio_cycle_carry += (now - g_audio_last_cycle_stamp) * (uint64_t) FMSX_AUDIO_RATE;
     g_audio_last_cycle_stamp = now;
     g_audio_last_sync_rendered_samples = 0u;
+    g_audio_last_render_batch = 0u;
 
-    if (g_audio_cycle_carry >= (uint64_t) CPU_CLOCK)
+    if (g_audio_cycle_carry >= cpu_hz)
     {
-        const unsigned samples = (unsigned) (g_audio_cycle_carry / (uint64_t) CPU_CLOCK);
-        g_audio_cycle_carry %= (uint64_t) CPU_CLOCK;
+        const unsigned samples = (unsigned) (g_audio_cycle_carry / cpu_hz);
+        g_audio_cycle_carry %= cpu_hz;
         if (samples != 0u)
         {
             RenderAndPlayAudio(samples);
             g_audio_frame_rendered_samples += samples;
             g_audio_last_sync_rendered_samples = samples;
+            g_audio_last_render_batch = samples;
+            if (samples > g_audio_max_render_batch)
+            {
+                g_audio_max_render_batch = samples;
+            }
         }
     }
+}
+
+void fmsx_audio_reset_stream_timing(void)
+{
+    g_audio_cycle_carry = 0u;
+    g_audio_last_cycle_stamp = 0u;
+    g_audio_wpos = 0u;
+    g_audio_rpos = 0u;
+    g_audio_ring_peak = 0u;
+    g_audio_last_pull_requested = 0u;
+    g_audio_last_pull_returned = 0u;
+    g_audio_last_level_before_pull = 0u;
+    g_audio_last_level_after_pull = 0u;
+    g_audio_last_trim_samples = 0u;
+    g_audio_last_sync_rendered_samples = 0u;
+    g_audio_last_render_batch = 0u;
+    g_audio_max_render_batch = 0u;
+    g_audio_frame_rendered_samples = 0u;
+}
+
+void fmsx_audio_reanchor_stream_timing(void)
+{
+    g_audio_cycle_carry = 0u;
+    g_audio_last_cycle_stamp = fmsx_audio_cpu_cycles_now();
+    g_audio_last_trim_samples = 0u;
+    g_audio_last_sync_rendered_samples = 0u;
+    g_audio_last_render_batch = 0u;
+    g_audio_max_render_batch = 0u;
+    g_audio_frame_rendered_samples = 0u;
 }
 
 unsigned fmsx_audio_last_sync_rendered_samples(void)
@@ -638,9 +792,10 @@ unsigned fmsx_audio_pull_samples(int16_t *dst, unsigned max_samples)
         return 0;
     }
 
-    unsigned level = g_audio_wpos >= g_audio_rpos
-        ? (g_audio_wpos - g_audio_rpos)
-        : ((FMSX_AUDIO_RING_SAMPLES - g_audio_rpos) + g_audio_wpos);
+    unsigned level = fmsx_audio_ring_level_current();
+    g_audio_last_pull_requested = max_samples;
+    g_audio_last_level_before_pull = level;
+    g_audio_last_trim_samples = 0u;
     if (level > FMSX_AUDIO_MAX_LATENCY_SAMPLES)
     {
         unsigned drop = level - FMSX_AUDIO_MAX_LATENCY_SAMPLES;
@@ -649,6 +804,9 @@ unsigned fmsx_audio_pull_samples(int16_t *dst, unsigned max_samples)
             drop = FMSX_AUDIO_MAX_TRIM_PER_PULL;
         }
         g_audio_rpos = (g_audio_rpos + drop) % FMSX_AUDIO_RING_SAMPLES;
+        g_audio_trim_events++;
+        g_audio_trim_samples += drop;
+        g_audio_last_trim_samples = drop;
         g_audio_drop_count += drop;
     }
 
@@ -665,6 +823,13 @@ unsigned fmsx_audio_pull_samples(int16_t *dst, unsigned max_samples)
     }
 
     g_audio_samples_pulled += count;
+    g_audio_last_pull_returned = count;
+    if (count < max_samples)
+    {
+        g_audio_short_pulls++;
+        g_audio_underrun_samples += (max_samples - count);
+    }
+    g_audio_last_level_after_pull = fmsx_audio_ring_level_current();
     return count;
 }
 
@@ -678,17 +843,23 @@ void fmsx_audio_get_stats(TFmsxAudioStats *stats)
     stats->write_calls = g_audio_write_calls;
     stats->samples_written = g_audio_samples_written;
     stats->samples_pulled = g_audio_samples_pulled;
+    stats->ring_peak = g_audio_ring_peak;
     stats->drop_count = g_audio_drop_count;
+    stats->overwrite_samples = g_audio_overwrite_samples;
+    stats->trim_events = g_audio_trim_events;
+    stats->trim_samples = g_audio_trim_samples;
+    stats->short_pulls = g_audio_short_pulls;
+    stats->underrun_samples = g_audio_underrun_samples;
     stats->source_peak = g_audio_source_peak;
     stats->source_nonzero = g_audio_source_nonzero;
-    if (g_audio_wpos >= g_audio_rpos)
-    {
-        stats->ring_level = g_audio_wpos - g_audio_rpos;
-    }
-    else
-    {
-        stats->ring_level = (FMSX_AUDIO_RING_SAMPLES - g_audio_rpos) + g_audio_wpos;
-    }
+    stats->last_pull_requested = g_audio_last_pull_requested;
+    stats->last_pull_returned = g_audio_last_pull_returned;
+    stats->last_level_before_pull = g_audio_last_level_before_pull;
+    stats->last_level_after_pull = g_audio_last_level_after_pull;
+    stats->last_trim_samples = g_audio_last_trim_samples;
+    stats->last_render_batch = g_audio_last_render_batch;
+    stats->max_render_batch = g_audio_max_render_batch;
+    stats->ring_level = fmsx_audio_ring_level_current();
 }
 
 void fmsx_keyboard_get_debug(TFmsxKeyboardDebug *stats)
@@ -700,6 +871,14 @@ void fmsx_keyboard_get_debug(TFmsxKeyboardDebug *stats)
 
     stats->last_hid = g_kbd_last_hid;
     stats->last_msx = g_kbd_last_msx;
+    stats->runtime_queued = g_kbd_runtime_write_seq - g_kbd_runtime_read_seq;
+    stats->runtime_high_water = 0u;
+    stats->runtime_dropped = g_kbd_runtime_dropped;
+    stats->candidate_created = 0u;
+    stats->candidate_promoted = 0u;
+    stats->candidate_discarded = 0u;
+    stats->immediate_releases = 0u;
+    stats->immediate_gameplay_presses = 0u;
 }
 
 void SetColor(uint8_t N, uint8_t R, uint8_t G, uint8_t B)
@@ -761,6 +940,7 @@ unsigned int WriteAudio(int16_t *Data, unsigned int Length)
         if (next == g_audio_rpos)
         {
             g_audio_rpos = (g_audio_rpos + 1u) % FMSX_AUDIO_RING_SAMPLES;
+            g_audio_overwrite_samples++;
             g_audio_drop_count++;
         }
 
@@ -771,6 +951,13 @@ unsigned int WriteAudio(int16_t *Data, unsigned int Length)
     g_audio_source_peak = peak;
     g_audio_source_nonzero = nonzero;
     g_audio_samples_written += i;
+    {
+        const unsigned level = fmsx_audio_ring_level_current();
+        if (level > g_audio_ring_peak)
+        {
+            g_audio_ring_peak = level;
+        }
+    }
     return i;
 }
 
