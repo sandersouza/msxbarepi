@@ -4,6 +4,18 @@ Data: 2026-03-13
 Base: `176-fix-msx2p-boot-screen-slow`
 Issue: #187 (latência e estabilidade de teclado)
 
+## Atualizacao 2026-03-25 - branch pausada com PR aberto
+
+- PR aberto para congelar o estado atual da branch: [#226](https://github.com/sandersouza/msxbarepi/pull/226)
+- Build validada nesta rodada:
+  - `BUILD_HASH`: `2f5d57c-7f0c6be58cc9741ce27bfc21fd4f27d3a16c5ab9`
+  - `BUILD_BID`: `202603250230-close-187-pr`
+  - `BUILD_ID`: `05C2`
+- Estado consolidado:
+  - overlay de debug restaurado em `DEBUG=1`
+  - `Reset` e `MSX BASIC` pelo menu saem de pause antes de acionar o backend
+  - a trilha de follow-up do `Knightmare Gold` permanece registrada localmente na `#225`
+
 ## Objetivo da iteração
 - Reduzir latência perceptível de teclado.
 - Eliminar cenário de tecla "presa" por falha de release.
