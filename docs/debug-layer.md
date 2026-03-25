@@ -93,7 +93,7 @@ Diretriz visual (overlay e menu):
 - Anti-flicker: redesenhar menu apenas em mudanca de estado (mostrar/ocultar, selecao, reposicionamento).
 
 ## Menu relacionado
-- `Settings -> Debugger`: liga/desliga overlay (quando compilado com debug).
+- `Settings -> Debugger`: sempre aparece em builds `DEBUG=1` e opera diretamente como `ON/OFF`.
 - Em builds com `DEBUG=1`, `Settings` volta a mostrar `Refresh [NTSC/PAL]` logo abaixo de `Disk ROM` para diagnostico.
 - Fora de debug, `Refresh` continua oculto.
 - O runtime inicia em `NTSC` e continua podendo passar para `PAL` automaticamente quando o software escreve `R#9`.
@@ -103,12 +103,7 @@ Diretriz visual (overlay e menu):
   - `Audio Gain` (0..9)
 - Em `DEBUG=1`, `Settings` tambem mostra:
   - `Debugger [ON/OFF]`
-  - `Real Clock [ON/OFF]`
   - `UART Log [ON/OFF]`
-- `Real Clock` aparece logo abaixo de `Debugger` e existe apenas para A/B de timing:
-  - `ON`: base exata `3.579545 MHz`
-  - `OFF`: base arredondada `3.58 MHz`
-- `Real Clock` nao substitui o chaveamento `PAL/NTSC` via `R#9`; ele so escolhe qual clock base o host usa nas contas atuais de timing/audio.
 - `UART Log` usa o mesmo estado operacional da tecla `F10`.
 
 ## Overlay: linhas e labels
@@ -184,13 +179,12 @@ Diretriz visual (overlay e menu):
   - `TL/TD`: linha-alvo de `IE1` e delta assinado entre o compare atual e a scanline corrente.
   - `EO`: odd/even efetivo derivado de `S#2 bit1`.
   - `RP`: página efetiva atualmente selecionada para render.
-- `TM5`: diagnostico de FDC/WD1793 (especialmente para `Disk I/O error`):
-  - `ST`: `FDC.R[0]` (status WD1793).
-  - `TR`: `FDC.R[1]` (track register).
-  - `SC`: `FDC.R[2]` (sector register).
-  - `DR/SD`: drive e side ativos.
-  - `IQ`: latch de `IRQ/DRQ` (`FDC.IRQ`).
-  - `WT`: watchdog interno (`FDC.Wait`).
+- `TM5`: diagnostico do pipeline de teclado runtime:
+  - `KQ:a/b`: profundidade atual da fila runtime e `high-water`.
+  - `KD`: drops acumulados da fila runtime.
+  - `KC:a/b/c`: candidatos `press-only` criados, promovidos e descartados.
+  - `KR`: releases aplicados imediatamente.
+  - `KP`: presses de gameplay aplicados imediatamente.
 - `TM6A`: trace de writes em registradores VDP — exibe **delta por frame** (variacao desde a ultima leitura, nao acumulado):
   - `W9/W15/W18/W19/W25/W26/W27`: writes por frame em cada registrador VDP (cap 9999).
 - `TM6B`: ultimo evento capturado no trace VDP/IRQ das janelas do `SMANBOW2`:

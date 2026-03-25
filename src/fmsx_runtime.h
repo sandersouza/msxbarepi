@@ -43,6 +43,14 @@ typedef struct {
 typedef struct {
     unsigned last_hid;
     unsigned last_msx;
+    unsigned runtime_queued;
+    unsigned runtime_high_water;
+    unsigned runtime_dropped;
+    unsigned candidate_created;
+    unsigned candidate_promoted;
+    unsigned candidate_discarded;
+    unsigned immediate_releases;
+    unsigned immediate_gameplay_presses;
 } TFmsxKeyboardDebug;
 
 #define FMSX_VDP_TRACE_CAPACITY 1024u
@@ -338,6 +346,14 @@ typedef struct {
     unsigned fdc_side;
     unsigned fdc_irq;
     unsigned fdc_wait;
+    unsigned kbd_runtime_queued;
+    unsigned kbd_runtime_high_water;
+    unsigned kbd_runtime_dropped;
+    unsigned kbd_candidate_created;
+    unsigned kbd_candidate_promoted;
+    unsigned kbd_candidate_discarded;
+    unsigned kbd_immediate_releases;
+    unsigned kbd_immediate_gameplay_presses;
 } TFmsxTimingDebug;
 
 extern uint8_t g_fmsx_scc_internal_slot;
@@ -363,8 +379,7 @@ void fmsx_runtime_set_overscan(boolean enabled);
 void fmsx_runtime_set_refresh_hz(unsigned hz);
 unsigned fmsx_runtime_get_refresh_hz(void);
 unsigned fmsx_runtime_get_z80_turbo_percent(void);
-void fmsx_runtime_set_real_clock_enabled(boolean enabled);
-boolean fmsx_runtime_get_real_clock_enabled(void);
+uint64_t fmsx_runtime_get_frame_interval_us_exact(void);
 unsigned fmsx_runtime_get_base_cpu_clock_hz(void);
 boolean fmsx_runtime_audio_render_enabled(void);
 void fmsx_audio_begin_frame_render_accounting(void);
@@ -373,6 +388,7 @@ uint64_t fmsx_audio_cpu_cycles_now(void);
 unsigned fmsx_audio_effective_cpu_clock_hz(void);
 void fmsx_audio_render_to_cpu_now(void);
 void fmsx_audio_reset_stream_timing(void);
+void fmsx_audio_reanchor_stream_timing(void);
 unsigned fmsx_audio_last_sync_rendered_samples(void);
 void fmsx_runtime_set_disk_rom_enabled(boolean enabled);
 boolean fmsx_runtime_get_disk_rom_enabled(void);

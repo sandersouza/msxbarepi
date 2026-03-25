@@ -739,7 +739,6 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_SccDualCartAvailable(TRUE),
     m_OverlayEnabled(FALSE),
     m_OverlayAvailable(FALSE),
-    m_RealClockEnabled(TRUE),
     m_DebugLogEnabled(FALSE),
     m_AudioGainPercent(50u),
     m_LoadRomSlot1Name{0},
@@ -798,7 +797,6 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnSccDualCartAvailable(TRUE),
     m_LastDrawnOverlay(FALSE),
     m_LastDrawnOverlayAvailable(FALSE),
-    m_LastDrawnRealClockEnabled(TRUE),
     m_LastDrawnDebugLogEnabled(FALSE),
     m_LastDrawnAudioGainPercent(50u),
     m_LastDrawnLoadRomSlot1Name{0},
@@ -927,7 +925,6 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnSccDualCartAvailable = m_SccDualCartAvailable;
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
-    m_LastDrawnRealClockEnabled = m_RealClockEnabled;
     m_LastDrawnDebugLogEnabled = m_DebugLogEnabled;
     m_LastDrawnAudioGainPercent = m_AudioGainPercent;
     m_LastDrawnBrowserTop = 0xFFFFFFFFu;
@@ -1242,16 +1239,6 @@ void CComboPauseMenu::SetOverlayEnabled(boolean enabled, boolean available)
     {
         m_OverlayEnabled = enabled;
         m_OverlayAvailable = available;
-        m_ForceRedraw = TRUE;
-    }
-}
-
-void CComboPauseMenu::SetRealClockEnabled(boolean enabled)
-{
-    enabled = enabled ? TRUE : FALSE;
-    if (m_RealClockEnabled != enabled)
-    {
-        m_RealClockEnabled = enabled;
         m_ForceRedraw = TRUE;
     }
 }
@@ -1647,7 +1634,6 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_SccDualCartAvailable,
             m_OverlayEnabled,
             m_OverlayAvailable,
-            m_RealClockEnabled,
             m_DebugLogEnabled,
             m_AudioGainPercent,
             count);
@@ -2538,7 +2524,6 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         else if ((items[m_Selected].action == ComboMenuActionToggleWidescreen)
               || (items[m_Selected].action == ComboMenuActionToggleDiskRom)
               || (items[m_Selected].action == ComboMenuActionToggleOverlay)
-              || (items[m_Selected].action == ComboMenuActionToggleRealClock)
               || (items[m_Selected].action == ComboMenuActionToggleDebugLog))
         {
             if (enter_edge || left_edge || right_edge)
@@ -2861,7 +2846,6 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnSccDualCartAvailable == m_SccDualCartAvailable
      && m_LastDrawnOverlay == m_OverlayEnabled
      && m_LastDrawnOverlayAvailable == m_OverlayAvailable
-     && m_LastDrawnRealClockEnabled == m_RealClockEnabled
      && m_LastDrawnDebugLogEnabled == m_DebugLogEnabled
      && m_LastDrawnAudioGainPercent == m_AudioGainPercent
      && ComboTextEquals(m_LastDrawnLoadRomSlot1Name, m_LoadRomSlot1Name)
@@ -3171,7 +3155,6 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnSccDualCartAvailable = m_SccDualCartAvailable;
     m_LastDrawnOverlay = m_OverlayEnabled;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
-    m_LastDrawnRealClockEnabled = m_RealClockEnabled;
     m_LastDrawnDebugLogEnabled = m_DebugLogEnabled;
     m_LastDrawnAudioGainPercent = m_AudioGainPercent;
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), m_LoadRomSlot1Name);

@@ -41,7 +41,6 @@ public:
     void SetSccCartEnabled(boolean enabled);
     void SetSccDualCartState(boolean enabled, boolean available);
     void SetOverlayEnabled(boolean enabled, boolean available);
-    void SetRealClockEnabled(boolean enabled);
     void SetDebugLogEnabled(boolean enabled);
     void SetAudioGainPercent(unsigned percent);
     void SetLoadRomSlotNames(const char *slot1_name, const char *slot2_name);
@@ -126,7 +125,6 @@ private:
     boolean m_SccDualCartAvailable;
     boolean m_OverlayEnabled;
     boolean m_OverlayAvailable;
-    boolean m_RealClockEnabled;
     boolean m_DebugLogEnabled;
     unsigned m_AudioGainPercent;
     char m_LoadRomSlot1Name[17];
@@ -185,7 +183,6 @@ private:
     boolean m_LastDrawnSccDualCartAvailable;
     boolean m_LastDrawnOverlay;
     boolean m_LastDrawnOverlayAvailable;
-    boolean m_LastDrawnRealClockEnabled;
     boolean m_LastDrawnDebugLogEnabled;
     unsigned m_LastDrawnAudioGainPercent;
     char m_LastDrawnLoadRomSlot1Name[17];

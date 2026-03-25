@@ -63,10 +63,10 @@ private:
     void ApplyRuntimeSettingsToFmsx(void);
     void RefreshSettingsUiAfterAction(void);
     void ResetEmulationRuntimeState(void);
+    void ExitPauseForBackendAction(void);
     void UpdateJoystickFromRaw(unsigned char modifiers, const unsigned char raw_keys[6]);
     void PushKeyboardStateToRuntime(boolean rensha_fire_on);
     void SetDebugOverlayEnabled(boolean enabled);
-    void SetRealClockEnabled(boolean enabled);
     void SetUartTelemetryEnabled(boolean enabled);
     void UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux);
     void UpdateLoadDiagTelemetry(unsigned stage);
@@ -202,7 +202,6 @@ private:
     unsigned m_RamMapperKb;
     unsigned m_MegaRamKb;
     unsigned m_Z80TurboMode;
-    boolean m_RealClockEnabled;
     unsigned m_RenshaMode;
     unsigned m_RenshaPhase;
     boolean m_RenshaFireAHeld;
@@ -211,6 +210,10 @@ private:
     unsigned char m_LastKeyboardRawKeys[6];
     unsigned char m_RuntimeKeyboardModifiers;
     unsigned char m_RuntimeKeyboardRawKeys[6];
+    boolean m_RuntimeKeyboardDispatchValid;
+    unsigned m_RuntimeKeyboardReplayBudget;
+    unsigned char m_RuntimeKeyboardDispatchedModifiers;
+    unsigned char m_RuntimeKeyboardDispatchedRawKeys[6];
     boolean m_FmMusicEnabled;
     unsigned m_FmLayerGainPct;
     boolean m_SccCartEnabled;

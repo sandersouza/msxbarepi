@@ -127,6 +127,9 @@ unsigned FmsxTurboPercent = 100u;  /* Effective Z80 clock scale (%) */
 static uint64_t g_fmsx_audio_cycle_base = 0u;
 static int g_fmsx_audio_phase_cycles = 0;
 static uint8_t g_fmsx_audio_cycle_valid = 0u;
+static unsigned g_fmsx_hrefresh_frac_acc_240 = 0u;
+static unsigned g_fmsx_hrefresh_frac_acc_256 = 0u;
+static int g_fmsx_active_cpu_cycles_current_line = CPU_H240;
 
 static int fmsx_scale_cycles(int cycles)
 {
@@ -142,6 +145,30 @@ static int fmsx_scale_cycles(int cycles)
   return (int)scaled;
 }
 
+static int fmsx_hrefresh_cpu_cycles_exact(int active_vdp_ticks)
+{
+  const unsigned denom = 600u; /* 6 VDP clocks per CPU clock, scaled by percent */
+  const unsigned percent = FmsxTurboPercent < 100u ? 100u : (FmsxTurboPercent > 300u ? 300u : FmsxTurboPercent);
+  const unsigned numer = (unsigned)active_vdp_ticks * percent;
+  unsigned *acc;
+  unsigned whole;
+  unsigned rem;
+
+  acc = (active_vdp_ticks == HREFRESH_240) ? &g_fmsx_hrefresh_frac_acc_240 : &g_fmsx_hrefresh_frac_acc_256;
+  whole = numer / denom;
+  rem = numer % denom;
+  *acc += rem;
+  if(*acc >= denom)
+  {
+    whole += 1u;
+    *acc -= denom;
+  }
+
+  if(whole < 1u) whole = 1u;
+  if(whole > 0x7FFFFFFFu) whole = 0x7FFFFFFFu;
+  return (int)whole;
+}
+
 void fmsx_cpu_set_turbo_percent(unsigned percent)
 {
   int base_vperiod;
@@ -149,6 +176,8 @@ void fmsx_cpu_set_turbo_percent(unsigned percent)
   if(percent < 100u) percent = 100u;
   if(percent > 300u) percent = 300u;
   FmsxTurboPercent = percent;
+  g_fmsx_hrefresh_frac_acc_240 = 0u;
+  g_fmsx_hrefresh_frac_acc_256 = 0u;
 
   base_vperiod = (VIDEO(MSX_PAL)? VPERIOD_PAL:VPERIOD_NTSC)/6;
   VPeriod = fmsx_scale_cycles(base_vperiod);
@@ -196,6 +225,9 @@ static void fmsx_audio_cycle_reset(void)
   g_fmsx_audio_cycle_base = 0u;
   g_fmsx_audio_phase_cycles = 0;
   g_fmsx_audio_cycle_valid = 0u;
+  g_fmsx_hrefresh_frac_acc_240 = 0u;
+  g_fmsx_hrefresh_frac_acc_256 = 0u;
+  g_fmsx_active_cpu_cycles_current_line = CPU_H240;
 }
 
 /** Main hardware: CPU, RAM, VRAM, mappers *******************/
@@ -257,9 +289,12 @@ uint8_t FmsxP1LastSS = 0xFF;          /* Last observed secondary slot on page 1 
 uint32_t FmsxVDPFrameCounter = 0;     /* Number of VDP frame starts observed */
 uint8_t FmsxVDPLinePhase = 0;         /* 0=active scan, 1=HBlank */
 uint8_t FmsxVDPScreenOnLatched = 0;   /* Display enable latched per scanline */
+int FmsxVDPRenderVScrollOverride = -1;/* Optional per-line VScroll override for renderer */
+static uint8_t FmsxVDPLineVScrollLatched = 0; /* VScroll captured at scanline start */
 static int FmsxVDPUCountLatched = 0;  /* Frame visibility accumulator for current scanline */
 static uint8_t FmsxVDPDrawingLatched = 0; /* Drawing state for current scanline */
 static uint8_t FmsxVDPLineRendered = 0;   /* Current scanline already composed before HBlank */
+static uint8_t FmsxVDPLineChunkEnd = 0;   /* Screen 4 partial render end column (0..32) */
 uint32_t FmsxIE1EventCount = 0;       /* Number of VDP line-coincidence events */
 uint32_t FmsxIE1AckCount = 0;         /* Number of S#1 reads that clear IE1 flag */
 uint32_t FmsxIE1ArmedCount = 0;       /* Number of times IE1 was armed on active line */
@@ -349,6 +384,7 @@ uint32_t FmsxKanjiAddrWriteCount = 0; /* Writes to Kanji address ports D8h/D9h *
 uint32_t FmsxKanjiNullReadCount = 0;  /* D9h reads while Kanji ROM pointer is null */
 uint8_t FmsxResetStatus = 0xFF;       /* Port F4h: reset status register stub */
 uint8_t FmsxSwitchedIODeviceId = 0xFF;
+uint8_t FmsxS1985TurboLatched = 0u;
 uint16_t FmsxS1985Addr = 0;
 uint8_t FmsxS1985Color1 = 0;
 uint8_t FmsxS1985Color2 = 0;
@@ -485,7 +521,6 @@ uint8_t VDPData;                      /* VDP data buffer        */
 uint8_t PLatch;                       /* Palette buffer         */
 uint8_t ALatch;                       /* Address buffer         */
 int  Palette[16];                  /* Current palette        */
-uint8_t FmsxVDPVScrollLatched = 0; /* R#23 latched at scanline boundary for renderer */
 /*
  * VDP I/O wait-state tuning (in Z80 cycles per access).
  *
@@ -497,7 +532,6 @@ uint8_t FmsxVDPVScrollLatched = 0; /* R#23 latched at scanline boundary for rend
 static const int kVDPIOWaitCyclesData = 0;
 static const int kVDPIOWaitCyclesStatusBase = 0;
 static const int kVDPIOWaitCyclesStatusPollingExtra = 10;
-static const int kVDPIOWaitCyclesPanasonicTurbo = 46;
 /* Apply extra delay only for tight polling loops (e.g. MSXDIAG). */
 static const uint8_t kVDPStatusPollingStreakThreshold = 4;
 
@@ -518,12 +552,25 @@ static void fmsx_apply_vdp_io_wait(int cycles)
 
 static int fmsx_panasonic_vdp_io_wait_cycles(void)
 {
-  if(MODEL(MSX_MSX2P) && fmsx_runtime_get_panasonic_turbo_enabled())
-    return kVDPIOWaitCyclesPanasonicTurbo;
+  /*
+   * blueMSX models Matsushita turbo by changing CPU frequency only, without
+   * injecting extra fixed delay into VDP port accesses. Knightmare Gold's
+   * smooth-scroll patch streams VRAM rectangles in tight bursts and this
+   * fixed 46-cycle penalty was the strongest remaining delta versus the
+   * working blueMSX behavior.
+   *
+   * Keep the explicit S#0 polling delay below for diagnostics such as
+   * MSXDIAG, but do not slow down normal 0x98/0x99 traffic here.
+   */
   return 0;
 }
 
 static int fmsx_vdp_write_wait_cycles(void)
+{
+  return kVDPIOWaitCyclesData + fmsx_panasonic_vdp_io_wait_cycles();
+}
+
+static int fmsx_vdp_read_wait_cycles(void)
 {
   return kVDPIOWaitCyclesData + fmsx_panasonic_vdp_io_wait_cycles();
 }
@@ -570,8 +617,11 @@ static uint8_t fmsx_vdp_status1_live(void);
 static uint8_t fmsx_vdp_ie1_target_line(void);
 static int fmsx_vdp_ie1_target_delta(void);
 static uint8_t fmsx_vdp_effective_odd_page(void);
+static int fmsx_vdp_hscroll_active256_local(void);
+void RefreshLine4PlainRange(uint8_t Y,unsigned X0,unsigned X1);
 static uint8_t fmsx_vdp_render_page(void);
 static void fmsx_vdp_render_scanline(uint8_t scanline,uint8_t drawing,int ucount);
+static void fmsx_vdp_render_screen4_partial(uint8_t scanline,unsigned end_column);
 static void fmsx_vdp_trace_log(uint8_t event_type);
 static void fmsx_vdp_trace_log_io(uint8_t event_type,uint32_t aux_addr,uint8_t aux_value,uint8_t aux_reg,uint8_t aux_ctrl);
 static void fmsx_vdp_sync_before_cpu_write(void);
@@ -1067,6 +1117,67 @@ static int fmsx_kmg_disk_active(void)
   return 0;
 }
 
+static uint8_t fmsx_peek_linear_byte(uint16_t addr)
+{
+  return RAM[addr >> 13][addr & 0x1FFF];
+}
+
+static int fmsx_kmg_smooth_scroll_allowed(void)
+{
+  const unsigned refresh_hz = fmsx_runtime_get_refresh_hz();
+  const unsigned turbo_percent = fmsx_runtime_get_z80_turbo_percent();
+
+  /*
+   * Knightmare Gold documents only two legal smooth-scroll combinations:
+   *  - 3.579545MHz at 50Hz
+   *  - 7MHz-class at 60Hz
+   * Any other effective runtime speed must fall back to ORIGINAL scroll.
+   */
+  if((refresh_hz == 50u) && (turbo_percent == 100u)) return 1;
+  if((refresh_hz == 60u) && (turbo_percent >= 200u)) return 1;
+  return 0;
+}
+
+static int fmsx_kmg_block_panasonic_runtime_turbo(void)
+{
+  return fmsx_kmg_disk_active()
+      && (fmsx_runtime_get_refresh_hz() == 50u)
+      && (fmsx_runtime_get_z80_turbo_mode() == 0u);
+}
+
+static void fmsx_kmg_apply_panasonic_turbo_gate(void)
+{
+  const boolean runtime_enabled =
+      (FmsxS1985TurboLatched && !fmsx_kmg_block_panasonic_runtime_turbo()) ? TRUE : FALSE;
+  fmsx_runtime_set_panasonic_turbo_enabled(runtime_enabled);
+}
+
+static void fmsx_kmg_apply_scroll_gate(void)
+{
+  uint8_t *page;
+
+  if(!fmsx_kmg_disk_active()) return;
+
+  page = RAM[0x2212u >> 13];
+  if(!page || (page == EmptyRAM)) return;
+
+  if(fmsx_kmg_smooth_scroll_allowed())
+  {
+    if(page[0x2212u & 0x1FFF] == 0x00u)
+      page[0x2212u & 0x1FFF] = 0x01u;
+    if(page[0x220Eu & 0x1FFF] < 0x05u)
+      page[0x220Eu & 0x1FFF] = 0x05u;
+  }
+  else
+  {
+    page[0x2212u & 0x1FFF] = 0x00u;
+    if(page[0x220Eu & 0x1FFF] >= 0x05u)
+      page[0x220Eu & 0x1FFF] = 0x04u;
+  }
+
+  fmsx_kmg_apply_panasonic_turbo_gate();
+}
+
 static uint8_t fmsx_vdp_trace_window(void)
 {
   uint8_t bank16;
@@ -1101,13 +1212,84 @@ static int fmsx_vdp_vblank_start(void)
                   : (ScanLines212? (212+18):(192+28));
 }
 
+static int fmsx_vdp_active_cpu_cycles(void)
+{
+  return g_fmsx_active_cpu_cycles_current_line;
+}
+
+static int fmsx_vdp_active_vdp_ticks(void)
+{
+  return !ScrMode||(ScrMode==MAXSCREEN+1)? HREFRESH_240:HREFRESH_256;
+}
+
+static int fmsx_vdp_phase_elapsed_cycles(void)
+{
+  int elapsed;
+
+  elapsed = g_fmsx_audio_phase_cycles - CPU.ICount;
+  if(elapsed < 0) elapsed = 0;
+  if(elapsed > g_fmsx_audio_phase_cycles) elapsed = g_fmsx_audio_phase_cycles;
+  return elapsed;
+}
+
+static unsigned fmsx_vdp_line_ticks_now(void)
+{
+  const int active_cpu = fmsx_vdp_active_cpu_cycles();
+  const int active_vdp = fmsx_vdp_active_vdp_ticks();
+  const int hblank_cpu = HPeriod - active_cpu;
+  const int hblank_vdp = HPERIOD - active_vdp;
+  const int elapsed_cpu = fmsx_vdp_phase_elapsed_cycles();
+  unsigned ticks;
+
+  if(!FmsxVDPLinePhase)
+  {
+    ticks = active_cpu > 0
+      ? (unsigned)(((long long)elapsed_cpu * (long long)active_vdp + (active_cpu / 2)) / active_cpu)
+      : 0u;
+  }
+  else
+  {
+    ticks = (unsigned)active_vdp;
+    if(hblank_cpu > 0)
+    {
+      ticks += (unsigned)(((long long)elapsed_cpu * (long long)hblank_vdp + (hblank_cpu / 2)) / hblank_cpu);
+    }
+  }
+
+  if(ticks >= (unsigned)HPERIOD) ticks = (unsigned)HPERIOD - 1u;
+  return ticks;
+}
+
 static uint8_t fmsx_vdp_status2_hr(void)
 {
-  return FmsxVDPLinePhase ? 1u : 0u;
+  /*
+   * Knightmare Gold polls S#2 bit5 in tight loops around its VRAM blitter
+   * hooks. openMSX/blueMSX keep HR low through the visible region and raise
+   * it only inside the final horizontal blank/border window near the end of
+   * the scanline. A simple "active vs HBlank phase" split is too early.
+   *
+   * The local scheduler counts line ticks from the start of the visible area,
+   * not from the start of the full scanline like openMSX/blueMSX. Translated
+   * to this local coordinate system, the HR=1 window starts exactly at the end
+   * of the visible span and lasts for 312 ticks in graphics modes (404 in
+   * text modes). The remaining tail of the coarse HBlank phase stays HR=0.
+   *
+   * This preserves the stable IE1 baseline while tightening the S#2 bit5 edge
+   * used by Knightmare Gold's low->high polling loop.
+   */
+  const unsigned line_ticks = fmsx_vdp_line_ticks_now();
+  const unsigned display_ticks = (unsigned)fmsx_vdp_active_vdp_ticks();
+  const unsigned hblank_ticks = (!ScrMode || (ScrMode == MAXSCREEN + 1)) ? 404u : 312u;
+  return (line_ticks >= display_ticks) && (line_ticks < (display_ticks + hblank_ticks));
 }
 
 static uint8_t fmsx_vdp_status2_vr(void)
 {
+  /*
+   * Keep VR tied to the effective vertical display window. The draw area
+   * remains active up to the first VBlank line; outside that window S#2 bit6
+   * must stay high.
+   */
   return (ScanLine>=fmsx_vdp_vblank_start())? 1u:0u;
 }
 
@@ -1158,27 +1340,54 @@ static void fmsx_vdp_commit_line_display_state(void)
   }
 
   FmsxVDPScreenOnLatched=(VDP[1]&0x40u)? 1u:0u;
-  FmsxVDPVScrollLatched=VDP[23];
 }
 
 static void fmsx_vdp_sync_before_cpu_write(void)
 {
   /*
    * blueMSX/openMSX synchronize the VDP before CPU-side VRAM/register writes.
-   * Our renderer is line-based rather than sub-line, so for now we apply the
-   * same contract in the narrow KMG smooth-scroll window: compose the current
-   * line once before the first write in the active phase and skip the later
-   * HBlank redraw for that same line.
+   * Our renderer is line-based rather than sub-line, so in the narrow KMG
+   * smooth-scroll window we preserve the current line by composing it once
+   * before the first CPU-side VDP mutation of that scanline, regardless of
+   * whether the write lands in the active span or in HBlank. HBlank matters
+   * here because KMG's VRAM blitter can cross the tile-row boundary exactly at
+   * the end of the line; if the line is still composed later in HBlank, those
+   * writes bleed backwards into the line that just finished scanning out.
    */
   if(!fmsx_vdp_kmg_sync_window_active()) return;
-  if(FmsxVDPLinePhase) return;
-  if(FmsxVDPLineRendered) return;
   if(!FmsxVDPDrawingLatched) return;
   if(FmsxVDPUCountLatched<100) return;
   if((ScanLine<0)||(ScanLine>=256)) return;
+  if(FmsxVDPLineRendered) return;
+
+  /*
+   * Knightmare Gold's smooth-scroll hook rewrites VRAM rectangles while the
+   * current scanline is already in flight. Rendering only the columns already
+   * scanned reintroduces an 8px transient exactly when the tile row rolls
+   * over. For this title, freeze the whole line on the first VDP-side CPU
+   * mutation and expose the new VRAM contents only from the next line.
+   */
+  if((ScrMode==4) && !fmsx_vdp_hscroll_active256_local())
+  {
+    fmsx_vdp_render_scanline((uint8_t)ScanLine,FmsxVDPDrawingLatched,FmsxVDPUCountLatched);
+    FmsxVDPLineRendered=1;
+    FmsxVDPLineChunkEnd=32u;
+    return;
+  }
 
   fmsx_vdp_render_scanline((uint8_t)ScanLine,FmsxVDPDrawingLatched,FmsxVDPUCountLatched);
   FmsxVDPLineRendered=1;
+}
+
+static void fmsx_vdp_render_screen4_partial(uint8_t scanline,unsigned end_column)
+{
+  if(end_column>32u) end_column=32u;
+  if(end_column<=FmsxVDPLineChunkEnd) return;
+  FmsxVDPRenderVScrollOverride = (int)FmsxVDPLineVScrollLatched;
+  RefreshLine4PlainRange(scanline,(unsigned)FmsxVDPLineChunkEnd,end_column);
+  FmsxVDPRenderVScrollOverride = -1;
+  FmsxVDPLineChunkEnd=(uint8_t)end_column;
+  if(FmsxVDPLineChunkEnd>=32u) FmsxVDPLineRendered=1;
 }
 
 static void fmsx_vdp_render_scanline(uint8_t scanline,uint8_t drawing,int ucount)
@@ -1231,7 +1440,12 @@ static void fmsx_vdp_render_scanline(uint8_t scanline,uint8_t drawing,int ucount
     (RefreshLine[MAXSCREEN+1])(scanline);
 #else
   if(!ModeYJK||(ScrMode<7)||(ScrMode>8))
+  {
+    if(fmsx_vdp_kmg_sync_window_active() && (ScrMode==4) && !fmsx_vdp_hscroll_active256_local())
+      FmsxVDPRenderVScrollOverride = (int)FmsxVDPLineVScrollLatched;
     (RefreshLine[ScrMode])(scanline);
+    FmsxVDPRenderVScrollOverride = -1;
+  }
   else
     if(ModeYAE) RefreshLine10(scanline);
     else RefreshLine12(scanline);
@@ -1251,13 +1465,15 @@ static uint8_t fmsx_vdp_status1_live(void)
 static uint8_t fmsx_vdp_ie1_target_line(void)
 {
   /*
-   * Upstream fMSX triggers the line coincidence path when:
-   *   (((ScanLine + VScroll) & 0xFF) - R#19) == 2
-   * which is equivalent to arming the event on (R#19 - VScroll + 2).
-   * Our previous target was 2 lines early, which matches the observed
-   * "reuse previous 8x8 row" glitch in Knightmare Gold smooth scroll.
+   * The stable split-raster baseline for the project uses the direct
+   * coincidence target derived from R#19 and current vertical scroll.
+   * Moving this globally by +2 reintroduced the old Gradius2E regression:
+   * the top two HUD lines start scrolling with the gameplay area.
+   *
+   * Knightmare Gold's remaining glitch must be chased via the VDP polling/
+   * status path, not by shifting IE1 for every title.
    */
-  return (uint8_t)((VDP[19]-VScroll+2u)&0xFFu);
+  return (uint8_t)((VDP[19]-VScroll)&0xFFu);
 }
 
 static void fmsx_vdp_reschedule_ie1_compare(void)
@@ -1296,6 +1512,12 @@ static uint8_t fmsx_vdp_effective_odd_page(void)
    * Bit1=0 selects the alternate ("odd") page when EO is enabled.
    */
   return (VDPStatus[2]&0x02u)? 0u:1u;
+}
+
+static int fmsx_vdp_hscroll_active256_local(void)
+{
+  return MODEL(MSX_MSX2P)
+      && ((VDP[25] & 0x03u) || (VDP[26] != 0u) || ((VDP[27] & 0x07u) != 0u));
 }
 
 static uint8_t fmsx_vdp_render_page(void)
@@ -1878,6 +2100,7 @@ static void fmsx_s1985_init_once(void)
   {
     memset(FmsxS1985RAM,0xFF,sizeof(FmsxS1985RAM));
     FmsxSwitchedIODeviceId = 0xFF;
+    FmsxS1985TurboLatched = 0u;
     FmsxS1985Addr = 0;
     FmsxS1985Color1 = 0;
     FmsxS1985Color2 = 0;
@@ -1903,7 +2126,7 @@ static uint8_t fmsx_s1985_read(uint8_t reg, int advance_pattern)
     case 0x01:
     {
       uint8_t value = 0xFFu;
-      if(fmsx_runtime_get_panasonic_turbo_enabled()) value &= (uint8_t)~0x01u;
+      if(FmsxS1985TurboLatched) value &= (uint8_t)~0x01u;
       value &= (uint8_t)~0x04u;
       return value;
     }
@@ -1936,7 +2159,8 @@ static void fmsx_s1985_write(uint8_t reg, uint8_t value)
       break;
     case 0x01:
       if(!fmsx_s1985_device_active()) break;
-      fmsx_runtime_set_panasonic_turbo_enabled((value&0x01u)? FALSE:TRUE);
+      FmsxS1985TurboLatched = (value&0x01u) ? 0u : 1u;
+      fmsx_kmg_apply_panasonic_turbo_gate();
       break;
     case 0x03:
       if(!fmsx_s1985_device_active()) break;
@@ -2797,6 +3021,7 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   Mode           = NewMode;
   FmsxResetStatus = MODEL(MSX_MSX2P)? 0x00:0xFF;
   FmsxSwitchedIODeviceId = 0xFFu;
+  FmsxS1985TurboLatched = 0u;
   fmsx_runtime_set_panasonic_turbo_enabled(FALSE);
   if(log_cb) log_cb(1,"ResetMSX: mode assigned\n");
 
@@ -3285,6 +3510,7 @@ case 0x87:
   /*return(Rd8251(&SIO,Port&0x07));*/
 
 case 0x98: /* VRAM read port */
+  fmsx_apply_vdp_io_wait(fmsx_vdp_read_wait_cycles());
   /* Read from VRAM data buffer */
   Port=VDPData;
   /* Reset VAddr latch sequencer */
@@ -3303,10 +3529,10 @@ case 0x98: /* VRAM read port */
 
 case 0x99: /* VDP status registers */
 {
+  fmsx_apply_vdp_io_wait(fmsx_vdp_status_wait_cycles());
   const uint8_t status_reg = MODEL(MSX_MSX1)? 0u:(uint8_t)(VDP[15]&0x0Fu);
   const uint8_t live_status1 = fmsx_vdp_status1_live();
   const uint8_t live_status2 = fmsx_vdp_status2_live();
-  fmsx_apply_vdp_io_wait(fmsx_vdp_status_wait_cycles());
   FmsxVDPPort99ReadCount++;
   FmsxVDPStatusReadCount[status_reg]++;
   /* MSX1/TMS9918 exposes only status register #0. */
@@ -3514,8 +3740,8 @@ case 0x87:
   return;*/
 
 case 0x98: /* VDP Data */
-  fmsx_vdp_sync_before_cpu_write();
   fmsx_apply_vdp_io_wait(fmsx_vdp_write_wait_cycles());
+  fmsx_vdp_sync_before_cpu_write();
   VKey=1;
   VDPData=Value;
   fmsx_vdp_trace_log_io(
@@ -4457,6 +4683,8 @@ uint16_t LoopZ80(Z80 *R)
     LoggedLoop = 1;
   }
 
+  fmsx_kmg_apply_scroll_gate();
+
   /* Flip HRefresh bit */
   VDPStatus[2]^=0x20;
   FmsxVDPLinePhase = (VDPStatus[2]&0x20)? 1u:0u;
@@ -4465,12 +4693,15 @@ uint16_t LoopZ80(Z80 *R)
   if(!FmsxVDPLinePhase)
   {
     /* HRefresh takes most of the scanline */
-    R->IPeriod=fmsx_scale_cycles(!ScrMode||(ScrMode==MAXSCREEN+1)? CPU_H240:CPU_H256);
+    g_fmsx_active_cpu_cycles_current_line =
+      fmsx_hrefresh_cpu_cycles_exact(!ScrMode||(ScrMode==MAXSCREEN+1)? HREFRESH_240:HREFRESH_256);
+    R->IPeriod=fmsx_vdp_active_cpu_cycles();
     fmsx_audio_cycle_open_phase(R->IPeriod);
 
     /* New scanline */
     ScanLine=ScanLine<(pal_timing? 312:261)? ScanLine+1:0;
     FmsxVDPLineRendered=0;
+    FmsxVDPLineChunkEnd=0;
 
     /* If first scanline of the screen... */
     if(!ScanLine)
@@ -4520,6 +4751,7 @@ uint16_t LoopZ80(Z80 *R)
     if(ScanLine==(ScanLines212? 212:192)) Drawing=0;
 
     fmsx_vdp_commit_line_display_state();
+    FmsxVDPLineVScrollLatched=VDP[23];
     FmsxVDPDrawingLatched=Drawing;
     FmsxVDPUCountLatched=UCount;
 
@@ -4567,7 +4799,7 @@ uint16_t LoopZ80(Z80 *R)
   }
 
   /* HBlank takes HPeriod-HRefresh */
-  R->IPeriod=fmsx_scale_cycles(!ScrMode||(ScrMode==MAXSCREEN+1)? CPU_H240:CPU_H256);
+  R->IPeriod=fmsx_vdp_active_cpu_cycles();
   R->IPeriod=HPeriod-R->IPeriod;
   fmsx_audio_cycle_open_phase(R->IPeriod);
 
@@ -4612,7 +4844,12 @@ uint16_t LoopZ80(Z80 *R)
   /* Refresh scanline, possibly with the overscan. If the CPU already forced
    * a sync during the active phase, do not redraw the same line in HBlank. */
   if(!FmsxVDPLineRendered)
-    fmsx_vdp_render_scanline((uint8_t)ScanLine,FmsxVDPDrawingLatched,FmsxVDPUCountLatched);
+  {
+    if((ScrMode==4) && !fmsx_vdp_hscroll_active256_local() && FmsxVDPLineChunkEnd)
+      fmsx_vdp_render_screen4_partial((uint8_t)ScanLine,32u);
+    else
+      fmsx_vdp_render_scanline((uint8_t)ScanLine,FmsxVDPDrawingLatched,FmsxVDPUCountLatched);
+  }
 
   fmsx_runtime_keyboard_drain_step();
 

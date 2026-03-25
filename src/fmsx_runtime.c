@@ -163,7 +163,6 @@ unsigned g_fmsx_megaram_kb = 0u;
 static boolean g_use_embedded_bios = FALSE;
 static unsigned g_z80_turbo_mode = 0u;
 static boolean g_panasonic_turbo_enabled = FALSE;
-static boolean g_real_clock_enabled = TRUE;
 static boolean g_fm_music_enabled = TRUE;
 static boolean g_scc_plus_enabled = TRUE;
 static boolean g_scc_dual_cart_enabled = FALSE;
@@ -810,26 +809,34 @@ static unsigned fmsx_runtime_z80_turbo_percent(void)
     }
 }
 
-static unsigned fmsx_runtime_panasonic_turbo_percent(void)
-{
-    /* Match Matsushita/Panasonic high-speed mode used by openMSX:
-     * 3.579545MHz -> 5.369318MHz (3/2), i.e. 150%.
-     * Keep this path faithful; game-specific benchmark calibration must
-     * not distort global runtime pacing/audio. */
-    return g_panasonic_turbo_enabled ? 150u : 100u;
-}
-
 static unsigned fmsx_runtime_effective_turbo_percent(void)
 {
-    const unsigned menu_pct = fmsx_runtime_z80_turbo_percent();
-    const unsigned hw_pct = fmsx_runtime_panasonic_turbo_percent();
-    return menu_pct > hw_pct ? menu_pct : hw_pct;
+    unsigned percent = fmsx_runtime_z80_turbo_percent();
+    if (g_panasonic_turbo_enabled && percent < 150u)
+    {
+        percent = 150u;
+    }
+    return percent;
+}
+
+static uint64_t fmsx_runtime_frame_interval_us_exact_internal(void)
+{
+    const uint64_t cpu_hz = (uint64_t) fmsx_runtime_get_base_cpu_clock_hz();
+    const uint64_t frame_cycles = (uint64_t) (unsigned) ((PALVideo ? VPERIOD_PAL : VPERIOD_NTSC) / 6);
+
+    if (cpu_hz == 0u || frame_cycles == 0u)
+    {
+        const unsigned refresh_hz = fmsx_runtime_effective_refresh_hz();
+        return refresh_hz == 50u ? 20000u : 16667u;
+    }
+
+    return ((frame_cycles * 1000000ull) + (cpu_hz / 2ull)) / cpu_hz;
 }
 
 static void fmsx_runtime_apply_turbo_percent(unsigned percent)
 {
     fmsx_cpu_set_turbo_percent(percent);
-    fmsx_audio_reset_stream_timing();
+    fmsx_audio_reanchor_stream_timing();
 }
 
 static void fmsx_runtime_apply_game_boot_override(void)
@@ -1232,7 +1239,18 @@ boolean fmsx_runtime_step_frame(void)
 
         if (audio_enabled_this_frame && (fmsx_audio_end_frame_render_accounting() == 0u))
         {
-            const unsigned samples_per_frame = kFmsxAudioRate / fmsx_runtime_effective_refresh_hz();
+            const uint64_t cpu_hz = (uint64_t) fmsx_runtime_get_base_cpu_clock_hz();
+            const uint64_t frame_cycles = (uint64_t) (unsigned) ((PALVideo ? VPERIOD_PAL : VPERIOD_NTSC) / 6);
+            unsigned samples_per_frame;
+
+            if (cpu_hz != 0u && frame_cycles != 0u)
+            {
+                samples_per_frame = (unsigned) (((frame_cycles * (uint64_t) kFmsxAudioRate) + (cpu_hz / 2ull)) / cpu_hz);
+            }
+            else
+            {
+                samples_per_frame = kFmsxAudioRate / fmsx_runtime_effective_refresh_hz();
+            }
             RenderAndPlayAudio(samples_per_frame);
         }
 
@@ -1325,7 +1343,7 @@ void fmsx_runtime_set_refresh_hz(unsigned hz)
         return;
     }
     g_refresh_hz = clamped;
-    fmsx_audio_reset_stream_timing();
+    fmsx_audio_reanchor_stream_timing();
 }
 
 unsigned fmsx_runtime_get_refresh_hz(void)
@@ -1335,28 +1353,17 @@ unsigned fmsx_runtime_get_refresh_hz(void)
 
 unsigned fmsx_runtime_get_z80_turbo_percent(void)
 {
-    return fmsx_runtime_z80_turbo_percent();
+    return fmsx_runtime_effective_turbo_percent();
 }
 
-void fmsx_runtime_set_real_clock_enabled(boolean enabled)
+uint64_t fmsx_runtime_get_frame_interval_us_exact(void)
 {
-    const boolean desired = enabled ? TRUE : FALSE;
-    if (g_real_clock_enabled == desired)
-    {
-        return;
-    }
-    g_real_clock_enabled = desired;
-    fmsx_audio_reset_stream_timing();
-}
-
-boolean fmsx_runtime_get_real_clock_enabled(void)
-{
-    return g_real_clock_enabled ? TRUE : FALSE;
+    return fmsx_runtime_frame_interval_us_exact_internal();
 }
 
 unsigned fmsx_runtime_get_base_cpu_clock_hz(void)
 {
-    return g_real_clock_enabled ? 3579545u : 3580000u;
+    return 3579545u;
 }
 
 boolean fmsx_runtime_audio_render_enabled(void)
@@ -2071,6 +2078,7 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
     unsigned ce;
     unsigned cmd;
     unsigned copy_cmd;
+    TFmsxKeyboardDebug keyboard_stats = {0};
     const uint8_t live_status1 = fmsx_vdp_get_status1_live();
     const uint8_t live_status2 = fmsx_vdp_get_status2_live();
 
@@ -2085,7 +2093,7 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
     stats->scanline = (ScanLine >= 0) ? (unsigned) ScanLine : 0u;
     stats->pal_video = PALVideo ? 1u : 0u;
     stats->lines_212 = ScanLines212 ? 1u : 0u;
-    stats->turbo_percent = fmsx_runtime_z80_turbo_percent();
+    stats->turbo_percent = fmsx_runtime_effective_turbo_percent();
     stats->scr_mode = (unsigned) ScrMode;
     stats->reg2 = (unsigned) VDP[2];
     stats->reg25 = (unsigned) VDP[25];
@@ -2260,6 +2268,15 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
     stats->fdc_side = (unsigned) FDC.Side;
     stats->fdc_irq = (unsigned) FDC.IRQ;
     stats->fdc_wait = (unsigned) FDC.Wait;
+    fmsx_keyboard_get_debug(&keyboard_stats);
+    stats->kbd_runtime_queued = keyboard_stats.runtime_queued;
+    stats->kbd_runtime_high_water = keyboard_stats.runtime_high_water;
+    stats->kbd_runtime_dropped = keyboard_stats.runtime_dropped;
+    stats->kbd_candidate_created = keyboard_stats.candidate_created;
+    stats->kbd_candidate_promoted = keyboard_stats.candidate_promoted;
+    stats->kbd_candidate_discarded = keyboard_stats.candidate_discarded;
+    stats->kbd_immediate_releases = keyboard_stats.immediate_releases;
+    stats->kbd_immediate_gameplay_presses = keyboard_stats.immediate_gameplay_presses;
 }
 
 void fmsx_runtime_get_vdp_trace_view(TFmsxVDPTraceView *view)

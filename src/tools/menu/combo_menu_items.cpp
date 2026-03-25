@@ -355,7 +355,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
                                                      boolean scc_dual_cart_available,
                                                      boolean overlay_enabled,
                                                      boolean overlay_available,
-                                                     boolean real_clock_enabled,
                                                      boolean debug_log_enabled,
                                                      unsigned audio_gain_percent,
                                                      unsigned *count)
@@ -377,7 +376,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     static char fm_music_label[32];
     static char scc_label[32];
     static char overlay_label[32];
-    static char real_clock_label[32];
     static char debug_log_label[32];
     static char audio_gain_label[32];
 
@@ -438,7 +436,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     BuildLabelFlag(megaram_label, sizeof(megaram_label), locale->settings_megaram,
                    megaram_kb == 0u ? locale->flag_off : (megaram_kb == 512u ? "512" : (megaram_kb == 1024u ? "1024" : "256")));
     BuildLabelFlag(turbo_label, sizeof(turbo_label), locale->settings_z80_turbo,
-                   z80_turbo_mode == 0u ? locale->flag_off : (z80_turbo_mode == 1u ? "PAN" : "MAX"));
+                   z80_turbo_mode == 0u ? "NORM" : (z80_turbo_mode == 1u ? "PAN" : "MAX"));
     BuildLabelFlag(rensha_label, sizeof(rensha_label), locale->settings_rensha,
                    rensha_mode == 0u ? locale->flag_off : (rensha_mode == 1u ? "1" : (rensha_mode == 2u ? "2" : "3")));
     BuildLabelFlag(fm_music_label, sizeof(fm_music_label), locale->settings_fm_music, fm_music_enabled ? locale->flag_on : locale->flag_off);
@@ -453,9 +451,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
         BuildLabelFlag(scc_label, sizeof(scc_label), locale->settings_scc_cart, scc_flag);
     }
     BuildLabelFlag(overlay_label, sizeof(overlay_label), locale->settings_debugger,
-                   overlay_available ? (overlay_enabled ? locale->flag_on : locale->flag_off) : locale->flag_na);
-    BuildLabelFlag(real_clock_label, sizeof(real_clock_label), locale->settings_real_clock,
-                   real_clock_enabled ? locale->flag_on : locale->flag_off);
+                   overlay_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(debug_log_label, sizeof(debug_log_label), locale->settings_sd_log,
                    debug_log_enabled ? locale->flag_on : locale->flag_off);
     {
@@ -528,16 +524,15 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     ADD_SETTING_ITEM(turbo_label, ComboMenuActionCycleZ80Turbo, ComboMenuRedrawMenuOnly, TRUE);
     ADD_SETTING_ITEM(rensha_label, ComboMenuActionCycleRensha, ComboMenuRedrawMenuOnly, TRUE);
 
-    if (overlay_available || show_disk_rom_setting || show_refresh_setting)
+    if (MSXBARE_ENABLE_DEBUG_OVERLAY || show_disk_rom_setting || show_refresh_setting)
     {
         ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
-        if (overlay_available)
+        if (MSXBARE_ENABLE_DEBUG_OVERLAY)
         {
             ADD_SETTING_ITEM(overlay_label, ComboMenuActionToggleOverlay, ComboMenuRedrawMenuOnly, TRUE);
         }
         if (MSXBARE_ENABLE_DEBUG_OVERLAY)
         {
-            ADD_SETTING_ITEM(real_clock_label, ComboMenuActionToggleRealClock, ComboMenuRedrawMenuOnly, TRUE);
             ADD_SETTING_ITEM(debug_log_label, ComboMenuActionToggleDebugLog, ComboMenuRedrawMenuOnly, TRUE);
         }
         if (show_disk_rom_setting)

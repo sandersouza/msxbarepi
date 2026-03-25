@@ -848,7 +848,7 @@ CComboKernel::CComboKernel(void)
 	m_JoyBridgeBits(0),
 	m_JoyMappedBits(ComboKeyboardJoyMask()),
 	m_DebugOverlayEnabled(MSXBARE_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE),
-	m_DebugOverlayUnlocked(MSXBARE_ENABLE_DEBUG_OVERLAY ? FALSE : TRUE),
+	m_DebugOverlayUnlocked(TRUE),
 	m_EmulationPaused(FALSE),
 	m_LastF12Pressed(FALSE),
 	m_LastF6Pressed(FALSE),
@@ -915,7 +915,6 @@ CComboKernel::CComboKernel(void)
 	m_RamMapperKb(kRamMapperKbDefault),
 	m_MegaRamKb(MSXBARE_FEAT_MEGARAM ? kMegaRamKbDefault : 0u),
 	m_Z80TurboMode(kZ80TurboModeDes),
-	m_RealClockEnabled(TRUE),
 	m_RenshaMode(0u),
 	m_RenshaPhase(0u),
 	m_RenshaFireAHeld(FALSE),
@@ -924,6 +923,10 @@ CComboKernel::CComboKernel(void)
 	m_LastKeyboardRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
 	m_RuntimeKeyboardModifiers(0u),
 	m_RuntimeKeyboardRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
+	m_RuntimeKeyboardDispatchValid(FALSE),
+	m_RuntimeKeyboardReplayBudget(0u),
+	m_RuntimeKeyboardDispatchedModifiers(0u),
+	m_RuntimeKeyboardDispatchedRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
 	m_FmMusicEnabled(MSXBARE_FEAT_FMPAC ? TRUE : FALSE),
 	m_FmLayerGainPct(100u),
 	m_SccCartEnabled(MSXBARE_FEAT_SCC ? TRUE : FALSE),
@@ -992,9 +995,6 @@ void CComboKernel::NormalizeSettingsForBuild(void)
 	 * boot config. Disabling is only allowed when DEBUG is compiled in.
 	 */
 	m_DiskRomEnabled = TRUE;
-#endif
-#if !MSXBARE_ENABLE_DEBUG_OVERLAY
-	m_RealClockEnabled = TRUE;
 #endif
 #if !MSXBARE_FEAT_MEGARAM
 	m_MegaRamKb = 0u;
@@ -1147,7 +1147,6 @@ TComboShutdownMode CComboKernel::Run(void)
 		{
 			m_RefreshRateHz = ClampRefreshRateHz(m_RefreshRateHz);
 			fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
-			fmsx_runtime_set_real_clock_enabled(m_RealClockEnabled);
 			fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 			fmsx_runtime_set_boot_mode(m_BootMode);
 			fmsx_runtime_set_model_profile(m_MachineProfile);
@@ -1268,9 +1267,8 @@ TComboShutdownMode CComboKernel::Run(void)
 	#endif
 	);
 	m_PauseMenu.SetOverlayEnabled(
-		(MSXBARE_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked) ? m_DebugOverlayEnabled : FALSE,
-		(MSXBARE_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked) ? TRUE : FALSE);
-	m_PauseMenu.SetRealClockEnabled(m_RealClockEnabled);
+		MSXBARE_ENABLE_DEBUG_OVERLAY ? m_DebugOverlayEnabled : FALSE,
+		MSXBARE_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
 	m_PauseMenu.SetDebugLogEnabled(m_UartTelemetryEnabled);
 	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
 	{
@@ -1371,6 +1369,25 @@ TComboShutdownMode CComboKernel::Run(void)
 			m_LastF10Pressed = FALSE;
 			m_LastFmGainUpPressed = FALSE;
 			m_LastFmGainDownPressed = FALSE;
+	#if MSXBARE_ENABLE_FMSX
+			if (m_FmsxReady)
+			{
+				static const unsigned char kEmptyKeyboard[6] = {0u, 0u, 0u, 0u, 0u, 0u};
+				emulator_backend_input_push_keyboard(0u, kEmptyKeyboard);
+				m_RuntimeKeyboardDispatchValid = TRUE;
+				m_RuntimeKeyboardReplayBudget = 0u;
+				m_RuntimeKeyboardDispatchedModifiers = 0u;
+				for (unsigned i = 0u; i < 6u; ++i)
+				{
+					m_RuntimeKeyboardDispatchedRawKeys[i] = 0u;
+				}
+			}
+			else
+			{
+				m_RuntimeKeyboardDispatchValid = FALSE;
+				m_RuntimeKeyboardReplayBudget = 0u;
+			}
+	#endif
 			m_Logger.Write(FromKernel, LogNotice, "USB keyboard removed");
 		}
 
@@ -1521,6 +1538,7 @@ TComboShutdownMode CComboKernel::Run(void)
 					stepped_fmsx = TRUE;
 					const EmulatorBackendRuntimeStatus runtime_status = emulator_backend_get_status();
 					const unsigned runtime_refresh_hz = ClampRefreshRateHz(fmsx_runtime_get_refresh_hz());
+					const u64 runtime_frame_interval_us = fmsx_runtime_get_frame_interval_us_exact();
 					m_FmsxFrames = runtime_status.frames;
 					m_FmsxLastError = runtime_status.last_error;
 
@@ -1530,6 +1548,11 @@ TComboShutdownMode CComboKernel::Run(void)
 						m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
 						m_FramePacingResetPending = TRUE;
 						m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
+					}
+					if (runtime_frame_interval_us != 0u && runtime_frame_interval_us != m_FrameIntervalUs)
+					{
+						m_FrameIntervalUs = runtime_frame_interval_us;
+						m_FramePacingResetPending = TRUE;
 					}
 
 					if (m_FmsxFpsWindowStartUs == 0u)
@@ -2529,14 +2552,15 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 			timing_stats.render_page > 9u ? 9u : timing_stats.render_page);
 		WriteScreenText(line);
 
-		line.Format("\x1b[97m\x1b[49m\x1b[16;1HTM5 FD ST:%02X TR:%02X SC:%02X DR:%u SD:%u IQ:%02X WT:%03u",
-			timing_stats.fdc_status & 0xFFu,
-			timing_stats.fdc_track_reg & 0xFFu,
-			timing_stats.fdc_sector_reg & 0xFFu,
-			timing_stats.fdc_drive > 9u ? 9u : timing_stats.fdc_drive,
-			timing_stats.fdc_side > 9u ? 9u : timing_stats.fdc_side,
-			timing_stats.fdc_irq & 0xFFu,
-			timing_stats.fdc_wait > 999u ? 999u : timing_stats.fdc_wait);
+		line.Format("\x1b[97m\x1b[49m\x1b[16;1HTM5 KQ:%03u/%03u KD:%03u KC:%03u/%03u/%03u KR:%03u KP:%03u",
+			timing_stats.kbd_runtime_queued > 999u ? 999u : timing_stats.kbd_runtime_queued,
+			timing_stats.kbd_runtime_high_water > 999u ? 999u : timing_stats.kbd_runtime_high_water,
+			timing_stats.kbd_runtime_dropped > 999u ? 999u : timing_stats.kbd_runtime_dropped,
+			timing_stats.kbd_candidate_created > 999u ? 999u : timing_stats.kbd_candidate_created,
+			timing_stats.kbd_candidate_promoted > 999u ? 999u : timing_stats.kbd_candidate_promoted,
+			timing_stats.kbd_candidate_discarded > 999u ? 999u : timing_stats.kbd_candidate_discarded,
+			timing_stats.kbd_immediate_releases > 999u ? 999u : timing_stats.kbd_immediate_releases,
+			timing_stats.kbd_immediate_gameplay_presses > 999u ? 999u : timing_stats.kbd_immediate_gameplay_presses);
 		WriteScreenText(line);
 
 		line.Format("\x1b[97m\x1b[49m\x1b[17;1HTM6A W9:%04u W15:%04u W18:%04u W19:%04u W25:%04u W26:%04u W27:%04u",
@@ -2959,10 +2983,43 @@ void CComboKernel::ResetEmulationRuntimeState(void)
 	m_FmsxAudioPortTraceDropped = 0u;
 	m_FmsxKmgTraceSeq = 0u;
 	m_FmsxKmgTraceDropped = 0u;
+	m_RenshaFireAHeld = FALSE;
+	m_RenshaSpaceHeld = FALSE;
+	m_RuntimeKeyboardModifiers = 0u;
+	for (unsigned i = 0u; i < 6u; ++i)
+	{
+		m_RuntimeKeyboardRawKeys[i] = 0u;
+		m_RuntimeKeyboardDispatchedRawKeys[i] = 0u;
+	}
+	m_RuntimeKeyboardDispatchedModifiers = 0u;
+	m_RuntimeKeyboardDispatchValid = TRUE;
+	m_RuntimeKeyboardReplayBudget = 0u;
+#if MSXBARE_ENABLE_FMSX
+	{
+		static const unsigned char kEmptyKeyboard[6] = {0u, 0u, 0u, 0u, 0u, 0u};
+		emulator_backend_input_push_keyboard(0u, kEmptyKeyboard);
+	}
+#endif
 	m_EmulationPaused = FALSE;
 	m_ForceViewportFullClearNextFrame = FALSE;
 	m_PauseRenderSuppressed = FALSE;
 	m_PauseMenu.Reset();
+}
+
+void CComboKernel::ExitPauseForBackendAction(void)
+{
+	if (!m_EmulationPaused)
+	{
+		return;
+	}
+
+	m_EmulationPaused = FALSE;
+	m_PauseNeedsBackgroundRedraw = FALSE;
+	m_PauseNeedsFullViewportClear = FALSE;
+	m_PauseRenderSuppressed = TRUE;
+	m_LastPauseWasInSettings = FALSE;
+	m_PauseMenu.Reset();
+	m_LastPauseToggleUs = CTimer::GetClockTicks64();
 }
 
 void CComboKernel::RefreshSettingsUiAfterAction(void)
@@ -3179,13 +3236,13 @@ void CComboKernel::LoadSettingsFromStorage(void)
 				{
 					m_RamMapperKb = ClampRamMapperKb(value);
 				}
-				else if (SettingsKeyEquals(line, key_len, "megaram_kb"))
-				{
-					m_MegaRamKb = ClampMegaRamKb(value);
-				}
-				else if (SettingsKeyEquals(line, key_len, "z80_turbo"))
-				{
-					m_Z80TurboMode = value > 2u ? 0u : value;
+			else if (SettingsKeyEquals(line, key_len, "megaram_kb"))
+			{
+				m_MegaRamKb = ClampMegaRamKb(value);
+			}
+			else if (SettingsKeyEquals(line, key_len, "z80_turbo"))
+			{
+				m_Z80TurboMode = value > 2u ? 0u : value;
 			}
 			else if (SettingsKeyEquals(line, key_len, "rensha"))
 			{
@@ -3219,10 +3276,6 @@ void CComboKernel::LoadSettingsFromStorage(void)
 				(void) value;
 				m_DebugOverlayEnabled = FALSE;
 #endif
-			}
-			else if (SettingsKeyEquals(line, key_len, "real_clock"))
-			{
-				m_RealClockEnabled = value ? TRUE : FALSE;
 			}
 			else if (SettingsKeyEquals(line, key_len, "audio_mute"))
 			{
@@ -3283,9 +3336,8 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled,
 		has_cfg_cartb && cfg_cartb_path[0] ? FALSE : TRUE);
 	m_PauseMenu.SetOverlayEnabled(
-		(MSXBARE_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked) ? m_DebugOverlayEnabled : FALSE,
-		(MSXBARE_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked) ? TRUE : FALSE);
-	m_PauseMenu.SetRealClockEnabled(m_RealClockEnabled);
+		MSXBARE_ENABLE_DEBUG_OVERLAY ? m_DebugOverlayEnabled : FALSE,
+		MSXBARE_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
 	m_PauseMenu.SetDebugLogEnabled(m_UartTelemetryEnabled);
 	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
 	{
@@ -3298,7 +3350,6 @@ void CComboKernel::LoadSettingsFromStorage(void)
 #if MSXBARE_ENABLE_FMSX
 	fmsx_runtime_set_overscan(m_OverscanPercent > kScalePercentMin ? TRUE : FALSE);
 	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
-	fmsx_runtime_set_real_clock_enabled(m_RealClockEnabled);
 	fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 	fmsx_runtime_set_boot_mode(m_BootMode);
 	fmsx_runtime_set_model_profile(m_MachineProfile);
@@ -3396,7 +3447,6 @@ void CComboKernel::SaveSettingsToStorage(void)
 	APPEND_LINE_FMT("scc_plus=%u\n", m_SccCartEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("scc_dual=%u\n", m_SccDualCartEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("debugger=%u\n", m_DebugOverlayEnabled ? 1u : 0u);
-	APPEND_LINE_FMT("real_clock=%u\n", m_RealClockEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("audio_gain=%u\n", m_AudioOutputGainPct > 100u ? 100u : m_AudioOutputGainPct);
 	#if MSXBARE_ENABLE_FMSX
 		APPEND_LINE_TEXT("cart_a_path", fmsx_runtime_get_cartridge_path(0u));
@@ -4268,6 +4318,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 	#if MSXBARE_ENABLE_FMSX
 		if (m_FmsxReady)
 		{
+			ExitPauseForBackendAction();
 			if (fmsx_runtime_reboot_basic())
 			{
 				ResetEmulationRuntimeState();
@@ -4285,6 +4336,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 	#if MSXBARE_ENABLE_FMSX
 		if (m_FmsxReady)
 		{
+			ExitPauseForBackendAction();
 			const boolean reset_ok = PerformMenuHardReset(3501u, 3502u, 9502u);
 			if (reset_ok)
 			{
@@ -4652,25 +4704,11 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 
 	case ComboMenuActionToggleOverlay:
 	#if MSXBARE_ENABLE_DEBUG_OVERLAY
-		if (!m_DebugOverlayUnlocked)
-		{
-			break;
-		}
 		SetDebugOverlayEnabled(m_DebugOverlayEnabled ? FALSE : TRUE);
 		RefreshSettingsUiAfterAction();
 		m_Logger.Write(FromKernel, LogNotice, m_DebugOverlayEnabled ? "Settings: Debugger ON" : "Settings: Debugger OFF");
 	#else
 		m_Logger.Write(FromKernel, LogNotice, "Settings: Debugger indisponivel neste build");
-	#endif
-		break;
-
-	case ComboMenuActionToggleRealClock:
-	#if MSXBARE_ENABLE_DEBUG_OVERLAY
-		SetRealClockEnabled(m_RealClockEnabled ? FALSE : TRUE);
-		m_Logger.Write(FromKernel, LogNotice,
-			m_RealClockEnabled ? "Settings: REAL CLOCK ON" : "Settings: REAL CLOCK OFF");
-	#else
-		m_Logger.Write(FromKernel, LogNotice, "Settings: REAL CLOCK indisponivel neste build");
 	#endif
 		break;
 
@@ -4792,14 +4830,10 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 void CComboKernel::SetDebugOverlayEnabled(boolean enabled)
 {
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
-	if (!m_DebugOverlayUnlocked)
-	{
-		return;
-	}
 	m_DebugOverlayEnabled = enabled ? TRUE : FALSE;
 	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, TRUE);
 	m_PauseMenu.RequestRedraw();
-	if (!m_DebugOverlayEnabled)
+	if (m_DebugOverlayUnlocked && !m_DebugOverlayEnabled)
 	{
 		ClearDebugOverlay();
 	}
@@ -4818,21 +4852,6 @@ void CComboKernel::SetUartTelemetryEnabled(boolean enabled)
 #endif
 	m_PauseMenu.SetDebugLogEnabled(m_UartTelemetryEnabled);
 	m_PauseMenu.RequestRedraw();
-}
-
-void CComboKernel::SetRealClockEnabled(boolean enabled)
-{
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
-	m_RealClockEnabled = enabled ? TRUE : FALSE;
-#else
-	(void) enabled;
-	m_RealClockEnabled = TRUE;
-#endif
-	m_PauseMenu.SetRealClockEnabled(m_RealClockEnabled);
-	m_PauseMenu.RequestRedraw();
-#if MSXBARE_ENABLE_FMSX
-	fmsx_runtime_set_real_clock_enabled(m_RealClockEnabled);
-#endif
 }
 
 void CComboKernel::ClearDebugOverlay(void)
@@ -5001,11 +5020,6 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	if (key_state.f1_pressed && !m_LastF12Pressed)
 	{
 		#if MSXBARE_ENABLE_DEBUG_OVERLAY
-		if (!m_DebugOverlayUnlocked)
-		{
-			m_LastF12Pressed = key_state.f1_pressed;
-			return;
-		}
 		SetDebugOverlayEnabled(m_DebugOverlayEnabled ? FALSE : TRUE);
 		m_Logger.Write(FromKernel, LogNotice, m_DebugOverlayEnabled ? "Overlay ON" : "Overlay OFF");
 		#endif

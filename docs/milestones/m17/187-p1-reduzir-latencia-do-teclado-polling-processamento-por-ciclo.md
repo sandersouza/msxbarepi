@@ -154,6 +154,79 @@ O filtro de estabilização não pode apagar `release` legítimo nem transformar
   - solta/pressiona rápido
   - ausência de tecla "presa" após alguns minutos de gameplay
 
+## Atualizacao 2026-03-24 - pipeline orientado a evento e prioridade de gameplay
+
+### Corte implementado
+- `kernel.cpp`
+  - o produtor runtime deixou de reenviar o mesmo snapshot em ciclos sem evento novo;
+  - reset/removal agora empurram explicitamente um snapshot vazio para o backend.
+- `fmsx_host_stubs.c`
+  - fila runtime ampliada para `128`;
+  - deduplicacao passou a comparar a matriz MSX desejada (`desired_state[16]`);
+  - `release` continua imediato;
+  - `press` imediato para teclas criticas de gameplay:
+    - `UP/DOWN/LEFT/RIGHT`
+    - `SPACE`
+    - `SHIFT`
+    - `CTRL`
+    - `GRAPH`
+  - `press-only` nao critico continua exigindo confirmacao extra;
+  - drenagem aumentada para ate `4` reports por passo.
+- `DEBUG=1`
+  - overlay `TM5` agora mostra contadores da fila runtime e da estabilizacao.
+
+### Meta desta rodada
+- reduzir chance de `release` ficar atras de backlog;
+- melhorar tap curto de teclas de gameplay;
+- manter UI/menu sem regressao.
+
+### Validacao local
+- `scripts/check-third-party-pristine.sh`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603241900-keyboard-pipeline-v2`: OK
+- `BUILD_HASH`: `cd6e34b-e6036c1f056b32121f4fd343a069647ab1ee2399`
+- `BUILD_BID`: `202603241900-keyboard-pipeline-v2`
+- `BUILD_ID`: `E059`
+
+## Atualizacao 2026-03-24 - ajuste `v3` da confirmacao de `press-only`
+
+### Diagnostico
+- O corte `v2` removeu o reenvio continuo do kernel, mas tornou o runtime dependente demais de uma segunda confirmacao explicita para `press-only`.
+- Em hardware, isso deixou menu/UI funcionando, mas comprometeu a emulacao de teclas nao-criticas.
+
+### Correcao aplicada
+- `kernel.cpp`
+  - snapshots novos do runtime agora ganham uma unica reemissao controlada (`one-shot replay`), suficiente para confirmar `press-only` sem voltar ao backlog antigo.
+
+### Validacao local
+- `scripts/check-third-party-pristine.sh`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603241940-keyboard-pipeline-v3`: OK
+- `BUILD_HASH`: `cd6e34b-8707413c1b98a915041f5b77ca0d827655cce090`
+- `BUILD_BID`: `202603241940-keyboard-pipeline-v3`
+- `BUILD_ID`: `863E`
+
+## Atualizacao 2026-03-24 - bridge minimo de gameplay restaurado para ROMs
+
+### Diagnostico
+- `BASIC` voltou a responder ao teclado, mas `ROMs` carregadas continuavam sem `SPACE` e setas.
+- O ponto em comum era o bridge de joystick:
+  - `ComboKeyboardJoyMask()` estava em `0`;
+  - `bridge_bits` permanecia zerado;
+  - jogos que leem joystick nao enxergavam `UP/DOWN/LEFT/RIGHT/FIRE`.
+
+### Correcao aplicada
+- `src/tools/input/keyboard_input.cpp`
+  - restaurado bridge minimo de gameplay:
+    - setas -> direcoes do joystick
+    - `SPACE` -> `FIRE A`
+  - `ComboKeyboardJoyMask()` volta a expor `0x1F`.
+
+### Validacao local
+- `scripts/check-third-party-pristine.sh`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603242030-keyboard-joybridge-min`: OK
+- `BUILD_HASH`: `cd6e34b-bc404791c19e4ed4d395dea4f2a30dc2c318b988`
+- `BUILD_BID`: `202603242030-keyboard-joybridge-min`
+- `BUILD_ID`: `C308`
+
 ## Referências obrigatórias
 - `src/tools/usb_hid_keyboard.cpp`
 - `src/fmsx_host_stubs.c`
@@ -166,3 +239,27 @@ O filtro de estabilização não pode apagar `release` legítimo nem transformar
 - `PRESS UP/DOWN` deve ser tratado nesta issue como transições `press/release`, e não como setas direcionais.
 - Joystick entra no contrato da tool agora, mas a validação obrigatória da primeira entrega segue focada em teclado.
 - A solução deve respeitar as restrições atuais do projeto: baremetal, sem dependência de OS e sem abstração excessiva no caminho sensível de hardware.
+
+
+## Atualizacao 2026-03-24 - bridge legado de joystick restaurado
+
+### Diagnostico
+- O bridge minimo (`arrows + SPACE`) ainda foi insuficiente para alguns ROMs.
+- O baseline historico anterior ao corte `03471c9` usava tambem `SHIFT` como `FIRE A` e `Z` como `FIRE B`.
+
+### Correcao aplicada
+- `src/tools/input/keyboard_input.cpp`
+  - restaurado o contrato legado:
+    - setas -> direcoes do joystick
+    - `SPACE` e `SHIFT` -> `FIRE A`
+    - `Z` -> `FIRE B`
+  - `ComboKeyboardJoyMask()` volta a `0x3F`.
+
+### Validacao local
+- `scripts/check-third-party-pristine.sh`: OK
+- `make -j4 DEBUG=1 BUILD_BID=202603242115-keyboard-joybridge-legacy`: OK
+- `BUILD_HASH`: `cd6e34b-dc7bed6801a0f1dde6e55916d6a81782f9406537`
+- `BUILD_BID`: `202603242115-keyboard-joybridge-legacy`
+- `BUILD_ID`: `291D`
+
+- Rollback logico para `F3AD`: `BUILD_HASH` `cd6e34b-0e382a5c6dc5777c74c897a80b2ab622d1baaaad`, `BUILD_BID` `202603241320-kmg-panasonic-gate`, `BUILD_ID` `F3AD`.

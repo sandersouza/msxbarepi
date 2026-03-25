@@ -14,7 +14,6 @@
 /*************************************************************/
 
 static int FirstLine = 10 + BORDER;/* First scanline in XBuf */
-extern uint8_t FmsxVDPVScrollLatched;
 
 static void  Sprites(uint8_t Y,uint16_t *Line);
 static void  ColorSprites(uint8_t Y,uint8_t *ZBuf);
@@ -24,9 +23,16 @@ static uint16_t YJKColor(int Y,int J,int K);
 
 extern void PutImage(void);
 extern uint8_t FmsxVDPScreenOnLatched;
+extern int FmsxVDPRenderVScrollOverride;
 
 #define FMSX_SCREEN_ON (FmsxVDPScreenOnLatched)
-#define FMSX_RENDER_VSCROLL (FmsxVDPVScrollLatched)
+/*
+ * Keep vertical scroll live like upstream fMSX/openMSX. Knightmare Gold
+ * updates R#23 in lockstep with its VRAM blits; latching it one scanline
+ * early makes the 8x8 boundary consume the previous tile row again.
+ */
+#define FMSX_RENDER_VSCROLL \
+  ((FmsxVDPRenderVScrollOverride>=0)? (uint8_t)FmsxVDPRenderVScrollOverride:VDP[23])
 
 /* V9958 horizontal scroll helpers:
  * R26 = coarse scroll blocks
@@ -855,6 +861,53 @@ void RefreshLine3(uint8_t Y)
 /** Refresh line Y (0..191/211) of SCREEN4, including       **/
 /** sprites in this line.                                   **/
 /*************************************************************/
+void RefreshLine4PlainRange(uint8_t Y,unsigned X0,unsigned X1)
+{
+  uint16_t FC,BC;
+  uint8_t K,C,*T,*R;
+  int I,J;
+  uint8_t ZBuf[320];
+  uint16_t *P=RefreshBorder(Y,XPal[BGColor]);
+  unsigned X;
+
+  if(!P) return;
+  if(X0>=32u) return;
+  if(X1>32u) X1=32u;
+  if(X1<=X0) return;
+
+  if(!FMSX_SCREEN_ON)
+  {
+    ClearLine(P,XPal[BGColor]);
+    return;
+  }
+
+  LastScanline = Y + FirstLine;
+  ColorSprites(Y,ZBuf);
+  R=ZBuf+32u+(X0<<3);
+  P+=(X0<<3);
+  Y+=FMSX_RENDER_VSCROLL;
+  T=ChrTab+((int)(Y&0xF8)<<2)+(int)X0;
+  I=((int)(Y&0xC0)<<5)+(Y&0x07);
+
+  for(X=X0;X<X1;X++,R+=8,P+=8,T++)
+  {
+    J=(int)*T<<3;
+    K=ColTab[(I+J)&ColTabM];
+    FC=XPal[K>>4];
+    BC=XPal[K&0x0F];
+    K=ChrGen[(I+J)&ChrGenM];
+
+    C=R[0];P[0]=C? XPal[C]:(K&0x80)? FC:BC;
+    C=R[1];P[1]=C? XPal[C]:(K&0x40)? FC:BC;
+    C=R[2];P[2]=C? XPal[C]:(K&0x20)? FC:BC;
+    C=R[3];P[3]=C? XPal[C]:(K&0x10)? FC:BC;
+    C=R[4];P[4]=C? XPal[C]:(K&0x08)? FC:BC;
+    C=R[5];P[5]=C? XPal[C]:(K&0x04)? FC:BC;
+    C=R[6];P[6]=C? XPal[C]:(K&0x02)? FC:BC;
+    C=R[7];P[7]=C? XPal[C]:(K&0x01)? FC:BC;
+  }
+}
+
 void RefreshLine4(uint8_t Y)
 {
   uint16_t FC,BC;

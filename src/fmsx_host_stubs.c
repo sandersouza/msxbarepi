@@ -120,6 +120,10 @@ static uint8_t g_kbd_candidate_state[16] =
 static uint8_t g_kbd_candidate_seen = 0u;
 
 static void fmsx_keyboard_press_code(uint8_t matrix[16], unsigned code);
+static void fmsx_keyboard_build_desired_state(u8 modifiers, const unsigned char raw_keys[6], uint8_t desired_state[16]);
+static unsigned fmsx_keyboard_report_last_msx_code(const unsigned char raw_keys[6], unsigned *last_hid);
+static int fmsx_keyboard_code_is_new_press(const uint8_t desired_state[16], const uint8_t stable_state[16], unsigned code);
+static int fmsx_keyboard_change_has_gameplay_press(const uint8_t desired_state[16], const uint8_t stable_state[16]);
 static unsigned fmsx_code_from_hid(u8 hid);
 static void fmsx_keyboard_canonicalize_raw(unsigned char raw_keys[6]);
 static int fmsx_keyboard_report_equals(u8 modifiers_a, const unsigned char raw_a[6],
@@ -216,6 +220,7 @@ static void fmsx_runtime_keyboard_queue_push(u8 modifiers, const unsigned char r
         g_kbd_runtime_dropped += oldest_seq - g_kbd_runtime_read_seq;
         g_kbd_runtime_read_seq = oldest_seq;
     }
+
 }
 
 static void fmsx_runtime_apply_keyboard_raw(u8 modifiers, const unsigned char raw_keys[6])
@@ -322,6 +327,95 @@ static void fmsx_keyboard_press_code(uint8_t matrix[16], unsigned code)
     {
         matrix[Keys[code][0]] &= (uint8_t) ~Keys[code][1];
     }
+}
+
+static void fmsx_keyboard_build_desired_state(u8 modifiers, const unsigned char raw_keys[6], uint8_t desired_state[16])
+{
+    for (unsigned i = 0u; i < 16u; ++i)
+    {
+        desired_state[i] = 0xFFu;
+    }
+
+    if (modifiers & 0x22u)
+    {
+        fmsx_keyboard_press_code(desired_state, KBD_SHIFT);
+    }
+    if (modifiers & 0x11u)
+    {
+        fmsx_keyboard_press_code(desired_state, KBD_CONTROL);
+    }
+    if (modifiers & 0x44u)
+    {
+        fmsx_keyboard_press_code(desired_state, KBD_GRAPH);
+    }
+
+    if (raw_keys)
+    {
+        for (unsigned i = 0u; i < 6u; ++i)
+        {
+            const unsigned code = fmsx_code_from_hid(raw_keys[i]);
+            if (code != 0u)
+            {
+                fmsx_keyboard_press_code(desired_state, code);
+            }
+        }
+    }
+}
+
+static unsigned fmsx_keyboard_report_last_msx_code(const unsigned char raw_keys[6], unsigned *last_hid)
+{
+    unsigned found_hid = 0u;
+    unsigned found_msx = 0u;
+
+    if (raw_keys)
+    {
+        for (unsigned i = 0u; i < 6u; ++i)
+        {
+            const u8 hid = raw_keys[i];
+            const unsigned code = fmsx_code_from_hid(hid);
+            if (code != 0u)
+            {
+                found_hid = hid;
+                found_msx = code;
+            }
+        }
+    }
+
+    if (last_hid)
+    {
+        *last_hid = found_hid;
+    }
+    return found_msx;
+}
+
+static int fmsx_keyboard_code_is_new_press(const uint8_t desired_state[16], const uint8_t stable_state[16], unsigned code)
+{
+    if (code > 0x88u)
+    {
+        return 0;
+    }
+
+    const unsigned row = Keys[code][0];
+    const uint8_t mask = (uint8_t) Keys[code][1];
+    return ((stable_state[row] & mask) != 0u) && ((desired_state[row] & mask) == 0u);
+}
+
+static int fmsx_keyboard_change_has_gameplay_press(const uint8_t desired_state[16], const uint8_t stable_state[16])
+{
+    static const unsigned kGameplayCodes[] =
+    {
+        KBD_LEFT, KBD_UP, KBD_RIGHT, KBD_DOWN,
+        KBD_SHIFT, KBD_CONTROL, KBD_GRAPH, KBD_SPACE
+    };
+
+    for (unsigned i = 0u; i < sizeof(kGameplayCodes) / sizeof(kGameplayCodes[0]); ++i)
+    {
+        if (fmsx_keyboard_code_is_new_press(desired_state, stable_state, kGameplayCodes[i]))
+        {
+            return 1;
+        }
+    }
+    return 0;
 }
 
 static void fmsx_keyboard_canonicalize_raw(unsigned char raw_keys[6])
@@ -673,6 +767,17 @@ void fmsx_audio_reset_stream_timing(void)
     g_audio_frame_rendered_samples = 0u;
 }
 
+void fmsx_audio_reanchor_stream_timing(void)
+{
+    g_audio_cycle_carry = 0u;
+    g_audio_last_cycle_stamp = fmsx_audio_cpu_cycles_now();
+    g_audio_last_trim_samples = 0u;
+    g_audio_last_sync_rendered_samples = 0u;
+    g_audio_last_render_batch = 0u;
+    g_audio_max_render_batch = 0u;
+    g_audio_frame_rendered_samples = 0u;
+}
+
 unsigned fmsx_audio_last_sync_rendered_samples(void)
 {
     return g_audio_last_sync_rendered_samples;
@@ -766,6 +871,14 @@ void fmsx_keyboard_get_debug(TFmsxKeyboardDebug *stats)
 
     stats->last_hid = g_kbd_last_hid;
     stats->last_msx = g_kbd_last_msx;
+    stats->runtime_queued = g_kbd_runtime_write_seq - g_kbd_runtime_read_seq;
+    stats->runtime_high_water = 0u;
+    stats->runtime_dropped = g_kbd_runtime_dropped;
+    stats->candidate_created = 0u;
+    stats->candidate_promoted = 0u;
+    stats->candidate_discarded = 0u;
+    stats->immediate_releases = 0u;
+    stats->immediate_gameplay_presses = 0u;
 }
 
 void SetColor(uint8_t N, uint8_t R, uint8_t G, uint8_t B)
