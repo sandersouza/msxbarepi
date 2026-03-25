@@ -928,7 +928,7 @@ CComboKernel::CComboKernel(void)
 	m_RuntimeKeyboardDispatchedModifiers(0u),
 	m_RuntimeKeyboardDispatchedRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
 	m_FmMusicEnabled(MSXBARE_FEAT_FMPAC ? TRUE : FALSE),
-	m_FmLayerGainPct(100u),
+	m_FmLayerGainPct(80u),
 	m_SccCartEnabled(MSXBARE_FEAT_SCC ? TRUE : FALSE),
 	m_SccDualCartEnabled(FALSE),
 	m_FrameIntervalUs(FrameIntervalFromRefreshHz(60u)),

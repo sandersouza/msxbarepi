@@ -50,3 +50,23 @@ Issue: #219 (melhorar fidelidade de render PSG/FM-PAC no backend local)
   - não tocar em `SCC/SCC+`;
   - não tocar em `VDP`/timing global;
   - não reabrir a trilha do `Knightmare Gold`.
+
+## Atualização 2026-03-25 - PSG mascarado quando FM está ativo
+- Após o revert do `NukeYKT` default, o pacing geral voltou ao normal na build `96EB`.
+- Feedback de hardware no `Xevious`:
+  - performance normal restaurada;
+  - o áudio ainda parece "faltar canais" no `PSG` quando o `FM-PAC` está ativo.
+- Varredura técnica desta rodada:
+  - o renderer dedicado do `PSG` em `src/fmsx_local_sound.c` continua alinhado ao caminho mono do `blueMSX` (`sampleVolume[3] -> ctrlVolume -> daVolume`);
+  - o write path do `AY8910` local em `src/fmsx_local_ay8910.c` continua equivalente ao upstream;
+  - o próximo suspeito deixou de ser o `PSG` e passou a ser o `FM-PAC` simples mascarando o mix final:
+    - o `YM2413` simplificado continua sem instrumentos reais;
+    - o ganho default do layer `FM` ainda estava em `100%`.
+- Corte incremental adotado:
+  - manter `NukeYKT` fora do default;
+  - reduzir o ganho default do layer `FM` para `80%`;
+  - não tocar em `PSG`, `SCC`, `VDP` ou timing global.
+- Build desta rodada:
+  - `BUILD_HASH: 4a54cb9-947feee84427a6890b5bafe3623677d4e27d4047`
+  - `BUILD_BID: 202603251145-issue219-fm-default-80`
+  - `BUILD_ID: 0A5D`
