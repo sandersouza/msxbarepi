@@ -51,10 +51,11 @@ Abrir uma trilha separada para melhorar a fidelidade de render do `PSG` e do `FM
 ## Rodada atual
 - Diagnóstico inicial fechado com `Xevious` como caso reprodutor de `PSG + FM-PAC`.
 - Conclusão: o problema principal não estava no `PSG`; o `FM-PAC` default ainda seguia o core simples do `fMSX`, que ignora instrumentos e `user tone`.
-- Primeiro corte escolhido:
-  - ativar `NukeYKT` por padrão no backend local;
-  - preservar mixer/voicing aprovados;
-  - deixar a análise fina do `PSG` para a próxima rodada, se ainda houver gap audível após o corte do `FM-PAC`.
+- Tentativa validada e revertida:
+  - ativar `NukeYKT` por padrão confirmou a hipótese de fidelidade, mas derrubou o frame pacing para ~31fps no hardware alvo;
+  - por isso, o default global foi revertido nesta mesma rodada.
+- Próximo alvo técnico:
+  - tornar o core FM fiel sem custo de performance inaceitável no Pi 3B.
 
 ## Referências iniciais
 - `src/fmsx_local_sound.c`

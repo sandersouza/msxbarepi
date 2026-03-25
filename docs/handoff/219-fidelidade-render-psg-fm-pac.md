@@ -41,9 +41,12 @@ Issue: #219 (melhorar fidelidade de render PSG/FM-PAC no backend local)
 - Referências `openMSX` e `blueMSX` usam cores completos de `YM2413`, inclusive com suporte real a patches/user instrument.
 
 ## Primeiro corte de implementação
-- Tornar `NukeYKT` o caminho default do `FM-PAC` no backend local.
-- Manter o mixer atual e o voicing Harman aprovados, sem mexer no `PSG` nesta rodada.
-- Preservar invariantes:
+- A tentativa de tornar `NukeYKT` o caminho default do `FM-PAC` confirmou o diagnóstico de fidelidade, mas abriu regressão grave de performance em hardware (`V` caiu para ~31fps no `Xevious` em Raspberry Pi 3B).
+- Decisão técnica desta rodada:
+  - `NukeYKT` nao pode ser o default global da `#219` no hardware alvo atual;
+  - o baseline volta ao caminho anterior para restaurar o frame pacing;
+  - o proximo corte precisa focar em alternativa incremental: seletor opcional de core FM, otimização do caminho `NukeYKT`, ou melhoria do `YM2413` simples sem custo de 2x no frame time.
+- Invariantes mantidas:
   - não tocar em `SCC/SCC+`;
   - não tocar em `VDP`/timing global;
   - não reabrir a trilha do `Knightmare Gold`.

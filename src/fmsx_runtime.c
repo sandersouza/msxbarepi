@@ -693,10 +693,10 @@ static int fmsx_runtime_machine_mode_bits_for_profile(unsigned profile)
 {
     switch (profile)
     {
-    case FMSX_MODEL_PROFILE_MSX2:  return MSX_MSX2 | MSX_NUKEYKT;
-    case FMSX_MODEL_PROFILE_MSX2P: return MSX_MSX2P | MSX_NUKEYKT;
+    case FMSX_MODEL_PROFILE_MSX2:  return MSX_MSX2;
+    case FMSX_MODEL_PROFILE_MSX2P: return MSX_MSX2P;
     case FMSX_MODEL_PROFILE_MSX1:
-    default: return MSX_MSX1 | MSX_NUKEYKT;
+    default: return MSX_MSX1;
     }
 }
 

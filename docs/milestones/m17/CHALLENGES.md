@@ -83,7 +83,7 @@ Registro de desafios enfrentados por issue, decisão adotada e status da soluç�
 
 ### #219 — fidelidade de render PSG/FM-PAC
 - Desafio: O voicing global do mixer melhorou o balanço, mas `PSG` e `FM-PAC` ainda não tiveram uma trilha própria de fidelidade de render; ambos usam caminhos diferentes do `SND_WAVE` que resolveu o caso crítico do `SCC/SCC+`.
-- Solução adotada: Diagnóstico inicial fechado com `Xevious`; o gap estrutural principal está no `FM-PAC` default do `fMSX`, que ignora instrumentos e `user tone`. Primeiro corte: ativar `NukeYKT` por padrão e revalidar antes de atacar o `PSG`.
+- Solução adotada: Diagnóstico inicial fechado com `Xevious`; o gap estrutural principal está no `FM-PAC` default do `fMSX`, que ignora instrumentos e `user tone`. A tentativa de ativar `NukeYKT` por padrão confirmou a hipótese de fidelidade, mas abriu regressão grave de performance no Pi 3B (~31fps), então o default foi revertido. O próximo corte precisa separar fidelidade de custo.
 - Status: Em andamento
 - Referência: [219-fidelidade-render-psg-fm-pac.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/219-fidelidade-render-psg-fm-pac.md)
 
