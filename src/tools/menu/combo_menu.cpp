@@ -727,6 +727,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_ScanlineMode(0u),
     m_RefreshRateHz(60u),
     m_DiskRomEnabled(TRUE),
+    m_KanjiRomEnabled(FALSE),
     m_BootMode(0u),
     m_MachineProfile(0u),
     m_RamMapperKb(256u),
@@ -785,6 +786,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnScanlineMode(0u),
     m_LastDrawnRefreshRateHz(60u),
     m_LastDrawnDiskRomEnabled(TRUE),
+    m_LastDrawnKanjiRomEnabled(FALSE),
     m_LastDrawnBootMode(0u),
     m_LastDrawnMachineProfile(0u),
     m_LastDrawnRamMapperKb(0u),
@@ -915,6 +917,7 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
     m_LastDrawnDiskRomEnabled = m_DiskRomEnabled;
+    m_LastDrawnKanjiRomEnabled = m_KanjiRomEnabled;
     m_LastDrawnBootMode = m_BootMode;
     m_LastDrawnMachineProfile = m_MachineProfile;
     m_LastDrawnZ80TurboMode = m_Z80TurboMode;
@@ -1093,6 +1096,21 @@ void CComboPauseMenu::SetDiskRomEnabled(boolean enabled)
 boolean CComboPauseMenu::IsDiskRomEnabled(void) const
 {
     return m_DiskRomEnabled ? TRUE : FALSE;
+}
+
+void CComboPauseMenu::SetKanjiRomEnabled(boolean enabled)
+{
+    enabled = enabled ? TRUE : FALSE;
+    if (m_KanjiRomEnabled != enabled)
+    {
+        m_KanjiRomEnabled = enabled;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+boolean CComboPauseMenu::IsKanjiRomEnabled(void) const
+{
+    return m_KanjiRomEnabled ? TRUE : FALSE;
 }
 
 void CComboPauseMenu::SetBootMode(unsigned mode)
@@ -1471,6 +1489,19 @@ boolean CComboPauseMenu::IsInSettings(void) const
     return (m_View != MenuViewRoot) ? TRUE : FALSE;
 }
 
+void CComboPauseMenu::ReturnToRoot(void)
+{
+    const unsigned old_view = m_View;
+    m_View = MenuViewRoot;
+    m_Selected = FindFirstSelectable();
+    const boolean silent_settings_back = (old_view == MenuViewSettings) ? TRUE : FALSE;
+    m_ForceRedraw = silent_settings_back ? FALSE : TRUE;
+    m_ForceHighlightRedraw = FALSE;
+    m_ForceContentRedraw = FALSE;
+    m_SuppressNextRender = silent_settings_back;
+    m_RequestBackgroundRestore = silent_settings_back ? FALSE : TRUE;
+}
+
 void CComboPauseMenu::RequestRedraw(void)
 {
     m_ForceRedraw = TRUE;
@@ -1636,6 +1667,18 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_OverlayAvailable,
             m_DebugLogEnabled,
             m_AudioGainPercent,
+            count);
+    }
+    if (m_View == MenuViewDebug)
+    {
+        return combo_menu_debug_items_get(
+            m_Language,
+            m_RefreshRateHz,
+            m_DiskRomEnabled,
+            m_KanjiRomEnabled,
+            m_OverlayEnabled,
+            m_OverlayAvailable,
+            m_DebugLogEnabled,
             count);
     }
     if (m_View == MenuViewLoadRom)
@@ -1941,7 +1984,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             m_View = MenuViewRoot;
         }
         m_Selected = FindFirstSelectable();
-        const boolean silent_settings_back = (m_View == MenuViewRoot && old_view == MenuViewSettings) ? TRUE : FALSE;
+        const boolean silent_settings_back = (m_View == MenuViewRoot && (old_view == MenuViewSettings || old_view == MenuViewDebug)) ? TRUE : FALSE;
         m_ForceRedraw = silent_settings_back ? FALSE : TRUE;
         m_ForceHighlightRedraw = FALSE;
         m_ForceContentRedraw = FALSE;
@@ -2302,7 +2345,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
     }
 
     boolean handled_settings_input = FALSE;
-    if (m_View == MenuViewSettings && items[m_Selected].selectable)
+    if ((m_View == MenuViewSettings || m_View == MenuViewDebug) && items[m_Selected].selectable)
     {
         const boolean enter_edge = enter_pressed && !m_LastEnterPressed;
         const boolean left_edge = left_pressed && !m_LastLeftPressed;
@@ -2523,6 +2566,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         }
         else if ((items[m_Selected].action == ComboMenuActionToggleWidescreen)
               || (items[m_Selected].action == ComboMenuActionToggleDiskRom)
+              || (items[m_Selected].action == ComboMenuActionToggleKanjiRom)
               || (items[m_Selected].action == ComboMenuActionToggleOverlay)
               || (items[m_Selected].action == ComboMenuActionToggleDebugLog))
         {
@@ -2549,6 +2593,14 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         if (m_View == MenuViewRoot && items[m_Selected].action == ComboMenuActionSettings)
         {
             m_View = MenuViewSettings;
+            m_Selected = FindFirstSelectable();
+            m_ForceRedraw = TRUE;
+            m_ForceHighlightRedraw = FALSE;
+            m_RequestBackgroundRestore = TRUE;
+        }
+        else if (m_View == MenuViewRoot && items[m_Selected].action == ComboMenuActionDebug)
+        {
+            m_View = MenuViewDebug;
             m_Selected = FindFirstSelectable();
             m_ForceRedraw = TRUE;
             m_ForceHighlightRedraw = FALSE;
@@ -2711,6 +2763,10 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     {
         title = locale->title_settings;
     }
+    else if (m_View == MenuViewDebug)
+    {
+        title = locale->title_debug;
+    }
     else if (m_View == MenuViewLoadRom)
     {
         title = locale->title_load_rom;
@@ -2834,6 +2890,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnScanlineMode == m_ScanlineMode
      && m_LastDrawnRefreshRateHz == m_RefreshRateHz
      && m_LastDrawnDiskRomEnabled == m_DiskRomEnabled
+     && m_LastDrawnKanjiRomEnabled == m_KanjiRomEnabled
      && m_LastDrawnBootMode == m_BootMode
      && m_LastDrawnMachineProfile == m_MachineProfile
      && m_LastDrawnRamMapperKb == m_RamMapperKb
@@ -2952,7 +3009,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         const unsigned row = 2u + i;
         const unsigned y = box_y + (row * cell_h);
         const unsigned text_len = ComboStrLen(items[i].label);
-        const boolean settings_row = (m_View == MenuViewSettings);
+        const boolean settings_row = (m_View == MenuViewSettings || m_View == MenuViewDebug);
         const boolean load_media_row = (m_View == MenuViewLoadRom || m_View == MenuViewLoadDisk);
         const boolean browser_row = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser);
         const boolean cheat_list_row = (m_View == MenuViewGameMasterCheats);
@@ -3143,6 +3200,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
     m_LastDrawnDiskRomEnabled = m_DiskRomEnabled;
+    m_LastDrawnKanjiRomEnabled = m_KanjiRomEnabled;
     m_LastDrawnBootMode = m_BootMode;
     m_LastDrawnMachineProfile = m_MachineProfile;
     m_LastDrawnRamMapperKb = m_RamMapperKb;

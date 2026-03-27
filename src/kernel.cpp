@@ -51,7 +51,8 @@ static const unsigned kResolutionMode1080 = 1u;
 static const unsigned kResolutionMode720 = 2u;
 static const unsigned kResolutionMode768 = 3u;
 static const char kSettingsDrive[] = "SD:";
-static const char kSettingsPath[] = "SD:/MSXBARE.CFG";
+static const char kSettingsPath[] = "SD:/msxbarepi.cfg";
+static const char kSettingsLegacyPath[] = "SD:/MSXBARE.CFG";
 static const char kBootConfigPath[] = "SD:/config.txt";
 static const char kStateDirPath[] = "SD:/states";
 static const char kStatePath[] = "SD:/states/slot-last.sav";
@@ -97,6 +98,20 @@ static unsigned BuildHash16(void)
 		cached = BuildHash16FromString(MSXBARE_BUILD_BID);
 	}
 	return cached;
+}
+
+static void BootPhase(CLogger &logger, const char *phase, const char *status)
+{
+	CString line;
+	line.Format("%s: %s", phase != 0 ? phase : "BT?", status != 0 ? status : "");
+	logger.Write(FromKernel, LogNotice, line);
+}
+
+static void BootPhaseWarn(CLogger &logger, const char *phase, const char *status)
+{
+	CString line;
+	line.Format("%s: %s", phase != 0 ? phase : "BT?", status != 0 ? status : "");
+	logger.Write(FromKernel, LogWarning, line);
 }
 
 static unsigned UMax(unsigned a, unsigned b)
@@ -849,6 +864,7 @@ CComboKernel::CComboKernel(void)
 	m_JoyMappedBits(ComboKeyboardJoyMask()),
 	m_DebugOverlayEnabled(MSXBARE_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE),
 	m_DebugOverlayUnlocked(TRUE),
+	m_ScreenReady(FALSE),
 	m_EmulationPaused(FALSE),
 	m_LastF12Pressed(FALSE),
 	m_LastF6Pressed(FALSE),
@@ -940,6 +956,7 @@ CComboKernel::CComboKernel(void)
 	m_ICacheEnabled(FALSE),
 	m_SettingsStorageReady(FALSE),
 	m_UartTelemetryEnabled(MSXBARE_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE),
+	m_KanjiRomEnabled(FALSE),
 	m_SettingsLoadPending(FALSE),
 	m_InitramfsDeferredMountPending(FALSE),
 	m_SettingsSavePending(FALSE),
@@ -1032,10 +1049,6 @@ boolean CComboKernel::Initialize(void)
 
 	if (ok)
 	{
-		ok = m_Screen.Initialize();
-	}
-	if (ok)
-	{
 		CDevice *target = &m_NullLog;
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
 		ok = m_Serial.Initialize(115200);
@@ -1046,19 +1059,29 @@ boolean CComboKernel::Initialize(void)
 		}
 #endif
 		ok = m_Logger.Initialize(target);
+		if (ok)
+		{
+			BootPhase(m_Logger, "BT0", "UART + Logger... OK");
+		}
 	}
 
 	if (ok) ok = m_Interrupt.Initialize();
 	if (ok) ok = m_Timer.Initialize();
 	if (ok)
 	{
+		BootPhase(m_Logger, "BT1", "Interrupt + Timer... OK");
+	}
+	if (ok)
+	{
 		if (!m_EMMC.Initialize())
 		{
+			BootPhaseWarn(m_Logger, "BT2", "SD/eMMC driver... FAIL");
 			m_Logger.Write(FromKernel, LogWarning, "SD storage init failed; settings persistence disabled");
 		}
 		else
 		{
 			m_SettingsStorageReady = TRUE;
+			BootPhase(m_Logger, "BT2", "SD/eMMC driver... OK");
 		}
 	}
 
@@ -1107,15 +1130,22 @@ TComboShutdownMode CComboKernel::Run(void)
 		/* Must be applied before fMSX init so boot/runtime settings take effect on first boot. */
 		if (f_mount(&m_SettingsFileSystem, kSettingsDrive, 1) == FR_OK)
 		{
+			BootPhase(m_Logger, "BT3", "FATFS mount... OK");
 			LoadSettingsFromStorage();
 		}
 		else
 		{
 			m_SettingsStorageReady = FALSE;
+			BootPhaseWarn(m_Logger, "BT3", "FATFS mount... FAIL");
 			m_Logger.Write(FromKernel, LogWarning, "Settings mount failed on SD:; persistence disabled");
 		}
 	}
+	else
+	{
+		BootPhaseWarn(m_Logger, "BT3", "FATFS mount... SKIP");
+	}
 	NormalizeSettingsForBuild();
+	BootPhase(m_Logger, "BT5", "Normalize settings... OK");
 #if MSXBARE_ENABLE_FMSX
 	if (m_FmsxEnabled)
 	{
@@ -1138,6 +1168,7 @@ TComboShutdownMode CComboKernel::Run(void)
 		CString initramfs_line;
 		initramfs_line.Format("initramfs files: %u", mounted_files);
 		m_Logger.Write(FromKernel, LogNotice, initramfs_line);
+		BootPhase(m_Logger, "BT6", "initramfs... OK");
 
 		if (!kBootQuiet)
 		{
@@ -1161,6 +1192,18 @@ TComboShutdownMode CComboKernel::Run(void)
 				m_SccDualCartEnabled = FALSE;
 			}
 		}
+		BootPhase(m_Logger, "BT7", "runtime config... OK");
+		m_Logger.Write(FromKernel, LogNotice, "Boot step: init screen");
+		if (!m_Screen.Initialize())
+		{
+			BootPhaseWarn(m_Logger, "BT8", "screen... FAIL");
+			m_Logger.Write(FromKernel, LogPanic, "Screen init failed");
+			return ComboShutdownHalt;
+		}
+		m_Logger.Write(FromKernel, LogNotice, "Screen ready");
+		m_Logger.Write(FromKernel, LogNotice, "Boot step: screen OK");
+		BootPhase(m_Logger, "BT8", "screen... OK");
+		m_ScreenReady = TRUE;
 		m_FmsxReady = emulator_backend_init();
 		{
 			const EmulatorBackendInfo backend_info = emulator_backend_get_info();
@@ -1183,6 +1226,7 @@ TComboShutdownMode CComboKernel::Run(void)
 				m_EmulatorBackendName != 0 ? m_EmulatorBackendName : "backend",
 				m_BackendInitFailCode);
 			m_Logger.Write(FromKernel, LogWarning, line);
+			BootPhaseWarn(m_Logger, "BT9", "emulator backend... FAIL");
 		}
 		else
 		{
@@ -1194,6 +1238,7 @@ TComboShutdownMode CComboKernel::Run(void)
 			line.Format("%s bootstrap OK (frame-step)",
 				m_EmulatorBackendName != 0 ? m_EmulatorBackendName : "backend");
 			m_Logger.Write(FromKernel, LogNotice, line);
+			BootPhase(m_Logger, "BT9", "emulator backend... OK");
 
 			/* Defensive restore exists only on fMSX path for now. */
 				if (backend_is_fmsx)
@@ -1236,6 +1281,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	{
 		WriteScreenText("\x1b[?25l");
 	}
+	BootPhase(m_Logger, "BT10", "debug overlay... READY");
 	m_Logger.Write(FromKernel, LogNotice, "Overlay: F11 | Pause: F12 | UART: F10");
 #if MSXBARE_ENABLE_FMSX
 	if (m_FmsxReady && backend_is_fmsx)
@@ -1251,6 +1297,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_RefreshRateHz = 60u;
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 	m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
+	m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
 	m_PauseMenu.SetBootMode(m_BootMode);
 	m_PauseMenu.SetMachineProfile(m_MachineProfile);
 	m_PauseMenu.SetRamMapperKb(m_RamMapperKb);
@@ -1290,11 +1337,13 @@ TComboShutdownMode CComboKernel::Run(void)
 				m_UsbReady = TRUE;
 				m_Logger.Write(FromKernel, LogNotice, "USB host ready");
 				m_Logger.Write(FromKernel, LogNotice, "Attach USB keyboard and type");
+				BootPhase(m_Logger, "BT11", "USB Host... OK");
 			}
 			else
 			{
 				m_Logger.Write(FromKernel, LogWarning, "USB host init failed; retrying");
 				m_UsbInitRetryTick = 300u;
+				BootPhaseWarn(m_Logger, "BT11", "USB Host... RETRY");
 			}
 		}
 		/* Force first visible frame to use current viewport policy (avoid transient wide boot frame). */
@@ -1307,6 +1356,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	#endif
 
 	m_Logger.Write(FromKernel, LogNotice, "Boot step: main loop");
+	BootPhase(m_Logger, "BT12", "main loop... OK");
 	u64 next_frame_us = CTimer::GetClockTicks64();
 	for (unsigned tick = 0; ; ++tick)
 	{
@@ -1413,6 +1463,9 @@ TComboShutdownMode CComboKernel::Run(void)
 		{
 			m_SettingsSavePending = FALSE;
 			SaveSettingsToStorage();
+			m_PauseMenu.ReturnToRoot();
+			m_LastPauseWasInSettings = FALSE;
+			m_PauseMenu.RequestRedraw();
 		}
 		if (m_ResolutionModeLoadPending)
 		{
@@ -3061,7 +3114,7 @@ void CComboKernel::UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, un
 	m_SettingsSaveCode = code;
 	m_SettingsSaveAux = aux;
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
-	if (m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
+	if (m_ScreenReady && m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
 	{
 		DrawDebugOverlay((unsigned) (m_FmsxFrames & 0xFFFFFFFFu));
 	}
@@ -3073,7 +3126,7 @@ void CComboKernel::UpdateLoadDiagTelemetry(unsigned stage)
 #if MSXBARE_ENABLE_FMSX
 	fmsx_runtime_set_load_diag(stage);
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
-	if (m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
+	if (m_ScreenReady && m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
 	{
 		DrawDebugOverlay((unsigned) (m_FmsxFrames & 0xFFFFFFFFu));
 	}
@@ -3092,28 +3145,37 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	UpdateLoadDiagTelemetry(5101u); /* CFG stat */
 
 	FILINFO file_info;
-	const FRESULT stat_result = f_stat(kSettingsPath, &file_info);
+	const char *settings_path = kSettingsPath;
+	FRESULT stat_result = f_stat(settings_path, &file_info);
+	if (stat_result == FR_NO_FILE)
+	{
+		settings_path = kSettingsLegacyPath;
+		stat_result = f_stat(settings_path, &file_info);
+	}
 	if (stat_result == FR_NO_FILE)
 	{
 		UpdateLoadDiagTelemetry(5102u); /* CFG not found */
+		BootPhaseWarn(m_Logger, "BT4", "msxbarepi.cfg... DEFAULTS");
 		m_Logger.Write(FromKernel, LogNotice, "Settings file not found; using defaults");
 		return;
 	}
 	if (stat_result != FR_OK)
 	{
 		UpdateLoadDiagTelemetry(5190u + (ClampFatFsCode(stat_result) % 10u)); /* CFG stat fail */
-		LogSdOpResult(m_Logger, "CFG:STAT", stat_result, kSettingsPath, TRUE);
+		LogSdOpResult(m_Logger, "CFG:STAT", stat_result, settings_path, TRUE);
+		BootPhaseWarn(m_Logger, "BT4", "msxbarepi.cfg... FALLBACK");
 		m_Logger.Write(FromKernel, LogWarning, "Settings stat failed; using defaults");
 		return;
 	}
 
 	FIL file;
 	UpdateLoadDiagTelemetry(5201u); /* CFG open */
-	const FRESULT open_result = f_open(&file, kSettingsPath, FA_READ);
+	const FRESULT open_result = f_open(&file, settings_path, FA_READ);
 	if (open_result != FR_OK)
 	{
 		UpdateLoadDiagTelemetry(5290u + (ClampFatFsCode(open_result) % 10u)); /* CFG open fail */
-		LogSdOpResult(m_Logger, "CFG:OPEN", open_result, kSettingsPath, TRUE);
+		LogSdOpResult(m_Logger, "CFG:OPEN", open_result, settings_path, TRUE);
+		BootPhaseWarn(m_Logger, "BT4", "msxbarepi.cfg... FALLBACK");
 		m_Logger.Write(FromKernel, LogWarning, "Settings open failed; using defaults");
 		return;
 	}
@@ -3128,8 +3190,9 @@ void CComboKernel::LoadSettingsFromStorage(void)
 		UpdateLoadDiagTelemetry(5390u + (ClampFatFsCode(read_result) % 10u)); /* CFG read fail */
 		if (read_result != FR_OK)
 		{
-			LogSdOpResult(m_Logger, "CFG:READ", read_result, kSettingsPath, TRUE);
+			LogSdOpResult(m_Logger, "CFG:READ", read_result, settings_path, TRUE);
 		}
+		BootPhaseWarn(m_Logger, "BT4", "msxbarepi.cfg... FALLBACK");
 		m_Logger.Write(FromKernel, LogWarning, "Settings read failed; using defaults");
 		return;
 	}
@@ -3139,6 +3202,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	/* Corruption guard: only parse files written by SaveSettingsToStorage(). */
 	if (strstr(buffer, "#END") == 0)
 	{
+		BootPhaseWarn(m_Logger, "BT4", "msxbarepi.cfg... FALLBACK");
 		m_Logger.Write(FromKernel, LogWarning, "Settings file invalid/corrupt; using defaults");
 		return;
 	}
@@ -3223,6 +3287,10 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			else if (SettingsKeyEquals(line, key_len, "disk_rom"))
 			{
 				m_DiskRomEnabled = value ? TRUE : FALSE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "kanji_rom"))
+			{
+				m_KanjiRomEnabled = value ? TRUE : FALSE;
 			}
 				else if (SettingsKeyEquals(line, key_len, "boot_mode"))
 				{
@@ -3325,6 +3393,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 	m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
+	m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
 	m_PauseMenu.SetBootMode(m_BootMode);
 	m_PauseMenu.SetMachineProfile(m_MachineProfile);
 	m_PauseMenu.SetRamMapperKb(m_RamMapperKb);
@@ -3381,8 +3450,9 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	#endif
 
 	CString line_log;
-	line_log.Format("Settings loaded from %s", kSettingsPath);
+	line_log.Format("Settings loaded from %s", settings_path);
 	m_Logger.Write(FromKernel, LogNotice, line_log);
+	BootPhase(m_Logger, "BT4", "msxbarepi.cfg... OK");
 }
 
 void CComboKernel::SaveSettingsToStorage(void)
@@ -3437,6 +3507,7 @@ void CComboKernel::SaveSettingsToStorage(void)
 		APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
 	APPEND_LINE_FMT("refresh=%u\n", ClampRefreshRateHz(m_RefreshRateHz));
 	APPEND_LINE_FMT("disk_rom=%u\n", m_DiskRomEnabled ? 1u : 0u);
+	APPEND_LINE_FMT("kanji_rom=%u\n", m_KanjiRomEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("boot_mode=%u\n", m_BootMode);
 	APPEND_LINE_FMT("machine=%u\n", m_MachineProfile);
 	APPEND_LINE_FMT("rammapper_kb=%u\n", m_RamMapperKb);
@@ -4498,6 +4569,13 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		break;
 #endif
 
+	case ComboMenuActionToggleKanjiRom:
+		m_KanjiRomEnabled = m_KanjiRomEnabled ? FALSE : TRUE;
+		m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
+		RefreshSettingsUiAfterAction();
+		m_Logger.Write(FromKernel, LogNotice, m_KanjiRomEnabled ? "Settings: Kanji ROM ON" : "Settings: Kanji ROM OFF");
+		break;
+
 	case ComboMenuActionCycleBootMode:
 #if MSXBARE_ONE_ROM_MODE || MSXBARE_BOOT_MODE_LOCKED
 		m_BootMode = kBootModeGame;
@@ -4833,7 +4911,7 @@ void CComboKernel::SetDebugOverlayEnabled(boolean enabled)
 	m_DebugOverlayEnabled = enabled ? TRUE : FALSE;
 	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, TRUE);
 	m_PauseMenu.RequestRedraw();
-	if (m_DebugOverlayUnlocked && !m_DebugOverlayEnabled)
+	if (m_ScreenReady && m_DebugOverlayUnlocked && !m_DebugOverlayEnabled)
 	{
 		ClearDebugOverlay();
 	}
@@ -4856,6 +4934,11 @@ void CComboKernel::SetUartTelemetryEnabled(boolean enabled)
 
 void CComboKernel::ClearDebugOverlay(void)
 {
+	if (!m_ScreenReady)
+	{
+		return;
+	}
+
 	WriteScreenText("\x1b[1;1H                                                                                                                                ");
 	WriteScreenText("\x1b[2;1H                                                                                                                                ");
 	WriteScreenText("\x1b[3;1H                                                                                                                                ");
@@ -4880,7 +4963,7 @@ void CComboKernel::ClearDebugOverlay(void)
 
 void CComboKernel::WriteScreenText(const char *text)
 {
-	if (text == 0)
+	if (text == 0 || !m_ScreenReady)
 	{
 		return;
 	}

@@ -70,3 +70,17 @@ Issue: #219 (melhorar fidelidade de render PSG/FM-PAC no backend local)
   - `BUILD_HASH: 4a54cb9-947feee84427a6890b5bafe3623677d4e27d4047`
   - `BUILD_BID: 202603251145-issue219-fm-default-80`
   - `BUILD_ID: 0A5D`
+
+## Atualização 2026-03-27 - Boot phases e rename do cfg
+- A base atual voltou a expor fases de boot na UART via `BT0..BT12`, cobrindo:
+  - logger/timer
+  - storage/FatFs
+  - carga de config
+  - initramfs/runtime
+  - screen/backend
+  - overlay/USB/main loop
+- O arquivo de configuracao canonico passou a ser `SD:/msxbarepi.cfg`.
+- Compatibilidade de leitura preservada:
+  - primeiro `SD:/msxbarepi.cfg`
+  - fallback para `SD:/MSXBARE.CFG`
+- Gravacao continua sempre no arquivo canonico novo.

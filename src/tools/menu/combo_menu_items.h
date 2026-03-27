@@ -11,6 +11,7 @@ enum TComboMenuAction {
     ComboMenuActionDiskDriveA,
     ComboMenuActionDiskDriveB,
     ComboMenuActionSettings,
+    ComboMenuActionDebug,
     ComboMenuActionGameMaster,
     ComboMenuActionCycleLanguage,
     ComboMenuActionCycleLanguagePrev,
@@ -23,6 +24,7 @@ enum TComboMenuAction {
     ComboMenuActionCycleRefreshRate,
     ComboMenuActionCycleRefreshRatePrev,
     ComboMenuActionToggleDiskRom,
+    ComboMenuActionToggleKanjiRom,
     ComboMenuActionCycleBootMode,
     ComboMenuActionCycleBootModePrev,
     ComboMenuActionCycleMachine,
@@ -92,5 +94,13 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
                                                      boolean debug_log_enabled,
                                                      unsigned audio_gain_percent,
                                                      unsigned *count);
+const TComboMenuItem *combo_menu_debug_items_get(unsigned language,
+                                                 unsigned refresh_rate_hz,
+                                                 boolean disk_rom_enabled,
+                                                 boolean kanji_rom_enabled,
+                                                 boolean overlay_enabled,
+                                                 boolean overlay_available,
+                                                 boolean debug_log_enabled,
+                                                 unsigned *count);
 
 #endif

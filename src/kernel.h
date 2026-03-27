@@ -133,6 +133,7 @@ private:
     u8 m_JoyMappedBits;
     boolean m_DebugOverlayEnabled;
     boolean m_DebugOverlayUnlocked;
+    boolean m_ScreenReady;
     boolean m_EmulationPaused;
     boolean m_LastF12Pressed;
     boolean m_LastF6Pressed;
@@ -227,6 +228,7 @@ private:
     boolean m_ICacheEnabled;
     boolean m_SettingsStorageReady;
     boolean m_UartTelemetryEnabled;
+    boolean m_KanjiRomEnabled;
     boolean m_SettingsLoadPending;
     boolean m_InitramfsDeferredMountPending;
     boolean m_SettingsSavePending;
