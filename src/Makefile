@@ -62,8 +62,12 @@ ifeq ($(MSXBARE_CARTA_ONLY),1)
 CFLAGS += -DFMSX_BAREMETAL_CARTA_ONLY
 endif
 CFLAGS += -DSKIP_STDIO_REDEFINES
+BLUEMSX_INCLUDE_DIRS := -I../third_party/bluemsx/blueMSX/Src/Common -I../third_party/bluemsx/blueMSX/Src/Utils -I../third_party/bluemsx/blueMSX/Src/SoundChips
 CFLAGS += -I ./fmsx_compat -I ../third_party/fmsx -I ../third_party/fmsx/fMSX -I ../third_party/fmsx/EMULib -I ../third_party/fmsx/Z80
+CPPFLAGS += $(BLUEMSX_INCLUDE_DIRS)
 CPPFLAGS += -I. -I./tools/locale -I./tools/debug -I./tools/menu -I./tools/file_browser -I./tools/render -I./tools/input -I./tools/media -I./tools
+CFLAGS += $(BLUEMSX_INCLUDE_DIRS)
+CXXFLAGS += $(BLUEMSX_INCLUDE_DIRS)
 
 ifeq ($(MSXBARE_SIZE_OPT),1)
 CFLAGS += -Os -ffunction-sections -fdata-sections
@@ -80,6 +84,7 @@ OBJS += emulator_backend.o fmsx_backend_shim.o bluemsx_backend.o
 EXTRACLEAN += tools/*.o tools/*.d tools/*/*.o tools/*/*.d
 
 OBJS += fmsx_runtime.o fmsx_host_stubs.o fmsx_compat_stubs.o fmsx_libc_shim.o
+OBJS += bluemsx_savestate_stubs.o fmsx_upstream_bluemsx_openym2413_2.o fmsx_local_ym2413_bluemsx.o
 OBJS += gamemaster_catalog.o
 OBJS += fmsx_virtual_fs.o fmsx_initramfs.o
 OBJS += fmsx_carts_sha_fallback.o

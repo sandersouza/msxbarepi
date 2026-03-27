@@ -30,6 +30,7 @@ static const unsigned kQueueMs = 120;
 static const u64 kFrameInterval60Us = 16667ull;
 static const u64 kFrameInterval50Us = 20000ull;
 static const u64 kDebugOverlayIntervalUs = 200000ull;
+static const u64 kUartPerfLogIntervalUs = 250000ull;
 static const u64 kFramePacingGuardUs = 300ull;
 static const u64 kFramePacingSleepTargetUs = 1200ull;
 static const u64 kFramePacingSpinThresholdUs = 80ull;
@@ -899,10 +900,24 @@ CComboKernel::CComboKernel(void)
 	m_FmsxKmgTraceSeq(0u),
 	m_FmsxKmgTraceDropped(0u),
 	m_LastAudioQueueLogUs(0),
+	m_LastVideoPacingLogUs(0),
 	m_FmsxFpsWindowStartUs(0),
 	m_LastPauseToggleUs(0),
 	m_LastMenuInputPollUs(0),
 	m_LastOverlayUs(0),
+	m_UartAudioQueueAvailMin(0u),
+	m_UartAudioLowWaterHits(0u),
+	m_UartAudioRefillUsLast(0u),
+	m_UartAudioRefillUsPeak(0u),
+	m_UartVideoCatchupLast(0u),
+	m_UartVideoCatchupPeak(0u),
+	m_UartVideoCatchupCapCount(0u),
+	m_UartVideoLateUsLast(0u),
+	m_UartVideoLateUsPeak(0u),
+	m_UartVideoStepUsLast(0u),
+	m_UartVideoStepUsPeak(0u),
+	m_UartVideoBlitUsLast(0u),
+	m_UartVideoBlitUsPeak(0u),
 	m_FmsxFpsWindowStartFrames(0),
 	m_FmsxFpsX10(0),
 	m_FramePacingErrAvgUs(0u),
@@ -977,6 +992,7 @@ CComboKernel::CComboKernel(void)
 	s_Instance = this;
 	m_ActLED.Blink(5);
 	NormalizeSettingsForBuild();
+	ResetUartPerfTelemetry();
 }
 
 void CComboKernel::NormalizeSettingsForBuild(void)
@@ -1316,7 +1332,6 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetOverlayEnabled(
 		MSXBARE_ENABLE_DEBUG_OVERLAY ? m_DebugOverlayEnabled : FALSE,
 		MSXBARE_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
-	m_PauseMenu.SetDebugLogEnabled(m_UartTelemetryEnabled);
 	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
 	{
 		const unsigned max_scale = ComputeScaleMaxPercentForCurrentFrame(m_Screen.GetWidth(), m_Screen.GetHeight());
@@ -1325,6 +1340,7 @@ TComboShutdownMode CComboKernel::Run(void)
 		if (m_OverscanPercent > max_scale) m_OverscanPercent = max_scale;
 		m_PauseMenu.SetScalePercent(m_OverscanPercent);
 	}
+	SetUartTelemetryEnabled(m_UartTelemetryEnabled);
 	#if MSXBARE_ENABLE_FMSX
 		m_Logger.Write(FromKernel, LogNotice, "Boot step: apply runtime");
 		ApplyRuntimeSettingsToFmsx();
@@ -1533,9 +1549,20 @@ TComboShutdownMode CComboKernel::Run(void)
 			boolean stepped_fmsx = FALSE;
 			unsigned catchup_steps = 0;
 			const unsigned max_catchup_steps = 2u;
+			const boolean uart_perf_enabled = m_UartTelemetryEnabled ? TRUE : FALSE;
 			while (now_us >= next_frame_us && catchup_steps < max_catchup_steps)
 			{
-				const unsigned pacing_err_us = (unsigned) ((now_us - next_frame_us) > 999u ? 999u : (now_us - next_frame_us));
+				const u64 late_us64 = now_us - next_frame_us;
+				const unsigned pacing_err_us = (unsigned) (late_us64 > 999u ? 999u : late_us64);
+				if (uart_perf_enabled)
+				{
+					const unsigned late_us = (unsigned) (late_us64 > 9999u ? 9999u : late_us64);
+					m_UartVideoLateUsLast = late_us;
+					if (late_us > m_UartVideoLateUsPeak)
+					{
+						m_UartVideoLateUsPeak = late_us;
+					}
+				}
 				if (m_FramePacingErrAvgUs == 0u)
 				{
 					m_FramePacingErrAvgUs = pacing_err_us;
@@ -1586,8 +1613,19 @@ TComboShutdownMode CComboKernel::Run(void)
 				}
 				PushKeyboardStateToRuntime(rensha_fire_on);
 				emulator_backend_input_push_joystick(joy_bits_runtime);
+				const u64 step_start_us = uart_perf_enabled ? CTimer::GetClockTicks64() : 0u;
 				if (emulator_backend_step_frame())
 				{
+					if (uart_perf_enabled)
+					{
+						const u64 step_elapsed_us64 = CTimer::GetClockTicks64() - step_start_us;
+						const unsigned step_elapsed_us = (unsigned) (step_elapsed_us64 > 9999u ? 9999u : step_elapsed_us64);
+						m_UartVideoStepUsLast = step_elapsed_us;
+						if (step_elapsed_us > m_UartVideoStepUsPeak)
+						{
+							m_UartVideoStepUsPeak = step_elapsed_us;
+						}
+					}
 					stepped_fmsx = TRUE;
 					const EmulatorBackendRuntimeStatus runtime_status = emulator_backend_get_status();
 					const unsigned runtime_refresh_hz = ClampRefreshRateHz(fmsx_runtime_get_refresh_hz());
@@ -1653,6 +1691,21 @@ TComboShutdownMode CComboKernel::Run(void)
 				catchup_steps++;
 				now_us = CTimer::GetClockTicks64();
 			}
+			if (uart_perf_enabled)
+			{
+				m_UartVideoCatchupLast = catchup_steps;
+				if (catchup_steps > m_UartVideoCatchupPeak)
+				{
+					m_UartVideoCatchupPeak = catchup_steps;
+				}
+				if (catchup_steps >= max_catchup_steps && now_us >= next_frame_us)
+				{
+					if (m_UartVideoCatchupCapCount < 999u)
+					{
+						m_UartVideoCatchupCapCount++;
+					}
+				}
+			}
 
 			if (stepped_fmsx)
 			{
@@ -1664,7 +1717,18 @@ TComboShutdownMode CComboKernel::Run(void)
 				LogKmgTraceUart();
 				const boolean force_viewport_clear = m_ForceViewportFullClearNextFrame;
 				m_ForceViewportFullClearNextFrame = FALSE;
+				const u64 blit_start_us = uart_perf_enabled ? CTimer::GetClockTicks64() : 0u;
 				BlitFmsxFrame(force_viewport_clear ? TRUE : FALSE);
+				if (uart_perf_enabled)
+				{
+					const u64 blit_elapsed_us64 = CTimer::GetClockTicks64() - blit_start_us;
+					const unsigned blit_elapsed_us = (unsigned) (blit_elapsed_us64 > 9999u ? 9999u : blit_elapsed_us64);
+					m_UartVideoBlitUsLast = blit_elapsed_us;
+					if (blit_elapsed_us > m_UartVideoBlitUsPeak)
+					{
+						m_UartVideoBlitUsPeak = blit_elapsed_us;
+					}
+				}
 			}
 
 			if (now_us > next_frame_us + (m_FrameIntervalUs * 12ull))
@@ -1705,7 +1769,19 @@ TComboShutdownMode CComboKernel::Run(void)
 
 		if (m_Sound != 0)
 		{
+			const boolean uart_perf_enabled = m_UartTelemetryEnabled ? TRUE : FALSE;
+			const u64 refill_start_us = uart_perf_enabled ? CTimer::GetClockTicks64() : 0u;
 			RefillAudioQueue();
+			if (uart_perf_enabled)
+			{
+				const u64 refill_elapsed_us64 = CTimer::GetClockTicks64() - refill_start_us;
+				const unsigned refill_elapsed_us = (unsigned) (refill_elapsed_us64 > 9999u ? 9999u : refill_elapsed_us64);
+				m_UartAudioRefillUsLast = refill_elapsed_us;
+				if (refill_elapsed_us > m_UartAudioRefillUsPeak)
+				{
+					m_UartAudioRefillUsPeak = refill_elapsed_us;
+				}
+			}
 			LogAudioQueueUart();
 			if (!m_Sound->IsActive() && ((tick % 500u) == 0u))
 			{
@@ -1720,6 +1796,7 @@ TComboShutdownMode CComboKernel::Run(void)
 				}
 			}
 		}
+		LogVideoPacingUart();
 		if (MSXBARE_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
 		{
 			now_us = CTimer::GetClockTicks64();
@@ -1834,6 +1911,10 @@ void CComboKernel::RefillAudioQueue(void)
 	unsigned refill_budget = kRefillBudgetPerCall;
 	m_LastQueueAvail = queue_avail;
 	m_LastQueueFree = free_frames;
+	if (queue_avail < m_UartAudioQueueAvailMin)
+	{
+		m_UartAudioQueueAvailMin = queue_avail;
+	}
 	if (free_frames == 0u)
 	{
 		return;
@@ -1854,6 +1935,10 @@ void CComboKernel::RefillAudioQueue(void)
 	}
 	if (queue_avail <= low_water)
 	{
+		if (m_UartAudioLowWaterHits < 999u)
+		{
+			m_UartAudioLowWaterHits++;
+		}
 		/* After a hiccup, refill aggressively to recover audio continuity quickly. */
 		desired_write = free_frames;
 	}
@@ -2040,17 +2125,131 @@ void CComboKernel::GenerateSamples(s16 *buffer, unsigned frames)
 	}
 }
 
+void CComboKernel::ResetUartPerfTelemetry(void)
+{
+	m_LastAudioQueueLogUs = 0u;
+	m_LastVideoPacingLogUs = 0u;
+	m_UartAudioQueueAvailMin = 0xFFFFFFFFu;
+	m_UartAudioLowWaterHits = 0u;
+	m_UartAudioRefillUsLast = 0u;
+	m_UartAudioRefillUsPeak = 0u;
+	m_UartVideoCatchupLast = 0u;
+	m_UartVideoCatchupPeak = 0u;
+	m_UartVideoCatchupCapCount = 0u;
+	m_UartVideoLateUsLast = 0u;
+	m_UartVideoLateUsPeak = 0u;
+	m_UartVideoStepUsLast = 0u;
+	m_UartVideoStepUsPeak = 0u;
+	m_UartVideoBlitUsLast = 0u;
+	m_UartVideoBlitUsPeak = 0u;
+}
+
 void CComboKernel::LogAudioQueueUart(void)
 {
 #if !MSXBARE_ENABLE_FMSX || !MSXBARE_ENABLE_DEBUG_OVERLAY
 	return;
 #else
-	/* Audio queue UART telemetry is intentionally disabled for now.
-	 * Keep the hook in place so F10 still gates the remaining channels. */
-	(void) m_UartTelemetryEnabled;
-	(void) m_DebugOverlayUnlocked;
-	(void) m_DebugOverlayEnabled;
-	(void) m_Sound;
+	if (!m_UartTelemetryEnabled || m_Sound == 0)
+	{
+		return;
+	}
+
+	const u64 now_us = CTimer::GetClockTicks64();
+	if (m_LastAudioQueueLogUs != 0u && (now_us - m_LastAudioQueueLogUs) < kUartPerfLogIntervalUs)
+	{
+		return;
+	}
+
+	TFmsxAudioStats audio_stats = {0};
+	fmsx_audio_get_stats(&audio_stats);
+	const unsigned queue_size = m_Sound->GetQueueSizeFrames();
+	const unsigned queue_avail = m_Sound->GetQueueFramesAvail();
+	const unsigned queue_min = (m_UartAudioQueueAvailMin == 0xFFFFFFFFu) ? queue_avail : m_UartAudioQueueAvailMin;
+
+	CString line;
+	line.Format("AUDQ Q:%u/%u/%u L:%u R:%u/%u P:%u/%u D:%u T:%u U:%u/%u A:%u/%u",
+		queue_avail > 9999u ? 9999u : queue_avail,
+		queue_min > 9999u ? 9999u : queue_min,
+		queue_size > 9999u ? 9999u : queue_size,
+		m_UartAudioLowWaterHits > 999u ? 999u : m_UartAudioLowWaterHits,
+		audio_stats.ring_level > 9999u ? 9999u : audio_stats.ring_level,
+		audio_stats.ring_peak > 9999u ? 9999u : audio_stats.ring_peak,
+		audio_stats.last_pull_returned > 9999u ? 9999u : audio_stats.last_pull_returned,
+		audio_stats.last_pull_requested > 9999u ? 9999u : audio_stats.last_pull_requested,
+		audio_stats.drop_count > 999u ? 999u : audio_stats.drop_count,
+		audio_stats.trim_samples > 9999u ? 9999u : audio_stats.trim_samples,
+		audio_stats.short_pulls > 999u ? 999u : audio_stats.short_pulls,
+		audio_stats.underrun_samples > 9999u ? 9999u : audio_stats.underrun_samples,
+		m_UartAudioRefillUsLast > 9999u ? 9999u : m_UartAudioRefillUsLast,
+		m_UartAudioRefillUsPeak > 9999u ? 9999u : m_UartAudioRefillUsPeak);
+	m_Logger.Write(FromKernel, LogNotice, line);
+
+	m_LastAudioQueueLogUs = now_us;
+	m_UartAudioQueueAvailMin = 0xFFFFFFFFu;
+	m_UartAudioLowWaterHits = 0u;
+	m_UartAudioRefillUsPeak = 0u;
+#endif
+}
+
+void CComboKernel::LogVideoPacingUart(void)
+{
+#if !MSXBARE_ENABLE_FMSX || !MSXBARE_ENABLE_DEBUG_OVERLAY
+	return;
+#else
+	if (!m_UartTelemetryEnabled)
+	{
+		return;
+	}
+
+	const u64 now_us = CTimer::GetClockTicks64();
+	if (m_LastVideoPacingLogUs != 0u && (now_us - m_LastVideoPacingLogUs) < kUartPerfLogIntervalUs)
+	{
+		return;
+	}
+
+	CString line;
+	line.Format("VIDP F:%u.%u C:%u/%u X:%u L:%u/%u P:%u/%u S:%u/%u B:%u/%u",
+		(m_FmsxFpsX10 / 10u) > 99u ? 99u : (m_FmsxFpsX10 / 10u),
+		m_FmsxFpsX10 % 10u,
+		m_UartVideoCatchupLast > 99u ? 99u : m_UartVideoCatchupLast,
+		m_UartVideoCatchupPeak > 99u ? 99u : m_UartVideoCatchupPeak,
+		m_UartVideoCatchupCapCount > 999u ? 999u : m_UartVideoCatchupCapCount,
+		m_UartVideoLateUsLast > 9999u ? 9999u : m_UartVideoLateUsLast,
+		m_UartVideoLateUsPeak > 9999u ? 9999u : m_UartVideoLateUsPeak,
+		m_FramePacingErrAvgUs > 9999u ? 9999u : m_FramePacingErrAvgUs,
+		m_FramePacingErrMaxUs > 9999u ? 9999u : m_FramePacingErrMaxUs,
+		m_UartVideoStepUsLast > 9999u ? 9999u : m_UartVideoStepUsLast,
+		m_UartVideoStepUsPeak > 9999u ? 9999u : m_UartVideoStepUsPeak,
+		m_UartVideoBlitUsLast > 9999u ? 9999u : m_UartVideoBlitUsLast,
+		m_UartVideoBlitUsPeak > 9999u ? 9999u : m_UartVideoBlitUsPeak);
+	m_Logger.Write(FromKernel, LogNotice, line);
+
+	if (emulator_backend_selected_kind() == EMULATOR_BACKEND_KIND_FMSX)
+	{
+		TFmsxFramePerfStats frame_perf = {0};
+		fmsx_runtime_get_frame_perf_stats(&frame_perf);
+		line.Format("VRTM ST:%u FR:%u SL:%u/%u Z:%u/%u A:%u/%u N:%u/%u M:%u",
+			frame_perf.last_steps > 99u ? 99u : frame_perf.last_steps,
+			frame_perf.last_frames_done > 99u ? 99u : frame_perf.last_frames_done,
+			frame_perf.last_slices > 9999u ? 9999u : frame_perf.last_slices,
+			frame_perf.peak_slices > 9999u ? 9999u : frame_perf.peak_slices,
+			frame_perf.last_z80_us > 9999u ? 9999u : frame_perf.last_z80_us,
+			frame_perf.peak_z80_us > 9999u ? 9999u : frame_perf.peak_z80_us,
+			frame_perf.last_audio_us > 9999u ? 9999u : frame_perf.last_audio_us,
+			frame_perf.peak_audio_us > 9999u ? 9999u : frame_perf.peak_audio_us,
+			frame_perf.last_audio_samples > 9999u ? 9999u : frame_perf.last_audio_samples,
+			frame_perf.peak_audio_samples > 9999u ? 9999u : frame_perf.peak_audio_samples,
+			frame_perf.frame_miss_count > 999u ? 999u : frame_perf.frame_miss_count);
+		m_Logger.Write(FromKernel, LogNotice, line);
+		fmsx_runtime_reset_frame_perf_stats_window();
+	}
+
+	m_LastVideoPacingLogUs = now_us;
+	m_UartVideoCatchupPeak = 0u;
+	m_UartVideoCatchupCapCount = 0u;
+	m_UartVideoLateUsPeak = 0u;
+	m_UartVideoStepUsPeak = 0u;
+	m_UartVideoBlitUsPeak = 0u;
 #endif
 }
 
@@ -3047,6 +3246,7 @@ void CComboKernel::ResetEmulationRuntimeState(void)
 	m_RuntimeKeyboardDispatchedModifiers = 0u;
 	m_RuntimeKeyboardDispatchValid = TRUE;
 	m_RuntimeKeyboardReplayBudget = 0u;
+	ResetUartPerfTelemetry();
 #if MSXBARE_ENABLE_FMSX
 	{
 		static const unsigned char kEmptyKeyboard[6] = {0u, 0u, 0u, 0u, 0u, 0u};
@@ -4927,6 +5127,10 @@ void CComboKernel::SetUartTelemetryEnabled(boolean enabled)
 #else
 	(void) enabled;
 	m_UartTelemetryEnabled = FALSE;
+#endif
+	ResetUartPerfTelemetry();
+#if MSXBARE_ENABLE_FMSX
+	fmsx_runtime_set_frame_perf_telemetry_enabled(m_UartTelemetryEnabled ? TRUE : FALSE);
 #endif
 	m_PauseMenu.SetDebugLogEnabled(m_UartTelemetryEnabled);
 	m_PauseMenu.RequestRedraw();

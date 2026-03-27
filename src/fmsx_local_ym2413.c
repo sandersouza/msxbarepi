@@ -14,10 +14,11 @@
 
 #include "YM2413.h"
 #include "Sound.h"
+#include "fmsx_local_ym2413_bluemsx.h"
 #include <string.h>
 
-static const int kFmPacAttenuationPct = 55;
-static const int kFmPacBalancePct = 96;
+static const int kFmPacAttenuationPct = 100;
+static const int kFmPacBalancePct = 100;
 
 static unsigned g_fm_layer_gain_pct = 100u;
 
@@ -32,27 +33,60 @@ static int ComputeFmVolume(uint8_t reg3x)
   return vol;
 }
 
+static int ComputeFmFrequency(const YM2413 *D,uint8_t channel)
+{
+  uint8_t Oct;
+  int Frq;
+
+  if(!D || channel>=YM2413_CHANNELS) return 0;
+  if(YM2413_DRUMS(D) && channel>=6u) return 0;
+
+  Oct = D->R[0x20u + channel];
+  if(!(Oct & 0x10u)) return 0;
+
+  Frq = ((int)(Oct & 0x01u) << 8) + D->R[0x10u + channel];
+  Oct = (Oct & 0x0Eu) >> 1;
+  return (3125 * Frq * (1 << Oct)) >> 15;
+}
+
+static void RefreshFmMetadata(YM2413 *D)
+{
+  uint8_t C;
+
+  if(!D) return;
+
+  for(C=0; C<YM2413_CHANNELS; ++C)
+  {
+    D->Freq[C] = ComputeFmFrequency(D,C);
+    D->Volume[C] = ComputeFmVolume(D->R[0x30u + C]);
+  }
+}
+
 void fmsx_local_ym2413_set_layer_gain_pct(unsigned pct)
 {
   if(pct > 100u) pct = 100u;
   g_fm_layer_gain_pct = pct;
+  fmsx_bluemsx_ym2413_set_layer_gain_pct(pct);
 }
 
 unsigned fmsx_local_ym2413_get_layer_gain_pct(void)
 {
+  g_fm_layer_gain_pct = fmsx_bluemsx_ym2413_get_layer_gain_pct();
   return g_fm_layer_gain_pct;
+}
+
+void fmsx_local_ym2413_set_sample_rate(unsigned rate)
+{
+  fmsx_bluemsx_ym2413_set_sample_rate(rate);
 }
 
 void fmsx_local_ym2413_refresh(YM2413 *D)
 {
-  int C;
   if(!D) return;
-  for(C=0;C<YM2413_CHANNELS;C++)
-  {
-    D->Volume[C] = ComputeFmVolume(D->R[0x30 + C]);
-  }
-  D->Changed = (1<<YM2413_CHANNELS)-1;
-  Sync2413(D,YM2413_FLUSH);
+  RefreshFmMetadata(D);
+  fmsx_bluemsx_ym2413_set_layer_gain_pct(g_fm_layer_gain_pct);
+  fmsx_bluemsx_ym2413_rebuild_from_regs(D->R);
+  D->Changed = 0;
 }
 
 /** Reset2413() **********************************************/
@@ -79,6 +113,11 @@ void Reset2413(YM2413 *D,int First)
   D->Sync     = YM2413_ASYNC;
   D->Changed  = (1<<YM2413_CHANNELS)-1;
   D->Latch    = 0;
+
+  fmsx_bluemsx_ym2413_set_layer_gain_pct(g_fm_layer_gain_pct);
+  fmsx_bluemsx_ym2413_reset();
+  fmsx_bluemsx_ym2413_rebuild_from_regs(D->R);
+  RefreshFmMetadata(D);
 }
 
 /** WrCtrl2413() *********************************************/
@@ -115,80 +154,61 @@ void Write2413(YM2413 *D,uint8_t R,uint8_t V)
   switch(R>>4)
   {
     case 0:
-      switch(C) // register 0-7 User Tone not supported by fMSX
+      switch(C)
       {
-        case 0x0E: // drums - not supported by fMSX, except for muting ch.6-8
+        case 0x0E:
           if(V==D->R[R]) return;
-          /* Keep all drums off when drum mode is off */
           if(!(V&0x20)) V&=0xE0;
-          /* If drum mode was turned on... */
           if((V^D->R[R])&V&0x20)
           {
-            /* Turn off melodic channels 6,7,8 */
             D->Freq[6]=D->Freq[7]=D->Freq[8]=0;
-            /* Mark channels 6,7,8 as changed */
             D->Changed|=0x1C0;
           }
-          /* Done */
           break;
       }
       break;
 
-    case 1: // frequency LSB
+    case 1:
       if((C>8)||(V==D->R[R])) return;
       if(!YM2413_DRUMS(D)||(C<6))
         if(D->R[R+0x10]&0x10)
         {
-          /* Set channel frequency */
           Oct=D->R[R+0x10];
           Frq=((int)(Oct&0x01)<<8)+V;
           Oct=(Oct&0x0E)>>1;
           D->Freq[C]=(3125*Frq*(1<<Oct))>>15;
-
-          /* Mark channel as changed */
           D->Changed|=1<<C;
         }
-      /* Done */
       break;
 
-    case 2: // frequency MSB, octave, key on/off, sustain on/off (last 2 ignored)
+    case 2:
       if(C>8) return;
       if(!YM2413_DRUMS(D)||(C<6))
       {
-        /* Depending on whether channel is on/off... */
         if(!(V&0x10)) D->Freq[C]=0;
         else
         {
-          /* Set channel frequency */
           Frq=((int)(V&0x01)<<8)+D->R[R-0x10];
           Oct=(V&0x0E)>>1;
           D->Freq[C]=(3125*Frq*(1<<Oct))>>15;
         }
-
-        /* Mark channel as changed */
         D->Changed|=1<<C;
       }
-      /* Done */
       break;
 
-    case 3: // instrument & volume - instrument ignored
+    case 3:
       if((C>8)||(V==D->R[R])) return;
-      /* Register any volume changes */
       if((V^D->R[R])&0x0F)
       {
-        /* Set channel volume (attenuated for better FM-PAC/PSG balance). */
         D->Volume[C] = ComputeFmVolume(V);
-        /* Mark channel as changed */
         D->Changed|=1<<C;
       }
-      /* Done */
       break;
   }
 
-  /* Write value into the register */
   D->R[R]=V;
+  fmsx_bluemsx_ym2413_write_reg(R,V);
 
-  /* For asynchronous mode, make Sound() calls right away */
   if(!D->Sync&&(D->Changed))
     Sync2413(D,YM2413_FLUSH);
 }
@@ -201,14 +221,6 @@ void Write2413(YM2413 *D,uint8_t R,uint8_t V)
 /*************************************************************/
 void Sync2413(YM2413 *D,uint8_t Sync)
 {
-  int J,I;
-
-  /* Change sync mode as requested */
   if(Sync!=YM2413_FLUSH) D->Sync=Sync;
-
-  /* Convert channel freq/volume changes into Sound() calls */
-  for(J=0,I=D->Changed;I&&(J<YM2413_CHANNELS);++J,I>>=1)
-    if(I&1) Sound(J+D->First,D->Freq[J],D->Volume[J]);
-
   D->Changed=0x000;
 }

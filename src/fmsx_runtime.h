@@ -53,6 +53,20 @@ typedef struct {
     unsigned immediate_gameplay_presses;
 } TFmsxKeyboardDebug;
 
+typedef struct {
+    unsigned last_steps;
+    unsigned last_frames_done;
+    unsigned last_slices;
+    unsigned peak_slices;
+    unsigned last_z80_us;
+    unsigned peak_z80_us;
+    unsigned last_audio_us;
+    unsigned peak_audio_us;
+    unsigned last_audio_samples;
+    unsigned peak_audio_samples;
+    unsigned frame_miss_count;
+} TFmsxFramePerfStats;
+
 #define FMSX_VDP_TRACE_CAPACITY 1024u
 #define FMSX_SMANBOW_AUDIO_TRACE_ENABLED 0
 #define FMSX_SCC_TRACE_CAPACITY 4096u
@@ -381,6 +395,9 @@ unsigned fmsx_runtime_get_refresh_hz(void);
 unsigned fmsx_runtime_get_z80_turbo_percent(void);
 uint64_t fmsx_runtime_get_frame_interval_us_exact(void);
 unsigned fmsx_runtime_get_base_cpu_clock_hz(void);
+void fmsx_runtime_set_frame_perf_telemetry_enabled(boolean enabled);
+void fmsx_runtime_get_frame_perf_stats(TFmsxFramePerfStats *stats);
+void fmsx_runtime_reset_frame_perf_stats_window(void);
 boolean fmsx_runtime_audio_render_enabled(void);
 void fmsx_audio_begin_frame_render_accounting(void);
 unsigned fmsx_audio_end_frame_render_accounting(void);

@@ -19,10 +19,10 @@
 
 #ifndef MSXBARE_FMSX_SCC_BALANCE_PCT
 /*
- * SCC was noticeably hotter than both PSG and FM-PAC in the current fMSX mix.
- * Use PSG/FM-PAC as the audible reference and keep SCC closer to that range.
+ * Keep SCC at unity gain here and let the shared bus voicing in Sound.c own
+ * the final loudness match against PSG/FM.
  */
-#define MSXBARE_FMSX_SCC_BALANCE_PCT 60
+#define MSXBARE_FMSX_SCC_BALANCE_PCT 100
 #endif
 
 static const int kSccBalancePct = MSXBARE_FMSX_SCC_BALANCE_PCT;

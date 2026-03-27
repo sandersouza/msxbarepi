@@ -1,0 +1,19 @@
+#ifndef MSXBARE_CIRCLE_MSXBARE_CXX_ALGORITHM_SHIM
+#define MSXBARE_CIRCLE_MSXBARE_CXX_ALGORITHM_SHIM
+
+namespace std
+{
+template <typename T>
+inline const T &min(const T &a,const T &b)
+{
+    return a < b ? a : b;
+}
+
+template <typename T>
+inline const T &max(const T &a,const T &b)
+{
+    return a > b ? a : b;
+}
+} /* namespace std */
+
+#endif /* MSXBARE_CIRCLE_MSXBARE_CXX_ALGORITHM_SHIM */

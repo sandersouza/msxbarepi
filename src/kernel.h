@@ -54,7 +54,9 @@ private:
     void LogSccTraceUart(void);
     void LogAudioPortTraceUart(void);
     void LogAudioQueueUart(void);
+    void LogVideoPacingUart(void);
     void LogKmgTraceUart(void);
+    void ResetUartPerfTelemetry(void);
     void ComputeViewportBox(unsigned src_width, unsigned src_height,
                             unsigned *out_x, unsigned *out_y,
                             unsigned *out_w, unsigned *out_h) const;
@@ -168,10 +170,24 @@ private:
     unsigned m_FmsxKmgTraceSeq;
     unsigned m_FmsxKmgTraceDropped;
     u64 m_LastAudioQueueLogUs;
+    u64 m_LastVideoPacingLogUs;
     u64 m_FmsxFpsWindowStartUs;
     u64 m_LastPauseToggleUs;
     u64 m_LastMenuInputPollUs;
     u64 m_LastOverlayUs;
+    unsigned m_UartAudioQueueAvailMin;
+    unsigned m_UartAudioLowWaterHits;
+    unsigned m_UartAudioRefillUsLast;
+    unsigned m_UartAudioRefillUsPeak;
+    unsigned m_UartVideoCatchupLast;
+    unsigned m_UartVideoCatchupPeak;
+    unsigned m_UartVideoCatchupCapCount;
+    unsigned m_UartVideoLateUsLast;
+    unsigned m_UartVideoLateUsPeak;
+    unsigned m_UartVideoStepUsLast;
+    unsigned m_UartVideoStepUsPeak;
+    unsigned m_UartVideoBlitUsLast;
+    unsigned m_UartVideoBlitUsPeak;
     unsigned long m_FmsxFpsWindowStartFrames;
     unsigned m_FmsxFpsX10;
     unsigned m_FramePacingErrAvgUs;
