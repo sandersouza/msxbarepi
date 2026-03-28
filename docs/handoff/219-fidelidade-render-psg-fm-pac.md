@@ -860,3 +860,15 @@ Issue: #219 (melhorar fidelidade de render PSG/FM-PAC no backend local)
   - `BUILD_ID: FCF3`
 - Objetivo:
   - preservar a qualidade do efeito `CRT` sem o flicker visual do contorno arredondado.
+
+## Atualização 2026-03-28 - `CRT` volta a compartilhar o mesmo box pixel-perfect de `OFF/LCD`
+
+- Sintoma residual em hardware:
+  - mesmo sem a borda arredondada, o viewport ainda ficava levemente maior no modo `CRT` do que nos modos `OFF` e `LCD`.
+- Ajuste aplicado:
+  - `src/kernel.cpp` deixa de usar bucket de altura, clamp de escala e latch exclusivos do `CRT` para o cálculo do viewport;
+  - `OFF`, `LCD` e `CRT` passam a usar o mesmo `NormalizeViewportSourceHeight()` e o mesmo `ComputePixelScaleMaxPercent()` para resolver a caixa do emulador;
+  - o estado morto do latch antigo do `CRT` foi removido de `src/kernel.h`.
+- Resultado esperado:
+  - o tamanho do mailbox/viewport fica idêntico entre os três modos de scanline em qualquer `Scale`, preservando a mesma proporção pixel-perfect;
+  - o `CRT` mantém apenas o tratamento visual interno (`split 50/50` por linha do MSX e `black lift`), sem alterar geometria.

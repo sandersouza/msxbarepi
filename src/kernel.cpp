@@ -156,26 +156,6 @@ static unsigned ComputePixelScaleMaxPercent(unsigned screen_w, unsigned screen_h
 	return max_pct;
 }
 
-static unsigned ComputeAspectScaleMaxPercent(unsigned screen_w, unsigned screen_h,
-								unsigned src_h,
-								unsigned ar_num,
-								unsigned ar_den)
-{
-	if (screen_w == 0u || screen_h == 0u || src_h == 0u || ar_num == 0u || ar_den == 0u)
-	{
-		return kScalePercentMin;
-	}
-
-	const unsigned max_y = (screen_h * 100u) / src_h;
-	const unsigned max_x = (unsigned) (((u64) screen_w * 100u * (u64) ar_den)
-		/ ((u64) src_h * (u64) ar_num));
-	unsigned max_pct = UMin(max_x, max_y);
-	max_pct = (max_pct / kScalePercentStep) * kScalePercentStep;
-	if (max_pct < kScalePercentMin) max_pct = kScalePercentMin;
-	if (max_pct > kScalePercentHardMax) max_pct = kScalePercentHardMax;
-	return max_pct;
-}
-
 static unsigned ComputeLogicalSourceWidth(unsigned src_w)
 {
 	/* MSX hi-res modes (e.g. 512-wide) use narrow pixels on CRT. Use logical width for viewport sizing. */
@@ -192,18 +172,6 @@ static unsigned NormalizeViewportSourceHeight(unsigned src_h)
 	if (src_h <= 243u) return 243u;
 	if (src_h <= 256u) return 256u;
 	if (src_h <= 486u) return 486u;
-	if (src_h <= 512u) return 512u;
-	return src_h;
-}
-
-static unsigned NormalizeCrtViewportSourceHeight(unsigned src_h)
-{
-	if (src_h == 0u)
-	{
-		return 0u;
-	}
-
-	if (src_h <= 256u) return 256u;
 	if (src_h <= 512u) return 512u;
 	return src_h;
 }
@@ -1042,13 +1010,6 @@ CComboKernel::CComboKernel(void)
 	m_FmsxBoxY(0),
 	m_FmsxBoxW(0),
 	m_FmsxBoxH(0),
-	m_CrtViewportKeySrcW(0u),
-	m_CrtViewportKeySrcH(0u),
-	m_CrtViewportKeyScreenW(0u),
-	m_CrtViewportKeyScreenH(0u),
-	m_CrtViewportKeyOverscanPercent(0u),
-	m_CrtViewportKeyWidescreen(FALSE),
-	m_CrtViewportLatchValid(FALSE),
 	m_BlitMapSrcW(0),
 	m_BlitMapSrcH(0),
 	m_BlitMapDstW(0),
@@ -2998,10 +2959,6 @@ void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
 	const unsigned screen_width = m_Screen.GetWidth();
 	const unsigned screen_height = m_Screen.GetHeight();
 	unsigned layout_src_height = NormalizeViewportSourceHeight(src_height);
-	if (m_ScanlineMode == kScanlineModeCrt)
-	{
-		layout_src_height = NormalizeCrtViewportSourceHeight(src_height);
-	}
 
 	if (screen_width > 0u && screen_height > 0u)
 	{
@@ -3013,9 +2970,7 @@ void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
 			const unsigned ar_den = m_WidescreenEnabled ? 9u : 3u;
 			const unsigned logical_src_w = ComputeLogicalSourceWidth(src_width);
 			const unsigned max_scale_percent =
-				(m_ScanlineMode == kScanlineModeCrt)
-				? ComputeAspectScaleMaxPercent(screen_width, screen_height, layout_src_height, ar_num, ar_den)
-				: ComputePixelScaleMaxPercent(screen_width, screen_height, logical_src_w, layout_src_height);
+				ComputePixelScaleMaxPercent(screen_width, screen_height, logical_src_w, layout_src_height);
 			unsigned scale_percent = m_OverscanPercent;
 			if (scale_percent < kScalePercentMin) scale_percent = kScalePercentMin;
 			if (scale_percent > max_scale_percent) scale_percent = max_scale_percent;
@@ -3054,44 +3009,6 @@ void CComboKernel::ResolveViewportBox(unsigned src_width, unsigned src_height,
 									unsigned *out_w, unsigned *out_h)
 {
 	ComputeViewportBox(src_width, src_height, out_x, out_y, out_w, out_h);
-
-	const unsigned scanline_mode = (m_ScanlineMode > kScanlineModeCrt) ? kScanlineModeCrt : m_ScanlineMode;
-	if (scanline_mode != kScanlineModeCrt)
-	{
-		m_CrtViewportLatchValid = FALSE;
-		return;
-	}
-
-	const unsigned logical_src_w = ComputeLogicalSourceWidth(src_width);
-	const unsigned layout_src_h = NormalizeCrtViewportSourceHeight(src_height);
-	const unsigned screen_width = m_Screen.GetWidth();
-	const unsigned screen_height = m_Screen.GetHeight();
-	const boolean same_layout_family =
-		m_CrtViewportLatchValid
-		&& m_FmsxBoxW > 0u
-		&& m_FmsxBoxH > 0u
-		&& m_CrtViewportKeySrcH == layout_src_h
-		&& m_CrtViewportKeyScreenW == screen_width
-		&& m_CrtViewportKeyScreenH == screen_height
-		&& m_CrtViewportKeyOverscanPercent == m_OverscanPercent
-		&& m_CrtViewportKeyWidescreen == (m_WidescreenEnabled ? TRUE : FALSE);
-
-	if (same_layout_family)
-	{
-		if (out_x != 0) *out_x = m_FmsxBoxX;
-		if (out_y != 0) *out_y = m_FmsxBoxY;
-		if (out_w != 0) *out_w = m_FmsxBoxW;
-		if (out_h != 0) *out_h = m_FmsxBoxH;
-		return;
-	}
-
-	m_CrtViewportKeySrcW = logical_src_w;
-	m_CrtViewportKeySrcH = layout_src_h;
-	m_CrtViewportKeyScreenW = screen_width;
-	m_CrtViewportKeyScreenH = screen_height;
-	m_CrtViewportKeyOverscanPercent = m_OverscanPercent;
-	m_CrtViewportKeyWidescreen = m_WidescreenEnabled ? TRUE : FALSE;
-	m_CrtViewportLatchValid = TRUE;
 }
 
 void CComboKernel::BlitFmsxFrame(boolean force_redraw)

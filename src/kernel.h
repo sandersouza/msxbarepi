@@ -206,13 +206,6 @@ private:
     unsigned m_FmsxBoxY;
     unsigned m_FmsxBoxW;
     unsigned m_FmsxBoxH;
-    unsigned m_CrtViewportKeySrcW;
-    unsigned m_CrtViewportKeySrcH;
-    unsigned m_CrtViewportKeyScreenW;
-    unsigned m_CrtViewportKeyScreenH;
-    unsigned m_CrtViewportKeyOverscanPercent;
-    boolean m_CrtViewportKeyWidescreen;
-    boolean m_CrtViewportLatchValid;
     unsigned m_BlitMapSrcW;
     unsigned m_BlitMapSrcH;
     unsigned m_BlitMapDstW;

@@ -403,6 +403,9 @@ Abrir uma trilha separada para melhorar a fidelidade de render do `PSG` e do `FM
 - Rodada atual:
   - a borda arredondada do `CRT` foi removida;
   - o efeito mantém o split `50/50` por linha do MSX e o `black lift`, mas volta a usar contorno reto por estabilidade visual.
+- Rodada atual:
+  - o `CRT` deixa de usar viewport/layout próprios;
+  - `OFF`, `LCD` e `CRT` passam a compartilhar o mesmo cálculo pixel-perfect de mailbox, evitando que o `CRT` fique levemente maior nas mesmas escalas.
 - Validação local da rodada atual:
   - `./scripts/check-third-party-pristine.sh` OK
   - `make -j4` OK
