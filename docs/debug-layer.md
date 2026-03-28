@@ -96,6 +96,9 @@ Diretriz visual (overlay e menu):
 ## Menu relacionado
 - `Settings -> Debugger`: sempre aparece em builds `DEBUG=1` e opera diretamente como `ON/OFF`.
 - Em builds com `DEBUG=1`, `Settings` volta a mostrar `Refresh [NTSC/PAL]` logo abaixo de `Disk ROM` para diagnostico.
+- Em builds com `DEBUG=1`, `Debug` tambem mostra `Kanji ROM [ON/OFF]`:
+  - o toggle atua no runtime real do `fMSX`, ligando/desligando a `KANJI.ROM` quando ela existir no set carregado;
+  - quando a `KANJI.ROM` nao estiver disponivel, o item continua visivel, mas fica desabilitado.
 - Fora de debug, `Refresh` continua oculto.
 - O runtime inicia em `NTSC` e continua podendo passar para `PAL` automaticamente quando o software escreve `R#9`.
 - Itens de audio em `Settings`:

@@ -27,7 +27,9 @@ public:
     void SetDiskRomEnabled(boolean enabled);
     boolean IsDiskRomEnabled(void) const;
     void SetKanjiRomEnabled(boolean enabled);
+    void SetKanjiRomAvailable(boolean available);
     boolean IsKanjiRomEnabled(void) const;
+    boolean IsKanjiRomAvailable(void) const;
     void SetBootMode(unsigned mode);
     unsigned GetBootMode(void) const;
     void SetMachineProfile(unsigned profile);
@@ -118,6 +120,7 @@ private:
     unsigned m_RefreshRateHz;
     boolean m_DiskRomEnabled;
     boolean m_KanjiRomEnabled;
+    boolean m_KanjiRomAvailable;
     unsigned m_BootMode;
     unsigned m_MachineProfile;
     unsigned m_RamMapperKb;
@@ -177,6 +180,7 @@ private:
     unsigned m_LastDrawnRefreshRateHz;
     boolean m_LastDrawnDiskRomEnabled;
     boolean m_LastDrawnKanjiRomEnabled;
+    boolean m_LastDrawnKanjiRomAvailable;
     unsigned m_LastDrawnBootMode;
     unsigned m_LastDrawnMachineProfile;
     unsigned m_LastDrawnRamMapperKb;

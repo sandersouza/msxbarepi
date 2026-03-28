@@ -406,6 +406,9 @@ Abrir uma trilha separada para melhorar a fidelidade de render do `PSG` e do `FM
 - Rodada atual:
   - o `CRT` deixa de usar viewport/layout próprios;
   - `OFF`, `LCD` e `CRT` passam a compartilhar o mesmo cálculo pixel-perfect de mailbox, evitando que o `CRT` fique levemente maior nas mesmas escalas.
+- Rodada atual:
+  - `DEBUG -> KANJI ROM [ON/OFF]` deixa de ser apenas um flag de UI e passa a atuar no runtime real do `fMSX`;
+  - quando a `KANJI.ROM` nao existir, o item continua visivel, mas fica desabilitado no menu.
 - Validação local da rodada atual:
   - `./scripts/check-third-party-pristine.sh` OK
   - `make -j4` OK

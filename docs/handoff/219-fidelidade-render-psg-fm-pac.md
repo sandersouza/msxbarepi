@@ -872,3 +872,17 @@ Issue: #219 (melhorar fidelidade de render PSG/FM-PAC no backend local)
 - Resultado esperado:
   - o tamanho do mailbox/viewport fica idêntico entre os três modos de scanline em qualquer `Scale`, preservando a mesma proporção pixel-perfect;
   - o `CRT` mantém apenas o tratamento visual interno (`split 50/50` por linha do MSX e `black lift`), sem alterar geometria.
+
+## Atualização 2026-03-28 - `KANJI.ROM` vira toggle real no menu `DEBUG`
+
+- Necessidade desta rodada:
+  - facilitar A/B do boot screen do `MSX2+` sem rebuild, ativando ou desativando a `KANJI.ROM` direto pelo menu `DEBUG`.
+- Ajuste aplicado:
+  - o item `DEBUG -> KANJI ROM [ON/OFF]`, que antes só alternava flag no `kernel`/UI, passa a atuar no runtime do `fMSX`;
+  - `src/fmsx_local/MSX.c` guarda a base da `KANJI.ROM` carregada em separado;
+  - `src/fmsx_runtime.c` ganha setter/getters para ligar/desligar a ROM em tempo de execucao, preservando a blob carregada quando existir;
+  - `src/kernel.cpp` sincroniza o estado efetivo com o menu no boot, no load de settings e no toggle em runtime;
+  - `src/tools/menu/combo_menu*.{h,cpp}` e `src/tools/menu/combo_menu_items.*` passam a desabilitar o item quando a `KANJI.ROM` nao existir no set ativo.
+- Resultado esperado:
+  - o usuario consegue testar `KANJI ROM ON/OFF` diretamente do menu `DEBUG` para investigar o boot screen do `MSX2+`;
+  - sem `KANJI.ROM` presente, o item permanece visivel mas nao induz toggle falso.

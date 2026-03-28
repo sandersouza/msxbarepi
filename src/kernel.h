@@ -69,6 +69,7 @@ private:
     void BlitFmsxFrame(boolean force_redraw);
     void HandleMenuAction(TComboMenuAction action);
     void ApplyRuntimeSettingsToFmsx(void);
+    void SyncKanjiRomStateFromRuntime(void);
     void RefreshSettingsUiAfterAction(void);
     void ResetEmulationRuntimeState(void);
     void ExitPauseForBackendAction(void);
@@ -253,6 +254,7 @@ private:
     boolean m_SettingsStorageReady;
     boolean m_UartTelemetryEnabled;
     boolean m_KanjiRomEnabled;
+    boolean m_KanjiRomAvailable;
     boolean m_SettingsLoadPending;
     boolean m_InitramfsDeferredMountPending;
     boolean m_SettingsSavePending;

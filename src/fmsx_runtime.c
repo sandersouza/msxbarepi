@@ -132,6 +132,7 @@ extern uint32_t FmsxManbow2FlashReadCount;
 extern uint8_t *MemMap[4][4][8];
 extern uint8_t *EmptyRAM;
 extern uint8_t *Kanji;
+extern uint8_t *FmsxKanjiBase;
 extern uint8_t *RAM[8];
 extern const char *DSKName[];
 extern FDIDisk FDD[];
@@ -160,6 +161,7 @@ static unsigned g_boot_warmup_frames_remaining = 0u;
 static boolean g_boot_forced_turbo = FALSE;
 static unsigned g_boot_video_gate_frames_remaining = 0u;
 static boolean g_disk_rom_enabled = TRUE;
+static boolean g_kanji_rom_enabled = TRUE;
 static unsigned g_boot_mode = 0u;
 static unsigned g_active_boot_mode = 0u;
 static unsigned g_model_profile = FMSX_MODEL_PROFILE_MSX1;
@@ -206,6 +208,12 @@ typedef struct
 
 static TFmsxGameMasterSlot g_game_master_slots[GAMEMASTER_MAX_CHEATS];
 static TFmsxGameMasterRecord g_game_master_records[GAMEMASTER_MAX_POKES];
+
+static boolean fmsx_runtime_apply_kanji_rom_enabled(void)
+{
+    Kanji = (g_kanji_rom_enabled && FmsxKanjiBase != 0) ? FmsxKanjiBase : 0;
+    return Kanji != 0 ? TRUE : FALSE;
+}
 
 static boolean fmsx_runtime_disk_rom_effective(unsigned model_profile)
 {
@@ -1053,6 +1061,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     InitSound(kFmsxAudioRate);
     fmsx_runtime_keyboard_reset_pipeline();
     fmsx_runtime_apply_audio_channels();
+    fmsx_runtime_apply_kanji_rom_enabled();
     fmsx_local_ym2413_refresh(&OPLL);
 
     g_fmsx_status.running = TRUE;
@@ -1110,6 +1119,7 @@ boolean fmsx_runtime_menu_reset(void)
     {
         fmsx_runtime_force_disk_rom_off_mapping();
     }
+    (void) fmsx_runtime_apply_kanji_rom_enabled();
 
     g_boot_warmup_frames_remaining = 0u;
     g_boot_forced_turbo = FALSE;
@@ -1485,11 +1495,31 @@ void fmsx_runtime_set_disk_rom_enabled(boolean enabled)
     {
         fmsx_runtime_force_disk_rom_off_mapping();
     }
+    (void) fmsx_runtime_apply_kanji_rom_enabled();
 }
 
 boolean fmsx_runtime_get_disk_rom_enabled(void)
 {
     return g_disk_rom_enabled ? TRUE : FALSE;
+}
+
+void fmsx_runtime_set_kanji_rom_enabled(boolean enabled)
+{
+    g_kanji_rom_enabled = enabled ? TRUE : FALSE;
+    if (g_fmsx_status.running)
+    {
+        (void) fmsx_runtime_apply_kanji_rom_enabled();
+    }
+}
+
+boolean fmsx_runtime_get_kanji_rom_enabled(void)
+{
+    return Kanji != 0 ? TRUE : FALSE;
+}
+
+boolean fmsx_runtime_get_kanji_rom_available(void)
+{
+    return FmsxKanjiBase != 0 ? TRUE : FALSE;
 }
 
 void fmsx_runtime_set_boot_mode(unsigned mode)

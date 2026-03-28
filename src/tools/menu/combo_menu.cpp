@@ -727,7 +727,8 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_ScanlineMode(0u),
     m_RefreshRateHz(60u),
     m_DiskRomEnabled(TRUE),
-    m_KanjiRomEnabled(FALSE),
+    m_KanjiRomEnabled(TRUE),
+    m_KanjiRomAvailable(FALSE),
     m_BootMode(0u),
     m_MachineProfile(0u),
     m_RamMapperKb(256u),
@@ -786,7 +787,8 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnScanlineMode(0u),
     m_LastDrawnRefreshRateHz(60u),
     m_LastDrawnDiskRomEnabled(TRUE),
-    m_LastDrawnKanjiRomEnabled(FALSE),
+    m_LastDrawnKanjiRomEnabled(TRUE),
+    m_LastDrawnKanjiRomAvailable(FALSE),
     m_LastDrawnBootMode(0u),
     m_LastDrawnMachineProfile(0u),
     m_LastDrawnRamMapperKb(0u),
@@ -918,6 +920,7 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
     m_LastDrawnDiskRomEnabled = m_DiskRomEnabled;
     m_LastDrawnKanjiRomEnabled = m_KanjiRomEnabled;
+    m_LastDrawnKanjiRomAvailable = m_KanjiRomAvailable;
     m_LastDrawnBootMode = m_BootMode;
     m_LastDrawnMachineProfile = m_MachineProfile;
     m_LastDrawnZ80TurboMode = m_Z80TurboMode;
@@ -1108,9 +1111,24 @@ void CComboPauseMenu::SetKanjiRomEnabled(boolean enabled)
     }
 }
 
+void CComboPauseMenu::SetKanjiRomAvailable(boolean available)
+{
+    available = available ? TRUE : FALSE;
+    if (m_KanjiRomAvailable != available)
+    {
+        m_KanjiRomAvailable = available;
+        m_ForceRedraw = TRUE;
+    }
+}
+
 boolean CComboPauseMenu::IsKanjiRomEnabled(void) const
 {
     return m_KanjiRomEnabled ? TRUE : FALSE;
+}
+
+boolean CComboPauseMenu::IsKanjiRomAvailable(void) const
+{
+    return m_KanjiRomAvailable ? TRUE : FALSE;
 }
 
 void CComboPauseMenu::SetBootMode(unsigned mode)
@@ -1676,6 +1694,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_RefreshRateHz,
             m_DiskRomEnabled,
             m_KanjiRomEnabled,
+            m_KanjiRomAvailable,
             m_OverlayEnabled,
             m_OverlayAvailable,
             m_DebugLogEnabled,
@@ -2891,6 +2910,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnRefreshRateHz == m_RefreshRateHz
      && m_LastDrawnDiskRomEnabled == m_DiskRomEnabled
      && m_LastDrawnKanjiRomEnabled == m_KanjiRomEnabled
+     && m_LastDrawnKanjiRomAvailable == m_KanjiRomAvailable
      && m_LastDrawnBootMode == m_BootMode
      && m_LastDrawnMachineProfile == m_MachineProfile
      && m_LastDrawnRamMapperKb == m_RamMapperKb
@@ -3201,6 +3221,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
     m_LastDrawnDiskRomEnabled = m_DiskRomEnabled;
     m_LastDrawnKanjiRomEnabled = m_KanjiRomEnabled;
+    m_LastDrawnKanjiRomAvailable = m_KanjiRomAvailable;
     m_LastDrawnBootMode = m_BootMode;
     m_LastDrawnMachineProfile = m_MachineProfile;
     m_LastDrawnRamMapperKb = m_RamMapperKb;

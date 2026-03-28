@@ -274,6 +274,7 @@ static uint8_t SaveManbow2Flash[MAXSLOTS] = {0,0,0,0,0,0};
 /** Disk images used by fMSX *********************************/
 const char *DSKName[MAXDRIVES] = { "DRIVEA.DSK","DRIVEB.DSK" };
 uint8_t DiskROMLoaded = 0;            /* 1 when DISK.ROM loaded */
+uint8_t *FmsxKanjiBase = 0;           /* Base pointer of loaded KANJI.ROM blob */
 uint8_t FmsxMSX2PKanjiBasicLoaded = 0;/* 1 when slot 3-1:4000h maps Kanji BASIC */
 uint8_t *FmsxMSX2PKanjiBasicBase = 0; /* Base pointer of mapped KANJIBASIC blob */
 uint8_t FmsxMSX2PMSXJELoaded = 0;     /* 1 when slot 0-3 maps MSX-JE ROM */
@@ -2494,6 +2495,7 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   RAMData     = 0;
   VRAM        = 0;
   Kanji       = 0;
+  FmsxKanjiBase = 0;
   WorkDir     = 0;
   SaveCMOS    = 0;
   FMPACKey    = 0x0000;
@@ -2590,6 +2592,7 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
 
   /* Try loading Kanji alphabet ROM */
   if((Kanji = LoadROM("KANJI.ROM",0x20000,0))) { }
+  FmsxKanjiBase = Kanji;
   if(log_cb) log_cb(1,"StartMSX: KANJI done\n");
 
   /* Try loading RS232 support ROM to slot */

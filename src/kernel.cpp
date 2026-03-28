@@ -1053,7 +1053,8 @@ CComboKernel::CComboKernel(void)
 	m_ICacheEnabled(FALSE),
 	m_SettingsStorageReady(FALSE),
 	m_UartTelemetryEnabled(MSXBARE_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE),
-	m_KanjiRomEnabled(FALSE),
+	m_KanjiRomEnabled(TRUE),
+	m_KanjiRomAvailable(FALSE),
 	m_SettingsLoadPending(FALSE),
 	m_InitramfsDeferredMountPending(FALSE),
 	m_SettingsSavePending(FALSE),
@@ -1289,6 +1290,7 @@ TComboShutdownMode CComboKernel::Run(void)
 			m_RefreshRateHz = ClampRefreshRateHz(m_RefreshRateHz);
 			fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
 			fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
+			fmsx_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
 			fmsx_runtime_set_boot_mode(m_BootMode);
 			fmsx_runtime_set_model_profile(m_MachineProfile);
 			fmsx_runtime_set_rammapper_kb(m_RamMapperKb);
@@ -1408,6 +1410,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 	m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
 	m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
+	m_PauseMenu.SetKanjiRomAvailable(m_KanjiRomAvailable);
 	m_PauseMenu.SetBootMode(m_BootMode);
 	m_PauseMenu.SetMachineProfile(m_MachineProfile);
 	m_PauseMenu.SetRamMapperKb(m_RamMapperKb);
@@ -3411,6 +3414,7 @@ void CComboKernel::ApplyRuntimeSettingsToFmsx(void)
 	}
 	fmsx_runtime_set_overscan(m_OverscanPercent > kScalePercentMin ? TRUE : FALSE);
 	fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
+	fmsx_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
 	fmsx_runtime_set_boot_mode(m_BootMode);
 	fmsx_runtime_set_model_profile(m_MachineProfile);
 	fmsx_runtime_set_rammapper_kb(m_RamMapperKb);
@@ -3423,7 +3427,27 @@ void CComboKernel::ApplyRuntimeSettingsToFmsx(void)
 	{
 		m_SccDualCartEnabled = FALSE;
 	}
+	SyncKanjiRomStateFromRuntime();
 #endif
+}
+
+void CComboKernel::SyncKanjiRomStateFromRuntime(void)
+{
+#if MSXBARE_ENABLE_FMSX
+	if (!m_FmsxReady || emulator_backend_selected_kind() != EMULATOR_BACKEND_KIND_FMSX)
+	{
+		m_KanjiRomAvailable = FALSE;
+		m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
+		m_PauseMenu.SetKanjiRomAvailable(m_KanjiRomAvailable);
+		return;
+	}
+	m_KanjiRomAvailable = fmsx_runtime_get_kanji_rom_available();
+	m_KanjiRomEnabled = fmsx_runtime_get_kanji_rom_enabled();
+#else
+	m_KanjiRomAvailable = FALSE;
+#endif
+	m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
+	m_PauseMenu.SetKanjiRomAvailable(m_KanjiRomAvailable);
 }
 
 void CComboKernel::UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux)
@@ -3712,6 +3736,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 	m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
 	m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
+	m_PauseMenu.SetKanjiRomAvailable(m_KanjiRomAvailable);
 	m_PauseMenu.SetBootMode(m_BootMode);
 	m_PauseMenu.SetMachineProfile(m_MachineProfile);
 	m_PauseMenu.SetRamMapperKb(m_RamMapperKb);
@@ -3738,6 +3763,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	fmsx_runtime_set_overscan(m_OverscanPercent > kScalePercentMin ? TRUE : FALSE);
 	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
 	fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
+	fmsx_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
 	fmsx_runtime_set_boot_mode(m_BootMode);
 	fmsx_runtime_set_model_profile(m_MachineProfile);
 	fmsx_runtime_set_rammapper_kb(m_RamMapperKb);
@@ -3764,6 +3790,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 		{
 			m_SccDualCartEnabled = FALSE;
 		}
+		SyncKanjiRomStateFromRuntime();
 		m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled, fmsx_runtime_get_scc_dual_cart_available());
 	#endif
 
@@ -4889,9 +4916,22 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 
 	case ComboMenuActionToggleKanjiRom:
 		m_KanjiRomEnabled = m_KanjiRomEnabled ? FALSE : TRUE;
-		m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
 		RefreshSettingsUiAfterAction();
-		m_Logger.Write(FromKernel, LogNotice, m_KanjiRomEnabled ? "Settings: Kanji ROM ON" : "Settings: Kanji ROM OFF");
+#if MSXBARE_ENABLE_FMSX
+		fmsx_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
+		SyncKanjiRomStateFromRuntime();
+#else
+		m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
+		m_PauseMenu.SetKanjiRomAvailable(m_KanjiRomAvailable);
+#endif
+		if (!m_KanjiRomAvailable)
+		{
+			m_Logger.Write(FromKernel, LogNotice, "Settings: Kanji ROM indisponivel");
+		}
+		else
+		{
+			m_Logger.Write(FromKernel, LogNotice, m_KanjiRomEnabled ? "Settings: Kanji ROM ON" : "Settings: Kanji ROM OFF");
+		}
 		break;
 
 	case ComboMenuActionCycleBootMode:
