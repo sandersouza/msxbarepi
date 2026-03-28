@@ -10,6 +10,8 @@
 #include "fmsx_initramfs.h"
 #endif
 
+#include <circle/bcmpropertytags.h>
+#include <circle/machineinfo.h>
 #include <circle/sound/hdmisoundbasedevice.h>
 #include <circle/startup.h>
 #include <circle/string.h>
@@ -115,6 +117,18 @@ static void BootPhaseWarn(CLogger &logger, const char *phase, const char *status
 	logger.Write(FromKernel, LogWarning, line);
 }
 
+static const char *ThrottleStateLabel(TSystemThrottledState state)
+{
+	switch (state)
+	{
+	case SystemStateUnderVoltageOccurred: return "UNDERVOLT";
+	case SystemStateFrequencyCappingOccurred: return "FREQCAP";
+	case SystemStateThrottlingOccurred: return "THROTTLED";
+	case SystemStateSoftTempLimitOccurred: return "SOFTTEMP";
+	default: return "MIXED";
+	}
+}
+
 static unsigned UMax(unsigned a, unsigned b)
 {
 	return a > b ? a : b;
@@ -142,10 +156,56 @@ static unsigned ComputePixelScaleMaxPercent(unsigned screen_w, unsigned screen_h
 	return max_pct;
 }
 
+static unsigned ComputeAspectScaleMaxPercent(unsigned screen_w, unsigned screen_h,
+								unsigned src_h,
+								unsigned ar_num,
+								unsigned ar_den)
+{
+	if (screen_w == 0u || screen_h == 0u || src_h == 0u || ar_num == 0u || ar_den == 0u)
+	{
+		return kScalePercentMin;
+	}
+
+	const unsigned max_y = (screen_h * 100u) / src_h;
+	const unsigned max_x = (unsigned) (((u64) screen_w * 100u * (u64) ar_den)
+		/ ((u64) src_h * (u64) ar_num));
+	unsigned max_pct = UMin(max_x, max_y);
+	max_pct = (max_pct / kScalePercentStep) * kScalePercentStep;
+	if (max_pct < kScalePercentMin) max_pct = kScalePercentMin;
+	if (max_pct > kScalePercentHardMax) max_pct = kScalePercentHardMax;
+	return max_pct;
+}
+
 static unsigned ComputeLogicalSourceWidth(unsigned src_w)
 {
 	/* MSX hi-res modes (e.g. 512-wide) use narrow pixels on CRT. Use logical width for viewport sizing. */
 	return (src_w >= 512u) ? (src_w / 2u) : src_w;
+}
+
+static unsigned NormalizeViewportSourceHeight(unsigned src_h)
+{
+	if (src_h == 0u)
+	{
+		return 0u;
+	}
+
+	if (src_h <= 243u) return 243u;
+	if (src_h <= 256u) return 256u;
+	if (src_h <= 486u) return 486u;
+	if (src_h <= 512u) return 512u;
+	return src_h;
+}
+
+static unsigned NormalizeCrtViewportSourceHeight(unsigned src_h)
+{
+	if (src_h == 0u)
+	{
+		return 0u;
+	}
+
+	if (src_h <= 256u) return 256u;
+	if (src_h <= 512u) return 512u;
+	return src_h;
 }
 
 static unsigned ComputeScaleMaxPercentForCurrentFrame(unsigned screen_w, unsigned screen_h)
@@ -166,6 +226,7 @@ static unsigned ComputeScaleMaxPercentForCurrentFrame(unsigned screen_w, unsigne
 		src_h = 192u;
 	}
 
+	src_h = NormalizeViewportSourceHeight(src_h);
 	const unsigned logical_src_w = ComputeLogicalSourceWidth(src_w);
 	return ComputePixelScaleMaxPercent(screen_w, screen_h, logical_src_w, src_h);
 }
@@ -552,6 +613,12 @@ static boolean BootConfigKeyEquals(const char *line, unsigned key_len, const cha
 
 static u16 *s_DimLut85 = 0;
 static boolean s_DimLut85Ready = FALSE;
+static const u16 kCrtBlackLift565 = 0x1082u;
+
+static u16 ApplyCrtBlackLevel565(u16 sample)
+{
+	return sample == 0u ? kCrtBlackLift565 : sample;
+}
 
 static const u16 *EnsureCrtDimLutReady(void)
 {
@@ -572,7 +639,7 @@ static const u16 *EnsureCrtDimLutReady(void)
 
 	for (unsigned sample = 0; sample < kRgb565LutSize; ++sample)
 	{
-		const u16 rgb = (u16) sample;
+		const u16 rgb = ApplyCrtBlackLevel565((u16) sample);
 		const unsigned r = (rgb >> 11) & 0x1Fu;
 		const unsigned g = (rgb >> 5) & 0x3Fu;
 		const unsigned b = rgb & 0x1Fu;
@@ -592,7 +659,8 @@ static void BlitMappedLineRgb565(u16 *dst_line,
 					 unsigned dst_width,
 					 unsigned src_x0,
 					 unsigned dim_mode,
-					 const u16 *dim_lut)
+					 const u16 *dim_lut,
+					 boolean crt_black_lift)
 {
 	if (dst_line == 0 || src_line == 0 || xmap == 0 || dst_width == 0u)
 	{
@@ -605,6 +673,10 @@ static void BlitMappedLineRgb565(u16 *dst_line,
 	if ((((uintptr) dst_line) & 0x2u) != 0u)
 	{
 		u16 sample = src_line[src_x0 + xmap[0]];
+		if (crt_black_lift)
+		{
+			sample = ApplyCrtBlackLevel565(sample);
+		}
 		if (dim_mode == 1u)
 		{
 			sample = (u16) ((sample & 0xF7DEu) >> 1);
@@ -621,6 +693,11 @@ static void BlitMappedLineRgb565(u16 *dst_line,
 	{
 		u16 s0 = src_line[src_x0 + xmap[x]];
 		u16 s1 = src_line[src_x0 + xmap[x + 1u]];
+		if (crt_black_lift)
+		{
+			s0 = ApplyCrtBlackLevel565(s0);
+			s1 = ApplyCrtBlackLevel565(s1);
+		}
 		if (dim_mode == 1u)
 		{
 			u32 packed = (u32) s0 | ((u32) s1 << 16);
@@ -639,6 +716,10 @@ static void BlitMappedLineRgb565(u16 *dst_line,
 	if (x < dst_width)
 	{
 		u16 sample = src_line[src_x0 + xmap[x]];
+		if (crt_black_lift)
+		{
+			sample = ApplyCrtBlackLevel565(sample);
+		}
 		if (dim_mode == 1u)
 		{
 			sample = (u16) ((sample & 0xF7DEu) >> 1);
@@ -655,7 +736,8 @@ static void BlitMappedLineRgb565NoDim(u16 *dst_line,
 						  const u16 *src_line,
 						  const u16 *xmap,
 						  unsigned dst_width,
-						  unsigned src_x0)
+						  unsigned src_x0,
+						  boolean crt_black_lift)
 {
 	if (dst_line == 0 || src_line == 0 || xmap == 0 || dst_width == 0u)
 	{
@@ -667,21 +749,53 @@ static void BlitMappedLineRgb565NoDim(u16 *dst_line,
 	/* Align to 32-bit stores when possible (2 pixels per write). */
 	if ((((uintptr) dst_line) & 0x2u) != 0u)
 	{
-		dst_line[0] = src_line[src_x0 + xmap[0]];
+		u16 sample = src_line[src_x0 + xmap[0]];
+		dst_line[0] = crt_black_lift ? ApplyCrtBlackLevel565(sample) : sample;
 		x = 1u;
 	}
 
 	for (; x + 1u < dst_width; x += 2u)
 	{
-		const u16 s0 = src_line[src_x0 + xmap[x]];
-		const u16 s1 = src_line[src_x0 + xmap[x + 1u]];
+		u16 s0 = src_line[src_x0 + xmap[x]];
+		u16 s1 = src_line[src_x0 + xmap[x + 1u]];
+		if (crt_black_lift)
+		{
+			s0 = ApplyCrtBlackLevel565(s0);
+			s1 = ApplyCrtBlackLevel565(s1);
+		}
 		*(u32 *) (void *) (dst_line + x) = (u32) s0 | ((u32) s1 << 16);
 	}
 
 	if (x < dst_width)
 	{
-		dst_line[x] = src_line[src_x0 + xmap[x]];
+		u16 sample = src_line[src_x0 + xmap[x]];
+		dst_line[x] = crt_black_lift ? ApplyCrtBlackLevel565(sample) : sample;
 	}
+}
+
+static boolean IsCrtDimmedHalfRow(unsigned dst_y,
+						 unsigned src_y,
+						 unsigned src_h,
+						 unsigned dst_h)
+{
+	if (src_h == 0u || dst_h == 0u)
+	{
+		return FALSE;
+	}
+
+	const u64 start_num = (u64) src_y * (u64) dst_h;
+	const u64 end_num = (u64) (src_y + 1u) * (u64) dst_h;
+	const unsigned group_start = (unsigned) ((start_num + (u64) src_h - 1ull) / (u64) src_h);
+	const unsigned group_end = (unsigned) ((end_num + (u64) src_h - 1ull) / (u64) src_h);
+	const unsigned group_len = (group_end > group_start) ? (group_end - group_start) : 0u;
+
+	if (group_len <= 1u || dst_y < group_start || dst_y >= group_end)
+	{
+		return FALSE;
+	}
+
+	const unsigned dark_start = (group_len + 1u) / 2u;
+	return (dst_y - group_start) >= dark_start;
 }
 
 static void FlushDCacheRange(void *addr, unsigned bytes)
@@ -928,6 +1042,13 @@ CComboKernel::CComboKernel(void)
 	m_FmsxBoxY(0),
 	m_FmsxBoxW(0),
 	m_FmsxBoxH(0),
+	m_CrtViewportKeySrcW(0u),
+	m_CrtViewportKeySrcH(0u),
+	m_CrtViewportKeyScreenW(0u),
+	m_CrtViewportKeyScreenH(0u),
+	m_CrtViewportKeyOverscanPercent(0u),
+	m_CrtViewportKeyWidescreen(FALSE),
+	m_CrtViewportLatchValid(FALSE),
 	m_BlitMapSrcW(0),
 	m_BlitMapSrcH(0),
 	m_BlitMapDstW(0),
@@ -1086,6 +1207,18 @@ boolean CComboKernel::Initialize(void)
 	if (ok)
 	{
 		BootPhase(m_Logger, "BT1", "Interrupt + Timer... OK");
+		if (m_CPUThrottle.IsDynamic())
+		{
+			(void) m_CPUThrottle.SetSpeed(CPUSpeedMaximum, TRUE);
+		}
+		m_CPUThrottle.RegisterSystemThrottledHandler(
+			SystemStateUnderVoltageOccurred
+				| SystemStateFrequencyCappingOccurred
+				| SystemStateThrottlingOccurred
+				| SystemStateSoftTempLimitOccurred,
+			SystemThrottledHandler,
+			this);
+		LogCpuClockStatus("BT1");
 	}
 	if (ok)
 	{
@@ -1382,6 +1515,7 @@ TComboShutdownMode CComboKernel::Run(void)
 			next_frame_us = now_us + m_FrameIntervalUs;
 			m_FramePacingResetPending = FALSE;
 		}
+		m_CPUThrottle.Update();
 		if (!m_AudioInitAttempted && (m_TestToneEnabled || fmsx_audio_enabled))
 		{
 			if (m_TestToneEnabled || !m_FmsxEnabled || !m_FmsxReady || m_FmsxFrames >= 2u)
@@ -1549,7 +1683,7 @@ TComboShutdownMode CComboKernel::Run(void)
 			boolean stepped_fmsx = FALSE;
 			unsigned catchup_steps = 0;
 			const unsigned max_catchup_steps = 2u;
-			const boolean uart_perf_enabled = m_UartTelemetryEnabled ? TRUE : FALSE;
+			const boolean uart_perf_enabled = FALSE;
 			while (now_us >= next_frame_us && catchup_steps < max_catchup_steps)
 			{
 				const u64 late_us64 = now_us - next_frame_us;
@@ -1709,12 +1843,6 @@ TComboShutdownMode CComboKernel::Run(void)
 
 			if (stepped_fmsx)
 			{
-				LogVdpTraceUart();
-#if FMSX_SMANBOW_AUDIO_TRACE_ENABLED
-				LogSccTraceUart();
-				LogAudioPortTraceUart();
-#endif
-				LogKmgTraceUart();
 				const boolean force_viewport_clear = m_ForceViewportFullClearNextFrame;
 				m_ForceViewportFullClearNextFrame = FALSE;
 				const u64 blit_start_us = uart_perf_enabled ? CTimer::GetClockTicks64() : 0u;
@@ -1756,7 +1884,7 @@ TComboShutdownMode CComboKernel::Run(void)
 			(void) emulator_backend_video_frame(&src_pixels, &src_w, &src_h);
 			if (src_pixels != 0 && src_w > 0u && src_h > 0u)
 			{
-				ComputeViewportBox(src_w, src_h, &m_FmsxBoxX, &m_FmsxBoxY, &m_FmsxBoxW, &m_FmsxBoxH);
+				ResolveViewportBox(src_w, src_h, &m_FmsxBoxX, &m_FmsxBoxY, &m_FmsxBoxW, &m_FmsxBoxH);
 			}
 			const unsigned snap_x = (m_FmsxBoxW > 0u) ? m_FmsxBoxX : 0u;
 			const unsigned snap_y = (m_FmsxBoxH > 0u) ? m_FmsxBoxY : 0u;
@@ -1769,7 +1897,7 @@ TComboShutdownMode CComboKernel::Run(void)
 
 		if (m_Sound != 0)
 		{
-			const boolean uart_perf_enabled = m_UartTelemetryEnabled ? TRUE : FALSE;
+			const boolean uart_perf_enabled = FALSE;
 			const u64 refill_start_us = uart_perf_enabled ? CTimer::GetClockTicks64() : 0u;
 			RefillAudioQueue();
 			if (uart_perf_enabled)
@@ -1782,7 +1910,6 @@ TComboShutdownMode CComboKernel::Run(void)
 					m_UartAudioRefillUsPeak = refill_elapsed_us;
 				}
 			}
-			LogAudioQueueUart();
 			if (!m_Sound->IsActive() && ((tick % 500u) == 0u))
 			{
 				m_SoundStartAttempts++;
@@ -1796,7 +1923,6 @@ TComboShutdownMode CComboKernel::Run(void)
 				}
 			}
 		}
-		LogVideoPacingUart();
 		if (MSXBARE_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
 		{
 			now_us = CTimer::GetClockTicks64();
@@ -2223,6 +2349,7 @@ void CComboKernel::LogVideoPacingUart(void)
 		m_UartVideoBlitUsLast > 9999u ? 9999u : m_UartVideoBlitUsLast,
 		m_UartVideoBlitUsPeak > 9999u ? 9999u : m_UartVideoBlitUsPeak);
 	m_Logger.Write(FromKernel, LogNotice, line);
+	LogCpuClockStatus("F10");
 
 	if (emulator_backend_selected_kind() == EMULATOR_BACKEND_KIND_FMSX)
 	{
@@ -2861,8 +2988,8 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 }
 
 void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
-								unsigned *out_x, unsigned *out_y,
-								unsigned *out_w, unsigned *out_h) const
+									unsigned *out_x, unsigned *out_y,
+									unsigned *out_w, unsigned *out_h) const
 {
 	unsigned box_x = 0u;
 	unsigned box_y = 0u;
@@ -2870,25 +2997,33 @@ void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
 	unsigned box_h = m_Screen.GetHeight();
 	const unsigned screen_width = m_Screen.GetWidth();
 	const unsigned screen_height = m_Screen.GetHeight();
+	unsigned layout_src_height = NormalizeViewportSourceHeight(src_height);
+	if (m_ScanlineMode == kScanlineModeCrt)
+	{
+		layout_src_height = NormalizeCrtViewportSourceHeight(src_height);
+	}
 
 	if (screen_width > 0u && screen_height > 0u)
 	{
 		unsigned dst_width = screen_width;
 		unsigned dst_height = screen_height;
-		if (src_width > 0u && src_height > 0u)
+		if (src_width > 0u && layout_src_height > 0u)
 		{
+			const unsigned ar_num = m_WidescreenEnabled ? 16u : 4u;
+			const unsigned ar_den = m_WidescreenEnabled ? 9u : 3u;
 			const unsigned logical_src_w = ComputeLogicalSourceWidth(src_width);
-			const unsigned max_scale_percent = ComputePixelScaleMaxPercent(screen_width, screen_height, logical_src_w, src_height);
+			const unsigned max_scale_percent =
+				(m_ScanlineMode == kScanlineModeCrt)
+				? ComputeAspectScaleMaxPercent(screen_width, screen_height, layout_src_height, ar_num, ar_den)
+				: ComputePixelScaleMaxPercent(screen_width, screen_height, logical_src_w, layout_src_height);
 			unsigned scale_percent = m_OverscanPercent;
 			if (scale_percent < kScalePercentMin) scale_percent = kScalePercentMin;
 			if (scale_percent > max_scale_percent) scale_percent = max_scale_percent;
-			dst_height = (unsigned) (((u64) src_height * (u64) scale_percent) / 100u);
+			dst_height = (unsigned) (((u64) layout_src_height * (u64) scale_percent) / 100u);
 			if (dst_height == 0u) dst_height = 1u;
 			if (dst_height > screen_height) dst_height = screen_height;
 
 			/* Keep default geometry in 4:3. Only use 16:9 when widescreen is explicitly enabled. */
-			const unsigned ar_num = m_WidescreenEnabled ? 16u : 4u;
-			const unsigned ar_den = m_WidescreenEnabled ? 9u : 3u;
 			dst_width = (unsigned) (((u64) dst_height * (u64) ar_num) / (u64) ar_den);
 			if (dst_width == 0u) dst_width = 1u;
 			if (dst_width > screen_width)
@@ -2912,6 +3047,51 @@ void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
 	if (out_y != 0) *out_y = box_y;
 	if (out_w != 0) *out_w = box_w;
 	if (out_h != 0) *out_h = box_h;
+}
+
+void CComboKernel::ResolveViewportBox(unsigned src_width, unsigned src_height,
+									unsigned *out_x, unsigned *out_y,
+									unsigned *out_w, unsigned *out_h)
+{
+	ComputeViewportBox(src_width, src_height, out_x, out_y, out_w, out_h);
+
+	const unsigned scanline_mode = (m_ScanlineMode > kScanlineModeCrt) ? kScanlineModeCrt : m_ScanlineMode;
+	if (scanline_mode != kScanlineModeCrt)
+	{
+		m_CrtViewportLatchValid = FALSE;
+		return;
+	}
+
+	const unsigned logical_src_w = ComputeLogicalSourceWidth(src_width);
+	const unsigned layout_src_h = NormalizeCrtViewportSourceHeight(src_height);
+	const unsigned screen_width = m_Screen.GetWidth();
+	const unsigned screen_height = m_Screen.GetHeight();
+	const boolean same_layout_family =
+		m_CrtViewportLatchValid
+		&& m_FmsxBoxW > 0u
+		&& m_FmsxBoxH > 0u
+		&& m_CrtViewportKeySrcH == layout_src_h
+		&& m_CrtViewportKeyScreenW == screen_width
+		&& m_CrtViewportKeyScreenH == screen_height
+		&& m_CrtViewportKeyOverscanPercent == m_OverscanPercent
+		&& m_CrtViewportKeyWidescreen == (m_WidescreenEnabled ? TRUE : FALSE);
+
+	if (same_layout_family)
+	{
+		if (out_x != 0) *out_x = m_FmsxBoxX;
+		if (out_y != 0) *out_y = m_FmsxBoxY;
+		if (out_w != 0) *out_w = m_FmsxBoxW;
+		if (out_h != 0) *out_h = m_FmsxBoxH;
+		return;
+	}
+
+	m_CrtViewportKeySrcW = logical_src_w;
+	m_CrtViewportKeySrcH = layout_src_h;
+	m_CrtViewportKeyScreenW = screen_width;
+	m_CrtViewportKeyScreenH = screen_height;
+	m_CrtViewportKeyOverscanPercent = m_OverscanPercent;
+	m_CrtViewportKeyWidescreen = m_WidescreenEnabled ? TRUE : FALSE;
+	m_CrtViewportLatchValid = TRUE;
 }
 
 void CComboKernel::BlitFmsxFrame(boolean force_redraw)
@@ -2942,7 +3122,7 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 	const u16 *crt_dim_lut = (scanline_mode == kScanlineModeCrt) ? EnsureCrtDimLutReady() : 0;
 	unsigned offset_x = 0u;
 	unsigned offset_y = 0u;
-	ComputeViewportBox(width, height, &offset_x, &offset_y, &dst_width, &dst_height);
+	ResolveViewportBox(width, height, &offset_x, &offset_y, &dst_width, &dst_height);
 	const unsigned old_box_x = m_FmsxBoxX;
 	const unsigned old_box_y = m_FmsxBoxY;
 	const unsigned old_box_w = m_FmsxBoxW;
@@ -3068,11 +3248,15 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 			u16 crt_dim_line_cache[kBlitMapMaxAxis];
 			for (unsigned y = 0; y < dst_height; ++y)
 			{
-				const unsigned src_y = src_y0 + m_BlitYMap[y];
+				const unsigned src_rel_y = m_BlitYMap[y];
+				const unsigned src_y = src_y0 + src_rel_y;
 				const u16 *src_line = pixels + (src_y * width);
 				u16 *dst_line = dst_base + ((offset_y + y) * pitch_pixels) + offset_x;
 				const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
-				const boolean dark_crt = (scanline_mode == kScanlineModeCrt) && crt_dim_lut != 0 && ((src_y & 1u) != 0u);
+				const boolean dark_crt =
+					(scanline_mode == kScanlineModeCrt)
+					&& crt_dim_lut != 0
+					&& IsCrtDimmedHalfRow(y, src_rel_y, src_h, dst_height);
 				const unsigned dim_mode = dark_lcd ? 1u : (dark_crt ? 2u : 0u);
 				if (dark_crt && src_w <= kBlitMapMaxAxis)
 				{
@@ -3084,17 +3268,19 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 						}
 						crt_cached_src_y = src_y;
 					}
-					BlitMappedLineRgb565NoDim(dst_line, crt_dim_line_cache, m_BlitXMap, dst_width, 0u);
+					BlitMappedLineRgb565NoDim(dst_line, crt_dim_line_cache, m_BlitXMap, dst_width, 0u, FALSE);
 					continue;
 				}
 				if (dim_mode == 0u)
 				{
-					BlitMappedLineRgb565NoDim(dst_line, src_line, m_BlitXMap, dst_width, src_x0);
+					BlitMappedLineRgb565NoDim(dst_line, src_line, m_BlitXMap, dst_width, src_x0,
+						(scanline_mode == kScanlineModeCrt) ? TRUE : FALSE);
 				}
 				else
 				{
 					const u16 *dim_lut = (dim_mode == 2u) ? crt_dim_lut : 0;
-					BlitMappedLineRgb565(dst_line, src_line, m_BlitXMap, dst_width, src_x0, dim_mode, dim_lut);
+					BlitMappedLineRgb565(dst_line, src_line, m_BlitXMap, dst_width, src_x0, dim_mode, dim_lut,
+						(dim_mode == 2u) ? TRUE : FALSE);
 				}
 			}
 		}
@@ -3104,11 +3290,15 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 			u16 crt_dim_line_cache[kBlitMapMaxAxis];
 			for (unsigned y = 0; y < dst_height; ++y)
 			{
-				const unsigned src_y = src_y0 + (unsigned) (((u64) y * (u64) src_h) / (u64) dst_height);
+				const unsigned src_rel_y = (unsigned) (((u64) y * (u64) src_h) / (u64) dst_height);
+				const unsigned src_y = src_y0 + src_rel_y;
 				const u16 *src_line = pixels + (src_y * width);
 				u16 *dst_line = dst_base + ((offset_y + y) * pitch_pixels) + offset_x;
 				const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
-				const boolean dark_crt = (scanline_mode == kScanlineModeCrt) && crt_dim_lut != 0 && ((src_y & 1u) != 0u);
+				const boolean dark_crt =
+					(scanline_mode == kScanlineModeCrt)
+					&& crt_dim_lut != 0
+					&& IsCrtDimmedHalfRow(y, src_rel_y, src_h, dst_height);
 				if (dark_lcd)
 				{
 					for (unsigned x = 0; x < dst_width; ++x)
@@ -3149,7 +3339,9 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 					for (unsigned x = 0; x < dst_width; ++x)
 					{
 						const unsigned src_x = src_x0 + (unsigned) (((u64) x * (u64) src_w) / (u64) dst_width);
-						dst_line[x] = src_line[src_x];
+						dst_line[x] = (scanline_mode == kScanlineModeCrt)
+							? ApplyCrtBlackLevel565(src_line[src_x])
+							: src_line[src_x];
 					}
 				}
 			}
@@ -3199,14 +3391,22 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 
 	for (unsigned y = 0; y < dst_height; ++y)
 	{
-		const unsigned src_y = src_y0 + (unsigned) (((u64) y * (u64) src_h) / (u64) dst_height);
+		const unsigned src_rel_y = (unsigned) (((u64) y * (u64) src_h) / (u64) dst_height);
+		const unsigned src_y = src_y0 + src_rel_y;
 		const u16 *line = pixels + (src_y * width);
 		const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
-		const boolean dark_crt = (scanline_mode == kScanlineModeCrt) && crt_dim_lut != 0 && ((src_y & 1u) != 0u);
+		const boolean dark_crt =
+			(scanline_mode == kScanlineModeCrt)
+			&& crt_dim_lut != 0
+			&& IsCrtDimmedHalfRow(y, src_rel_y, src_h, dst_height);
 		for (unsigned x = 0; x < dst_width; ++x)
 		{
 			const unsigned src_x = src_x0 + (unsigned) (((u64) x * (u64) src_w) / (u64) dst_width);
 			u16 sample = line[src_x];
+			if (scanline_mode == kScanlineModeCrt)
+			{
+				sample = ApplyCrtBlackLevel565(sample);
+			}
 			if (dark_lcd)
 			{
 				sample = (u16) ((sample & 0xF7DEu) >> 1);
@@ -3218,6 +3418,7 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 			m_Screen.SetPixel(offset_x + x, offset_y + y, (TScreenColor) sample);
 		}
 	}
+
 #endif
 }
 
@@ -5130,7 +5331,8 @@ void CComboKernel::SetUartTelemetryEnabled(boolean enabled)
 #endif
 	ResetUartPerfTelemetry();
 #if MSXBARE_ENABLE_FMSX
-	fmsx_runtime_set_frame_perf_telemetry_enabled(m_UartTelemetryEnabled ? TRUE : FALSE);
+	/* UART perf telemetry is intentionally quiesced in this phase. */
+	fmsx_runtime_set_frame_perf_telemetry_enabled(FALSE);
 #endif
 	m_PauseMenu.SetDebugLogEnabled(m_UartTelemetryEnabled);
 	m_PauseMenu.RequestRedraw();
@@ -5173,6 +5375,51 @@ void CComboKernel::WriteScreenText(const char *text)
 	}
 
 	m_Screen.Write(text, strlen(text));
+}
+
+void CComboKernel::SystemThrottledHandler(TSystemThrottledState state, void *param)
+{
+	if (param == 0)
+	{
+		return;
+	}
+
+	((CComboKernel *) param)->HandleSystemThrottled(state);
+}
+
+void CComboKernel::HandleSystemThrottled(TSystemThrottledState state)
+{
+	CString line;
+	line.Format("Throttle event: %s state=0x%08X",
+		ThrottleStateLabel(state),
+		(unsigned) state);
+	m_Logger.Write(FromKernel, LogWarning, line);
+	LogCpuClockStatus("THR");
+}
+
+void CComboKernel::LogCpuClockStatus(const char *phase)
+{
+	const unsigned arm_hz = m_CPUThrottle.GetClockRate();
+	const unsigned core_hz = CMachineInfo::Get()->GetClockRate(CLOCK_ID_CORE);
+	const unsigned temp_c = m_CPUThrottle.GetTemperature();
+	const unsigned min_hz = m_CPUThrottle.GetMinClockRate();
+	const unsigned max_hz = m_CPUThrottle.GetMaxClockRate();
+	CBcmPropertyTags tags;
+	TPropertyTagSimple throttled;
+	throttled.nValue = 0u;
+	const boolean throttled_ok = tags.GetTag(PROPTAG_GET_THROTTLED, &throttled, sizeof throttled, 4);
+
+	CString line;
+	line.Format("CLK %s ARM:%u CORE:%u TEMP:%u DYN:%u RNG:%u-%u THR:%08X",
+		phase != 0 ? phase : "-",
+		arm_hz / 1000000u,
+		core_hz / 1000000u,
+		temp_c,
+		m_CPUThrottle.IsDynamic() ? 1u : 0u,
+		min_hz / 1000000u,
+		max_hz / 1000000u,
+		throttled_ok ? throttled.nValue : 0u);
+	m_Logger.Write(FromKernel, LogNotice, line);
 }
 
 void CComboKernel::BootTrace(const char *tag)

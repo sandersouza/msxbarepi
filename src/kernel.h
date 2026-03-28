@@ -7,6 +7,7 @@
 #include "tools/usb_hid_keyboard.h"
 
 #include <circle/actled.h>
+#include <circle/cputhrottle.h>
 #include <circle/devicenameservice.h>
 #include <circle/exceptionhandler.h>
 #include <circle/interrupt.h>
@@ -55,8 +56,13 @@ private:
     void LogAudioPortTraceUart(void);
     void LogAudioQueueUart(void);
     void LogVideoPacingUart(void);
+    void LogCpuClockStatus(const char *phase);
+    void HandleSystemThrottled(TSystemThrottledState state);
     void LogKmgTraceUart(void);
     void ResetUartPerfTelemetry(void);
+    void ResolveViewportBox(unsigned src_width, unsigned src_height,
+                            unsigned *out_x, unsigned *out_y,
+                            unsigned *out_w, unsigned *out_h);
     void ComputeViewportBox(unsigned src_width, unsigned src_height,
                             unsigned *out_x, unsigned *out_y,
                             unsigned *out_w, unsigned *out_h) const;
@@ -83,6 +89,7 @@ private:
     void NormalizeSettingsForBuild(void);
 
     static void KeyPressedHandler(const char *text);
+    static void SystemThrottledHandler(TSystemThrottledState state, void *param);
 
 private:
 	static const unsigned kBlitMapMaxAxis = 2048u;
@@ -90,6 +97,7 @@ private:
     CActLED m_ActLED;
     CKernelOptions m_Options;
     CDeviceNameService m_DeviceNameService;
+    CCPUThrottle m_CPUThrottle;
     CScreenDevice m_Screen;
     CGfxTextBoxRenderer m_GfxText;
     CSerialDevice m_Serial;
@@ -198,6 +206,13 @@ private:
     unsigned m_FmsxBoxY;
     unsigned m_FmsxBoxW;
     unsigned m_FmsxBoxH;
+    unsigned m_CrtViewportKeySrcW;
+    unsigned m_CrtViewportKeySrcH;
+    unsigned m_CrtViewportKeyScreenW;
+    unsigned m_CrtViewportKeyScreenH;
+    unsigned m_CrtViewportKeyOverscanPercent;
+    boolean m_CrtViewportKeyWidescreen;
+    boolean m_CrtViewportLatchValid;
     unsigned m_BlitMapSrcW;
     unsigned m_BlitMapSrcH;
     unsigned m_BlitMapDstW;

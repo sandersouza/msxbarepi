@@ -20,6 +20,12 @@ Copie para a partição FAT32 de boot:
 - `config.txt` (já disponível nesta pasta)
 - `msx.cpio` (gerado em `sdcard/msx.cpio`)
 
-Opcional:
+Opcional, mas recomendado para preservar os defaults de áudio/clock usados no projeto:
 
-- `cmdline.txt` (não necessário para este estágio baremetal)
+- `cmdline.txt`
+  - `sounddev=sndvchiq`
+  - `fast=true`
+  - `socmaxtemp=75`
+- `config.txt`
+  - `arm_freq=1100`
+  - `arm_freq_min=900`

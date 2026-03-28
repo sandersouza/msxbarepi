@@ -41,8 +41,8 @@ make DEBUG=0
 - `F6`: mute/unmute `Layer 1` (PSG + ruido).
 - `F7`: mute/unmute `Layer 2` (FM-PAC).
 - `F8`: mute/unmute `Layer 3` (Konami SCC+).
-- `F10`: liga/desliga as telemetrias UART frequentes ainda ativas (`AUDQ`, `VIDP`, `VRTM`, `SCC EVT`, `AUD EVT`, `KMG EVT`, `VDP EVT`).
-  - O estado atual de `F10` e `UART Log` e sincronizado no boot; `VRTM` nao exige mais um toggle manual pos-boot para comecar a medir.
+- `F10`: mantém o toggle de `UART Log` reservado para futuras fases de debug, mas a fase atual nao emite mais telemetria periódica de performance.
+  - O baseline atual da UART fica reduzido aos marcadores de boot (`BT0..BT12`) e a eventos pontuais/criticos.
 - `F9`: sem uso na build atual.
 
 ## Tag de build na tela
@@ -217,37 +217,18 @@ Diretriz visual (overlay e menu):
 - Para o freeze do `SMANBOW2` em `PC:C698/C699`, `TM6C` e a linha de maior valor diagnostico: ela mostra se a pagina `4000h` continua apontando para o cart, quais bancos estao ativos e se a Flash realmente recebeu/programou/leu o offset esperado (`0x70000+`).
 - Em paralelo, o kernel emite telemetria UART adicional focada em VDP:
   - `VDP EVT`: eventos da janela rastreada com `PC`, scanline, fase de linha, alvo de `IE1`, `R#19/R#23` e I/O de VDP (`0x98`, `0x99` address/register). Em `Knightmare Gold`, a janela aparece como `W=KG` e fica ativa durante a gameplay em `screen mode 4` quando o disco carregado contem `kmaregold`/`kmare`.
-  - `AUDQ`: resumo periódico (~250ms) da fila HDMI e da ring de áudio:
-    - `Q:cur/min/max`: nível atual da fila HDMI, menor nível observado desde o último log e capacidade total.
-    - `L`: quantas vezes a fila caiu em `low_water` desde o último log.
-    - `R:a/b`: nível atual da ring interna e pico histórico.
-    - `P:a/b`: último pull retornado / último pull solicitado pela HDMI.
-    - `D`: drops acumulados.
-    - `T`: samples já descartados por trim.
-    - `U:a/b`: pulls curtos e underrun samples acumulados.
-    - `A:a/b`: custo do `RefillAudioQueue()` no último loop e pico desde o último log.
-  - `VIDP`: resumo periódico (~250ms) do pacing de vídeo:
-    - `F`: fps atual do core.
-    - `C:a/b`: catch-up steps no último loop e pico desde o último log.
-    - `X`: quantas vezes o loop bateu no limite de catch-up desde o último log.
-    - `L:a/b`: atraso bruto em microssegundos no último loop e pico desde o último log.
-    - `P:a/b`: média e pico do erro de pacing já mantidos no runtime.
-    - `S:a/b`: custo de `emulator_backend_step_frame()` no último loop e pico desde o último log.
-    - `B:a/b`: custo de `BlitFmsxFrame()` no último loop e pico desde o último log.
-  - `VRTM`: quebra periódica (~250ms) do `fmsx_runtime_step_frame()`:
-    - `ST`: quantidade de steps solicitados no último `step_frame()`.
-    - `FR`: quantidade de frames realmente concluídos nesse mesmo `step_frame()`.
-    - `SL:a/b`: slices `RunZ80()` usados no último `step_frame()` e pico desde o último log.
-    - `Z:a/b`: custo do trecho de CPU/emulação (`RunZ80` até o frame fechar) no último `step_frame()` e pico desde o último log.
-    - `A:a/b`: custo de `RenderAndPlayAudio()` no último `step_frame()` e pico desde o último log.
-    - `N:a/b`: samples pedidos para `RenderAndPlayAudio()` no último `step_frame()` e pico desde o último log.
-    - `M`: quantas vezes o runtime não conseguiu fechar frame dentro do limite de slices desde o último log.
+  - `CLK`: leitura do estado de clock/throttle do firmware:
+    - `ARM:<mhz>`: clock ARM reportado pelo firmware.
+    - `CORE:<mhz>`: clock CORE reportado pelo firmware.
+    - `TEMP:<c>`: temperatura atual do SoC.
+    - `DYN:<0|1>`: se `CCPUThrottle` está ativo com faixa dinâmica válida.
+    - `RNG:<min>-<max>`: faixa mínima/máxima de clock ARM exposta pelo firmware.
+    - `THR:<hex>`: máscara crua de `PROPTAG_GET_THROTTLED`, incluindo bits atuais e ocorridos.
 - A trilha UART experimental de audio do `SMANBOW2` (`SCC EVT` / `AUD EVT`) foi congelada para futuro na issue `#220`.
   - O codigo de instrumentacao foi preservado para reativacao futura.
-  - `F10` agora controla apenas a emissao dessas telemetrias UART frequentes.
+  - `F10` permanece como chave reservada para reativacao futura de telemetria direcionada.
   - O fluxo antigo de snapshot manual/telemetry view por `F9/F10` foi removido.
-  - No estado atual, ela fica desabilitada por compile-time e nao emite logs em runtime.
-- A telemetria `AUDQ ...` voltou a ser usada apenas como resumo periódico controlado por `F10`, sem flood por frame.
+  - No estado atual, a UART fica propositalmente enxuta e nao emite logs periódicos de performance.
 - Os contadores de audio e pacing continuam visiveis no overlay (`EV1/EV2/JY2`) para consulta local sem depender da UART.
 
 ## Arquitetura (modular)

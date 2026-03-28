@@ -359,3 +359,504 @@ Issue: #219 (melhorar fidelidade de render PSG/FM-PAC no backend local)
   - `BUILD_HASH: 95155be-95155be3a7fd865c8f478ae9965b14750866da0a`
   - `BUILD_BID: 202603271140-95155be`
   - `BUILD_ID: 93FE`
+
+## Atualização 2026-03-27 - Quebra fina do `RunZ80` e do `BlitFmsxFrame()`
+- A captura seguinte com fonte/cabo estáveis confirmou que o sintoma não depende do aviso de `undervoltage`:
+  - o ponto de quebra continua entrando com a mesma assinatura temporal;
+  - `AUDQ` volta a degradar depois da queda, então o áudio permanece como efeito secundário.
+- Leitura consolidada do log estável:
+  - em torno de `00:00:54.21`, `VIDP` entra no regime ruim (`C:2/2`, `L:9999/9999`, `S:~9.8ms`, `B:9999`);
+  - `VRTM` mostrou que `A:0/0` continua zerado e `SL:1/1` não sobe;
+  - o custo que explode dentro do `step_frame()` é o `Z`, isto é, o slice único do `RunZ80`, e não `RenderAndPlayAudio()`.
+- Corte implementado nesta rodada:
+  - `src/fmsx_local/MSX.c` passa a contabilizar subfases reais do `RunZ80()` quando `F10` está ativo:
+    - `PutImage()` -> bucket `P`;
+    - `LoopVDP()` -> bucket `V`;
+    - renderer VDP (`fmsx_vdp_render_scanline()` e `fmsx_vdp_render_screen4_partial()`) -> bucket `R`;
+    - bloco especial de `ScanLine==192` -> bucket `L`;
+  - `src/fmsx_runtime_step_frame()` passa a expor esses acumulados e também o residual de core puro (`C`), que corresponde ao custo do slice `RunZ80` depois de descontar `P/V/R/L`;
+  - `src/kernel.cpp` volta a expor uma linha `VIDB`, agora sem tocar no boot path nem em pacing:
+    - `P`: fetch do frame + viewport/box;
+    - `C`: clears;
+    - `M`: geração/atualização do mapa `x/y`;
+    - `D`: draw/dim/scanlines;
+    - `F`: flush.
+- Objetivo operacional da nova captura:
+  - fechar se o salto de `~9.8ms` está no core puro do `RunZ80`, no renderer VDP interno do `fMSX`, ou no draw/flush do `blit` do kernel.
+- Build local desta rodada:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603271215-c4dd79a`
+  - `BUILD_ID: E0B5`
+- Próxima captura esperada:
+  - repetir o mesmo repro em hardware com `F10` ligado;
+  - trazer `VIDP`, `VRTM`, `VIDB` e `AUDQ` 2 a 3 segundos antes/depois da quebra;
+  - se possível, marcar o instante em que a gameplay entra e o ponto do pause de referência no log UART.
+
+## Atualização 2026-03-27 - `screen 4` em `BG/SP` e draw do blit em `shade/write`
+- A captura seguinte com fonte estável consolidou o recorte da build `E0B5`:
+  - a quebra continua abrindo primeiro em `VIDP`, não em `AUDQ`;
+  - no instante ruim, `VRTM` mostrou `C` e `R` maiores ao mesmo tempo;
+  - `VIDB` mostrou `D` saturando, enquanto `P/C/M/F` permanecem pequenos.
+- Decisão desta rodada:
+  - aprofundar o diagnóstico só nas fatias que ainda estavam agregadas demais;
+  - não tocar em pacing, boot, geometria, mixer ou política de áudio.
+- Corte implementado:
+  - `src/fmsx_local/Common.h` passa a separar o renderer de `screen 4` em:
+    - `BG`: composição/background do `RefreshLine4()` / `RefreshLine4PlainRange()`;
+    - `SP`: preparação de sprites via `ColorSprites()`;
+  - `src/fmsx_runtime_step_frame()` agrega esses novos buckets em `VRTM`, mantendo `R` como total do renderer e `C` como residual do core;
+  - `src/kernel.cpp` mantém `VIDB D` como custo total de draw, mas passa a expor `VIDD` com:
+    - `S`: custo do preparo de shade/cache para `CRT dim`;
+    - `W`: aproximação da escrita efetiva de pixels no framebuffer (`D-S`).
+- Objetivo operacional:
+  - fechar se a piora da gameplay vem mais do compositor `screen 4` (background ou sprites) ou do custo de escrita escalada no framebuffer;
+  - evitar nova rodada de “otimização no escuro”.
+- Build local desta rodada:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272033-c4dd79a`
+  - `BUILD_ID: 7EC4`
+- Próxima captura esperada:
+  - repetir o mesmo repro com `F10` ligado;
+  - trazer `VIDP`, `VRTM`, `VIDB`, `VIDD` e `AUDQ` 2 a 3 segundos antes/depois da queda;
+  - se possível, pausar logo depois da transição para manter uma âncora temporal no log.
+
+## Atualização 2026-03-27 - Renderer ativo identificado como `SCREEN 5`
+- A captura da build `7EC4` fechou um ponto importante do diagnóstico:
+  - o primeiro degrau da quebra vem do blit do kernel (`VIDB D`/`VIDD W` saturam antes);
+  - só no sample seguinte o `RunZ80` também sobe para o regime ruim;
+  - `VIDD S` ficou zerado o tempo todo, então o custo do draw não está no `CRT dim`, mas na escrita real de pixels;
+  - `BG/SP` permaneceram zerados, o que mostrou que o repro não passa pelo `RefreshLine4*()`.
+- Correlação técnica adicional:
+  - o caminho ativo desse caso é `ScrMode=5`, então o bucket `R` precisava ser aberto em `RefreshLine5()`, não em `screen 4`.
+- Corte implementado nesta rodada:
+  - `VRTM` agora expõe também `SM`, para o log UART carregar o `ScrMode` efetivo do frame;
+  - `src/fmsx_local/Common.h` passa a instrumentar `RefreshLine5()` em dois buckets próprios:
+    - `VRM5 B`: bitmap/background/composição;
+    - `VRM5 S`: preparação de sprites via `ColorSprites()`;
+  - o bucket `R` de `VRTM` continua como total do renderer, mas agora a próxima captura consegue dizer quanto dele vem especificamente do renderer de `SCREEN 5`.
+- Build local desta rodada:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272050-c4dd79a`
+  - `BUILD_ID: 8367`
+- Próxima captura esperada:
+  - repetir o mesmo repro com `F10` ligado;
+  - trazer `VIDP`, `VRTM`, `VRM5`, `VIDB`, `VIDD` e `AUDQ` 2 a 3 segundos antes/depois da quebra.
+
+## Atualização 2026-03-27 - Separação do residual `C` entre CPU puro e callback `LoopZ80`
+
+- A captura da build `8367` isolou dois fatos:
+  - o primeiro degrau da quebra continua vindo do draw do blit;
+  - dentro do `RunZ80`, o bucket `R` já foi suficientemente explicado pelo `VRM5`, então a incógnita real passou a ser o residual `C`.
+- Hipótese desta rodada:
+  - parte relevante do `C` pode não ser CPU puro do `RunZ80`, mas trabalho agregado dentro do callback `LoopZ80()` (teclado, manutenção periódica de áudio ou outros auxiliares do loop principal).
+- Corte implementado nesta rodada:
+  - `src/fmsx_local/MSX.c` agora cronometra o callback `LoopZ80()` como um todo e, dentro dele, separa explicitamente:
+    - drenagem de teclado;
+    - bloco periódico de manutenção de áudio;
+    - callback total para posterior cálculo do residual;
+  - `src/fmsx_runtime.c` / `src/fmsx_runtime.h` agregam isso em novos buckets de frame:
+    - `loop_callback_us`;
+    - `cpu_core_only_us = Z - loop_callback_us`;
+    - `loop_audio_maint_us`;
+    - `loop_keyboard_us`;
+    - `loop_misc_us` como residual do callback;
+  - `src/kernel.cpp` passa a expor a nova linha UART `VRCL`:
+    - `LO`: custo total do callback `LoopZ80()`;
+    - `CPU`: aproximação do CPU puro do `RunZ80()` fora do callback;
+    - `AU`: manutenção periódica de áudio dentro do callback;
+    - `KB`: drenagem de teclado;
+    - `MI`: residual do callback após descontar os buckets já medidos.
+- Build local desta rodada:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272109-c4dd79a`
+  - `BUILD_ID: D84F`
+- Próxima captura esperada:
+  - repetir o mesmo repro com `F10` ligado;
+  - trazer `VIDP`, `VRTM`, `VRCL`, `VRM5`, `VIDB`, `VIDD` e `AUDQ` 2 a 3 segundos antes/depois da quebra.
+
+## Atualização 2026-03-27 - Separação de `CPU` entre memória/IO e residual de execução
+
+- A leitura da build `D84F` fechou o callback `LoopZ80()`:
+  - no ponto ruim, `VRCL` mostrou `CPU` puro em torno de `7.5ms`, contra `LO` em torno de `2.2ms`;
+  - dentro de `LO`, teclado (`KB`) e manutenção periódica de áudio (`AU`) permaneceram marginais;
+  - o callback sobe principalmente junto com o renderer (`R`/`VRM5`), mas não explica o grosso do residual `C`.
+- Conclusão operacional desta rodada:
+  - a próxima pergunta deixou de ser "o callback pesa?" e passou a ser "o `CPU` puro está indo para fetch/read/write/portas ou sobra no loop de execução do core?".
+- Corte implementado nesta rodada:
+  - `src/fmsx_local/Z80.c` agora instrumenta o caminho de CPU puro diretamente no core:
+    - `RdZ80()` / `OpZ80()` viram bucket `MR`;
+    - `WrZ80()` vira bucket `MW`;
+    - `InZ80()` vira bucket `IR`;
+    - `OutZ80()` vira bucket `IW`;
+  - `src/fmsx_runtime.c` / `src/fmsx_runtime.h` agregam esses buckets e calculam `EX` como residual de execução do core após descontar `MR/MW/IR/IW` de `CPU`;
+  - `src/kernel.cpp` expõe duas novas linhas UART:
+    - `VRIO MR/MW/IR`;
+    - `VRIX IW/EX`.
+- Build local desta rodada:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272125-c4dd79a`
+  - `BUILD_ID: 4E7B`
+- Próxima captura esperada:
+  - repetir o mesmo repro com `F10` ligado;
+  - trazer `VIDP`, `VRTM`, `VRCL`, `VRIO`, `VRIX`, `VRM5`, `VIDB`, `VIDD` e `AUDQ` 2 a 3 segundos antes/depois da quebra.
+
+## Atualização 2026-03-27 - Descarte da `4E7B` e troca para contadores de acesso de baixo overhead
+
+- A captura da `4E7B` invalidou a abordagem de temporizar acessos no `Z80.c`:
+  - o emulador já passou a nascer em `~34-38 FPS`, muito antes da gameplay;
+  - `VIDP` entrou saturado desde os primeiros samples do boot;
+  - `VRIO/VRIX` acabaram medindo o custo do próprio observador, não do gargalo real.
+- Leitura consolidada dessa regressão:
+  - a telemetria por timestamp em `RdZ80/WrZ80/InZ80/OutZ80` ficou invasiva demais para o hot path;
+  - por isso, a build `4E7B` fica descartada para qualquer inferência de performance.
+- Corte corretivo implementado nesta rodada:
+  - `src/fmsx_local/Z80.c` voltou ao baseline anterior da `D84F`, sem cronômetro por acesso;
+  - `src/fmsx_local/MSX.c` passou a contar acessos de baixo overhead em `RdZ80/WrZ80/InZ80/OutZ80`, mas só fora do callback `LoopZ80()`;
+  - `src/fmsx_runtime.c` / `src/fmsx_runtime.h` agregam esses contadores por `step_frame()`;
+  - `src/kernel.cpp` substitui `VRIO/VRIX` por uma única linha UART `VRCN`:
+    - `MR`: leituras de memória/opcode;
+    - `MW`: escritas de memória;
+    - `IR`: leituras de portas;
+    - `IW`: escritas de portas.
+- Build local desta rodada:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272139-c4dd79a`
+  - `BUILD_ID: A8DE`
+- Próxima captura esperada:
+  - repetir o mesmo repro com `F10` ligado;
+  - trazer `VIDP`, `VRTM`, `VRCL`, `VRCN`, `VRM5`, `VIDB`, `VIDD` e `AUDQ` 2 a 3 segundos antes/depois da quebra.
+
+## Atualização 2026-03-27 - Descarte da `A8DE` e retorno ao baseline da `D84F`
+
+- A leitura do log da `A8DE` mostrou uma regressão mais cedo do que o repro original:
+  - o segundo boot da própria `A8DE` já nasceu lento desde os primeiros samples úteis;
+  - com isso, a captura deixou de servir para investigar o choke de gameplay, porque o observador passou a contaminar o baseline do boot.
+- Leitura consolidada dessa regressão:
+  - mesmo sem timestamps por acesso, a trilha `VRCN` continuou invasiva o bastante para invalidar a build como instrumento de diagnóstico;
+  - na prática, a última telemetria ainda confiável volta a ser a `D84F`.
+- Corte corretivo implementado nesta rodada:
+  - `src/fmsx_local/MSX.c` remove os contadores em `RdZ80/WrZ80/InZ80/OutZ80` e o estado auxiliar que os desarmava dentro de `LoopZ80()`;
+  - `src/fmsx_runtime.c` / `src/fmsx_runtime.h` deixam de agregar/exportar os buckets de contagem por acesso;
+  - `src/kernel.cpp` remove a linha UART `VRCN`, retornando ao pacote de telemetria da `D84F`;
+  - `docs/debug-layer.md` volta a documentar somente `AUDQ`, `VIDP`, `VRTM`, `VRCL`, `VIDB`, `VIDD` e `VRM5` como telemetrias frequentes.
+- Build local desta rodada:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272150-c4dd79a`
+  - `BUILD_ID: AAF9`
+- Próxima captura esperada:
+  - repetir o mesmo repro com `F10` ligado;
+  - trazer `VIDP`, `VRTM`, `VRCL`, `VRM5`, `VIDB`, `VIDD` e `AUDQ` 2 a 3 segundos antes/depois da quebra.
+
+## Atualização 2026-03-27 - Ativação de `CCPUThrottle` para fazer `fast=true` valer no Pi 3
+
+- A captura da `AAF9` removeu `VRCN`, mas o boot continuou lento e o log ainda veio com `timer: SpeedFactor is 1.51`.
+- Correlação técnica usada nesta rodada:
+  - o `sdcard/cmdline.txt` já contém `fast=true`;
+  - a documentação do Circle diz que, no Raspberry Pi 2/3/4/Zero, essa flag só tem efeito quando a classe `CCPUThrottle` existe no kernel; sem ela, o padrão é velocidade baixa.
+- Corte implementado nesta rodada:
+  - `src/kernel.h` passa a manter uma instância de `CCPUThrottle` no kernel, seguindo o padrão dos samples do Circle;
+  - `src/kernel.cpp` registra um handler de `throttled state`, chama `m_CPUThrottle.Update()` no loop principal e adiciona uma linha UART de boot/runtime:
+    - `CLK <fase> ARM:<mhz> CORE:<mhz> TEMP:<c> DYN:<0|1> RNG:<min>-<max> THR:<hex>`;
+  - isso faz `fast=true` deixar de ser inerte e, ao mesmo tempo, expõe clock real e flags de cap/throttle do firmware no boot.
+- Referência técnica usada:
+  - `third_party/circle/include/circle/cputhrottle.h`
+  - `third_party/circle/lib/cputhrottle.cpp`
+  - `third_party/circle/doc/cmdline.txt`
+- Build local desta rodada:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272207-c4dd79a`
+  - `BUILD_ID: C367`
+- Próxima captura esperada:
+  - o boot deve mostrar `CLK BT1 ...`;
+  - trazer esse trecho do boot junto com `timer: SpeedFactor is ...`;
+  - se a hipótese estiver certa, o próximo boot deve subir com `ARM` no teto da faixa e `SpeedFactor` próximo do regime saudável anterior.
+
+## Atualização 2026-03-27 - Leitura da `7E07`: o gargalo volta em gameplay, mas o clock ARM já caiu para `600MHz` muito antes disso
+
+- A captura mais recente fechou a distinção entre gargalo de runtime e configuração de boot:
+  - o boot entra saudável com `SpeedFactor is 3.03` e `CLK BT1 ARM:1200`;
+  - o choke antigo continua abrindo em gameplay, por volta de `00:00:57.20`;
+  - porém o `ARM` já cai de `1200MHz` para `600MHz` em `00:00:11.48` e permanece ali até a degradação.
+- Leitura consolidada do log:
+  - em `00:00:11.20`, ainda há `CLK F10 ARM:1200`, `VIDP F:60.8`, `Z:4655us`, `VIDB D:7209us`;
+  - em `00:00:11.48`, o clock cai para `CLK F10 ARM:600`, mas o emulador continua saudável (`~59-60 FPS`, `Z ~4.6ms`, `VIDB D ~7.0-7.2ms`);
+  - em `00:00:57.20`, já em `ARM:600`, o choke reabre: `VIDP S/B` saturam, `VRTM Z` vai para `~10ms`, `C` para `~8ms`, `VRM5` dobra e `VIDB D` volta a `9999`.
+- Conclusão técnica desta rodada:
+  - `sdcard/config.txt` não é o gatilho principal; ele já fixa `arm_freq=1200` e o boot de fato começa em `1200MHz`;
+  - o problema de configuração está no `sdcard/cmdline.txt`: com `fast=true` e sem `socmaxtemp=...`, o `CCPUThrottle.Update()` do Circle aplica o default implícito `socmaxtemp=60`, exatamente na faixa de temperatura observada (`60-63C`);
+  - isso derruba o ARM para `600MHz` cedo demais e deixa a emulação sem margem para a carga maior da gameplay.
+- Corte implementado nesta rodada:
+  - `sdcard/cmdline.txt` passa a incluir `socmaxtemp=75`, mantendo o governor do Circle ativo, mas removendo o downclock prematuro em `60C`;
+  - `sdcard/config.txt` passa a usar `arm_freq=1100` e `arm_freq_min=900`, criando uma faixa dinâmica `900-1100` em vez de `600-1200`;
+  - `sdcard/README.md` passa a tratar `cmdline.txt` e `config.txt` como recomendados para os defaults de áudio/clock usados no projeto.
+- Build local desta rodada:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272230-c4dd79a`
+  - `BUILD_ID: C7F8`
+- Referência técnica usada:
+  - `third_party/circle/doc/cmdline.txt`
+  - `third_party/circle/include/circle/cputhrottle.h`
+  - `third_party/circle/lib/cputhrottle.cpp`
+
+## Atualização 2026-03-27 - Core `RunZ80` restaurado ao baseline da branch; mantido apenas o corte de clock/config
+
+- Depois de confirmar que o gatilho principal era a política de clock (`CCPUThrottle` + `config/cmdline`), a trilha de instrumentação profunda do core foi descartada.
+- Rodada atual:
+  - `src/fmsx_local/Common.h`, `src/fmsx_local/MSX.c`, `src/fmsx_runtime.c` e `src/fmsx_runtime.h` voltam ao estado do `HEAD` da branch;
+  - `src/kernel.cpp` / `src/kernel.h` mantêm somente:
+    - `CCPUThrottle`;
+    - `CLK BT1/THR/F10`;
+    - `AUDQ`, `VIDP` e `VRTM` básico.
+  - as linhas profundas `VRCL`, `VRM5`, `VIDB` e `VIDD` saem do pacote ativo para tirar trabalho do hot path.
+- Motivação:
+  - o usuário reportou `Z80` acelerado e menor controle de teclado após as rodadas de investigação;
+  - como o problema raiz já foi isolado no boot/clock, não faz sentido manter telemetria invasiva no caminho de emulação.
+- Build local desta rodada:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272243-c4dd79a`
+  - `BUILD_ID: 1E0B`
+
+## Atualização 2026-03-27 - UART desinstrumentada para baseline limpo de próximas fases
+
+- Rodada atual:
+  - a UART deixa de emitir os resumos periódicos de performance desta fase (`AUDQ`, `VIDP`, `VRTM`) e também não aciona mais as trilhas frequentes de `VDP/SCC/AUD/KMG`;
+  - `F10` permanece reservado como toggle de `UART Log`, mas a fase atual não injeta mais telemetria de pacing/runtime no hot path;
+  - permanecem apenas:
+    - marcadores de boot `BT0..BT12`;
+    - logs pontuais de runtime/configuração;
+    - eventos críticos como `Throttle event` e `CLK BT1/THR`.
+- Motivação:
+  - preparar uma base de UART limpa para as próximas fases de debug, sem o ruído e o overhead das instrumentações temporárias desta issue.
+- Build local desta rodada:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272246-c4dd79a`
+  - `BUILD_ID: 38FF`
+
+## Atualização 2026-03-27 - README documenta fase térmica, dissipação e fonte como pré-requisito de validação
+
+- `README.md` passa a explicitar que, no Raspberry Pi 3B, fonte/cabo, dissipadores e ventilação fazem parte do ambiente de teste.
+- O texto novo registra o padrão observado nesta investigação:
+  - sintomas térmicos ou de alimentação podem parecer regressão de emulação;
+  - o ARM pode cair de frequência em carga sustentada;
+  - gameplay mais pesada expõe o problema antes de qualquer conclusão de software.
+- Objetivo:
+  - reduzir falso positivo de bug em futuras fases de debug;
+  - deixar a recomendação já visível no onboarding do projeto, sem depender do histórico da issue.
+
+## Atualização 2026-03-27 - Leitura da `C367`: boot saudável, choke antigo preservado e throttle do firmware ainda suspeito
+
+- A captura da `C367` mudou o quadro de forma útil:
+  - o boot voltou ao regime saudável de entrada, com `SpeedFactor is 3.03`;
+  - o gameplay ainda degrada quase no mesmo ponto de sempre, em `00:00:57.17`;
+  - então o problema de runtime original continua existindo, mas o baseline de boot melhorou.
+- Leitura consolidada do log:
+  - até `00:00:56.87`, o frame fica em `~59.6-60.1 FPS`, com `Z ~4.8-5.1ms`, `R ~0.93-1.11ms` e `VIDB D ~7.0-7.2ms`;
+  - em `00:00:57.17`, o choke reabre no mesmo padrão das capturas anteriores:
+    - `VIDP S` salta para `~9.7ms`;
+    - `VRTM Z` sobe para `~9.7ms`, com `C ~7.8ms` e `R ~1.86ms`;
+    - `VRM5` dobra para `B ~1.5ms` e `S ~0.18ms`;
+    - `VIDB D` volta a saturar.
+  - o áudio segue vindo depois como consequência, e não como causa primária.
+- Ponto novo que continua em aberto:
+  - logo na entrada do loop principal, o kernel registrou `Throttle event: MIXED state=0x00050000`;
+  - a linha `CLK THR` seguinte veio `THR:00050005`, ou seja, o firmware reportou bits ocorridos e também bits correntes;
+  - ao mesmo tempo, `CLK BT1` ainda mostrou `ARM:600 CORE:400`, o que não bate de forma limpa com o `SpeedFactor 3.03`.
+- Corte implementado na sequência:
+  - `src/kernel.cpp` passa a forçar `CPUSpeedMaximum` explicitamente após `BT1`;
+  - a linha `CLK` também passa a ser emitida no pacote periódico do `F10`, para correlacionar `ARM/CORE/THR` com o instante exato da queda de FPS.
+- Próxima captura esperada:
+  - repetir o mesmo repro com `F10` ligado;
+  - trazer `CLK`, `VIDP`, `VRTM`, `VRCL`, `VRM5`, `VIDB`, `VIDD` e `AUDQ`;
+  - o alvo é fechar se o clock/throttle muda junto do choke em `~57s` ou se o gargalo é puramente de renderer/blit/core.
+
+## Atualização 2026-03-27 - `Scanline CRT` passa a dividir cada linha do MSX em metade normal e metade escurecida
+
+- Ajuste aplicado no renderer do viewport:
+  - o modo `CRT` deixa de tratar a linha escurecida como efeito uniforme por linha de destino do framebuffer;
+  - agora, para cada linha fonte do MSX expandida verticalmente, a metade superior do grupo permanece em brilho normal e a metade inferior recebe o dim de `85%`.
+- Implementação:
+  - `src/kernel.cpp` agora decide o `dark_crt` pela posição da linha de destino dentro do grupo de linhas que mapeia para o mesmo `src_y`;
+  - `src/tools/render/viewport_screenshot.cpp` espelha exatamente a mesma regra para manter screenshot e viewport consistentes.
+- Intenção:
+  - alinhar a semântica do `CRT` ao espaço das linhas do MSX, e não à paridade global do framebuffer/mailbox;
+  - manter um split aproximado de `50/50` entre parte normal e parte escurecida em cada linha expandida.
+
+## Atualização 2026-03-27 - `CRT` ganha cantos arredondados no viewport para simular tubo
+
+- Ajuste aplicado:
+  - o modo `CRT` agora mascara os cantos do viewport do emulador com um rounded-rect discreto, usando o próprio `letterbox` preto ao redor;
+  - o raio é derivado do tamanho do viewport e fica limitado para evitar exagero em escalas pequenas.
+- Implementação:
+  - `src/kernel.cpp` aplica o mask diretamente no framebuffer ao final do blit do viewport, tanto no path RGB565 quanto no fallback com `SetPixel`;
+  - `src/tools/render/viewport_screenshot.cpp` aplica o mesmo rounded-rect no screenshot do viewport, para o frame de pausa manter exatamente a mesma geometria visual.
+- Objetivo:
+  - dar ao modo `CRT` uma leitura mais próxima de tubo de televisão sem alterar o enquadramento, o scale nem os outros modos de scanline.
+
+## Atualização 2026-03-27 - Geometria do viewport estabilizada para parar o topo do `CRT` de “respirar”
+
+- Sintoma reportado em hardware:
+  - após os cantos arredondados, a borda superior do `CRT` parecia entrar/sair entre frames, enquanto a inferior permanecia visualmente estável.
+- Causa tratada:
+  - o backend `fMSX` pode variar `src_h` conforme `LastScanline`/overscan;
+  - isso fazia `ComputeViewportBox()` recalcular a altura do viewport com pequenas oscilações frame a frame, deslocando principalmente a leitura visual do topo.
+- Ajuste aplicado:
+  - `src/kernel.cpp` agora normaliza a altura usada para layout do viewport em buckets canônicos estáveis (`243/256` e equivalentes doubled `486/512` para hi-res) antes de calcular `dst_height`, `box_y` e o raio do `CRT`.
+- Objetivo:
+  - manter o contorno e o posicionamento do viewport estáveis durante a gameplay, sem mexer no conteúdo amostrado do frame.
+
+## Atualização 2026-03-27 - `CRT` passa a levantar levemente o preto para cinza escuro
+
+- Ajuste aplicado:
+  - no modo `CRT`, pixels `RGB565=0x0000` dentro do viewport do emulador deixam de sair em preto absoluto e passam a ser renderizados com um cinza muito escuro;
+  - o `letterbox` externo e a máscara preta dos cantos arredondados permanecem em preto puro.
+- Implementação:
+  - `src/kernel.cpp` aplica um `black lift` local antes do write no viewport do `CRT`;
+  - a LUT de dim de `85%` do `CRT` também passa a respeitar esse mesmo piso para preto;
+  - `src/tools/render/viewport_screenshot.cpp` espelha exatamente a mesma regra.
+- Objetivo:
+  - simular a claridade residual de um tubo CRT sem lavar o restante da imagem e sem alterar os modos `DES` e `LCD`.
+
+## Atualização 2026-03-27 - Box arredondado do `CRT` passa a ser latched por geometria real
+
+- Sintoma residual em hardware:
+  - mesmo após o bucket mais agressivo de `src_h`, a borda do `CRT` ainda alternava ocasionalmente entre arredondada e mais “quadrada”.
+- Causa tratada:
+  - o viewport ainda era recalculado frame a frame;
+  - pequenas oscilações internas de geometria podiam trocar o retângulo usado pelo mask do `CRT`, mesmo sem mudança visual real de modo ou enquadramento.
+- Ajuste aplicado:
+  - `src/kernel.cpp` agora mantém o box do `CRT` travado enquanto a chave de layout permanecer igual:
+    - largura lógica da fonte;
+    - bucket de altura do `CRT` (`256/512`);
+    - resolução da tela;
+    - overscan;
+    - widescreen.
+- Validação local:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272341-c4dd79a`
+  - `BUILD_ID: AA12`
+- Objetivo:
+  - fazer o contorno arredondado mudar apenas quando houver alteração real de geometria, eliminando o “square/rounded flicker” residual.
+
+## Atualização 2026-03-28 - `CRT` ganha histerese de box para matar o flicker residual do topo
+
+- Sintoma reportado em hardware:
+  - mesmo com o latch por geometria, o topo do `CRT` ainda alternava ocasionalmente entre leitura arredondada e mais “quadrada”.
+- Causa tratada:
+  - o backend ainda podia sugerir microvariações de `1-2px` no box calculado;
+  - essas oscilações são pequenas demais para representar mudança real de enquadramento, mas suficientes para a borda superior “piscar”.
+- Ajuste aplicado:
+  - `src/kernel.cpp` agora aplica histerese ao box do `CRT`;
+  - enquanto o candidato novo permanecer dentro de uma janela de tolerância de `2px` em `x/y/w/h`, o runtime reaproveita o box arredondado anterior.
+- Validação local:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603281427-c4dd79a`
+  - `BUILD_ID: F4B7`
+- Objetivo:
+  - absorver jitter residual do viewport sem congelar mudanças reais de geometria.
+
+## Atualização 2026-03-28 - Clamp de escala do `CRT` passa a seguir o aspect ratio final, não a largura variável do frame
+
+- Hipótese tratada:
+  - mesmo com bucket e histerese, o `CRT` ainda podia oscilar quando o backend variava a largura reportada do frame;
+  - no modo `CRT`, isso não deveria influenciar o box visual, porque a apresentação final já é sempre calculada em `4:3` ou `16:9`.
+- Ajuste aplicado:
+  - `src/kernel.cpp` agora calcula o `max_scale_percent` do `CRT` a partir do aspect ratio final do viewport;
+  - com isso, a limitação de altura/largura do box deixa de depender da largura momentânea que veio do frame fonte.
+- Objetivo:
+  - impedir que variações de `src_width` ou de clamp em overscan alterem o contorno arredondado quando a caixa visual do `CRT` deveria permanecer fixa.
+
+## Atualização 2026-03-28 - Moldura do `CRT` passa a ficar totalmente congelada por família de layout
+
+- Sintoma residual em hardware:
+  - mesmo com bucket, histerese e clamp por aspect ratio, a borda ainda podia alternar entre leitura mais curva e mais quadrada.
+- Ajuste aplicado:
+  - `src/kernel.cpp` deixa de aceitar qualquer microvariação intra-família no box do `CRT`;
+  - enquanto `layout_src_h` (`256/512`), resolução da tela, overscan e widescreen não mudarem, o box arredondado reaproveita exatamente o mesmo retângulo.
+- Validação local:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603281436-c4dd79a`
+  - `BUILD_ID: 5986`
+- Objetivo:
+  - separar de vez a moldura visual do `CRT` das oscilações frame a frame reportadas pelo backend.
+
+## Atualização 2026-03-28 - Última tentativa: topo do `CRT` ganha um pequeno bezel interno fixo
+
+- Sintoma remanescente:
+  - a base da moldura já estava estável, mas o topo ainda alternava entre leitura mais curva e mais “quadrada”.
+- Ajuste aplicado:
+  - `src/kernel.cpp` reforça a máscara do `CRT` com um pequeno cap interno só nas primeiras linhas do viewport;
+  - `src/tools/render/viewport_screenshot.cpp` espelha exatamente o mesmo desenho para manter o frame de pausa coerente com a tela.
+- Validação local:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603281441-c4dd79a`
+  - `BUILD_ID: 2EA5`
+- Objetivo:
+  - fazer a leitura da curva superior depender da própria moldura, e não do conteúdo que encosta nas primeiras linhas do frame.
+
+## Atualização 2026-03-28 - Borda arredondada removida do `CRT`
+
+- Resultado em hardware:
+  - mesmo após bucket de altura, latch por geometria, histerese, clamp por aspect ratio e bezel superior, a borda do `CRT` continuou instável no topo.
+- Decisão:
+  - remover completamente a moldura arredondada em vez de continuar acumulando heurísticas visuais.
+- Ajuste aplicado:
+  - `src/kernel.cpp` deixa de aplicar qualquer máscara/arredondamento no viewport `CRT`;
+  - `src/tools/render/viewport_screenshot.cpp` deixa de aplicar o rounded mask no screenshot do viewport;
+  - o `CRT` mantém os demais efeitos já aprovados:
+    - split `50/50` por linha do MSX;
+    - `black lift` discreto do preto interno;
+    - geometria/enquadramento atuais.
+- Validação local:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603281449-c4dd79a`
+  - `BUILD_ID: FCF3`
+- Objetivo:
+  - preservar a qualidade do efeito `CRT` sem o flicker visual do contorno arredondado.

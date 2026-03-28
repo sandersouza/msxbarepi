@@ -17,6 +17,23 @@ Projeto de emulacao de MSX em baremetal no Raspberry Pi 3B.
 - Dependencias de scripts validadas por `scripts/check-toolchain.sh`.
 - Repositorios em `third_party/` presentes e integros.
 
+## Hardware do Raspberry Pi 3B
+
+Para testes de runtime, audio HDMI e emulacao sustentada, trate o estado termico e a alimentacao como parte do ambiente de validacao.
+
+- Use fonte estavel e cabo de boa qualidade.
+- Evite fontes subdimensionadas, cabos com queda de tensao e portas USB de TV/monitor como alimentacao principal.
+- Considere dissipadores no SoC e no PMIC como baseline de bancada.
+- Para sessoes longas, prefira ventilacao ativa ou fluxo de ar consistente dentro do gabinete.
+- Se houver gabinete fechado, valide temperatura real em carga; um case bonito sem ventilacao pode derrubar clock cedo demais.
+
+Contexto pratico do projeto:
+
+- O Raspberry Pi 3B pode reduzir clock do ARM quando entra em regime termico mais alto.
+- No `msxbarepi`, isso ja apareceu em campo como queda de `1200MHz` para `600MHz` ou outro degrau dinâmico, com impacto direto no frame budget.
+- Sintomas de fonte e fase termica podem se parecer com bug de emulacao: FPS cai depois de algum tempo, audio começa a degradar e o comportamento piora quando a gameplay fica mais pesada.
+- Antes de concluir que existe regressao de software, confirme fonte, cabo, dissipacao e ventilacao.
+
 Checagem rapida de ambiente:
 
 ```bash
