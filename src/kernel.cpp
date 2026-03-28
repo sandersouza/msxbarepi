@@ -4915,6 +4915,15 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 #endif
 
 	case ComboMenuActionToggleKanjiRom:
+#if MSXBARE_ENABLE_FMSX
+		if (!fmsx_runtime_get_kanji_rom_available())
+		{
+			SyncKanjiRomStateFromRuntime();
+			RefreshSettingsUiAfterAction();
+			m_Logger.Write(FromKernel, LogNotice, "Settings: Kanji ROM indisponivel");
+			break;
+		}
+#endif
 		m_KanjiRomEnabled = m_KanjiRomEnabled ? FALSE : TRUE;
 		RefreshSettingsUiAfterAction();
 #if MSXBARE_ENABLE_FMSX
@@ -4924,14 +4933,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
 		m_PauseMenu.SetKanjiRomAvailable(m_KanjiRomAvailable);
 #endif
-		if (!m_KanjiRomAvailable)
-		{
-			m_Logger.Write(FromKernel, LogNotice, "Settings: Kanji ROM indisponivel");
-		}
-		else
-		{
-			m_Logger.Write(FromKernel, LogNotice, m_KanjiRomEnabled ? "Settings: Kanji ROM ON" : "Settings: Kanji ROM OFF");
-		}
+		m_Logger.Write(FromKernel, LogNotice, m_KanjiRomEnabled ? "Settings: Kanji ROM ON" : "Settings: Kanji ROM OFF");
 		break;
 
 	case ComboMenuActionCycleBootMode:

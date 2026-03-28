@@ -67,6 +67,7 @@ extern uint8_t DiskROMLoaded;
 extern uint8_t FmsxMSX2PKanjiBasicLoaded;
 extern uint8_t *FmsxMSX2PKanjiBasicBase;
 extern uint8_t FmsxMSX2PMSXJELoaded;
+extern uint8_t *FmsxMSX2PMSXJEBase;
 extern uint32_t FmsxP1Select31Count;
 extern uint32_t FmsxP1Select03Count;
 extern uint32_t FmsxRTCReadCount;
@@ -209,9 +210,60 @@ typedef struct
 static TFmsxGameMasterSlot g_game_master_slots[GAMEMASTER_MAX_CHEATS];
 static TFmsxGameMasterRecord g_game_master_records[GAMEMASTER_MAX_POKES];
 
+static void fmsx_runtime_apply_msx2p_kanji_mappings(void)
+{
+    if (!MODEL(MSX_MSX2P))
+    {
+        return;
+    }
+
+    if (g_kanji_rom_enabled && FmsxMSX2PMSXJEBase != 0)
+    {
+        MemMap[0][3][0] = FmsxMSX2PMSXJEBase;
+        MemMap[0][3][1] = FmsxMSX2PMSXJEBase + 0x2000;
+        MemMap[0][3][2] = FmsxMSX2PMSXJEBase + 0x4000;
+        MemMap[0][3][3] = FmsxMSX2PMSXJEBase + 0x6000;
+        MemMap[0][3][4] = FmsxMSX2PMSXJEBase + 0x8000;
+        MemMap[0][3][5] = FmsxMSX2PMSXJEBase + 0xA000;
+        MemMap[0][3][6] = FmsxMSX2PMSXJEBase + 0xC000;
+        MemMap[0][3][7] = FmsxMSX2PMSXJEBase + 0xE000;
+        FmsxMSX2PMSXJELoaded = 1u;
+    }
+    else
+    {
+        MemMap[0][3][0] = EmptyRAM;
+        MemMap[0][3][1] = EmptyRAM;
+        MemMap[0][3][2] = EmptyRAM;
+        MemMap[0][3][3] = EmptyRAM;
+        MemMap[0][3][4] = EmptyRAM;
+        MemMap[0][3][5] = EmptyRAM;
+        MemMap[0][3][6] = EmptyRAM;
+        MemMap[0][3][7] = EmptyRAM;
+        FmsxMSX2PMSXJELoaded = 0u;
+    }
+
+    if (g_kanji_rom_enabled && FmsxMSX2PKanjiBasicBase != 0)
+    {
+        MemMap[3][1][2] = FmsxMSX2PKanjiBasicBase;
+        MemMap[3][1][3] = FmsxMSX2PKanjiBasicBase + 0x2000;
+        MemMap[3][1][4] = FmsxMSX2PKanjiBasicBase + 0x4000;
+        MemMap[3][1][5] = FmsxMSX2PKanjiBasicBase + 0x6000;
+        FmsxMSX2PKanjiBasicLoaded = 1u;
+    }
+    else
+    {
+        MemMap[3][1][2] = EmptyRAM;
+        MemMap[3][1][3] = EmptyRAM;
+        MemMap[3][1][4] = EmptyRAM;
+        MemMap[3][1][5] = EmptyRAM;
+        FmsxMSX2PKanjiBasicLoaded = 0u;
+    }
+}
+
 static boolean fmsx_runtime_apply_kanji_rom_enabled(void)
 {
     Kanji = (g_kanji_rom_enabled && FmsxKanjiBase != 0) ? FmsxKanjiBase : 0;
+    fmsx_runtime_apply_msx2p_kanji_mappings();
     return Kanji != 0 ? TRUE : FALSE;
 }
 

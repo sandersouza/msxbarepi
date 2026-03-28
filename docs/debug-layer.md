@@ -98,7 +98,9 @@ Diretriz visual (overlay e menu):
 - Em builds com `DEBUG=1`, `Settings` volta a mostrar `Refresh [NTSC/PAL]` logo abaixo de `Disk ROM` para diagnostico.
 - Em builds com `DEBUG=1`, `Debug` tambem mostra `Kanji ROM [ON/OFF]`:
   - o toggle atua no runtime real do `fMSX`, ligando/desligando a `KANJI.ROM` quando ela existir no set carregado;
-  - quando a `KANJI.ROM` nao estiver disponivel, o item continua visivel, mas fica desabilitado.
+  - em perfil `MSX2+`, o mesmo toggle tambem corta ou restaura o mapeamento de `KANJIBASIC/MSX-JE`, para o A/B do boot screen ser perceptivel;
+  - com `Boot Screen` desligado, o initramfs continua preservando `KANJI*.ROM`; quem sai do pacote e o `KANJIBASIC*.ROM`;
+  - quando a `KANJI.ROM` nao estiver disponivel, o item continua navegavel e `Enter` apenas registra indisponibilidade, sem mudar estado efetivo.
 - Fora de debug, `Refresh` continua oculto.
 - O runtime inicia em `NTSC` e continua podendo passar para `PAL` automaticamente quando o software escreve `R#9`.
 - Itens de audio em `Settings`:

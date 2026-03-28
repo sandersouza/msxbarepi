@@ -408,7 +408,13 @@ Abrir uma trilha separada para melhorar a fidelidade de render do `PSG` e do `FM
   - `OFF`, `LCD` e `CRT` passam a compartilhar o mesmo cálculo pixel-perfect de mailbox, evitando que o `CRT` fique levemente maior nas mesmas escalas.
 - Rodada atual:
   - `DEBUG -> KANJI ROM [ON/OFF]` deixa de ser apenas um flag de UI e passa a atuar no runtime real do `fMSX`;
-  - quando a `KANJI.ROM` nao existir, o item continua visivel, mas fica desabilitado no menu.
+  - ajuste seguinte: o item continua navegavel mesmo sem `KANJI.ROM`; nesse caso, `Enter` so registra indisponibilidade e nao muda o estado efetivo.
+- Rodada atual:
+  - a causa real do `ON/OFF` sem efeito em hardware foi encontrada no empacotamento do initramfs;
+  - com `Boot Screen OFF`, `scripts/make-initramfs.sh` passa a preservar `KANJI*.ROM` e remover apenas `KANJIBASIC*.ROM`, permitindo o A/B real do boot screen do `MSX2+`.
+- Rodada atual:
+  - o toggle `DEBUG -> KANJI ROM [ON/OFF]` passa a atuar tambem sobre o mapeamento `KANJIBASIC/MSX-JE` no perfil `MSX2+`;
+  - isso faz o `ON/OFF` mexer no caminho pratico do boot screen, e nao apenas no ponteiro da fonte `KANJI.ROM`.
 - Validação local da rodada atual:
   - `./scripts/check-third-party-pristine.sh` OK
   - `make -j4` OK

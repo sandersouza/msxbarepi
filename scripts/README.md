@@ -87,7 +87,7 @@ Sincronizar `build/config.mk` a partir de `.config` sem abrir menu:
 - Em `One ROM Mode`, o caminho de `CARTA.ROM` e definido diretamente no campo `MSXBARE_ONE_ROM_PATH` do proprio `menuconfig` (entrada digitada).
 - `Boot Screen` (visivel quando `Suporte a MSX2+` estiver ativo):
   - `[*]` inclui `KANJI*.ROM` e `KANJIBASIC*.ROM` no initramfs;
-  - `[ ]` remove `KANJI*.ROM` e `KANJIBASIC*.ROM` do initramfs.
+  - `[ ]` preserva `KANJI*.ROM` para debug/runtime e remove apenas `KANJIBASIC*.ROM` do initramfs.
 
 ## 1.2) gen-build-header.sh
 
@@ -389,6 +389,6 @@ VIDEO_MODE_PRESET=720 COPY_GAMES_TO_ROOT=1 ./scripts/update-sd-incremental.sh
 - Nao formata o cartao.
 - Quando `SD_DEVICE` e informado (via `prepare-sd.sh` ou manualmente), o script tenta detectar/montar a particao e resolver `TARGET_VOLUME` automaticamente.
 - Se `make-initramfs.sh` estiver disponivel e `INITRAMFS_SRC_DIR` existir, regenera `msx.cpio` antes da copia.
-  - quando `CONFIG_MSXBARE_BOOT_SCREEN` estiver desligado (`[ ]`), remove `KANJI*.ROM`/`KANJIBASIC*.ROM` do pacote gerado.
+  - quando `CONFIG_MSXBARE_BOOT_SCREEN` estiver desligado (`[ ]`), preserva `KANJI*.ROM` para o toggle `DEBUG -> KANJI ROM [ON/OFF]` e remove apenas `KANJIBASIC*.ROM` do pacote gerado.
 - Ao final da copia, executa `sync` e tenta desmontar automaticamente o volume alvo.
 - Se `EJECT_AT_END=1` e o disco puder ser resolvido, faz ejeção segura do SD; caso contrario, cai para desmontagem simples do volume.

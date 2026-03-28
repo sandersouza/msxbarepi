@@ -882,7 +882,34 @@ Issue: #219 (melhorar fidelidade de render PSG/FM-PAC no backend local)
   - `src/fmsx_local/MSX.c` guarda a base da `KANJI.ROM` carregada em separado;
   - `src/fmsx_runtime.c` ganha setter/getters para ligar/desligar a ROM em tempo de execucao, preservando a blob carregada quando existir;
   - `src/kernel.cpp` sincroniza o estado efetivo com o menu no boot, no load de settings e no toggle em runtime;
-  - `src/tools/menu/combo_menu*.{h,cpp}` e `src/tools/menu/combo_menu_items.*` passam a desabilitar o item quando a `KANJI.ROM` nao existir no set ativo.
+  - ajuste seguinte: o item volta a ser sempre navegavel no `DEBUG`; quando a `KANJI.ROM` nao existir, `Enter` apenas registra indisponibilidade em vez de o cursor pular a linha.
 - Resultado esperado:
   - o usuario consegue testar `KANJI ROM ON/OFF` diretamente do menu `DEBUG` para investigar o boot screen do `MSX2+`;
   - sem `KANJI.ROM` presente, o item permanece visivel mas nao induz toggle falso.
+
+## Atualização 2026-03-28 - `Boot Screen OFF` deixa de remover `KANJI.ROM` do initramfs
+
+- Causa raiz encontrada:
+  - o toggle do menu `DEBUG` ja estava correto no runtime, mas o `msx.cpio` embarcado continuava sem `KANJI.ROM`;
+  - o filtro de `scripts/make-initramfs.sh` ainda removia `KANJI*.ROM` junto com `KANJIBASIC*.ROM` quando `Boot Screen` estava `OFF`.
+- Ajuste aplicado:
+  - `scripts/make-initramfs.sh` passa a preservar `KANJI*.ROM` mesmo com `Boot Screen OFF`;
+  - apenas `KANJIBASIC*.ROM` continua sendo removido nesse modo, para manter o boot path do `MSX2+` limpo;
+  - `scripts/README.md` e `docs/debug-layer.md` foram alinhados com a nova semantica.
+- Resultado esperado:
+  - `DEBUG -> KANJI ROM [ON/OFF]` finalmente passa a alternar de verdade quando o set de ROMs incluir `KANJI.ROM`;
+  - o A/B do boot screen do `MSX2+` deixa de depender de rebuild manual do `msx.cpio`.
+
+## Atualização 2026-03-28 - Toggle `KANJI ROM` passa a cortar tambem o mapeamento japones do `MSX2+`
+
+- Sintoma em hardware:
+  - mesmo com a `KANJI.ROM` preservada no `msx.cpio`, o item `DEBUG -> KANJI ROM [ON/OFF]` ainda nao produzia um efeito pratico no boot path do `MSX2+`.
+- Causa provavel:
+  - desligar apenas o ponteiro `Kanji` cortava o porto `D9h`, mas o perfil `MSX2+` continuava com `KANJIBASIC` e `MSX-JE` mapeados nos slots de boot japones.
+- Ajuste aplicado:
+  - `src/fmsx_runtime.c` passa a aplicar o mesmo estado do toggle tambem sobre os mapas `MemMap[3][1][2..5]` (`KANJIBASIC`) e `MemMap[0][3][0..7]` (`MSX-JE`) quando o modelo ativo e `MSX2+`;
+  - ao religar, o runtime restaura os mesmos blobs ja carregados, sem rebuild;
+  - ao desligar, o runtime substitui essas faixas por `EmptyRAM`.
+- Resultado esperado:
+  - o toggle deixa de afetar so a fonte `KANJI.ROM` e passa a produzir um A/B real do caminho japones do `MSX2+`;
+  - para observar o boot screen, o fluxo continua sendo alternar o item e executar `Reset`.
