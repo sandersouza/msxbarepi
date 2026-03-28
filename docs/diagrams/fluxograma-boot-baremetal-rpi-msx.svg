@@ -1,0 +1,275 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1320" viewBox="0 0 1600 1320" role="img" aria-labelledby="title desc">
+  <title id="title">Fluxograma do boot baremetal no Raspberry Pi 3B ate a emulacao MSX</title>
+  <desc id="desc">Diagrama em camadas mostrando a cadeia de boot do firmware do Raspberry Pi, bootstrap Circle, runtime do msxbarepi e pipeline final de emulacao, framebuffer, overlay, menu, audio e USB.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#07111f"/>
+      <stop offset="50%" stop-color="#0d1f36"/>
+      <stop offset="100%" stop-color="#04080f"/>
+    </linearGradient>
+    <linearGradient id="laneFirmware" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#18354f"/>
+      <stop offset="100%" stop-color="#10273a"/>
+    </linearGradient>
+    <linearGradient id="laneCircle" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#173d46"/>
+      <stop offset="100%" stop-color="#102a33"/>
+    </linearGradient>
+    <linearGradient id="laneRuntime" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#454216"/>
+      <stop offset="100%" stop-color="#2e2a10"/>
+    </linearGradient>
+    <linearGradient id="laneEmu" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4b231c"/>
+      <stop offset="100%" stop-color="#301711"/>
+    </linearGradient>
+    <linearGradient id="cardBlue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#58c7ff"/>
+      <stop offset="100%" stop-color="#2492d1"/>
+    </linearGradient>
+    <linearGradient id="cardTeal" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#60e2d4"/>
+      <stop offset="100%" stop-color="#1e9f96"/>
+    </linearGradient>
+    <linearGradient id="cardGold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#f4d35c"/>
+      <stop offset="100%" stop-color="#d39a1a"/>
+    </linearGradient>
+    <linearGradient id="cardCoral" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff9b7f"/>
+      <stop offset="100%" stop-color="#dd5e3c"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000000" flood-opacity="0.28"/>
+    </filter>
+    <marker id="arrowBlue" markerWidth="16" markerHeight="16" refX="12" refY="8" orient="auto">
+      <path d="M0,0 L16,8 L0,16 z" fill="#7fd2ff"/>
+    </marker>
+    <marker id="arrowTeal" markerWidth="16" markerHeight="16" refX="12" refY="8" orient="auto">
+      <path d="M0,0 L16,8 L0,16 z" fill="#70e8db"/>
+    </marker>
+    <marker id="arrowGold" markerWidth="16" markerHeight="16" refX="12" refY="8" orient="auto">
+      <path d="M0,0 L16,8 L0,16 z" fill="#f7d76f"/>
+    </marker>
+    <marker id="arrowCoral" markerWidth="16" markerHeight="16" refX="12" refY="8" orient="auto">
+      <path d="M0,0 L16,8 L0,16 z" fill="#ffab92"/>
+    </marker>
+    <style>
+      .title { font: 700 42px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: #f5fbff; }
+      .subtitle { font: 400 18px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: #b7cde0; }
+      .laneTitle { font: 700 24px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: #f7fbff; }
+      .laneSub { font: 400 15px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: #c7d8e5; }
+      .cardTag { font: 700 13px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: #07111f; letter-spacing: 0.08em; }
+      .cardTitle { font: 700 20px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: #f7fbff; }
+      .cardBody { font: 400 15px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: #d9e6ef; }
+      .miniTitle { font: 700 16px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: #f7fbff; }
+      .miniBody { font: 400 13px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: #d2dee7; }
+      .callout { font: 700 15px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: #07111f; }
+      .source { font: 400 13px 'Helvetica Neue', Helvetica, Arial, sans-serif; fill: #a9bfd0; }
+      .mono { font-family: 'SFMono-Regular', Menlo, Consolas, monospace; }
+      .laneStroke { stroke: rgba(255,255,255,0.08); stroke-width: 1; }
+      .connectorBlue { fill: none; stroke: #7fd2ff; stroke-width: 5; stroke-linecap: round; marker-end: url(#arrowBlue); }
+      .connectorTeal { fill: none; stroke: #70e8db; stroke-width: 5; stroke-linecap: round; marker-end: url(#arrowTeal); }
+      .connectorGold { fill: none; stroke: #f7d76f; stroke-width: 5; stroke-linecap: round; marker-end: url(#arrowGold); }
+      .connectorCoral { fill: none; stroke: #ffab92; stroke-width: 5; stroke-linecap: round; marker-end: url(#arrowCoral); }
+      .divider { stroke: rgba(255,255,255,0.10); stroke-width: 2; stroke-dasharray: 6 10; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="1320" fill="url(#bg)"/>
+  <circle cx="148" cy="124" r="110" fill="rgba(88,199,255,0.08)"/>
+  <circle cx="1470" cy="1180" r="160" fill="rgba(255,155,127,0.06)"/>
+  <circle cx="1230" cy="180" r="96" fill="rgba(96,226,212,0.06)"/>
+
+  <text x="74" y="74" class="title">Fluxograma do Boot Baremetal no Raspberry Pi 3B</text>
+  <text x="74" y="108" class="subtitle">Da cadeia de firmware do Pi ao frame MSX em HDMI: Circle, SD/eMMC, FatFs, initramfs, backend de emulacao, framebuffer, overlay e loop principal.</text>
+
+  <g transform="translate(54 150)">
+    <rect x="0" y="0" width="340" height="1010" rx="28" fill="url(#laneFirmware)" class="laneStroke"/>
+    <rect x="370" y="0" width="340" height="1010" rx="28" fill="url(#laneCircle)" class="laneStroke"/>
+    <rect x="740" y="0" width="340" height="1010" rx="28" fill="url(#laneRuntime)" class="laneStroke"/>
+    <rect x="1110" y="0" width="380" height="1010" rx="28" fill="url(#laneEmu)" class="laneStroke"/>
+
+    <text x="28" y="42" class="laneTitle">1. Firmware do Raspberry Pi</text>
+    <text x="28" y="66" class="laneSub">GPU bootloader, FAT do SD</text>
+    <text x="28" y="86" class="laneSub">e handoff do kernel.</text>
+
+    <text x="398" y="42" class="laneTitle">2. Circle e Bootstrap</text>
+    <text x="398" y="66" class="laneSub">Entrada AArch64, main()</text>
+    <text x="398" y="86" class="laneSub">e servicos-base do host.</text>
+
+    <text x="768" y="42" class="laneTitle">3. Runtime msxbarepi</text>
+    <text x="768" y="66" class="laneSub">Config, initramfs, screen,</text>
+    <text x="768" y="86" class="laneSub">debug layer e menu.</text>
+
+    <text x="1138" y="42" class="laneTitle">4. Emulacao + HDMI</text>
+    <text x="1138" y="66" class="laneSub">Adapter do backend, loop</text>
+    <text x="1138" y="86" class="laneSub">principal e saida HDMI.</text>
+
+    <g filter="url(#shadow)">
+      <rect x="24" y="100" width="292" height="138" rx="24" fill="#0e2134" stroke="#4ebeff" stroke-width="2.5"/>
+      <rect x="44" y="120" width="82" height="26" rx="13" fill="url(#cardBlue)"/>
+      <text x="63" y="138" class="cardTag">BOOT</text>
+      <text x="44" y="174" class="cardTitle">Power on / reset</text>
+      <text x="44" y="200" class="cardBody">O SoC liga, a GPU assume o boot inicial e procura a particao FAT do cartao.</text>
+      <text x="44" y="222" class="cardBody mono">meta: RPi 3B + AArch64 + kernel8.img</text>
+
+      <rect x="24" y="274" width="292" height="172" rx="24" fill="#0e2134" stroke="#4ebeff" stroke-width="2.5"/>
+      <rect x="44" y="294" width="110" height="26" rx="13" fill="url(#cardBlue)"/>
+      <text x="64" y="312" class="cardTag">FIRMWARE</text>
+      <text x="44" y="348" class="cardTitle">Arquivos de boot no SD</text>
+      <text x="44" y="374" class="cardBody mono">bootcode.bin / start.elf / fixup.dat</text>
+      <text x="44" y="396" class="cardBody mono">bcm2710-rpi-3-b.dtb</text>
+      <text x="44" y="418" class="cardBody mono">config.txt / cmdline.txt / msx.cpio</text>
+
+      <rect x="24" y="482" width="292" height="160" rx="24" fill="#0e2134" stroke="#4ebeff" stroke-width="2.5"/>
+      <rect x="44" y="502" width="116" height="26" rx="13" fill="url(#cardBlue)"/>
+      <text x="66" y="520" class="cardTag">HANDOFF</text>
+      <text x="44" y="556" class="cardTitle">Firmware carrega o kernel</text>
+      <text x="44" y="582" class="cardBody">`config.txt` habilita o initramfs e define o perfil do hardware.</text>
+      <text x="44" y="604" class="cardBody">O firmware posiciona `kernel8.img` em memoria e transfere o controle ao ARM64.</text>
+
+      <rect x="24" y="678" width="292" height="164" rx="24" fill="#11273c" stroke="#4ebeff" stroke-width="2.5"/>
+      <text x="44" y="720" class="miniTitle">Payload copiado pelo projeto</text>
+      <text x="44" y="748" class="miniBody">`scripts/prepare-sd.sh` exige o payload minimo e copia kernel, `config.txt`, `cmdline.txt`, `msx.cpio` e firmwares para o SD.</text>
+      <text x="44" y="778" class="miniBody mono">fonte: scripts/prepare-sd.sh / Makefile</text>
+    </g>
+
+    <g filter="url(#shadow)">
+      <rect x="394" y="100" width="292" height="150" rx="24" fill="#0f2a31" stroke="#57d6cb" stroke-width="2.5"/>
+      <rect x="414" y="120" width="100" height="26" rx="13" fill="url(#cardTeal)"/>
+      <text x="434" y="138" class="cardTag">CIRCLE</text>
+      <text x="414" y="174" class="cardTitle">Startup AArch64 + main()</text>
+      <text x="414" y="200" class="cardBody">O bootstrap do Circle inicializa o ambiente freestanding e chama `main()`.</text>
+      <text x="414" y="222" class="cardBody mono">src/main.cpp -> CComboKernel</text>
+
+      <rect x="394" y="286" width="292" height="138" rx="24" fill="#0f2a31" stroke="#57d6cb" stroke-width="2.5"/>
+      <rect x="414" y="306" width="82" height="26" rx="13" fill="url(#cardTeal)"/>
+      <text x="436" y="324" class="cardTag">BT0</text>
+      <text x="414" y="360" class="cardTitle">UART + Logger</text>
+      <text x="414" y="386" class="cardBody">Canal de telemetria minima do boot, especialmente em build de debug.</text>
+
+      <rect x="394" y="460" width="292" height="154" rx="24" fill="#0f2a31" stroke="#57d6cb" stroke-width="2.5"/>
+      <rect x="414" y="480" width="82" height="26" rx="13" fill="url(#cardTeal)"/>
+      <text x="436" y="498" class="cardTag">BT1</text>
+      <text x="414" y="534" class="cardTitle">Interrupt + Timer</text>
+      <text x="414" y="560" class="cardBody">Ativa temporizacao, hooks de throttle/clock e estrutura base do runtime baremetal.</text>
+
+      <rect x="394" y="650" width="292" height="142" rx="24" fill="#0f2a31" stroke="#57d6cb" stroke-width="2.5"/>
+      <rect x="414" y="670" width="82" height="26" rx="13" fill="url(#cardTeal)"/>
+      <text x="436" y="688" class="cardTag">BT2</text>
+      <text x="414" y="724" class="cardTitle">Driver SD/eMMC</text>
+      <text x="414" y="750" class="cardBody">Circle sobe o `CEMMCDevice`; se falhar, o boot segue sem persistencia em SD.</text>
+
+      <rect x="394" y="828" width="292" height="174" rx="24" fill="#143038" stroke="#57d6cb" stroke-width="2.5"/>
+      <text x="414" y="870" class="miniTitle">Servicos usados pelo kernel</text>
+      <text x="414" y="898" class="miniBody mono">CScreenDevice / CUSBHCIDevice / CTimer</text>
+      <text x="414" y="920" class="miniBody mono">CLogger / CInterruptSystem / CCPUThrottle</text>
+      <text x="414" y="948" class="miniBody">Esses blocos de host permitem que o projeto fique sem OS, mas ainda com video, input, audio e MMIO organizados.</text>
+    </g>
+
+    <g filter="url(#shadow)">
+      <rect x="764" y="100" width="292" height="132" rx="24" fill="#322d12" stroke="#f0c744" stroke-width="2.5"/>
+      <rect x="784" y="120" width="82" height="26" rx="13" fill="url(#cardGold)"/>
+      <text x="807" y="138" class="cardTag">BT3</text>
+      <text x="784" y="174" class="cardTitle">Mount FATFS em `SD:`</text>
+      <text x="784" y="200" class="cardBody">Abre a camada de persistencia para settings, states e media externos.</text>
+
+      <rect x="764" y="268" width="292" height="176" rx="24" fill="#322d12" stroke="#f0c744" stroke-width="2.5"/>
+      <rect x="784" y="288" width="82" height="26" rx="13" fill="url(#cardGold)"/>
+      <text x="807" y="306" class="cardTag">BT4</text>
+      <text x="784" y="342" class="cardTitle">Carga de `msxbarepi.cfg`</text>
+      <text x="784" y="368" class="cardBody">Procura `SD:/msxbarepi.cfg`; se nao existir, aceita `SD:/MSXBARE.CFG`.</text>
+      <text x="784" y="390" class="cardBody">Valida o arquivo inteiro antes de aplicar; se falhar, cai em defaults/fallback.</text>
+
+      <rect x="764" y="480" width="292" height="132" rx="24" fill="#322d12" stroke="#f0c744" stroke-width="2.5"/>
+      <rect x="784" y="500" width="82" height="26" rx="13" fill="url(#cardGold)"/>
+      <text x="807" y="518" class="cardTag">BT5</text>
+      <text x="784" y="554" class="cardTitle">Normalize settings</text>
+      <text x="784" y="580" class="cardBody">Clampa os settings ao build atual, perfis de maquina e feature gates compilados.</text>
+
+      <rect x="764" y="648" width="292" height="176" rx="24" fill="#322d12" stroke="#f0c744" stroke-width="2.5"/>
+      <rect x="784" y="668" width="82" height="26" rx="13" fill="url(#cardGold)"/>
+      <text x="807" y="686" class="cardTag">BT6</text>
+      <text x="784" y="722" class="cardTitle">Mount do `msx.cpio`</text>
+      <text x="784" y="748" class="cardBody">`fmsx_initramfs_mount_boot_minimal()` sobe ROMs/medias minimos.</text>
+      <text x="784" y="770" class="cardBody">Depois `mount_remaining()` completa a VFS embutida usada no boot do MSX.</text>
+
+      <rect x="764" y="860" width="292" height="142" rx="24" fill="#322d12" stroke="#f0c744" stroke-width="2.5"/>
+      <rect x="784" y="880" width="82" height="26" rx="13" fill="url(#cardGold)"/>
+      <text x="807" y="898" class="cardTag">BT7-BT8</text>
+      <text x="784" y="934" class="cardTitle">Config do runtime + screen</text>
+      <text x="784" y="960" class="cardBody">Aplica machine profile, mapper, boot mode e inicializa `CScreenDevice` para HDMI/framebuffer.</text>
+    </g>
+
+    <g filter="url(#shadow)">
+      <rect x="1134" y="100" width="332" height="176" rx="24" fill="#331810" stroke="#ff916f" stroke-width="2.5"/>
+      <rect x="1154" y="120" width="82" height="26" rx="13" fill="url(#cardCoral)"/>
+      <text x="1177" y="138" class="cardTag">BT9</text>
+      <text x="1154" y="174" class="cardTitle">`emulator_backend_init()`</text>
+      <text x="1154" y="200" class="cardBody">O adapter seleciona o backend ativo. Hoje o default e `fmsx`.</text>
+      <text x="1154" y="222" class="cardBody mono">emulator_backend.c -> fmsx_backend_shim_init()</text>
+      <text x="1154" y="244" class="cardBody mono">fmsx_runtime_init()</text>
+
+      <rect x="1134" y="312" width="332" height="142" rx="24" fill="#331810" stroke="#ff916f" stroke-width="2.5"/>
+      <rect x="1154" y="332" width="96" height="26" rx="13" fill="url(#cardCoral)"/>
+      <text x="1172" y="350" class="cardTag">BT10-11</text>
+      <text x="1154" y="386" class="cardTitle">Overlay, menu e USB host</text>
+      <text x="1154" y="412" class="cardBody">Ativa debug layer, menu pause, teclado/joystick HID e prepara audio sem bloquear o boot.</text>
+
+      <rect x="1134" y="490" width="332" height="344" rx="24" fill="#331810" stroke="#ff916f" stroke-width="2.5"/>
+      <rect x="1154" y="510" width="82" height="26" rx="13" fill="url(#cardCoral)"/>
+      <text x="1178" y="528" class="cardTag">BT12</text>
+      <text x="1154" y="564" class="cardTitle">Loop principal baremetal</text>
+      <text x="1154" y="592" class="cardBody">1. `emulator_backend_step_frame()`</text>
+      <text x="1154" y="618" class="cardBody">2. `emulator_backend_video_frame()` entrega o frame MSX em RGB565</text>
+      <text x="1154" y="644" class="cardBody">3. `BlitFmsxFrame()` escala, aplica scanline e letterbox</text>
+      <text x="1154" y="670" class="cardBody">4. flush do cache apenas na area alterada do framebuffer</text>
+      <text x="1154" y="696" class="cardBody">5. overlay/menu sao desenhados apos o blit principal</text>
+      <text x="1154" y="722" class="cardBody">6. audio puxa amostras do backend e input HID vira matriz MSX</text>
+      <text x="1154" y="748" class="cardBody">7. save/load/settings/media continuam acessando SD e VFS</text>
+      <text x="1154" y="780" class="cardBody mono">resultado: emulacao MSX sem sistema operacional</text>
+
+      <rect x="1134" y="870" width="332" height="132" rx="24" fill="#3a1f17" stroke="#ff916f" stroke-width="2.5"/>
+      <text x="1154" y="912" class="miniTitle">Saida final</text>
+      <text x="1154" y="940" class="miniBody">Video HDMI via framebuffer do Circle, com viewport escalado e overlay de debug. Audio e USB rodam no mesmo kernel baremetal.</text>
+      <text x="1154" y="968" class="miniBody mono">sem Linux, sem SDL, sem userspace</text>
+    </g>
+
+    <path d="M170 238 L170 274" class="connectorBlue"/>
+    <path d="M170 446 L170 482" class="connectorBlue"/>
+    <path d="M170 642 L170 678" class="connectorBlue"/>
+
+    <path d="M540 250 L540 286" class="connectorTeal"/>
+    <path d="M540 424 L540 460" class="connectorTeal"/>
+    <path d="M540 614 L540 650" class="connectorTeal"/>
+    <path d="M540 792 L540 828" class="connectorTeal"/>
+
+    <path d="M910 232 L910 268" class="connectorGold"/>
+    <path d="M910 444 L910 480" class="connectorGold"/>
+    <path d="M910 612 L910 648" class="connectorGold"/>
+    <path d="M910 824 L910 860" class="connectorGold"/>
+
+    <path d="M1300 276 L1300 312" class="connectorCoral"/>
+    <path d="M1300 454 L1300 490" class="connectorCoral"/>
+    <path d="M1300 834 L1300 870" class="connectorCoral"/>
+
+    <path d="M316 562 C350 562 356 174 394 174" class="connectorBlue"/>
+    <path d="M686 724 C722 724 728 166 764 166" class="connectorTeal"/>
+    <path d="M1056 932 C1092 932 1098 188 1134 188" class="connectorGold"/>
+
+    <line x1="1095" y1="92" x2="1095" y2="970" class="divider"/>
+
+    <g transform="translate(84 1044)">
+      <rect x="0" y="0" width="1410" height="96" rx="24" fill="rgba(8,15,25,0.74)" stroke="rgba(255,255,255,0.10)" stroke-width="1.5"/>
+      <text x="26" y="34" class="miniTitle">Mapa de fontes usado para o desenho</text>
+      <text x="26" y="60" class="source mono">Makefile | scripts/prepare-sd.sh | src/main.cpp | src/kernel.cpp | src/emulator_backend.c | src/fmsx_backend_shim.c | src/fmsx_initramfs.cpp</text>
+      <text x="26" y="82" class="source">A ordem BT0..BT12 segue a inicializacao real do kernel e o caminho do frame segue `BlitFmsxFrame()` + overlay/menu apos o blit.</text>
+    </g>
+
+    <g transform="translate(1240 934)" filter="url(#shadow)">
+      <rect x="0" y="0" width="212" height="48" rx="20" fill="url(#cardCoral)"/>
+      <text x="22" y="30" class="callout">MSX jogavel no HDMI</text>
+    </g>
+  </g>
+</svg>

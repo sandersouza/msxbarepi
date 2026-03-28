@@ -218,3 +218,4 @@ Referencias tecnicas prioritarias para implementacao/correcao:
 - Documentacao dos scripts: `scripts/README.md`
 - Gestao de projeto: `docs/github-project-management.md`
 - Perfis desacoplados por modelo (MSX1/MSX2/MSX2+): `docs/machine-profiles/README.md`
+- Fluxograma do boot baremetal ate a emulacao: `docs/fluxograma-boot-baremetal-rpi-msx.md`
