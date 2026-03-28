@@ -67,7 +67,7 @@
     - item único `Scanlines [DES/LCD/CRT]` no Settings
     - `DES`: sem scanline
     - `LCD`: escurecimento de 50% por paridade da linha de destino (`y`)
-    - `CRT`: escurecimento de 85% por paridade da linha fonte do MSX (`src_y`), aproximando melhor o comportamento de CRT após escala
+    - `CRT`: para cada linha fonte do MSX expandida no framebuffer, a metade superior fica normal e a metade inferior recebe o dim de 85%, mantendo a divisão no espaço da linha do MSX, não na paridade global do framebuffer; o preto interno do frame sobe levemente para cinza escuro, reforçando o visual de tubo
     - controles: `Enter` faz ciclo incremental; `seta esquerda/direita` faz decremento/incremento
   - Correção de redraw no submenu Settings:
     - rotina única de refresh aplicada após qualquer ação de Settings (incluindo novos itens)

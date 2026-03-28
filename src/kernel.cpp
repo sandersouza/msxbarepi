@@ -10,6 +10,8 @@
 #include "fmsx_initramfs.h"
 #endif
 
+#include <circle/bcmpropertytags.h>
+#include <circle/machineinfo.h>
 #include <circle/sound/hdmisoundbasedevice.h>
 #include <circle/startup.h>
 #include <circle/string.h>
@@ -30,6 +32,7 @@ static const unsigned kQueueMs = 120;
 static const u64 kFrameInterval60Us = 16667ull;
 static const u64 kFrameInterval50Us = 20000ull;
 static const u64 kDebugOverlayIntervalUs = 200000ull;
+static const u64 kUartPerfLogIntervalUs = 250000ull;
 static const u64 kFramePacingGuardUs = 300ull;
 static const u64 kFramePacingSleepTargetUs = 1200ull;
 static const u64 kFramePacingSpinThresholdUs = 80ull;
@@ -51,7 +54,8 @@ static const unsigned kResolutionMode1080 = 1u;
 static const unsigned kResolutionMode720 = 2u;
 static const unsigned kResolutionMode768 = 3u;
 static const char kSettingsDrive[] = "SD:";
-static const char kSettingsPath[] = "SD:/MSXBARE.CFG";
+static const char kSettingsPath[] = "SD:/msxbarepi.cfg";
+static const char kSettingsLegacyPath[] = "SD:/MSXBARE.CFG";
 static const char kBootConfigPath[] = "SD:/config.txt";
 static const char kStateDirPath[] = "SD:/states";
 static const char kStatePath[] = "SD:/states/slot-last.sav";
@@ -99,6 +103,32 @@ static unsigned BuildHash16(void)
 	return cached;
 }
 
+static void BootPhase(CLogger &logger, const char *phase, const char *status)
+{
+	CString line;
+	line.Format("%s: %s", phase != 0 ? phase : "BT?", status != 0 ? status : "");
+	logger.Write(FromKernel, LogNotice, line);
+}
+
+static void BootPhaseWarn(CLogger &logger, const char *phase, const char *status)
+{
+	CString line;
+	line.Format("%s: %s", phase != 0 ? phase : "BT?", status != 0 ? status : "");
+	logger.Write(FromKernel, LogWarning, line);
+}
+
+static const char *ThrottleStateLabel(TSystemThrottledState state)
+{
+	switch (state)
+	{
+	case SystemStateUnderVoltageOccurred: return "UNDERVOLT";
+	case SystemStateFrequencyCappingOccurred: return "FREQCAP";
+	case SystemStateThrottlingOccurred: return "THROTTLED";
+	case SystemStateSoftTempLimitOccurred: return "SOFTTEMP";
+	default: return "MIXED";
+	}
+}
+
 static unsigned UMax(unsigned a, unsigned b)
 {
 	return a > b ? a : b;
@@ -126,10 +156,56 @@ static unsigned ComputePixelScaleMaxPercent(unsigned screen_w, unsigned screen_h
 	return max_pct;
 }
 
+static unsigned ComputeAspectScaleMaxPercent(unsigned screen_w, unsigned screen_h,
+								unsigned src_h,
+								unsigned ar_num,
+								unsigned ar_den)
+{
+	if (screen_w == 0u || screen_h == 0u || src_h == 0u || ar_num == 0u || ar_den == 0u)
+	{
+		return kScalePercentMin;
+	}
+
+	const unsigned max_y = (screen_h * 100u) / src_h;
+	const unsigned max_x = (unsigned) (((u64) screen_w * 100u * (u64) ar_den)
+		/ ((u64) src_h * (u64) ar_num));
+	unsigned max_pct = UMin(max_x, max_y);
+	max_pct = (max_pct / kScalePercentStep) * kScalePercentStep;
+	if (max_pct < kScalePercentMin) max_pct = kScalePercentMin;
+	if (max_pct > kScalePercentHardMax) max_pct = kScalePercentHardMax;
+	return max_pct;
+}
+
 static unsigned ComputeLogicalSourceWidth(unsigned src_w)
 {
 	/* MSX hi-res modes (e.g. 512-wide) use narrow pixels on CRT. Use logical width for viewport sizing. */
 	return (src_w >= 512u) ? (src_w / 2u) : src_w;
+}
+
+static unsigned NormalizeViewportSourceHeight(unsigned src_h)
+{
+	if (src_h == 0u)
+	{
+		return 0u;
+	}
+
+	if (src_h <= 243u) return 243u;
+	if (src_h <= 256u) return 256u;
+	if (src_h <= 486u) return 486u;
+	if (src_h <= 512u) return 512u;
+	return src_h;
+}
+
+static unsigned NormalizeCrtViewportSourceHeight(unsigned src_h)
+{
+	if (src_h == 0u)
+	{
+		return 0u;
+	}
+
+	if (src_h <= 256u) return 256u;
+	if (src_h <= 512u) return 512u;
+	return src_h;
 }
 
 static unsigned ComputeScaleMaxPercentForCurrentFrame(unsigned screen_w, unsigned screen_h)
@@ -150,6 +226,7 @@ static unsigned ComputeScaleMaxPercentForCurrentFrame(unsigned screen_w, unsigne
 		src_h = 192u;
 	}
 
+	src_h = NormalizeViewportSourceHeight(src_h);
 	const unsigned logical_src_w = ComputeLogicalSourceWidth(src_w);
 	return ComputePixelScaleMaxPercent(screen_w, screen_h, logical_src_w, src_h);
 }
@@ -536,6 +613,12 @@ static boolean BootConfigKeyEquals(const char *line, unsigned key_len, const cha
 
 static u16 *s_DimLut85 = 0;
 static boolean s_DimLut85Ready = FALSE;
+static const u16 kCrtBlackLift565 = 0x1082u;
+
+static u16 ApplyCrtBlackLevel565(u16 sample)
+{
+	return sample == 0u ? kCrtBlackLift565 : sample;
+}
 
 static const u16 *EnsureCrtDimLutReady(void)
 {
@@ -556,7 +639,7 @@ static const u16 *EnsureCrtDimLutReady(void)
 
 	for (unsigned sample = 0; sample < kRgb565LutSize; ++sample)
 	{
-		const u16 rgb = (u16) sample;
+		const u16 rgb = ApplyCrtBlackLevel565((u16) sample);
 		const unsigned r = (rgb >> 11) & 0x1Fu;
 		const unsigned g = (rgb >> 5) & 0x3Fu;
 		const unsigned b = rgb & 0x1Fu;
@@ -576,7 +659,8 @@ static void BlitMappedLineRgb565(u16 *dst_line,
 					 unsigned dst_width,
 					 unsigned src_x0,
 					 unsigned dim_mode,
-					 const u16 *dim_lut)
+					 const u16 *dim_lut,
+					 boolean crt_black_lift)
 {
 	if (dst_line == 0 || src_line == 0 || xmap == 0 || dst_width == 0u)
 	{
@@ -589,6 +673,10 @@ static void BlitMappedLineRgb565(u16 *dst_line,
 	if ((((uintptr) dst_line) & 0x2u) != 0u)
 	{
 		u16 sample = src_line[src_x0 + xmap[0]];
+		if (crt_black_lift)
+		{
+			sample = ApplyCrtBlackLevel565(sample);
+		}
 		if (dim_mode == 1u)
 		{
 			sample = (u16) ((sample & 0xF7DEu) >> 1);
@@ -605,6 +693,11 @@ static void BlitMappedLineRgb565(u16 *dst_line,
 	{
 		u16 s0 = src_line[src_x0 + xmap[x]];
 		u16 s1 = src_line[src_x0 + xmap[x + 1u]];
+		if (crt_black_lift)
+		{
+			s0 = ApplyCrtBlackLevel565(s0);
+			s1 = ApplyCrtBlackLevel565(s1);
+		}
 		if (dim_mode == 1u)
 		{
 			u32 packed = (u32) s0 | ((u32) s1 << 16);
@@ -623,6 +716,10 @@ static void BlitMappedLineRgb565(u16 *dst_line,
 	if (x < dst_width)
 	{
 		u16 sample = src_line[src_x0 + xmap[x]];
+		if (crt_black_lift)
+		{
+			sample = ApplyCrtBlackLevel565(sample);
+		}
 		if (dim_mode == 1u)
 		{
 			sample = (u16) ((sample & 0xF7DEu) >> 1);
@@ -639,7 +736,8 @@ static void BlitMappedLineRgb565NoDim(u16 *dst_line,
 						  const u16 *src_line,
 						  const u16 *xmap,
 						  unsigned dst_width,
-						  unsigned src_x0)
+						  unsigned src_x0,
+						  boolean crt_black_lift)
 {
 	if (dst_line == 0 || src_line == 0 || xmap == 0 || dst_width == 0u)
 	{
@@ -651,21 +749,53 @@ static void BlitMappedLineRgb565NoDim(u16 *dst_line,
 	/* Align to 32-bit stores when possible (2 pixels per write). */
 	if ((((uintptr) dst_line) & 0x2u) != 0u)
 	{
-		dst_line[0] = src_line[src_x0 + xmap[0]];
+		u16 sample = src_line[src_x0 + xmap[0]];
+		dst_line[0] = crt_black_lift ? ApplyCrtBlackLevel565(sample) : sample;
 		x = 1u;
 	}
 
 	for (; x + 1u < dst_width; x += 2u)
 	{
-		const u16 s0 = src_line[src_x0 + xmap[x]];
-		const u16 s1 = src_line[src_x0 + xmap[x + 1u]];
+		u16 s0 = src_line[src_x0 + xmap[x]];
+		u16 s1 = src_line[src_x0 + xmap[x + 1u]];
+		if (crt_black_lift)
+		{
+			s0 = ApplyCrtBlackLevel565(s0);
+			s1 = ApplyCrtBlackLevel565(s1);
+		}
 		*(u32 *) (void *) (dst_line + x) = (u32) s0 | ((u32) s1 << 16);
 	}
 
 	if (x < dst_width)
 	{
-		dst_line[x] = src_line[src_x0 + xmap[x]];
+		u16 sample = src_line[src_x0 + xmap[x]];
+		dst_line[x] = crt_black_lift ? ApplyCrtBlackLevel565(sample) : sample;
 	}
+}
+
+static boolean IsCrtDimmedHalfRow(unsigned dst_y,
+						 unsigned src_y,
+						 unsigned src_h,
+						 unsigned dst_h)
+{
+	if (src_h == 0u || dst_h == 0u)
+	{
+		return FALSE;
+	}
+
+	const u64 start_num = (u64) src_y * (u64) dst_h;
+	const u64 end_num = (u64) (src_y + 1u) * (u64) dst_h;
+	const unsigned group_start = (unsigned) ((start_num + (u64) src_h - 1ull) / (u64) src_h);
+	const unsigned group_end = (unsigned) ((end_num + (u64) src_h - 1ull) / (u64) src_h);
+	const unsigned group_len = (group_end > group_start) ? (group_end - group_start) : 0u;
+
+	if (group_len <= 1u || dst_y < group_start || dst_y >= group_end)
+	{
+		return FALSE;
+	}
+
+	const unsigned dark_start = (group_len + 1u) / 2u;
+	return (dst_y - group_start) >= dark_start;
 }
 
 static void FlushDCacheRange(void *addr, unsigned bytes)
@@ -849,6 +979,7 @@ CComboKernel::CComboKernel(void)
 	m_JoyMappedBits(ComboKeyboardJoyMask()),
 	m_DebugOverlayEnabled(MSXBARE_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE),
 	m_DebugOverlayUnlocked(TRUE),
+	m_ScreenReady(FALSE),
 	m_EmulationPaused(FALSE),
 	m_LastF12Pressed(FALSE),
 	m_LastF6Pressed(FALSE),
@@ -883,10 +1014,24 @@ CComboKernel::CComboKernel(void)
 	m_FmsxKmgTraceSeq(0u),
 	m_FmsxKmgTraceDropped(0u),
 	m_LastAudioQueueLogUs(0),
+	m_LastVideoPacingLogUs(0),
 	m_FmsxFpsWindowStartUs(0),
 	m_LastPauseToggleUs(0),
 	m_LastMenuInputPollUs(0),
 	m_LastOverlayUs(0),
+	m_UartAudioQueueAvailMin(0u),
+	m_UartAudioLowWaterHits(0u),
+	m_UartAudioRefillUsLast(0u),
+	m_UartAudioRefillUsPeak(0u),
+	m_UartVideoCatchupLast(0u),
+	m_UartVideoCatchupPeak(0u),
+	m_UartVideoCatchupCapCount(0u),
+	m_UartVideoLateUsLast(0u),
+	m_UartVideoLateUsPeak(0u),
+	m_UartVideoStepUsLast(0u),
+	m_UartVideoStepUsPeak(0u),
+	m_UartVideoBlitUsLast(0u),
+	m_UartVideoBlitUsPeak(0u),
 	m_FmsxFpsWindowStartFrames(0),
 	m_FmsxFpsX10(0),
 	m_FramePacingErrAvgUs(0u),
@@ -897,6 +1042,13 @@ CComboKernel::CComboKernel(void)
 	m_FmsxBoxY(0),
 	m_FmsxBoxW(0),
 	m_FmsxBoxH(0),
+	m_CrtViewportKeySrcW(0u),
+	m_CrtViewportKeySrcH(0u),
+	m_CrtViewportKeyScreenW(0u),
+	m_CrtViewportKeyScreenH(0u),
+	m_CrtViewportKeyOverscanPercent(0u),
+	m_CrtViewportKeyWidescreen(FALSE),
+	m_CrtViewportLatchValid(FALSE),
 	m_BlitMapSrcW(0),
 	m_BlitMapSrcH(0),
 	m_BlitMapDstW(0),
@@ -928,7 +1080,7 @@ CComboKernel::CComboKernel(void)
 	m_RuntimeKeyboardDispatchedModifiers(0u),
 	m_RuntimeKeyboardDispatchedRawKeys{0u, 0u, 0u, 0u, 0u, 0u},
 	m_FmMusicEnabled(MSXBARE_FEAT_FMPAC ? TRUE : FALSE),
-	m_FmLayerGainPct(100u),
+	m_FmLayerGainPct(80u),
 	m_SccCartEnabled(MSXBARE_FEAT_SCC ? TRUE : FALSE),
 	m_SccDualCartEnabled(FALSE),
 	m_FrameIntervalUs(FrameIntervalFromRefreshHz(60u)),
@@ -940,6 +1092,7 @@ CComboKernel::CComboKernel(void)
 	m_ICacheEnabled(FALSE),
 	m_SettingsStorageReady(FALSE),
 	m_UartTelemetryEnabled(MSXBARE_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE),
+	m_KanjiRomEnabled(FALSE),
 	m_SettingsLoadPending(FALSE),
 	m_InitramfsDeferredMountPending(FALSE),
 	m_SettingsSavePending(FALSE),
@@ -960,6 +1113,7 @@ CComboKernel::CComboKernel(void)
 	s_Instance = this;
 	m_ActLED.Blink(5);
 	NormalizeSettingsForBuild();
+	ResetUartPerfTelemetry();
 }
 
 void CComboKernel::NormalizeSettingsForBuild(void)
@@ -1032,10 +1186,6 @@ boolean CComboKernel::Initialize(void)
 
 	if (ok)
 	{
-		ok = m_Screen.Initialize();
-	}
-	if (ok)
-	{
 		CDevice *target = &m_NullLog;
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
 		ok = m_Serial.Initialize(115200);
@@ -1046,19 +1196,41 @@ boolean CComboKernel::Initialize(void)
 		}
 #endif
 		ok = m_Logger.Initialize(target);
+		if (ok)
+		{
+			BootPhase(m_Logger, "BT0", "UART + Logger... OK");
+		}
 	}
 
 	if (ok) ok = m_Interrupt.Initialize();
 	if (ok) ok = m_Timer.Initialize();
 	if (ok)
 	{
+		BootPhase(m_Logger, "BT1", "Interrupt + Timer... OK");
+		if (m_CPUThrottle.IsDynamic())
+		{
+			(void) m_CPUThrottle.SetSpeed(CPUSpeedMaximum, TRUE);
+		}
+		m_CPUThrottle.RegisterSystemThrottledHandler(
+			SystemStateUnderVoltageOccurred
+				| SystemStateFrequencyCappingOccurred
+				| SystemStateThrottlingOccurred
+				| SystemStateSoftTempLimitOccurred,
+			SystemThrottledHandler,
+			this);
+		LogCpuClockStatus("BT1");
+	}
+	if (ok)
+	{
 		if (!m_EMMC.Initialize())
 		{
+			BootPhaseWarn(m_Logger, "BT2", "SD/eMMC driver... FAIL");
 			m_Logger.Write(FromKernel, LogWarning, "SD storage init failed; settings persistence disabled");
 		}
 		else
 		{
 			m_SettingsStorageReady = TRUE;
+			BootPhase(m_Logger, "BT2", "SD/eMMC driver... OK");
 		}
 	}
 
@@ -1107,15 +1279,22 @@ TComboShutdownMode CComboKernel::Run(void)
 		/* Must be applied before fMSX init so boot/runtime settings take effect on first boot. */
 		if (f_mount(&m_SettingsFileSystem, kSettingsDrive, 1) == FR_OK)
 		{
+			BootPhase(m_Logger, "BT3", "FATFS mount... OK");
 			LoadSettingsFromStorage();
 		}
 		else
 		{
 			m_SettingsStorageReady = FALSE;
+			BootPhaseWarn(m_Logger, "BT3", "FATFS mount... FAIL");
 			m_Logger.Write(FromKernel, LogWarning, "Settings mount failed on SD:; persistence disabled");
 		}
 	}
+	else
+	{
+		BootPhaseWarn(m_Logger, "BT3", "FATFS mount... SKIP");
+	}
 	NormalizeSettingsForBuild();
+	BootPhase(m_Logger, "BT5", "Normalize settings... OK");
 #if MSXBARE_ENABLE_FMSX
 	if (m_FmsxEnabled)
 	{
@@ -1138,6 +1317,7 @@ TComboShutdownMode CComboKernel::Run(void)
 		CString initramfs_line;
 		initramfs_line.Format("initramfs files: %u", mounted_files);
 		m_Logger.Write(FromKernel, LogNotice, initramfs_line);
+		BootPhase(m_Logger, "BT6", "initramfs... OK");
 
 		if (!kBootQuiet)
 		{
@@ -1161,6 +1341,18 @@ TComboShutdownMode CComboKernel::Run(void)
 				m_SccDualCartEnabled = FALSE;
 			}
 		}
+		BootPhase(m_Logger, "BT7", "runtime config... OK");
+		m_Logger.Write(FromKernel, LogNotice, "Boot step: init screen");
+		if (!m_Screen.Initialize())
+		{
+			BootPhaseWarn(m_Logger, "BT8", "screen... FAIL");
+			m_Logger.Write(FromKernel, LogPanic, "Screen init failed");
+			return ComboShutdownHalt;
+		}
+		m_Logger.Write(FromKernel, LogNotice, "Screen ready");
+		m_Logger.Write(FromKernel, LogNotice, "Boot step: screen OK");
+		BootPhase(m_Logger, "BT8", "screen... OK");
+		m_ScreenReady = TRUE;
 		m_FmsxReady = emulator_backend_init();
 		{
 			const EmulatorBackendInfo backend_info = emulator_backend_get_info();
@@ -1183,6 +1375,7 @@ TComboShutdownMode CComboKernel::Run(void)
 				m_EmulatorBackendName != 0 ? m_EmulatorBackendName : "backend",
 				m_BackendInitFailCode);
 			m_Logger.Write(FromKernel, LogWarning, line);
+			BootPhaseWarn(m_Logger, "BT9", "emulator backend... FAIL");
 		}
 		else
 		{
@@ -1194,6 +1387,7 @@ TComboShutdownMode CComboKernel::Run(void)
 			line.Format("%s bootstrap OK (frame-step)",
 				m_EmulatorBackendName != 0 ? m_EmulatorBackendName : "backend");
 			m_Logger.Write(FromKernel, LogNotice, line);
+			BootPhase(m_Logger, "BT9", "emulator backend... OK");
 
 			/* Defensive restore exists only on fMSX path for now. */
 				if (backend_is_fmsx)
@@ -1236,6 +1430,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	{
 		WriteScreenText("\x1b[?25l");
 	}
+	BootPhase(m_Logger, "BT10", "debug overlay... READY");
 	m_Logger.Write(FromKernel, LogNotice, "Overlay: F11 | Pause: F12 | UART: F10");
 #if MSXBARE_ENABLE_FMSX
 	if (m_FmsxReady && backend_is_fmsx)
@@ -1251,6 +1446,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_RefreshRateHz = 60u;
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 	m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
+	m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
 	m_PauseMenu.SetBootMode(m_BootMode);
 	m_PauseMenu.SetMachineProfile(m_MachineProfile);
 	m_PauseMenu.SetRamMapperKb(m_RamMapperKb);
@@ -1269,7 +1465,6 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetOverlayEnabled(
 		MSXBARE_ENABLE_DEBUG_OVERLAY ? m_DebugOverlayEnabled : FALSE,
 		MSXBARE_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
-	m_PauseMenu.SetDebugLogEnabled(m_UartTelemetryEnabled);
 	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
 	{
 		const unsigned max_scale = ComputeScaleMaxPercentForCurrentFrame(m_Screen.GetWidth(), m_Screen.GetHeight());
@@ -1278,6 +1473,7 @@ TComboShutdownMode CComboKernel::Run(void)
 		if (m_OverscanPercent > max_scale) m_OverscanPercent = max_scale;
 		m_PauseMenu.SetScalePercent(m_OverscanPercent);
 	}
+	SetUartTelemetryEnabled(m_UartTelemetryEnabled);
 	#if MSXBARE_ENABLE_FMSX
 		m_Logger.Write(FromKernel, LogNotice, "Boot step: apply runtime");
 		ApplyRuntimeSettingsToFmsx();
@@ -1290,11 +1486,13 @@ TComboShutdownMode CComboKernel::Run(void)
 				m_UsbReady = TRUE;
 				m_Logger.Write(FromKernel, LogNotice, "USB host ready");
 				m_Logger.Write(FromKernel, LogNotice, "Attach USB keyboard and type");
+				BootPhase(m_Logger, "BT11", "USB Host... OK");
 			}
 			else
 			{
 				m_Logger.Write(FromKernel, LogWarning, "USB host init failed; retrying");
 				m_UsbInitRetryTick = 300u;
+				BootPhaseWarn(m_Logger, "BT11", "USB Host... RETRY");
 			}
 		}
 		/* Force first visible frame to use current viewport policy (avoid transient wide boot frame). */
@@ -1307,6 +1505,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	#endif
 
 	m_Logger.Write(FromKernel, LogNotice, "Boot step: main loop");
+	BootPhase(m_Logger, "BT12", "main loop... OK");
 	u64 next_frame_us = CTimer::GetClockTicks64();
 	for (unsigned tick = 0; ; ++tick)
 	{
@@ -1316,6 +1515,7 @@ TComboShutdownMode CComboKernel::Run(void)
 			next_frame_us = now_us + m_FrameIntervalUs;
 			m_FramePacingResetPending = FALSE;
 		}
+		m_CPUThrottle.Update();
 		if (!m_AudioInitAttempted && (m_TestToneEnabled || fmsx_audio_enabled))
 		{
 			if (m_TestToneEnabled || !m_FmsxEnabled || !m_FmsxReady || m_FmsxFrames >= 2u)
@@ -1413,6 +1613,9 @@ TComboShutdownMode CComboKernel::Run(void)
 		{
 			m_SettingsSavePending = FALSE;
 			SaveSettingsToStorage();
+			m_PauseMenu.ReturnToRoot();
+			m_LastPauseWasInSettings = FALSE;
+			m_PauseMenu.RequestRedraw();
 		}
 		if (m_ResolutionModeLoadPending)
 		{
@@ -1480,9 +1683,20 @@ TComboShutdownMode CComboKernel::Run(void)
 			boolean stepped_fmsx = FALSE;
 			unsigned catchup_steps = 0;
 			const unsigned max_catchup_steps = 2u;
+			const boolean uart_perf_enabled = FALSE;
 			while (now_us >= next_frame_us && catchup_steps < max_catchup_steps)
 			{
-				const unsigned pacing_err_us = (unsigned) ((now_us - next_frame_us) > 999u ? 999u : (now_us - next_frame_us));
+				const u64 late_us64 = now_us - next_frame_us;
+				const unsigned pacing_err_us = (unsigned) (late_us64 > 999u ? 999u : late_us64);
+				if (uart_perf_enabled)
+				{
+					const unsigned late_us = (unsigned) (late_us64 > 9999u ? 9999u : late_us64);
+					m_UartVideoLateUsLast = late_us;
+					if (late_us > m_UartVideoLateUsPeak)
+					{
+						m_UartVideoLateUsPeak = late_us;
+					}
+				}
 				if (m_FramePacingErrAvgUs == 0u)
 				{
 					m_FramePacingErrAvgUs = pacing_err_us;
@@ -1533,8 +1747,19 @@ TComboShutdownMode CComboKernel::Run(void)
 				}
 				PushKeyboardStateToRuntime(rensha_fire_on);
 				emulator_backend_input_push_joystick(joy_bits_runtime);
+				const u64 step_start_us = uart_perf_enabled ? CTimer::GetClockTicks64() : 0u;
 				if (emulator_backend_step_frame())
 				{
+					if (uart_perf_enabled)
+					{
+						const u64 step_elapsed_us64 = CTimer::GetClockTicks64() - step_start_us;
+						const unsigned step_elapsed_us = (unsigned) (step_elapsed_us64 > 9999u ? 9999u : step_elapsed_us64);
+						m_UartVideoStepUsLast = step_elapsed_us;
+						if (step_elapsed_us > m_UartVideoStepUsPeak)
+						{
+							m_UartVideoStepUsPeak = step_elapsed_us;
+						}
+					}
 					stepped_fmsx = TRUE;
 					const EmulatorBackendRuntimeStatus runtime_status = emulator_backend_get_status();
 					const unsigned runtime_refresh_hz = ClampRefreshRateHz(fmsx_runtime_get_refresh_hz());
@@ -1600,18 +1825,38 @@ TComboShutdownMode CComboKernel::Run(void)
 				catchup_steps++;
 				now_us = CTimer::GetClockTicks64();
 			}
+			if (uart_perf_enabled)
+			{
+				m_UartVideoCatchupLast = catchup_steps;
+				if (catchup_steps > m_UartVideoCatchupPeak)
+				{
+					m_UartVideoCatchupPeak = catchup_steps;
+				}
+				if (catchup_steps >= max_catchup_steps && now_us >= next_frame_us)
+				{
+					if (m_UartVideoCatchupCapCount < 999u)
+					{
+						m_UartVideoCatchupCapCount++;
+					}
+				}
+			}
 
 			if (stepped_fmsx)
 			{
-				LogVdpTraceUart();
-#if FMSX_SMANBOW_AUDIO_TRACE_ENABLED
-				LogSccTraceUart();
-				LogAudioPortTraceUart();
-#endif
-				LogKmgTraceUart();
 				const boolean force_viewport_clear = m_ForceViewportFullClearNextFrame;
 				m_ForceViewportFullClearNextFrame = FALSE;
+				const u64 blit_start_us = uart_perf_enabled ? CTimer::GetClockTicks64() : 0u;
 				BlitFmsxFrame(force_viewport_clear ? TRUE : FALSE);
+				if (uart_perf_enabled)
+				{
+					const u64 blit_elapsed_us64 = CTimer::GetClockTicks64() - blit_start_us;
+					const unsigned blit_elapsed_us = (unsigned) (blit_elapsed_us64 > 9999u ? 9999u : blit_elapsed_us64);
+					m_UartVideoBlitUsLast = blit_elapsed_us;
+					if (blit_elapsed_us > m_UartVideoBlitUsPeak)
+					{
+						m_UartVideoBlitUsPeak = blit_elapsed_us;
+					}
+				}
 			}
 
 			if (now_us > next_frame_us + (m_FrameIntervalUs * 12ull))
@@ -1639,7 +1884,7 @@ TComboShutdownMode CComboKernel::Run(void)
 			(void) emulator_backend_video_frame(&src_pixels, &src_w, &src_h);
 			if (src_pixels != 0 && src_w > 0u && src_h > 0u)
 			{
-				ComputeViewportBox(src_w, src_h, &m_FmsxBoxX, &m_FmsxBoxY, &m_FmsxBoxW, &m_FmsxBoxH);
+				ResolveViewportBox(src_w, src_h, &m_FmsxBoxX, &m_FmsxBoxY, &m_FmsxBoxW, &m_FmsxBoxH);
 			}
 			const unsigned snap_x = (m_FmsxBoxW > 0u) ? m_FmsxBoxX : 0u;
 			const unsigned snap_y = (m_FmsxBoxH > 0u) ? m_FmsxBoxY : 0u;
@@ -1652,8 +1897,19 @@ TComboShutdownMode CComboKernel::Run(void)
 
 		if (m_Sound != 0)
 		{
+			const boolean uart_perf_enabled = FALSE;
+			const u64 refill_start_us = uart_perf_enabled ? CTimer::GetClockTicks64() : 0u;
 			RefillAudioQueue();
-			LogAudioQueueUart();
+			if (uart_perf_enabled)
+			{
+				const u64 refill_elapsed_us64 = CTimer::GetClockTicks64() - refill_start_us;
+				const unsigned refill_elapsed_us = (unsigned) (refill_elapsed_us64 > 9999u ? 9999u : refill_elapsed_us64);
+				m_UartAudioRefillUsLast = refill_elapsed_us;
+				if (refill_elapsed_us > m_UartAudioRefillUsPeak)
+				{
+					m_UartAudioRefillUsPeak = refill_elapsed_us;
+				}
+			}
 			if (!m_Sound->IsActive() && ((tick % 500u) == 0u))
 			{
 				m_SoundStartAttempts++;
@@ -1781,6 +2037,10 @@ void CComboKernel::RefillAudioQueue(void)
 	unsigned refill_budget = kRefillBudgetPerCall;
 	m_LastQueueAvail = queue_avail;
 	m_LastQueueFree = free_frames;
+	if (queue_avail < m_UartAudioQueueAvailMin)
+	{
+		m_UartAudioQueueAvailMin = queue_avail;
+	}
 	if (free_frames == 0u)
 	{
 		return;
@@ -1801,6 +2061,10 @@ void CComboKernel::RefillAudioQueue(void)
 	}
 	if (queue_avail <= low_water)
 	{
+		if (m_UartAudioLowWaterHits < 999u)
+		{
+			m_UartAudioLowWaterHits++;
+		}
 		/* After a hiccup, refill aggressively to recover audio continuity quickly. */
 		desired_write = free_frames;
 	}
@@ -1987,17 +2251,132 @@ void CComboKernel::GenerateSamples(s16 *buffer, unsigned frames)
 	}
 }
 
+void CComboKernel::ResetUartPerfTelemetry(void)
+{
+	m_LastAudioQueueLogUs = 0u;
+	m_LastVideoPacingLogUs = 0u;
+	m_UartAudioQueueAvailMin = 0xFFFFFFFFu;
+	m_UartAudioLowWaterHits = 0u;
+	m_UartAudioRefillUsLast = 0u;
+	m_UartAudioRefillUsPeak = 0u;
+	m_UartVideoCatchupLast = 0u;
+	m_UartVideoCatchupPeak = 0u;
+	m_UartVideoCatchupCapCount = 0u;
+	m_UartVideoLateUsLast = 0u;
+	m_UartVideoLateUsPeak = 0u;
+	m_UartVideoStepUsLast = 0u;
+	m_UartVideoStepUsPeak = 0u;
+	m_UartVideoBlitUsLast = 0u;
+	m_UartVideoBlitUsPeak = 0u;
+}
+
 void CComboKernel::LogAudioQueueUart(void)
 {
 #if !MSXBARE_ENABLE_FMSX || !MSXBARE_ENABLE_DEBUG_OVERLAY
 	return;
 #else
-	/* Audio queue UART telemetry is intentionally disabled for now.
-	 * Keep the hook in place so F10 still gates the remaining channels. */
-	(void) m_UartTelemetryEnabled;
-	(void) m_DebugOverlayUnlocked;
-	(void) m_DebugOverlayEnabled;
-	(void) m_Sound;
+	if (!m_UartTelemetryEnabled || m_Sound == 0)
+	{
+		return;
+	}
+
+	const u64 now_us = CTimer::GetClockTicks64();
+	if (m_LastAudioQueueLogUs != 0u && (now_us - m_LastAudioQueueLogUs) < kUartPerfLogIntervalUs)
+	{
+		return;
+	}
+
+	TFmsxAudioStats audio_stats = {0};
+	fmsx_audio_get_stats(&audio_stats);
+	const unsigned queue_size = m_Sound->GetQueueSizeFrames();
+	const unsigned queue_avail = m_Sound->GetQueueFramesAvail();
+	const unsigned queue_min = (m_UartAudioQueueAvailMin == 0xFFFFFFFFu) ? queue_avail : m_UartAudioQueueAvailMin;
+
+	CString line;
+	line.Format("AUDQ Q:%u/%u/%u L:%u R:%u/%u P:%u/%u D:%u T:%u U:%u/%u A:%u/%u",
+		queue_avail > 9999u ? 9999u : queue_avail,
+		queue_min > 9999u ? 9999u : queue_min,
+		queue_size > 9999u ? 9999u : queue_size,
+		m_UartAudioLowWaterHits > 999u ? 999u : m_UartAudioLowWaterHits,
+		audio_stats.ring_level > 9999u ? 9999u : audio_stats.ring_level,
+		audio_stats.ring_peak > 9999u ? 9999u : audio_stats.ring_peak,
+		audio_stats.last_pull_returned > 9999u ? 9999u : audio_stats.last_pull_returned,
+		audio_stats.last_pull_requested > 9999u ? 9999u : audio_stats.last_pull_requested,
+		audio_stats.drop_count > 999u ? 999u : audio_stats.drop_count,
+		audio_stats.trim_samples > 9999u ? 9999u : audio_stats.trim_samples,
+		audio_stats.short_pulls > 999u ? 999u : audio_stats.short_pulls,
+		audio_stats.underrun_samples > 9999u ? 9999u : audio_stats.underrun_samples,
+		m_UartAudioRefillUsLast > 9999u ? 9999u : m_UartAudioRefillUsLast,
+		m_UartAudioRefillUsPeak > 9999u ? 9999u : m_UartAudioRefillUsPeak);
+	m_Logger.Write(FromKernel, LogNotice, line);
+
+	m_LastAudioQueueLogUs = now_us;
+	m_UartAudioQueueAvailMin = 0xFFFFFFFFu;
+	m_UartAudioLowWaterHits = 0u;
+	m_UartAudioRefillUsPeak = 0u;
+#endif
+}
+
+void CComboKernel::LogVideoPacingUart(void)
+{
+#if !MSXBARE_ENABLE_FMSX || !MSXBARE_ENABLE_DEBUG_OVERLAY
+	return;
+#else
+	if (!m_UartTelemetryEnabled)
+	{
+		return;
+	}
+
+	const u64 now_us = CTimer::GetClockTicks64();
+	if (m_LastVideoPacingLogUs != 0u && (now_us - m_LastVideoPacingLogUs) < kUartPerfLogIntervalUs)
+	{
+		return;
+	}
+
+	CString line;
+	line.Format("VIDP F:%u.%u C:%u/%u X:%u L:%u/%u P:%u/%u S:%u/%u B:%u/%u",
+		(m_FmsxFpsX10 / 10u) > 99u ? 99u : (m_FmsxFpsX10 / 10u),
+		m_FmsxFpsX10 % 10u,
+		m_UartVideoCatchupLast > 99u ? 99u : m_UartVideoCatchupLast,
+		m_UartVideoCatchupPeak > 99u ? 99u : m_UartVideoCatchupPeak,
+		m_UartVideoCatchupCapCount > 999u ? 999u : m_UartVideoCatchupCapCount,
+		m_UartVideoLateUsLast > 9999u ? 9999u : m_UartVideoLateUsLast,
+		m_UartVideoLateUsPeak > 9999u ? 9999u : m_UartVideoLateUsPeak,
+		m_FramePacingErrAvgUs > 9999u ? 9999u : m_FramePacingErrAvgUs,
+		m_FramePacingErrMaxUs > 9999u ? 9999u : m_FramePacingErrMaxUs,
+		m_UartVideoStepUsLast > 9999u ? 9999u : m_UartVideoStepUsLast,
+		m_UartVideoStepUsPeak > 9999u ? 9999u : m_UartVideoStepUsPeak,
+		m_UartVideoBlitUsLast > 9999u ? 9999u : m_UartVideoBlitUsLast,
+		m_UartVideoBlitUsPeak > 9999u ? 9999u : m_UartVideoBlitUsPeak);
+	m_Logger.Write(FromKernel, LogNotice, line);
+	LogCpuClockStatus("F10");
+
+	if (emulator_backend_selected_kind() == EMULATOR_BACKEND_KIND_FMSX)
+	{
+		TFmsxFramePerfStats frame_perf = {0};
+		fmsx_runtime_get_frame_perf_stats(&frame_perf);
+		line.Format("VRTM ST:%u FR:%u SL:%u/%u Z:%u/%u A:%u/%u N:%u/%u M:%u",
+			frame_perf.last_steps > 99u ? 99u : frame_perf.last_steps,
+			frame_perf.last_frames_done > 99u ? 99u : frame_perf.last_frames_done,
+			frame_perf.last_slices > 9999u ? 9999u : frame_perf.last_slices,
+			frame_perf.peak_slices > 9999u ? 9999u : frame_perf.peak_slices,
+			frame_perf.last_z80_us > 9999u ? 9999u : frame_perf.last_z80_us,
+			frame_perf.peak_z80_us > 9999u ? 9999u : frame_perf.peak_z80_us,
+			frame_perf.last_audio_us > 9999u ? 9999u : frame_perf.last_audio_us,
+			frame_perf.peak_audio_us > 9999u ? 9999u : frame_perf.peak_audio_us,
+			frame_perf.last_audio_samples > 9999u ? 9999u : frame_perf.last_audio_samples,
+			frame_perf.peak_audio_samples > 9999u ? 9999u : frame_perf.peak_audio_samples,
+			frame_perf.frame_miss_count > 999u ? 999u : frame_perf.frame_miss_count);
+		m_Logger.Write(FromKernel, LogNotice, line);
+		fmsx_runtime_reset_frame_perf_stats_window();
+	}
+
+	m_LastVideoPacingLogUs = now_us;
+	m_UartVideoCatchupPeak = 0u;
+	m_UartVideoCatchupCapCount = 0u;
+	m_UartVideoLateUsPeak = 0u;
+	m_UartVideoStepUsPeak = 0u;
+	m_UartVideoBlitUsPeak = 0u;
 #endif
 }
 
@@ -2609,8 +2988,8 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 }
 
 void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
-								unsigned *out_x, unsigned *out_y,
-								unsigned *out_w, unsigned *out_h) const
+									unsigned *out_x, unsigned *out_y,
+									unsigned *out_w, unsigned *out_h) const
 {
 	unsigned box_x = 0u;
 	unsigned box_y = 0u;
@@ -2618,25 +2997,33 @@ void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
 	unsigned box_h = m_Screen.GetHeight();
 	const unsigned screen_width = m_Screen.GetWidth();
 	const unsigned screen_height = m_Screen.GetHeight();
+	unsigned layout_src_height = NormalizeViewportSourceHeight(src_height);
+	if (m_ScanlineMode == kScanlineModeCrt)
+	{
+		layout_src_height = NormalizeCrtViewportSourceHeight(src_height);
+	}
 
 	if (screen_width > 0u && screen_height > 0u)
 	{
 		unsigned dst_width = screen_width;
 		unsigned dst_height = screen_height;
-		if (src_width > 0u && src_height > 0u)
+		if (src_width > 0u && layout_src_height > 0u)
 		{
+			const unsigned ar_num = m_WidescreenEnabled ? 16u : 4u;
+			const unsigned ar_den = m_WidescreenEnabled ? 9u : 3u;
 			const unsigned logical_src_w = ComputeLogicalSourceWidth(src_width);
-			const unsigned max_scale_percent = ComputePixelScaleMaxPercent(screen_width, screen_height, logical_src_w, src_height);
+			const unsigned max_scale_percent =
+				(m_ScanlineMode == kScanlineModeCrt)
+				? ComputeAspectScaleMaxPercent(screen_width, screen_height, layout_src_height, ar_num, ar_den)
+				: ComputePixelScaleMaxPercent(screen_width, screen_height, logical_src_w, layout_src_height);
 			unsigned scale_percent = m_OverscanPercent;
 			if (scale_percent < kScalePercentMin) scale_percent = kScalePercentMin;
 			if (scale_percent > max_scale_percent) scale_percent = max_scale_percent;
-			dst_height = (unsigned) (((u64) src_height * (u64) scale_percent) / 100u);
+			dst_height = (unsigned) (((u64) layout_src_height * (u64) scale_percent) / 100u);
 			if (dst_height == 0u) dst_height = 1u;
 			if (dst_height > screen_height) dst_height = screen_height;
 
 			/* Keep default geometry in 4:3. Only use 16:9 when widescreen is explicitly enabled. */
-			const unsigned ar_num = m_WidescreenEnabled ? 16u : 4u;
-			const unsigned ar_den = m_WidescreenEnabled ? 9u : 3u;
 			dst_width = (unsigned) (((u64) dst_height * (u64) ar_num) / (u64) ar_den);
 			if (dst_width == 0u) dst_width = 1u;
 			if (dst_width > screen_width)
@@ -2660,6 +3047,51 @@ void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
 	if (out_y != 0) *out_y = box_y;
 	if (out_w != 0) *out_w = box_w;
 	if (out_h != 0) *out_h = box_h;
+}
+
+void CComboKernel::ResolveViewportBox(unsigned src_width, unsigned src_height,
+									unsigned *out_x, unsigned *out_y,
+									unsigned *out_w, unsigned *out_h)
+{
+	ComputeViewportBox(src_width, src_height, out_x, out_y, out_w, out_h);
+
+	const unsigned scanline_mode = (m_ScanlineMode > kScanlineModeCrt) ? kScanlineModeCrt : m_ScanlineMode;
+	if (scanline_mode != kScanlineModeCrt)
+	{
+		m_CrtViewportLatchValid = FALSE;
+		return;
+	}
+
+	const unsigned logical_src_w = ComputeLogicalSourceWidth(src_width);
+	const unsigned layout_src_h = NormalizeCrtViewportSourceHeight(src_height);
+	const unsigned screen_width = m_Screen.GetWidth();
+	const unsigned screen_height = m_Screen.GetHeight();
+	const boolean same_layout_family =
+		m_CrtViewportLatchValid
+		&& m_FmsxBoxW > 0u
+		&& m_FmsxBoxH > 0u
+		&& m_CrtViewportKeySrcH == layout_src_h
+		&& m_CrtViewportKeyScreenW == screen_width
+		&& m_CrtViewportKeyScreenH == screen_height
+		&& m_CrtViewportKeyOverscanPercent == m_OverscanPercent
+		&& m_CrtViewportKeyWidescreen == (m_WidescreenEnabled ? TRUE : FALSE);
+
+	if (same_layout_family)
+	{
+		if (out_x != 0) *out_x = m_FmsxBoxX;
+		if (out_y != 0) *out_y = m_FmsxBoxY;
+		if (out_w != 0) *out_w = m_FmsxBoxW;
+		if (out_h != 0) *out_h = m_FmsxBoxH;
+		return;
+	}
+
+	m_CrtViewportKeySrcW = logical_src_w;
+	m_CrtViewportKeySrcH = layout_src_h;
+	m_CrtViewportKeyScreenW = screen_width;
+	m_CrtViewportKeyScreenH = screen_height;
+	m_CrtViewportKeyOverscanPercent = m_OverscanPercent;
+	m_CrtViewportKeyWidescreen = m_WidescreenEnabled ? TRUE : FALSE;
+	m_CrtViewportLatchValid = TRUE;
 }
 
 void CComboKernel::BlitFmsxFrame(boolean force_redraw)
@@ -2690,7 +3122,7 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 	const u16 *crt_dim_lut = (scanline_mode == kScanlineModeCrt) ? EnsureCrtDimLutReady() : 0;
 	unsigned offset_x = 0u;
 	unsigned offset_y = 0u;
-	ComputeViewportBox(width, height, &offset_x, &offset_y, &dst_width, &dst_height);
+	ResolveViewportBox(width, height, &offset_x, &offset_y, &dst_width, &dst_height);
 	const unsigned old_box_x = m_FmsxBoxX;
 	const unsigned old_box_y = m_FmsxBoxY;
 	const unsigned old_box_w = m_FmsxBoxW;
@@ -2816,11 +3248,15 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 			u16 crt_dim_line_cache[kBlitMapMaxAxis];
 			for (unsigned y = 0; y < dst_height; ++y)
 			{
-				const unsigned src_y = src_y0 + m_BlitYMap[y];
+				const unsigned src_rel_y = m_BlitYMap[y];
+				const unsigned src_y = src_y0 + src_rel_y;
 				const u16 *src_line = pixels + (src_y * width);
 				u16 *dst_line = dst_base + ((offset_y + y) * pitch_pixels) + offset_x;
 				const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
-				const boolean dark_crt = (scanline_mode == kScanlineModeCrt) && crt_dim_lut != 0 && ((src_y & 1u) != 0u);
+				const boolean dark_crt =
+					(scanline_mode == kScanlineModeCrt)
+					&& crt_dim_lut != 0
+					&& IsCrtDimmedHalfRow(y, src_rel_y, src_h, dst_height);
 				const unsigned dim_mode = dark_lcd ? 1u : (dark_crt ? 2u : 0u);
 				if (dark_crt && src_w <= kBlitMapMaxAxis)
 				{
@@ -2832,17 +3268,19 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 						}
 						crt_cached_src_y = src_y;
 					}
-					BlitMappedLineRgb565NoDim(dst_line, crt_dim_line_cache, m_BlitXMap, dst_width, 0u);
+					BlitMappedLineRgb565NoDim(dst_line, crt_dim_line_cache, m_BlitXMap, dst_width, 0u, FALSE);
 					continue;
 				}
 				if (dim_mode == 0u)
 				{
-					BlitMappedLineRgb565NoDim(dst_line, src_line, m_BlitXMap, dst_width, src_x0);
+					BlitMappedLineRgb565NoDim(dst_line, src_line, m_BlitXMap, dst_width, src_x0,
+						(scanline_mode == kScanlineModeCrt) ? TRUE : FALSE);
 				}
 				else
 				{
 					const u16 *dim_lut = (dim_mode == 2u) ? crt_dim_lut : 0;
-					BlitMappedLineRgb565(dst_line, src_line, m_BlitXMap, dst_width, src_x0, dim_mode, dim_lut);
+					BlitMappedLineRgb565(dst_line, src_line, m_BlitXMap, dst_width, src_x0, dim_mode, dim_lut,
+						(dim_mode == 2u) ? TRUE : FALSE);
 				}
 			}
 		}
@@ -2852,11 +3290,15 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 			u16 crt_dim_line_cache[kBlitMapMaxAxis];
 			for (unsigned y = 0; y < dst_height; ++y)
 			{
-				const unsigned src_y = src_y0 + (unsigned) (((u64) y * (u64) src_h) / (u64) dst_height);
+				const unsigned src_rel_y = (unsigned) (((u64) y * (u64) src_h) / (u64) dst_height);
+				const unsigned src_y = src_y0 + src_rel_y;
 				const u16 *src_line = pixels + (src_y * width);
 				u16 *dst_line = dst_base + ((offset_y + y) * pitch_pixels) + offset_x;
 				const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
-				const boolean dark_crt = (scanline_mode == kScanlineModeCrt) && crt_dim_lut != 0 && ((src_y & 1u) != 0u);
+				const boolean dark_crt =
+					(scanline_mode == kScanlineModeCrt)
+					&& crt_dim_lut != 0
+					&& IsCrtDimmedHalfRow(y, src_rel_y, src_h, dst_height);
 				if (dark_lcd)
 				{
 					for (unsigned x = 0; x < dst_width; ++x)
@@ -2897,7 +3339,9 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 					for (unsigned x = 0; x < dst_width; ++x)
 					{
 						const unsigned src_x = src_x0 + (unsigned) (((u64) x * (u64) src_w) / (u64) dst_width);
-						dst_line[x] = src_line[src_x];
+						dst_line[x] = (scanline_mode == kScanlineModeCrt)
+							? ApplyCrtBlackLevel565(src_line[src_x])
+							: src_line[src_x];
 					}
 				}
 			}
@@ -2947,14 +3391,22 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 
 	for (unsigned y = 0; y < dst_height; ++y)
 	{
-		const unsigned src_y = src_y0 + (unsigned) (((u64) y * (u64) src_h) / (u64) dst_height);
+		const unsigned src_rel_y = (unsigned) (((u64) y * (u64) src_h) / (u64) dst_height);
+		const unsigned src_y = src_y0 + src_rel_y;
 		const u16 *line = pixels + (src_y * width);
 		const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
-		const boolean dark_crt = (scanline_mode == kScanlineModeCrt) && crt_dim_lut != 0 && ((src_y & 1u) != 0u);
+		const boolean dark_crt =
+			(scanline_mode == kScanlineModeCrt)
+			&& crt_dim_lut != 0
+			&& IsCrtDimmedHalfRow(y, src_rel_y, src_h, dst_height);
 		for (unsigned x = 0; x < dst_width; ++x)
 		{
 			const unsigned src_x = src_x0 + (unsigned) (((u64) x * (u64) src_w) / (u64) dst_width);
 			u16 sample = line[src_x];
+			if (scanline_mode == kScanlineModeCrt)
+			{
+				sample = ApplyCrtBlackLevel565(sample);
+			}
 			if (dark_lcd)
 			{
 				sample = (u16) ((sample & 0xF7DEu) >> 1);
@@ -2966,6 +3418,7 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 			m_Screen.SetPixel(offset_x + x, offset_y + y, (TScreenColor) sample);
 		}
 	}
+
 #endif
 }
 
@@ -2994,6 +3447,7 @@ void CComboKernel::ResetEmulationRuntimeState(void)
 	m_RuntimeKeyboardDispatchedModifiers = 0u;
 	m_RuntimeKeyboardDispatchValid = TRUE;
 	m_RuntimeKeyboardReplayBudget = 0u;
+	ResetUartPerfTelemetry();
 #if MSXBARE_ENABLE_FMSX
 	{
 		static const unsigned char kEmptyKeyboard[6] = {0u, 0u, 0u, 0u, 0u, 0u};
@@ -3061,7 +3515,7 @@ void CComboKernel::UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, un
 	m_SettingsSaveCode = code;
 	m_SettingsSaveAux = aux;
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
-	if (m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
+	if (m_ScreenReady && m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
 	{
 		DrawDebugOverlay((unsigned) (m_FmsxFrames & 0xFFFFFFFFu));
 	}
@@ -3073,7 +3527,7 @@ void CComboKernel::UpdateLoadDiagTelemetry(unsigned stage)
 #if MSXBARE_ENABLE_FMSX
 	fmsx_runtime_set_load_diag(stage);
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
-	if (m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
+	if (m_ScreenReady && m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
 	{
 		DrawDebugOverlay((unsigned) (m_FmsxFrames & 0xFFFFFFFFu));
 	}
@@ -3092,28 +3546,37 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	UpdateLoadDiagTelemetry(5101u); /* CFG stat */
 
 	FILINFO file_info;
-	const FRESULT stat_result = f_stat(kSettingsPath, &file_info);
+	const char *settings_path = kSettingsPath;
+	FRESULT stat_result = f_stat(settings_path, &file_info);
+	if (stat_result == FR_NO_FILE)
+	{
+		settings_path = kSettingsLegacyPath;
+		stat_result = f_stat(settings_path, &file_info);
+	}
 	if (stat_result == FR_NO_FILE)
 	{
 		UpdateLoadDiagTelemetry(5102u); /* CFG not found */
+		BootPhaseWarn(m_Logger, "BT4", "msxbarepi.cfg... DEFAULTS");
 		m_Logger.Write(FromKernel, LogNotice, "Settings file not found; using defaults");
 		return;
 	}
 	if (stat_result != FR_OK)
 	{
 		UpdateLoadDiagTelemetry(5190u + (ClampFatFsCode(stat_result) % 10u)); /* CFG stat fail */
-		LogSdOpResult(m_Logger, "CFG:STAT", stat_result, kSettingsPath, TRUE);
+		LogSdOpResult(m_Logger, "CFG:STAT", stat_result, settings_path, TRUE);
+		BootPhaseWarn(m_Logger, "BT4", "msxbarepi.cfg... FALLBACK");
 		m_Logger.Write(FromKernel, LogWarning, "Settings stat failed; using defaults");
 		return;
 	}
 
 	FIL file;
 	UpdateLoadDiagTelemetry(5201u); /* CFG open */
-	const FRESULT open_result = f_open(&file, kSettingsPath, FA_READ);
+	const FRESULT open_result = f_open(&file, settings_path, FA_READ);
 	if (open_result != FR_OK)
 	{
 		UpdateLoadDiagTelemetry(5290u + (ClampFatFsCode(open_result) % 10u)); /* CFG open fail */
-		LogSdOpResult(m_Logger, "CFG:OPEN", open_result, kSettingsPath, TRUE);
+		LogSdOpResult(m_Logger, "CFG:OPEN", open_result, settings_path, TRUE);
+		BootPhaseWarn(m_Logger, "BT4", "msxbarepi.cfg... FALLBACK");
 		m_Logger.Write(FromKernel, LogWarning, "Settings open failed; using defaults");
 		return;
 	}
@@ -3128,8 +3591,9 @@ void CComboKernel::LoadSettingsFromStorage(void)
 		UpdateLoadDiagTelemetry(5390u + (ClampFatFsCode(read_result) % 10u)); /* CFG read fail */
 		if (read_result != FR_OK)
 		{
-			LogSdOpResult(m_Logger, "CFG:READ", read_result, kSettingsPath, TRUE);
+			LogSdOpResult(m_Logger, "CFG:READ", read_result, settings_path, TRUE);
 		}
+		BootPhaseWarn(m_Logger, "BT4", "msxbarepi.cfg... FALLBACK");
 		m_Logger.Write(FromKernel, LogWarning, "Settings read failed; using defaults");
 		return;
 	}
@@ -3139,6 +3603,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	/* Corruption guard: only parse files written by SaveSettingsToStorage(). */
 	if (strstr(buffer, "#END") == 0)
 	{
+		BootPhaseWarn(m_Logger, "BT4", "msxbarepi.cfg... FALLBACK");
 		m_Logger.Write(FromKernel, LogWarning, "Settings file invalid/corrupt; using defaults");
 		return;
 	}
@@ -3223,6 +3688,10 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			else if (SettingsKeyEquals(line, key_len, "disk_rom"))
 			{
 				m_DiskRomEnabled = value ? TRUE : FALSE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "kanji_rom"))
+			{
+				m_KanjiRomEnabled = value ? TRUE : FALSE;
 			}
 				else if (SettingsKeyEquals(line, key_len, "boot_mode"))
 				{
@@ -3325,6 +3794,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 	m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
+	m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
 	m_PauseMenu.SetBootMode(m_BootMode);
 	m_PauseMenu.SetMachineProfile(m_MachineProfile);
 	m_PauseMenu.SetRamMapperKb(m_RamMapperKb);
@@ -3381,8 +3851,9 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	#endif
 
 	CString line_log;
-	line_log.Format("Settings loaded from %s", kSettingsPath);
+	line_log.Format("Settings loaded from %s", settings_path);
 	m_Logger.Write(FromKernel, LogNotice, line_log);
+	BootPhase(m_Logger, "BT4", "msxbarepi.cfg... OK");
 }
 
 void CComboKernel::SaveSettingsToStorage(void)
@@ -3437,6 +3908,7 @@ void CComboKernel::SaveSettingsToStorage(void)
 		APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
 	APPEND_LINE_FMT("refresh=%u\n", ClampRefreshRateHz(m_RefreshRateHz));
 	APPEND_LINE_FMT("disk_rom=%u\n", m_DiskRomEnabled ? 1u : 0u);
+	APPEND_LINE_FMT("kanji_rom=%u\n", m_KanjiRomEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("boot_mode=%u\n", m_BootMode);
 	APPEND_LINE_FMT("machine=%u\n", m_MachineProfile);
 	APPEND_LINE_FMT("rammapper_kb=%u\n", m_RamMapperKb);
@@ -4498,6 +4970,13 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		break;
 #endif
 
+	case ComboMenuActionToggleKanjiRom:
+		m_KanjiRomEnabled = m_KanjiRomEnabled ? FALSE : TRUE;
+		m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
+		RefreshSettingsUiAfterAction();
+		m_Logger.Write(FromKernel, LogNotice, m_KanjiRomEnabled ? "Settings: Kanji ROM ON" : "Settings: Kanji ROM OFF");
+		break;
+
 	case ComboMenuActionCycleBootMode:
 #if MSXBARE_ONE_ROM_MODE || MSXBARE_BOOT_MODE_LOCKED
 		m_BootMode = kBootModeGame;
@@ -4833,7 +5312,7 @@ void CComboKernel::SetDebugOverlayEnabled(boolean enabled)
 	m_DebugOverlayEnabled = enabled ? TRUE : FALSE;
 	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, TRUE);
 	m_PauseMenu.RequestRedraw();
-	if (m_DebugOverlayUnlocked && !m_DebugOverlayEnabled)
+	if (m_ScreenReady && m_DebugOverlayUnlocked && !m_DebugOverlayEnabled)
 	{
 		ClearDebugOverlay();
 	}
@@ -4850,12 +5329,22 @@ void CComboKernel::SetUartTelemetryEnabled(boolean enabled)
 	(void) enabled;
 	m_UartTelemetryEnabled = FALSE;
 #endif
+	ResetUartPerfTelemetry();
+#if MSXBARE_ENABLE_FMSX
+	/* UART perf telemetry is intentionally quiesced in this phase. */
+	fmsx_runtime_set_frame_perf_telemetry_enabled(FALSE);
+#endif
 	m_PauseMenu.SetDebugLogEnabled(m_UartTelemetryEnabled);
 	m_PauseMenu.RequestRedraw();
 }
 
 void CComboKernel::ClearDebugOverlay(void)
 {
+	if (!m_ScreenReady)
+	{
+		return;
+	}
+
 	WriteScreenText("\x1b[1;1H                                                                                                                                ");
 	WriteScreenText("\x1b[2;1H                                                                                                                                ");
 	WriteScreenText("\x1b[3;1H                                                                                                                                ");
@@ -4880,12 +5369,57 @@ void CComboKernel::ClearDebugOverlay(void)
 
 void CComboKernel::WriteScreenText(const char *text)
 {
-	if (text == 0)
+	if (text == 0 || !m_ScreenReady)
 	{
 		return;
 	}
 
 	m_Screen.Write(text, strlen(text));
+}
+
+void CComboKernel::SystemThrottledHandler(TSystemThrottledState state, void *param)
+{
+	if (param == 0)
+	{
+		return;
+	}
+
+	((CComboKernel *) param)->HandleSystemThrottled(state);
+}
+
+void CComboKernel::HandleSystemThrottled(TSystemThrottledState state)
+{
+	CString line;
+	line.Format("Throttle event: %s state=0x%08X",
+		ThrottleStateLabel(state),
+		(unsigned) state);
+	m_Logger.Write(FromKernel, LogWarning, line);
+	LogCpuClockStatus("THR");
+}
+
+void CComboKernel::LogCpuClockStatus(const char *phase)
+{
+	const unsigned arm_hz = m_CPUThrottle.GetClockRate();
+	const unsigned core_hz = CMachineInfo::Get()->GetClockRate(CLOCK_ID_CORE);
+	const unsigned temp_c = m_CPUThrottle.GetTemperature();
+	const unsigned min_hz = m_CPUThrottle.GetMinClockRate();
+	const unsigned max_hz = m_CPUThrottle.GetMaxClockRate();
+	CBcmPropertyTags tags;
+	TPropertyTagSimple throttled;
+	throttled.nValue = 0u;
+	const boolean throttled_ok = tags.GetTag(PROPTAG_GET_THROTTLED, &throttled, sizeof throttled, 4);
+
+	CString line;
+	line.Format("CLK %s ARM:%u CORE:%u TEMP:%u DYN:%u RNG:%u-%u THR:%08X",
+		phase != 0 ? phase : "-",
+		arm_hz / 1000000u,
+		core_hz / 1000000u,
+		temp_c,
+		m_CPUThrottle.IsDynamic() ? 1u : 0u,
+		min_hz / 1000000u,
+		max_hz / 1000000u,
+		throttled_ok ? throttled.nValue : 0u);
+	m_Logger.Write(FromKernel, LogNotice, line);
 }
 
 void CComboKernel::BootTrace(const char *tag)

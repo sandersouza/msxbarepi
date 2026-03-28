@@ -41,7 +41,8 @@ make DEBUG=0
 - `F6`: mute/unmute `Layer 1` (PSG + ruido).
 - `F7`: mute/unmute `Layer 2` (FM-PAC).
 - `F8`: mute/unmute `Layer 3` (Konami SCC+).
-- `F10`: liga/desliga as telemetrias UART frequentes ainda ativas (`SCC EVT`, `AUD EVT`, `KMG EVT`, `VDP EVT`).
+- `F10`: mantém o toggle de `UART Log` reservado para futuras fases de debug, mas a fase atual nao emite mais telemetria periódica de performance.
+  - O baseline atual da UART fica reduzido aos marcadores de boot (`BT0..BT12`) e a eventos pontuais/criticos.
 - `F9`: sem uso na build atual.
 
 ## Tag de build na tela
@@ -216,14 +217,19 @@ Diretriz visual (overlay e menu):
 - Para o freeze do `SMANBOW2` em `PC:C698/C699`, `TM6C` e a linha de maior valor diagnostico: ela mostra se a pagina `4000h` continua apontando para o cart, quais bancos estao ativos e se a Flash realmente recebeu/programou/leu o offset esperado (`0x70000+`).
 - Em paralelo, o kernel emite telemetria UART adicional focada em VDP:
   - `VDP EVT`: eventos da janela rastreada com `PC`, scanline, fase de linha, alvo de `IE1`, `R#19/R#23` e I/O de VDP (`0x98`, `0x99` address/register). Em `Knightmare Gold`, a janela aparece como `W=KG` e fica ativa durante a gameplay em `screen mode 4` quando o disco carregado contem `kmaregold`/`kmare`.
-  - Observacao: `AUDQ` foi removido da UART; o diagnostico de audio permanece apenas no overlay.
+  - `CLK`: leitura do estado de clock/throttle do firmware:
+    - `ARM:<mhz>`: clock ARM reportado pelo firmware.
+    - `CORE:<mhz>`: clock CORE reportado pelo firmware.
+    - `TEMP:<c>`: temperatura atual do SoC.
+    - `DYN:<0|1>`: se `CCPUThrottle` está ativo com faixa dinâmica válida.
+    - `RNG:<min>-<max>`: faixa mínima/máxima de clock ARM exposta pelo firmware.
+    - `THR:<hex>`: máscara crua de `PROPTAG_GET_THROTTLED`, incluindo bits atuais e ocorridos.
 - A trilha UART experimental de audio do `SMANBOW2` (`SCC EVT` / `AUD EVT`) foi congelada para futuro na issue `#220`.
   - O codigo de instrumentacao foi preservado para reativacao futura.
-  - `F10` agora controla apenas a emissao dessas telemetrias UART frequentes.
+  - `F10` permanece como chave reservada para reativacao futura de telemetria direcionada.
   - O fluxo antigo de snapshot manual/telemetry view por `F9/F10` foi removido.
-  - No estado atual, ela fica desabilitada por compile-time e nao emite logs em runtime.
-- A telemetria `AUDQ ...` da UART foi desativada depois que o diagnostico da fila de audio foi fechado.
-- Os contadores de audio continuam visiveis no overlay (`EV1/EV2/JY2`) para consulta local sem flood de UART.
+  - No estado atual, a UART fica propositalmente enxuta e nao emite logs periódicos de performance.
+- Os contadores de audio e pacing continuam visiveis no overlay (`EV1/EV2/JY2`) para consulta local sem depender da UART.
 
 ## Arquitetura (modular)
 - Renderer da debug layer desacoplado em objeto plugavel:

@@ -19,11 +19,11 @@
 extern void fmsx_psg_render_reset_state(void);
 
 #ifndef MSXBARE_FMSX_PSG_MELODIC_BALANCE_PCT
-#define MSXBARE_FMSX_PSG_MELODIC_BALANCE_PCT 102
+#define MSXBARE_FMSX_PSG_MELODIC_BALANCE_PCT 100
 #endif
 
 #ifndef MSXBARE_FMSX_PSG_NOISE_BALANCE_PCT
-#define MSXBARE_FMSX_PSG_NOISE_BALANCE_PCT 106
+#define MSXBARE_FMSX_PSG_NOISE_BALANCE_PCT 100
 #endif
 
 static int ApplyPsgBalancePct(int volume, int channel)

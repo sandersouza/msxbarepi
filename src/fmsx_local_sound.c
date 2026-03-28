@@ -16,6 +16,7 @@
 #include "Sound.h"
 #include "MSX.h"
 #include "fmsx_audio_layout.h"
+#include "fmsx_local_ym2413_bluemsx.h"
 #include "fmsx_runtime.h"
 #include "fmsx_local_scc_render.h"
 
@@ -65,42 +66,40 @@ int MasterVolume      = 192;      /* Master volume                    */
 extern YM2413_NukeYKT OPLL_NukeYKT;
 extern YM2413 OPLL;
 
-#ifndef MSXBARE_FMSX_SCC_HARMAN_SHELF_EXTRA_PCT
+#ifndef MSXBARE_FMSX_BUS_UNITY_GAIN_PCT
+#define MSXBARE_FMSX_BUS_UNITY_GAIN_PCT 100
+#endif
+
+#ifndef MSXBARE_FMSX_BUS_HARMAN_SHELF_EXTRA_PCT
 /*
- * Harman-inspired voicing for the SCC bus: keep PSG/FM-PAC as loudness
- * reference and apply only a gentle low-shelf on the summed SCC output.
- * +26% ~= +2.0dB low-shelf gain.
+ * Apply the same gentle Harman-inspired low shelf to every synthesized bus so
+ * PSG/FM/SCC share the same tonal contour in the final mix.
  */
-#define MSXBARE_FMSX_SCC_HARMAN_SHELF_EXTRA_PCT 26
+#define MSXBARE_FMSX_BUS_HARMAN_SHELF_EXTRA_PCT 16
+#endif
+
+#ifndef MSXBARE_FMSX_SCC_HARMAN_SHELF_EXTRA_PCT
+#define MSXBARE_FMSX_SCC_HARMAN_SHELF_EXTRA_PCT MSXBARE_FMSX_BUS_HARMAN_SHELF_EXTRA_PCT
 #endif
 
 #ifndef MSXBARE_FMSX_SCC2_HARMAN_SHELF_EXTRA_PCT
-/*
- * The secondary SCC+ in dual-cart setups is currently used as a voice/sample
- * carrier in GRADIUS1E. Keep its voicing flatter so the speech stays clearer
- * against the primary SCC music bed.
- */
-#define MSXBARE_FMSX_SCC2_HARMAN_SHELF_EXTRA_PCT 6
+#define MSXBARE_FMSX_SCC2_HARMAN_SHELF_EXTRA_PCT MSXBARE_FMSX_BUS_HARMAN_SHELF_EXTRA_PCT
 #endif
 
 #ifndef MSXBARE_FMSX_PSG_HARMAN_SHELF_EXTRA_PCT
-#define MSXBARE_FMSX_PSG_HARMAN_SHELF_EXTRA_PCT 16
+#define MSXBARE_FMSX_PSG_HARMAN_SHELF_EXTRA_PCT MSXBARE_FMSX_BUS_HARMAN_SHELF_EXTRA_PCT
 #endif
 
 #ifndef MSXBARE_FMSX_FM_HARMAN_SHELF_EXTRA_PCT
-#define MSXBARE_FMSX_FM_HARMAN_SHELF_EXTRA_PCT 10
+#define MSXBARE_FMSX_FM_HARMAN_SHELF_EXTRA_PCT MSXBARE_FMSX_BUS_HARMAN_SHELF_EXTRA_PCT
 #endif
 
 #ifndef MSXBARE_FMSX_SCC2_GAIN_PCT
-/*
- * Dual-SCC voice content sounded buried compared to the primary SCC music.
- * Apply a modest bus gain bump only to the secondary chip.
- */
-#define MSXBARE_FMSX_SCC2_GAIN_PCT 125
+#define MSXBARE_FMSX_SCC2_GAIN_PCT MSXBARE_FMSX_BUS_UNITY_GAIN_PCT
 #endif
 
 #ifndef MSXBARE_FMSX_SCC_BALANCE_PCT
-#define MSXBARE_FMSX_SCC_BALANCE_PCT 60
+#define MSXBARE_FMSX_SCC_BALANCE_PCT 100
 #endif
 
 #define MSXBARE_FMSX_BUS_HARMAN_ALPHA_NUM 16
@@ -124,9 +123,9 @@ typedef struct
 
 static fmsx_bus_voicing_t g_BusVoicing[MIX_BUS_COUNT] =
 {
-  { 100, MSXBARE_FMSX_PSG_HARMAN_SHELF_EXTRA_PCT,  0 },
-  { 100, MSXBARE_FMSX_FM_HARMAN_SHELF_EXTRA_PCT,   0 },
-  { 100, MSXBARE_FMSX_SCC_HARMAN_SHELF_EXTRA_PCT,  0 },
+  { MSXBARE_FMSX_BUS_UNITY_GAIN_PCT, MSXBARE_FMSX_PSG_HARMAN_SHELF_EXTRA_PCT,  0 },
+  { MSXBARE_FMSX_BUS_UNITY_GAIN_PCT, MSXBARE_FMSX_FM_HARMAN_SHELF_EXTRA_PCT,   0 },
+  { MSXBARE_FMSX_BUS_UNITY_GAIN_PCT, MSXBARE_FMSX_SCC_HARMAN_SHELF_EXTRA_PCT,  0 },
   { MSXBARE_FMSX_SCC2_GAIN_PCT, MSXBARE_FMSX_SCC2_HARMAN_SHELF_EXTRA_PCT, 0 }
 };
 
@@ -353,6 +352,14 @@ static void RenderPsgToMix(int *PsgWave,unsigned int Samples)
       PsgWave[index] += 9 * g_PsgRender.daVolume;
     }
   }
+}
+
+static void RenderFmToMix(int *FmWave,unsigned int Samples)
+{
+  const unsigned fm_mask = ((1u << YM2413_CHANNELS) - 1u) << FIRST_YM2413_CHANNEL;
+
+  if(!FmWave || !Samples || !SndRate) return;
+  fmsx_bluemsx_ym2413_render(FmWave,Samples,(MasterSwitch & fm_mask) != 0);
 }
 
 static int fmsx_scc_filter4(TFmsxLocalSccRenderState *S,int in1,int in2,int in3,int in4)
@@ -736,6 +743,7 @@ unsigned int InitSound(unsigned int Rate)
 
   /* Done */
   SetChannels(MasterVolume,MasterSwitch);
+  fmsx_bluemsx_ym2413_set_sample_rate(Rate);
   return(SndRate=Rate);
 }
 
@@ -770,6 +778,9 @@ static void RenderAudio(int *Wave,unsigned int Samples)
     {
       if((J>=FIRST_AY8910_CHANNEL)
       && (J<(FIRST_AY8910_CHANNEL+AY8910_CHANNELS))) continue;
+
+      if((J>=FIRST_YM2413_CHANNEL)
+      && (J<(FIRST_YM2413_CHANNEL+YM2413_CHANNELS))) continue;
 
       if((J>=FIRST_SCC_CHANNEL)
       && (J<(FIRST_SCC_CHANNEL+FMSX_TOTAL_SCC_CHANNELS))) continue;
@@ -921,6 +932,7 @@ static void RenderAudio(int *Wave,unsigned int Samples)
     }
 
   RenderPsgToMix(PsgWave,Samples);
+  if(!OPTION(MSX_NUKEYKT)) RenderFmToMix(FmWave,Samples);
   RenderSccChipToMix(
     fmsx_scc_get_render_state(FMSX_SCC_CHIP_PRIMARY),
     FMSX_SCC_CHIP_PRIMARY,

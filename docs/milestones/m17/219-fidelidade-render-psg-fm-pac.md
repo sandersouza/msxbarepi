@@ -39,14 +39,377 @@ Abrir uma trilha separada para melhorar a fidelidade de render do `PSG` e do `FM
 
 ## DoR
 - [ ] Capturas A/B ou baseline auditivo definidos para `PSG` e `FM-PAC`
-- [ ] Referências `openMSX` / `blueMSX` mapeadas para os chips alvo
-- [ ] Escopo da primeira iteração fechado sem conflitar com a milestone `SCC/SCC+`
+- [x] Referências `openMSX` / `blueMSX` mapeadas para os chips alvo
+- [x] Escopo da primeira iteração fechado sem conflitar com a milestone `SCC/SCC+`
 
 ## DoD
-- [ ] Gaps de fidelidade documentados por chip (`PSG` e `FM-PAC`)
-- [ ] Plano técnico da primeira iteração fechado com alvo claro de implementação
+- [x] Gaps de fidelidade documentados por chip (`PSG` e `FM-PAC`)
+- [x] Plano técnico da primeira iteração fechado com alvo claro de implementação
 - [ ] Sem regressão no mix aprovado atual de `SCC/SCC+`
 - [ ] Espelho local e issue remota sincronizados
+
+## Rodada atual
+- Diagnóstico inicial fechado com `Xevious` como caso reprodutor de `PSG + FM-PAC`.
+- Conclusão: o problema principal não estava no `PSG`; o `FM-PAC` default ainda seguia o core simples do `fMSX`, que ignora instrumentos e `user tone`.
+- Tentativa validada e revertida:
+  - ativar `NukeYKT` por padrão confirmou a hipótese de fidelidade, mas derrubou o frame pacing para ~31fps no hardware alvo;
+  - por isso, o default global foi revertido nesta mesma rodada.
+- Rodada seguinte:
+  - com o pacing restaurado, o sintoma refinado passou a ser mascaramento do `PSG` quando `FM-PAC` está ativo no `Xevious`;
+  - o renderer local do `PSG` permaneceu alinhado ao caminho mono do `blueMSX`, então o próximo suspeito passou a ser o ganho/timbre do `FM` simples.
+- Corte incremental atual:
+  - manter `NukeYKT` fora do default;
+  - reduzir o ganho default do layer `FM` para `80%` e validar se o `PSG` reaparece sem regressão de performance.
+- Rodada seguinte fechada no código:
+  - o `FM-PAC` default sai do `YM2413` simples do `fMSX` e passa a usar um wrapper local do core `OpenMsxYM2413_2` (`blueMSX/openMSX`);
+  - o `FM` deixa de passar pelo mixer genérico `SND_MELODIC` e ganha bus dedicado em `src/fmsx_local_sound.c`;
+  - a rodada seguinte remove as compensações escondidas por chip (`PSG` e `SCC` em `100%`, `FM` nominal do `blueMSX`) e passa a aplicar a mesma curva `Harman-inspired` a `PSG/FM/SCC/SCC2`, com ganho unitário em todos os buses;
+  - `load state` passa a reconstruir explicitamente o estado do `FM` a partir dos registradores `OPLL`, evitando divergência entre save-state e síntese real.
+- Rodada de suporte ao pacing, fechada no kernel sem mudar contrato visual:
+  - `BlitFmsxFrame()` passa a flushar o framebuffer por linha e largura exata, em vez de invalidar grandes áreas contínuas com padding de `pitch`;
+  - scanlines duplicadas reaproveitam a linha já renderizada quando `dst_y` consecutivos mapeiam para o mesmo `src_y` e o mesmo `dim_mode`;
+  - `FillRect565()` ficou mais barato para clears de letterbox;
+  - `RefillAudioQueue()` limita refill não urgente quando o frame já está atrasado e a fila ainda está acima de `low_water`.
+- Validação local da rodada:
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: 95155be-95155be3a7fd865c8f478ae9965b14750866da0a`
+  - `BUILD_BID: 202603270952-95155be`
+  - `BUILD_ID: 957D`
+- Feedback de hardware da rodada `957D`:
+  - a estratégia piorou o pacing percebido no cenário real de `Scale` alto;
+  - a `957D` deixa de ser baseline desta trilha.
+- Rodada corretiva seguinte:
+  - `RefillAudioQueue()` volta ao comportamento anterior, sem throttle especial para frame atrasado;
+  - o flush do framebuffer vira híbrido: contíguo em retângulos largos, por linha apenas em faixas estreitas;
+  - `CopyLine565()` passa a usar cópia packed local em vez de `memcpy()` genérico;
+  - reaproveitamento de scanlines duplicadas e `FillRect565()` otimizado foram mantidos.
+- Validação local da rodada corretiva:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: 95155be-95155be3a7fd865c8f478ae9965b14750866da0a`
+  - `BUILD_BID: 202603271003-95155be`
+  - `BUILD_ID: 04D3`
+- Feedback de hardware da rodada `04D3`:
+  - o rollback parcial piorou ainda mais o cenário;
+  - a trilha experimental inteira foi descartada.
+- Rodada seguinte:
+  - `src/kernel.cpp` voltou integralmente ao baseline anterior a qualquer tentativa desta trilha de otimização;
+  - `957D` e `04D3` permanecem apenas como referências de regressão.
+- Validação local do rollback total:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: 95155be-95155be3a7fd865c8f478ae9965b14750866da0a`
+  - `BUILD_BID: 202603271010-95155be`
+  - `BUILD_ID: 26E3`
+- Rodada seguinte:
+  - em vez de nova otimização, o kernel ganhou instrumentação UART periódica controlada por `F10` para diferenciar gargalo de áudio (`AUDQ`) de gargalo de pacing/blit (`VIDP`);
+  - a hipótese atual é que a queda não seja custo fixo do `Scale`, mas mudança de regime quando a gameplay entra.
+- Validação local da rodada de instrumentação:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: 95155be-95155be3a7fd865c8f478ae9965b14750866da0a`
+  - `BUILD_BID: 202603271023-95155be`
+  - `BUILD_ID: 3E8F`
+- Leitura do log `3E8F`:
+  - a virada acontece em `00:00:57.23`, quando `VIDP` salta de regime estável para `C:2/2`, `S:8291/8604` e `B:9999/9999`;
+  - a fila HDMI ainda segue cheia nessa janela, então a trilha de áudio não é a causa primária;
+  - os sintomas de `AUDIOQ` aparecem depois, como dano secundário do loop já atrasado.
+- Rodada seguinte:
+  - sem mexer em pacing nem em política de refill, o kernel ganhou telemetria mais fina:
+    - `AUDR` para quebrar `RefillAudioQueue()` em `audio_pull`, mistura local, `Write()` HDMI e frames sem retorno do backend;
+    - `VIDB` para quebrar `BlitFmsxFrame()` em fetch/viewport, clears, mapa `x/y`, draw e flush;
+    - `VIDP/VIDB` deixam de emitir amostra ociosa quando a emulação está pausada ou sem frame novo.
+- Validação local da telemetria fina:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: 95155be-95155be3a7fd865c8f478ae9965b14750866da0a`
+  - `BUILD_BID: 202603271100-95155be`
+  - `BUILD_ID: 6A87`
+- Feedback de hardware da `6A87`:
+  - a build passou a travar no boot logo após `Boot step: init USB`;
+  - a rodada de telemetria fina foi invalidada antes mesmo de chegar ao loop principal.
+- Rodada corretiva:
+  - removidos `AUDR` e `VIDB`;
+  - `BlitFmsxFrame()` e `RefillAudioQueue()` voltam ao shape anterior da `3E8F`;
+  - a investigação continua com `AUDQ` + `VIDP`, porque o diagnóstico já fechado do log `3E8F` continua útil: a queda entra em `step/blit` antes de aparecer no áudio.
+- Validação local do rollback:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: 95155be-95155be3a7fd865c8f478ae9965b14750866da0a`
+  - `BUILD_BID: 202603271109-95155be`
+  - `BUILD_ID: 94FA`
+- Leitura do log da `94FA`:
+  - a quebra continua abrindo em `00:00:57.22`, com `VIDP` indo de regime normal para `C:2/2`, `L:9999/9999`, `S:~9.8ms` e `B:9999`;
+  - a `AUDIOQ` ainda está cheia nessa transição e a ring seca só depois, confirmando que áudio continua sendo sintoma secundário.
+- Rodada seguinte:
+  - em vez de reabrir telemetria fina no kernel, a instrumentação foi movida para dentro de `fmsx_runtime_step_frame()`;
+  - nova linha UART `VRTM` expõe:
+    - steps pedidos;
+    - frames concluídos;
+    - slices usados;
+    - custo do trecho `RunZ80`;
+    - custo de `RenderAndPlayAudio()`;
+    - samples enviados para render de áudio;
+    - contagem de frames não fechados dentro do limite de slices.
+- Validação local da rodada `VRTM`:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: 95155be-95155be3a7fd865c8f478ae9965b14750866da0a`
+  - `BUILD_BID: 202603271125-95155be`
+  - `BUILD_ID: 3F4D`
+- Leitura de hardware da `3F4D`:
+  - a queda continua abrindo perto de `00:00:54.21` e o pause de referência veio em `00:00:58.51`;
+  - porém a telemetria `VRTM` ficou zerada em toda a captura, invalidando essa build para separar custo de `RunZ80` e `RenderAndPlayAudio()`.
+- Correção seguinte:
+  - o `kernel` passa a sincronizar `SetUartTelemetryEnabled(m_UartTelemetryEnabled)` ainda no boot, para que `VRTM` herde o estado efetivo de `F10` mesmo quando a UART já nasce ligada por default;
+  - o ícone de `undervoltage` visto em campo passa a ser tratado como confounder real de performance, devendo ser verificado em paralelo com a nova captura.
+- Validação local da correção:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: 95155be-95155be3a7fd865c8f478ae9965b14750866da0a`
+  - `BUILD_BID: 202603271140-95155be`
+  - `BUILD_ID: 93FE`
+- Captura seguinte com alimentação estável:
+  - o sintoma permaneceu igual, então a suspeita principal deixa de ser `undervoltage`;
+  - `VRTM` mostrou que `RenderAndPlayAudio()` continua fora do caminho crítico (`A:0/0`) e que o custo que explode é o `Z` do slice único de `RunZ80`.
+- Rodada atual:
+  - `src/fmsx_local/MSX.c` agora quebra `RunZ80()` em subfases reais:
+    - `P` = `PutImage()`;
+    - `V` = `LoopVDP()`;
+    - `R` = render VDP (`fmsx_vdp_render_scanline()` + parcial de `screen 4`);
+    - `L` = bloco especial de `ScanLine==192`;
+    - `C` = residual do core depois de descontar `P/V/R/L`.
+  - `src/kernel.cpp` volta a expor `VIDB`, agora em buckets seguros:
+    - `P` = fetch/viewport;
+    - `C` = clears;
+    - `M` = mapa `x/y`;
+    - `D` = draw;
+    - `F` = flush.
+- Validação local da rodada atual:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603271215-c4dd79a`
+  - `BUILD_ID: E0B5`
+- Leitura consolidada da `E0B5` com fonte estável:
+  - a quebra continua abrindo em `VIDP`, antes da degradação da `AUDQ`;
+  - `VRTM` mostrou alta simultânea em `C` (residual do core) e `R` (renderer VDP);
+  - `VIDB` mostrou `D` saturando, com `P/C/M/F` ainda pequenos.
+- Rodada atual:
+  - `src/fmsx_local/Common.h` passa a separar o renderer de `screen 4` em:
+    - `BG` = custo do background/composição;
+    - `SP` = custo da preparação de sprites (`ColorSprites`);
+  - `src/kernel.cpp` mantém `VIDB D` como draw total, mas adiciona `VIDD`:
+    - `S` = preparo de shade/cache para `CRT dim`;
+    - `W` = escrita efetiva aproximada no framebuffer (`D-S`).
+- Validação local da rodada atual:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272033-c4dd79a`
+  - `BUILD_ID: 7EC4`
+- Leitura consolidada da `7EC4`:
+  - o primeiro degrau da quebra vem do blit (`VIDB D` e `VIDD W` saturam antes de `Z`);
+  - `VIDD S` ficou zerado, descartando custo de `CRT dim`/shade;
+  - `BG/SP` ficaram zerados, indicando que o renderer ativo não é `screen 4`.
+- Rodada atual:
+  - `VRTM` passa a carregar `SM` (`ScrMode`) no próprio UART;
+  - `src/fmsx_local/Common.h` instrumenta `RefreshLine5()` em buckets próprios:
+    - `VRM5 B` = bitmap/background/composição;
+    - `VRM5 S` = preparação de sprites.
+- Validação local da rodada atual:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272050-c4dd79a`
+  - `BUILD_ID: 8367`
+- Leitura consolidada da `8367`:
+  - `SM:5` confirmou que o repro está em `SCREEN 5`;
+  - `VRM5` praticamente explica o bucket `R`, então a dúvida restante ficou concentrada no residual `C`;
+  - a próxima separação precisa distinguir CPU puro de `RunZ80()` contra housekeeping no callback `LoopZ80()`.
+- Rodada atual:
+  - `src/fmsx_local/MSX.c` cronometra `LoopZ80()` como callback total e separa:
+    - drenagem de teclado;
+    - manutenção periódica de áudio;
+  - `src/fmsx_runtime.c` / `src/fmsx_runtime.h` agregam novos buckets:
+    - `loop_callback_us`;
+    - `cpu_core_only_us`;
+    - `loop_audio_maint_us`;
+    - `loop_keyboard_us`;
+    - `loop_misc_us`;
+  - `src/kernel.cpp` expõe a nova linha UART `VRCL`:
+    - `LO` = callback total `LoopZ80()`;
+    - `CPU` = `RunZ80()` fora do callback;
+    - `AU` = manutenção periódica de áudio;
+    - `KB` = drenagem de teclado;
+    - `MI` = residual do callback.
+- Validação local da rodada atual:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272109-c4dd79a`
+  - `BUILD_ID: D84F`
+- Leitura consolidada da `D84F`:
+  - o bucket `CPU` do `VRCL` domina claramente o residual ruim;
+  - `AU` e `KB` continuam pequenos, então o callback `LoopZ80()` deixou de ser suspeito principal;
+  - o próximo corte precisa abrir o `CPU` puro entre memória/IO e residual de execução.
+- Rodada atual:
+  - `src/fmsx_local/Z80.c` mede direto no core:
+    - `MR` = leituras de memória/opcode;
+    - `MW` = escritas de memória;
+    - `IR` = leituras de portas;
+    - `IW` = escritas de portas;
+  - `src/fmsx_runtime.c` / `src/fmsx_runtime.h` agregam esses buckets e calculam `EX` como residual do loop de execução do core;
+  - `src/kernel.cpp` expõe as novas linhas UART `VRIO` e `VRIX`.
+- Validação local da rodada atual:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272125-c4dd79a`
+  - `BUILD_ID: 4E7B`
+- Leitura consolidada da `4E7B`:
+  - a telemetria por tempo em `Rd/Wr/In/Out` derrubou o emulador já no boot;
+  - `VIDP` nasceu saturado em `~34-38 FPS`, então a rodada ficou inválida para diagnóstico;
+  - `VRIO/VRIX` mediam principalmente o custo do observador.
+- Rodada atual:
+  - `src/fmsx_local/Z80.c` volta ao baseline anterior, sem cronômetro por acesso;
+  - `src/fmsx_local/MSX.c` passa a contar acessos de baixo overhead em `RdZ80/WrZ80/InZ80/OutZ80`, fora do callback `LoopZ80()`;
+  - `src/fmsx_runtime.c` / `src/fmsx_runtime.h` agregam esses contadores por `step_frame()`;
+  - `src/kernel.cpp` substitui `VRIO/VRIX` pela nova linha UART `VRCN`.
+- Validação local da rodada atual:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272139-c4dd79a`
+  - `BUILD_ID: A8DE`
+- Leitura consolidada da `A8DE`:
+  - a build passou a nascer lenta desde o boot, antes mesmo do ponto de choke em gameplay;
+  - isso invalidou `VRCN` como instrumento de diagnóstico, porque o observador voltou a contaminar o baseline.
+- Rodada atual:
+  - `src/fmsx_local/MSX.c` remove os contadores por acesso em `RdZ80/WrZ80/InZ80/OutZ80`;
+  - `src/fmsx_runtime.c` / `src/fmsx_runtime.h` deixam de agregar/exportar os buckets de `VRCN`;
+  - `src/kernel.cpp` remove a linha UART `VRCN` e retorna ao pacote de telemetria da `D84F`.
+- Validação local da rodada atual:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272150-c4dd79a`
+  - `BUILD_ID: AAF9`
+- Leitura consolidada da `AAF9`:
+  - remover `VRCN` não bastou; o boot continuou lento;
+  - o log ainda veio com `timer: SpeedFactor is 1.51`, reforçando a hipótese de clock ARM baixo no boot.
+- Rodada atual:
+  - `src/kernel.h` passa a incluir `CCPUThrottle` no kernel;
+  - `src/kernel.cpp` registra handler de `throttled state`, chama `m_CPUThrottle.Update()` no loop principal e loga `CLK BT1 ARM/CORE/TEMP/RNG/THR`;
+  - isso faz o `fast=true` já existente em `sdcard/cmdline.txt` finalmente valer no Pi 3, conforme o contrato do Circle.
+- Validação local da rodada atual:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272207-c4dd79a`
+  - `BUILD_ID: C367`
+- Leitura consolidada da `C367`:
+  - o boot voltou ao regime saudável, com `SpeedFactor 3.03` e ~`60 FPS` na entrada;
+  - o choke antigo continua, reabrindo em `00:00:57.17` com o mesmo salto de `Z/R/VRM5/VIDB D`;
+  - o firmware ainda registrou `Throttle event ... state=0x00050000` logo na entrada do loop principal.
+- Rodada atual:
+  - `src/kernel.cpp` passa a forçar `CPUSpeedMaximum` explicitamente após `BT1`;
+  - a linha `CLK` entra também no pacote periódico do `F10`, para correlacionar `ARM/CORE/THR` com o instante da queda de FPS.
+- Leitura consolidada da `7E07`:
+  - o boot entra saudável (`SpeedFactor 3.03`, `ARM:1200`);
+  - o ARM cai para `600MHz` em `00:00:11.48` e permanece assim muito antes do choke em gameplay;
+  - mesmo em `600MHz`, o emulador ainda segura `~60 FPS` até `~57s`, quando a carga maior de `SM:5` reabre o gargalo clássico de `RunZ80 + VRM5 + blit`.
+- Rodada atual:
+  - `sdcard/cmdline.txt` passa a explicitar `socmaxtemp=75` para evitar o downclock prematuro do `CCPUThrottle` no default implícito de `60C`;
+  - `sdcard/config.txt` passa a usar `arm_freq=1100` e `arm_freq_min=900`, fazendo o governor alternar entre `900` e `1100MHz` em vez de `600` e `1200MHz`;
+  - `sdcard/README.md` documenta `cmdline.txt` e `config.txt` como recomendados para os defaults de áudio/clock do projeto.
+- Validação local da rodada atual:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272230-c4dd79a`
+  - `BUILD_ID: C7F8`
+- Rodada atual:
+  - restaurados ao baseline da branch:
+    - `src/fmsx_local/Common.h`
+    - `src/fmsx_local/MSX.c`
+    - `src/fmsx_runtime.c`
+    - `src/fmsx_runtime.h`
+  - `src/kernel.cpp` / `src/kernel.h` preservam apenas `CCPUThrottle` e a telemetria leve de clock (`CLK`) junto de `AUDQ/VIDP/VRTM`.
+- Validação local da rodada atual:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272243-c4dd79a`
+  - `BUILD_ID: 1E0B`
+- Rodada atual:
+  - a UART periódica de performance desta fase foi desinstrumentada;
+  - `F10` permanece reservado, mas sem `AUDQ/VIDP/VRTM` e sem trilhas frequentes de `VDP/SCC/AUD/KMG`;
+  - a base UART volta a priorizar `BT0..BT12` e eventos críticos.
+- Validação local da rodada atual:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603272246-c4dd79a`
+  - `BUILD_ID: 38FF`
+- Rodada atual:
+  - o modo `Scanline CRT` foi ajustado para trabalhar no espaço da linha fonte do MSX:
+    - cada grupo de linhas de destino que representa a mesma linha do MSX passa a ser dividido em metade normal e metade escurecida;
+    - o renderer do viewport e o path de screenshot usam a mesma regra.
+- Objetivo:
+  - abandonar a referência implícita à paridade global do framebuffer/mailbox;
+  - deixar o padrão visual do `CRT` estável por linha do MSX mesmo em escalas maiores.
+- Rodada atual:
+  - o modo `CRT` também passa a arredondar os cantos do viewport com um mask discreto, usando o `letterbox` preto para dar leitura de tubo;
+  - o mesmo contorno é aplicado no screenshot do viewport para manter o fundo do menu de pausa consistente com o frame em tela.
+- Rodada atual:
+  - a altura usada no layout do viewport passa a ser normalizada por buckets canônicos estáveis (`243/256` e `486/512`), para impedir que pequenas oscilações de `src_h` façam o topo do `CRT` “respirar” entre frames.
+- Rodada atual:
+  - o modo `CRT` também ganha `black lift` discreto para `0x0000` dentro do viewport, simulando brilho residual do tubo sem alterar o `letterbox` externo.
+- Rodada atual:
+  - o box arredondado do `CRT` deixa de seguir recálculo frame a frame e passa a ficar latched por geometria real do viewport;
+  - enquanto largura lógica, bucket de altura `256/512`, tela, overscan e widescreen não mudarem, o contorno arredondado reaproveita o mesmo retângulo.
+- Rodada atual:
+  - o `CRT` também passa a aplicar histerese de `2px` no box arredondado;
+  - microvariações residuais do viewport deixam de substituir o contorno anterior, reduzindo o flicker mais visível no topo.
+- Rodada atual:
+  - o clamp máximo de `Scale` no `CRT` passa a ser derivado do aspect ratio final (`4:3` ou `16:9`), e não da largura variável do frame fonte;
+  - isso elimina os casos em que a borda mudava mesmo sem mudança visual real de layout.
+- Rodada atual:
+  - a moldura do `CRT` passa a ficar totalmente congelada por família de layout;
+  - enquanto bucket `256/512`, tela, overscan e widescreen não mudarem, o box arredondado não aceita mais nenhuma microvariação frame a frame.
+- Rodada atual:
+  - como última tentativa antes de remover o rounded border, o topo do `CRT` ganha um pequeno bezel interno fixo;
+  - a curvatura superior passa a depender mais da própria moldura e menos do conteúdo do frame nas primeiras linhas.
+- Rodada atual:
+  - a borda arredondada do `CRT` foi removida;
+  - o efeito mantém o split `50/50` por linha do MSX e o `black lift`, mas volta a usar contorno reto por estabilidade visual.
+- Validação local da rodada atual:
+  - `./scripts/check-third-party-pristine.sh` OK
+  - `make -j4` OK
+  - artefatos gerados: `artifacts/kernel8-default.img` e `artifacts/kernel8-issue219.img`
+  - `BUILD_HASH: c4dd79a-c4dd79a6001d7446bd09b3a57945eef798a76b56`
+  - `BUILD_BID: 202603281449-c4dd79a`
+  - `BUILD_ID: FCF3`
 
 ## Referências iniciais
 - `src/fmsx_local_sound.c`
@@ -55,3 +418,5 @@ Abrir uma trilha separada para melhorar a fidelidade de render do `PSG` e do `FM
 - `third_party/fmsx/EMULib/YM2413.c`
 - `third_party/openMSX/src/sound/`
 - `third_party/bluemsx/blueMSX/Src/SoundChips/`
+- `third_party/bluemsx/blueMSX/Src/SoundChips/OpenMsxYM2413_2.h`
+- `third_party/bluemsx/blueMSX/Src/SoundChips/OpenMsxYM2413_2.cpp`

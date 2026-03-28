@@ -4,6 +4,10 @@
 #include <stddef.h>
 #include <stdarg.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct FILE {
 	const unsigned char *data;
 	size_t size;
@@ -35,5 +39,9 @@ long ftell(FILE *stream);
 int feof(FILE *stream);
 int fgetc(FILE *stream);
 int fputc(int c, FILE *stream);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

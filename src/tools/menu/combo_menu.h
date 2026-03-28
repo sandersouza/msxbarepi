@@ -26,6 +26,8 @@ public:
     unsigned GetRefreshRateHz(void) const;
     void SetDiskRomEnabled(boolean enabled);
     boolean IsDiskRomEnabled(void) const;
+    void SetKanjiRomEnabled(boolean enabled);
+    boolean IsKanjiRomEnabled(void) const;
     void SetBootMode(unsigned mode);
     unsigned GetBootMode(void) const;
     void SetMachineProfile(unsigned profile);
@@ -57,6 +59,7 @@ public:
     void OpenGameMaster(TGameMasterCatalog *catalog, unsigned load_status, unsigned error_line);
     unsigned GetAudioGainPercent(void) const;
     boolean IsInSettings(void) const;
+    void ReturnToRoot(void);
     void RequestRedraw(void);
     void InvalidateViewportSnapshot(void);
     void CaptureViewportSnapshot(CGfxTextBoxRenderer *renderer, unsigned x, unsigned y, unsigned w, unsigned h);
@@ -81,12 +84,13 @@ private:
     enum TMenuView {
         MenuViewRoot = 0,
         MenuViewSettings = 1,
-        MenuViewLoadRom = 2,
-        MenuViewLoadRomBrowser = 3,
-        MenuViewLoadDisk = 4,
-        MenuViewLoadDiskBrowser = 5,
-        MenuViewGameMasterBrowser = 6,
-        MenuViewGameMasterCheats = 7
+        MenuViewDebug = 2,
+        MenuViewLoadRom = 3,
+        MenuViewLoadRomBrowser = 4,
+        MenuViewLoadDisk = 5,
+        MenuViewLoadDiskBrowser = 6,
+        MenuViewGameMasterBrowser = 7,
+        MenuViewGameMasterCheats = 8
     };
     static void CopySmallText(char *dst, unsigned dst_size, const char *src);
     const TComboMenuItem *GetItems(unsigned *count) const;
@@ -113,6 +117,7 @@ private:
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;
     boolean m_DiskRomEnabled;
+    boolean m_KanjiRomEnabled;
     unsigned m_BootMode;
     unsigned m_MachineProfile;
     unsigned m_RamMapperKb;
@@ -171,6 +176,7 @@ private:
     unsigned m_LastDrawnScanlineMode;
     unsigned m_LastDrawnRefreshRateHz;
     boolean m_LastDrawnDiskRomEnabled;
+    boolean m_LastDrawnKanjiRomEnabled;
     unsigned m_LastDrawnBootMode;
     unsigned m_LastDrawnMachineProfile;
     unsigned m_LastDrawnRamMapperKb;
