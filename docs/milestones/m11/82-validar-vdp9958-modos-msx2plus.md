@@ -82,3 +82,11 @@ Resultado esperado: sem regressão visual óbvia fora do perfil MSX2+.
 - Ajuste visual de máscara em SCREEN 6/7 (narrow+wide): pixels da faixa mascarada usam a cor do backdrop scrolleado da própria linha, reduzindo diferença de tom entre bloco de ocultação e fundo.
 
 - Aceleracao cirurgica da fase de boot logo MSX2+: quando `PC` esta em `0x7A00-0x7FFF` (KANJIBASIC), `SM:06` e mascara esquerda (`R25 bit1`) ativa, `fmsx_runtime_step_frame()` executa burst de 6 frames por tick para reduzir tempo real de boot sem alterar runtime normal de jogos.
+
+## Iteração 2026-03-29 (branch `82-auditar-registradores-v9958`)
+
+- Repro reclassificado: `POKE -1,170` nao escreve em `R#1`; ele grava `0xAA` no seletor de subslot em `0xFFFF`.
+- Problema pratico tratado nesta rodada: no perfil `MSX2+`, esse `POKE` passou a desmontar a RAM de `8000h-FFFFh` porque a topologia atual usa `RAM mapper = 3-0` e `DISK.ROM = 3-2`.
+- Tentativa descartada:
+  - foi testado um alias de compatibilidade em `3-2` para manter RAM nas paginas `0`, `2` e `3` sem mover `DISK.ROM`;
+  - a hipotese falhou no hardware e foi revertida, entao o core permaneceu no baseline anterior enquanto a investigacao segue.
