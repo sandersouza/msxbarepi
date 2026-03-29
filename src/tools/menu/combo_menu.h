@@ -95,6 +95,7 @@ private:
         MenuViewGameMasterCheats = 8
     };
     static void CopySmallText(char *dst, unsigned dst_size, const char *src);
+    void ResetRepeatState(void);
     const TComboMenuItem *GetItems(unsigned *count) const;
     unsigned FindFirstSelectable(void) const;
     unsigned FindPrevSelectable(unsigned from) const;
@@ -216,6 +217,10 @@ private:
     unsigned m_LastBoxW;
     unsigned m_LastBoxH;
     boolean m_LastBoxValid;
+    unsigned m_UpHoldFrames;
+    unsigned m_DownHoldFrames;
+    unsigned m_LeftHoldFrames;
+    unsigned m_RightHoldFrames;
     boolean m_LastUpPressed;
     boolean m_LastDownPressed;
     boolean m_LastPageUpPressed;
