@@ -10,6 +10,42 @@ static const TScreenColor kPauseMenuBgColor = COLOR32(0, 0, 0x9B, 0xFF);
 static const TScreenColor kPauseMenuBgColor = COLOR16(0, 0, 0x9B >> 3);
 #endif
 
+static const unsigned kMenuRepeatDelayFrames = 12u;  /* ~200ms em 60Hz */
+static const unsigned kMenuRepeatPeriodFrames = 2u;  /* ~30 passos/s em 60Hz */
+
+static boolean ComboConsumeHoldRepeat(boolean pressed, boolean last_pressed, unsigned *hold_frames)
+{
+    if (hold_frames == 0)
+    {
+        return (pressed && !last_pressed) ? TRUE : FALSE;
+    }
+
+    if (pressed)
+    {
+        if (!last_pressed)
+        {
+            *hold_frames = 0u;
+            return TRUE;
+        }
+
+        ++*hold_frames;
+        if (*hold_frames >= kMenuRepeatDelayFrames)
+        {
+            const unsigned tick = *hold_frames - kMenuRepeatDelayFrames;
+            if ((tick % kMenuRepeatPeriodFrames) == 0u)
+            {
+                return TRUE;
+            }
+        }
+    }
+    else
+    {
+        *hold_frames = 0u;
+    }
+
+    return FALSE;
+}
+
 static char ComboToUpperAscii(char ch)
 {
     if (ch >= 'a' && ch <= 'z')
@@ -824,6 +860,10 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastBoxW(0),
     m_LastBoxH(0),
     m_LastBoxValid(FALSE),
+    m_UpHoldFrames(0u),
+    m_DownHoldFrames(0u),
+    m_LeftHoldFrames(0u),
+    m_RightHoldFrames(0u),
     m_LastUpPressed(FALSE),
     m_LastDownPressed(FALSE),
     m_LastPageUpPressed(FALSE),
@@ -875,6 +915,14 @@ CComboPauseMenu::~CComboPauseMenu(void)
     m_MenuBackbufferH = 0u;
     m_MenuBackbufferX = 0u;
     m_MenuBackbufferY = 0u;
+}
+
+void CComboPauseMenu::ResetRepeatState(void)
+{
+    m_UpHoldFrames = 0u;
+    m_DownHoldFrames = 0u;
+    m_LeftHoldFrames = 0u;
+    m_RightHoldFrames = 0u;
 }
 
 void CComboPauseMenu::ResetGameMasterState(void)
@@ -964,6 +1012,7 @@ void CComboPauseMenu::Reset(void)
     m_SuppressNextRender = FALSE;
     m_RequestBackgroundRestore = FALSE;
     m_LastBoxValid = FALSE;
+    ResetRepeatState();
     m_LastUpPressed = FALSE;
     m_LastDownPressed = FALSE;
     m_LastPageUpPressed = FALSE;
@@ -1955,6 +2004,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
 
     if (!paused)
     {
+        ResetRepeatState();
         m_LastBackPressed = back_pressed;
         m_LastUpPressed = up_pressed;
         m_LastDownPressed = down_pressed;
@@ -1971,6 +2021,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
     const TComboMenuItem *items = GetItems(&item_count);
     if (item_count == 0u)
     {
+        ResetRepeatState();
         m_LastBackPressed = back_pressed;
         m_LastUpPressed = up_pressed;
         m_LastDownPressed = down_pressed;
@@ -2009,6 +2060,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_ForceContentRedraw = FALSE;
         m_SuppressNextRender = silent_settings_back;
         m_RequestBackgroundRestore = silent_settings_back ? FALSE : TRUE;
+        ResetRepeatState();
         m_LastBackPressed = back_pressed;
         m_LastUpPressed = up_pressed;
         m_LastDownPressed = down_pressed;
@@ -2037,8 +2089,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             : CComboFileBrowser::kVisibleRows;
         const unsigned old_cheat_top = m_GameMasterCheatTop;
         const unsigned old_cheat_selected = m_GameMasterCheatSelected;
-        const boolean up_edge = (up_pressed && !m_LastUpPressed) ? TRUE : FALSE;
-        const boolean down_edge = (down_pressed && !m_LastDownPressed) ? TRUE : FALSE;
+        const boolean up_step = ComboConsumeHoldRepeat(up_pressed, m_LastUpPressed, &m_UpHoldFrames);
+        const boolean down_step = ComboConsumeHoldRepeat(down_pressed, m_LastDownPressed, &m_DownHoldFrames);
         const boolean page_up_edge = (page_up_pressed && !m_LastPageUpPressed) ? TRUE : FALSE;
         const boolean page_down_edge = (page_down_pressed && !m_LastPageDownPressed) ? TRUE : FALSE;
         const boolean left_edge = (left_pressed && !m_LastLeftPressed) ? TRUE : FALSE;
@@ -2047,13 +2099,13 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
 
         if (cheat_count > 0u)
         {
-            if (up_edge)
+            if (up_step)
             {
                 m_GameMasterCheatSelected = (m_GameMasterCheatSelected == 0u)
                     ? (cheat_count - 1u)
                     : (m_GameMasterCheatSelected - 1u);
             }
-            if (down_edge)
+            if (down_step)
             {
                 m_GameMasterCheatSelected = (m_GameMasterCheatSelected + 1u) % cheat_count;
             }
@@ -2136,8 +2188,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
 
         if (m_GameMasterCheatTop != old_cheat_top
                 || m_GameMasterCheatSelected != old_cheat_selected
-                || up_edge
-                || down_edge
+                || up_step
+                || down_step
                 || page_up_edge
                 || page_down_edge
                 || (jump_letter >= 'A' && jump_letter <= 'Z'))
@@ -2159,6 +2211,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
 
     if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser)
     {
+        ResetRepeatState();
         const unsigned old_browser_top = m_FileBrowser.GetTop();
         const unsigned old_browser_abs = m_FileBrowser.GetSelectedAbs();
         const unsigned old_browser_count = m_FileBrowser.GetCount();
@@ -2331,6 +2384,10 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             }
         }
 
+        if (m_View != old_view)
+        {
+            ResetRepeatState();
+        }
         m_LastBackPressed = back_pressed;
         m_LastUpPressed = up_pressed;
         m_LastDownPressed = down_pressed;
@@ -2353,12 +2410,15 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         return action;
     }
 
-    if (up_pressed && !m_LastUpPressed)
+    const boolean up_step = ComboConsumeHoldRepeat(up_pressed, m_LastUpPressed, &m_UpHoldFrames);
+    const boolean down_step = ComboConsumeHoldRepeat(down_pressed, m_LastDownPressed, &m_DownHoldFrames);
+
+    if (up_step)
     {
         m_Selected = FindPrevSelectable(m_Selected);
     }
 
-    if (down_pressed && !m_LastDownPressed)
+    if (down_step)
     {
         m_Selected = FindNextSelectable(m_Selected);
     }
@@ -2367,17 +2427,17 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
     if ((m_View == MenuViewSettings || m_View == MenuViewDebug) && items[m_Selected].selectable)
     {
         const boolean enter_edge = enter_pressed && !m_LastEnterPressed;
-        const boolean left_edge = left_pressed && !m_LastLeftPressed;
-        const boolean right_edge = right_pressed && !m_LastRightPressed;
+        const boolean left_step = ComboConsumeHoldRepeat(left_pressed, m_LastLeftPressed, &m_LeftHoldFrames);
+        const boolean right_step = ComboConsumeHoldRepeat(right_pressed, m_LastRightPressed, &m_RightHoldFrames);
 
         if (items[m_Selected].action == ComboMenuActionOverscanChanged)
         {
             unsigned next_value = m_ScalePercent;
-            if (left_edge)
+            if (left_step)
             {
                 next_value = (next_value <= 250u) ? 250u : (next_value - 50u);
             }
-            if (right_edge || enter_edge)
+            if (right_step || enter_edge)
             {
                 next_value = (next_value >= m_MaxScalePercent) ? m_MaxScalePercent : (next_value + 50u);
             }
@@ -2389,155 +2449,155 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                 m_ForceHighlightRedraw = FALSE;
                 action = ComboMenuActionOverscanChanged;
             }
-            handled_settings_input = enter_edge || left_edge || right_edge;
+            handled_settings_input = enter_edge || left_step || right_step;
         }
         else if (items[m_Selected].action == ComboMenuActionCycleScanlines)
         {
-            if (left_edge)
+            if (left_step)
             {
                 action = ComboMenuActionCycleScanlinesPrev;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            else if (right_edge || enter_edge)
+            else if (right_step || enter_edge)
             {
                 action = ComboMenuActionCycleScanlines;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            handled_settings_input = enter_edge || left_edge || right_edge;
+            handled_settings_input = enter_edge || left_step || right_step;
         }
         else if (items[m_Selected].action == ComboMenuActionCycleBootMode)
         {
-            if (left_edge)
+            if (left_step)
             {
                 action = ComboMenuActionCycleBootModePrev;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            else if (right_edge || enter_edge)
+            else if (right_step || enter_edge)
             {
                 action = ComboMenuActionCycleBootMode;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            handled_settings_input = enter_edge || left_edge || right_edge;
+            handled_settings_input = enter_edge || left_step || right_step;
         }
         else if (items[m_Selected].action == ComboMenuActionCycleMachine)
         {
-            if (left_edge)
+            if (left_step)
             {
                 action = ComboMenuActionCycleMachinePrev;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            else if (right_edge || enter_edge)
+            else if (right_step || enter_edge)
             {
                 action = ComboMenuActionCycleMachine;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            handled_settings_input = enter_edge || left_edge || right_edge;
+            handled_settings_input = enter_edge || left_step || right_step;
         }
         else if (items[m_Selected].action == ComboMenuActionCycleRamMapper)
         {
-            if (left_edge)
+            if (left_step)
             {
                 action = ComboMenuActionCycleRamMapperPrev;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            else if (right_edge || enter_edge)
+            else if (right_step || enter_edge)
             {
                 action = ComboMenuActionCycleRamMapper;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            handled_settings_input = enter_edge || left_edge || right_edge;
+            handled_settings_input = enter_edge || left_step || right_step;
         }
         else if (items[m_Selected].action == ComboMenuActionCycleMegaRam)
         {
-            if (left_edge)
+            if (left_step)
             {
                 action = ComboMenuActionCycleMegaRamPrev;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            else if (right_edge || enter_edge)
+            else if (right_step || enter_edge)
             {
                 action = ComboMenuActionCycleMegaRam;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            handled_settings_input = enter_edge || left_edge || right_edge;
+            handled_settings_input = enter_edge || left_step || right_step;
         }
         else if (items[m_Selected].action == ComboMenuActionCycleZ80Turbo)
         {
-            if (left_edge)
+            if (left_step)
             {
                 action = ComboMenuActionCycleZ80TurboPrev;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            else if (right_edge || enter_edge)
+            else if (right_step || enter_edge)
             {
                 action = ComboMenuActionCycleZ80Turbo;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            handled_settings_input = enter_edge || left_edge || right_edge;
+            handled_settings_input = enter_edge || left_step || right_step;
         }
         else if (items[m_Selected].action == ComboMenuActionCycleLanguage)
         {
-            if (left_edge)
+            if (left_step)
             {
                 action = ComboMenuActionCycleLanguagePrev;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            else if (right_edge || enter_edge)
+            else if (right_step || enter_edge)
             {
                 action = ComboMenuActionCycleLanguage;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            handled_settings_input = enter_edge || left_edge || right_edge;
+            handled_settings_input = enter_edge || left_step || right_step;
         }
         else if (items[m_Selected].action == ComboMenuActionCycleResolution)
         {
-            if (left_edge)
+            if (left_step)
             {
                 action = ComboMenuActionCycleResolutionPrev;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            else if (right_edge || enter_edge)
+            else if (right_step || enter_edge)
             {
                 action = ComboMenuActionCycleResolution;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            handled_settings_input = enter_edge || left_edge || right_edge;
+            handled_settings_input = enter_edge || left_step || right_step;
         }
         else if ((items[m_Selected].action == ComboMenuActionToggleFmMusic)
               || (items[m_Selected].action == ComboMenuActionToggleSccCart))
         {
-            if (enter_edge || left_edge || right_edge)
+            if (enter_edge || left_step || right_step)
             {
                 action = items[m_Selected].action;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            handled_settings_input = enter_edge || left_edge || right_edge;
+            handled_settings_input = enter_edge || left_step || right_step;
         }
         else if (items[m_Selected].action == ComboMenuActionAudioGainChanged)
         {
             unsigned next_level = AudioGainUiLevelFromPercent(m_AudioGainPercent);
-            if (left_edge)
+            if (left_step)
             {
                 next_level = (next_level == 0u) ? 9u : (next_level - 1u);
             }
-            if (right_edge || enter_edge)
+            if (right_step || enter_edge)
             {
                 next_level = (next_level >= 9u) ? 0u : (next_level + 1u);
             }
@@ -2549,39 +2609,39 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                 m_ForceHighlightRedraw = FALSE;
                 action = ComboMenuActionAudioGainChanged;
             }
-            handled_settings_input = enter_edge || left_edge || right_edge;
+            handled_settings_input = enter_edge || left_step || right_step;
         }
         else if (items[m_Selected].action == ComboMenuActionCycleRensha)
         {
-            if (left_edge)
+            if (left_step)
             {
                 action = ComboMenuActionCycleRenshaPrev;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            else if (right_edge || enter_edge)
+            else if (right_step || enter_edge)
             {
                 action = ComboMenuActionCycleRensha;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            handled_settings_input = enter_edge || left_edge || right_edge;
+            handled_settings_input = enter_edge || left_step || right_step;
         }
         else if (items[m_Selected].action == ComboMenuActionCycleRefreshRate)
         {
-            if (left_edge)
+            if (left_step)
             {
                 action = ComboMenuActionCycleRefreshRatePrev;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            else if (right_edge || enter_edge)
+            else if (right_step || enter_edge)
             {
                 action = ComboMenuActionCycleRefreshRate;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
-            handled_settings_input = enter_edge || left_edge || right_edge;
+            handled_settings_input = enter_edge || left_step || right_step;
         }
         else if ((items[m_Selected].action == ComboMenuActionToggleWidescreen)
               || (items[m_Selected].action == ComboMenuActionToggleDiskRom)
@@ -2589,7 +2649,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
               || (items[m_Selected].action == ComboMenuActionToggleOverlay)
               || (items[m_Selected].action == ComboMenuActionToggleDebugLog))
         {
-            if (enter_edge || left_edge || right_edge)
+            if (enter_edge || left_step || right_step)
             {
                 action = items[m_Selected].action;
                 if (items[m_Selected].action == ComboMenuActionToggleWidescreen)
@@ -2603,7 +2663,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                     m_ForceHighlightRedraw = FALSE;
                 }
             }
-            handled_settings_input = enter_edge || left_edge || right_edge;
+            handled_settings_input = enter_edge || left_step || right_step;
         }
     }
 
@@ -2695,6 +2755,10 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         }
     }
 
+    if (m_View != old_view)
+    {
+        ResetRepeatState();
+    }
     m_LastBackPressed = back_pressed;
     m_LastUpPressed = up_pressed;
     m_LastDownPressed = down_pressed;

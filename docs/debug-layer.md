@@ -90,7 +90,9 @@ Diretriz visual (overlay e menu):
   - `Disk Drive B`
   - `Settings`
 - Selecao visual: inversao de cores, faixa com margem lateral, itens centralizados.
-- Navegacao: `Up/Down` edge-trigger, sem repeticao por hold.
+- Navegacao: `Up/Down` com auto-repeat por hold nas listas do menu.
+- Em `Settings` e `Debug`, `Left/Right` tambem repetem por hold para ciclar valores.
+- `ESC`, `ENTER`, `Del` e `PgUp/PgDn` continuam edge-trigger.
 - Anti-flicker: redesenhar menu apenas em mudanca de estado (mostrar/ocultar, selecao, reposicionamento).
 
 ## Menu relacionado

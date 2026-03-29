@@ -8,8 +8,8 @@ extern "C" {
 static const char *kRomsRootPath = "SD:/roms";
 static const char *kDisksRootPath = "SD:/disks";
 static const char *kCheatsRootPath = GAMEMASTER_CHEATS_ROOT;
-static const unsigned kRepeatDelayFrames = 30u;  /* ~500ms em 60Hz */
-static const unsigned kRepeatPeriodFrames = 6u;  /* ~10 passos/s em 60Hz */
+static const unsigned kRepeatDelayFrames = 12u;  /* ~200ms em 60Hz */
+static const unsigned kRepeatPeriodFrames = 2u;  /* ~30 passos/s em 60Hz */
 
 static char ComboToUpperAscii(char ch)
 {
