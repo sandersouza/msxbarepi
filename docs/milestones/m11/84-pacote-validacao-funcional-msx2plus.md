@@ -2,6 +2,6 @@
 
 - URL: https://github.com/sandersouza/msxbarepi/issues/84
 - Milestone: Release: Suporte MSX2+ (m11)
-- Estado remoto: OPEN
+- Estado remoto: CLOSED
 - Prioridade: P2
 - Labels: `priority:P2`, `type:feature`, `area:scripts`, `area:emulation`

@@ -1,10 +1,43 @@
-# Issue #82 - Validar VDP9958 e modos MSX2+
+# Issue #82 - Epic: Auditoria comparativa do V9958 stock
 
 - URL: https://github.com/sandersouza/msxbarepi/issues/82
 - Milestone: Release: Suporte MSX2+ (m11)
 - Estado remoto: OPEN
 - Prioridade: P1
 - Labels: `priority:P1`, `type:feature`, `area:video`, `area:emulation`
+- Estado local atual: EM PROGRESSO
+
+## Objetivo atual
+Transformar a `#82` na issue-epic da auditoria comparativa do `V9958 stock`, usando `blueMSX` como referência software, `V9958-Super` como referência HDL/semântica stock e o nosso core local como alvo da análise.
+
+## Escopo da trilha
+- escopo fechado em `V9958 stock`
+- sem incluir `R#29+`, modos super ou extensões próprias do `V9958-Super`
+- camada de descoberta antes da camada de correção
+
+## Documento canônico
+- Matriz central da trilha:
+  - [v9958-stock-compare-matrix.md](/Users/sandersouza/Developer/msxbarepi/docs/reverse-engineering/msx2plus/v9958-stock-compare-matrix.md)
+- Evidências auxiliares da `#82`:
+  - [README.md](/Users/sandersouza/Developer/msxbarepi/docs/reverse-engineering/issues/issue-82/README.md)
+
+## Sub-issues da trilha
+- [#231 - Criar matriz comparativa do V9958 stock vs blueMSX e V9958-Super](https://github.com/sandersouza/msxbarepi/issues/231)
+- [#232 - Fechar auditoria de protocolo I/O, registradores e status do V9958 stock](https://github.com/sandersouza/msxbarepi/issues/232)
+- [#233 - Fechar gap analysis do command engine e timing do V9958 stock](https://github.com/sandersouza/msxbarepi/issues/233)
+- [#234 - Fechar gap analysis do renderer V9958 stock (scroll, multipage, odd/even e addressing)](https://github.com/sandersouza/msxbarepi/issues/234)
+- [#235 - Validar corpus dinâmico do V9958 stock com telemetria já existente](https://github.com/sandersouza/msxbarepi/issues/235)
+- [#236 - Consolidar backlog implementável dos gaps confirmados do V9958 stock](https://github.com/sandersouza/msxbarepi/issues/236)
+
+## Checklist da epic
+- [x] Converter a `#82` em umbrella da auditoria stock do `V9958`
+- [x] Criar as 6 sub-issues da camada de descoberta
+- [x] Vincular `#231..#236` como sub-issues da `#82`
+- [x] Criar a matriz canônica da trilha
+- [ ] Fechar a leitura estática dos blocos de I/O, status, engine e renderer
+- [ ] Fechar a validação dinâmica mínima com telemetria existente
+- [ ] Consolidar o backlog implementável
+- [ ] Abrir issues reais de implementação derivadas dos gaps confirmados
 
 ## Iteração 2026-03-10 (branch `fix-acurating-timing-vdp9958`)
 
@@ -84,6 +117,17 @@ Resultado esperado: sem regressão visual óbvia fora do perfil MSX2+.
 - Aceleracao cirurgica da fase de boot logo MSX2+: quando `PC` esta em `0x7A00-0x7FFF` (KANJIBASIC), `SM:06` e mascara esquerda (`R25 bit1`) ativa, `fmsx_runtime_step_frame()` executa burst de 6 frames por tick para reduzir tempo real de boot sem alterar runtime normal de jogos.
 
 ## Iteração 2026-03-29 (branch `82-auditar-registradores-v9958`)
+
+- A issue foi reestruturada como epic da auditoria comparativa do `V9958 stock`.
+- Foram abertas e vinculadas como sub-issues:
+  - `#231` matriz canônica
+  - `#232` I/O/registradores/status
+  - `#233` command engine/timing
+  - `#234` renderer/addressing
+  - `#235` validação dinâmica mínima
+  - `#236` backlog implementável
+- A matriz canônica passou a viver em `docs/reverse-engineering/msx2plus/v9958-stock-compare-matrix.md`.
+- O diretório de evidências da trilha passou a viver em `docs/reverse-engineering/issues/issue-82/`.
 
 - Repro reclassificado: `POKE -1,170` nao escreve em `R#1`; ele grava `0xAA` no seletor de subslot em `0xFFFF`.
 - Problema pratico tratado nesta rodada: no perfil `MSX2+`, esse `POKE` passou a desmontar a RAM de `8000h-FFFFh` porque a topologia atual usa `RAM mapper = 3-0` e `DISK.ROM = 3-2`.

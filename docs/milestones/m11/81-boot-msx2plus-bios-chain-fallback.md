@@ -2,6 +2,6 @@
 
 - URL: https://github.com/sandersouza/msxbarepi/issues/81
 - Milestone: Release: Suporte MSX2+ (m11)
-- Estado remoto: OPEN
+- Estado remoto: CLOSED
 - Prioridade: P0
 - Labels: `priority:P0`, `type:feature`, `area:boot`, `area:storage`, `area:emulation`
