@@ -84,6 +84,18 @@ extern uint32_t FmsxIE1FiredHBlankCount;
 extern uint32_t FmsxVDPPort99ReadCount;
 extern uint32_t FmsxVDPPort99WriteCount;
 extern uint32_t FmsxVDPPort9BWriteCount;
+extern uint8_t FmsxVDPPort9BLastReg17Before;
+extern uint8_t FmsxVDPPort9BLastTarget;
+extern uint8_t FmsxVDPPort9BLastReg17After;
+extern uint8_t FmsxVDPPort9BLastValue;
+extern uint8_t FmsxVDPLastStatusReadReg;
+extern uint8_t FmsxVDPLastStatusReadValue;
+extern uint8_t FmsxVDPLastPort99Op;
+extern uint8_t FmsxVDPLastPort99Value;
+extern uint8_t FmsxVDPLastPort99ALatch;
+extern uint8_t FmsxVDPLastPort99VKey;
+extern uint8_t FmsxVDPLastPort99R15;
+extern uint16_t FmsxVDPLastPort99PC;
 extern uint32_t FmsxVDPRegWriteCount[64];
 extern uint32_t FmsxVDPStatusReadCount[16];
 extern uint32_t FmsxKanjiReadCount;
@@ -2281,9 +2293,20 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
     stats->reg25 = (unsigned) VDP[25];
     stats->reg26 = (unsigned) VDP[26];
     stats->reg27 = (unsigned) VDP[27];
+    stats->reg17 = (unsigned) VDP[17];
     stats->reg19 = (unsigned) VDP[19];
     stats->reg1 = (unsigned) VDP[1];
     stats->reg7 = (unsigned) VDP[7];
+    stats->status8 = (unsigned) VDPStatus[8];
+    stats->status9 = (unsigned) VDPStatus[9];
+    stats->last_status_read_reg = (unsigned) FmsxVDPLastStatusReadReg;
+    stats->last_status_read_value = (unsigned) FmsxVDPLastStatusReadValue;
+    stats->last_port99_op = (unsigned) FmsxVDPLastPort99Op;
+    stats->last_port99_value = (unsigned) FmsxVDPLastPort99Value;
+    stats->last_port99_alatch = (unsigned) FmsxVDPLastPort99ALatch;
+    stats->last_port99_vkey = (unsigned) FmsxVDPLastPort99VKey;
+    stats->last_port99_r15 = (unsigned) FmsxVDPLastPort99R15;
+    stats->last_port99_pc = (unsigned) FmsxVDPLastPort99PC;
     stats->screen_on = (VDP[1] & 0x40u) ? 1u : 0u;
     stats->ie0_enabled = (VDP[1] & 0x20u) ? 1u : 0u;
     stats->vblank_flag = (VDPStatus[0] & 0x80u) ? 1u : 0u;
@@ -2406,6 +2429,10 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
         VDP_DELTA(stats->vdp_port9b_writes,FmsxVDPPort9BWriteCount,     s_p9b);
 #undef VDP_DELTA
     }
+    stats->vdp_port9b_last_reg17_before = (unsigned) FmsxVDPPort9BLastReg17Before;
+    stats->vdp_port9b_last_target = (unsigned) FmsxVDPPort9BLastTarget;
+    stats->vdp_port9b_last_reg17_after = (unsigned) FmsxVDPPort9BLastReg17After;
+    stats->vdp_port9b_last_value = (unsigned) FmsxVDPPort9BLastValue;
     {
         TFmsxVDPTraceView trace_view;
         const TFmsxVDPTraceEvent *last_event = 0;

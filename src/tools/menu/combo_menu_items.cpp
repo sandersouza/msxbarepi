@@ -386,7 +386,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     }
 
     language = combo_locale_clamp_language(language);
-    if (scale_percent < 250u) scale_percent = 250u;
+    if (scale_percent != 200u && scale_percent < 250u) scale_percent = 250u;
     if (max_scale_percent < 250u) max_scale_percent = 250u;
     if (max_scale_percent > 450u) max_scale_percent = 450u;
     if (scale_percent > max_scale_percent) scale_percent = max_scale_percent;
@@ -411,13 +411,30 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
                    : (resolution_mode == 1u ? locale->resolution_1080
                    : (resolution_mode == 2u ? locale->resolution_720 : locale->resolution_768)));
 
-    char scale_flag[4];
-    unsigned scale_factor = 1u + ((scale_percent - 250u) / 50u);
-    if (scale_factor < 1u) scale_factor = 1u;
-    if (scale_factor > 5u) scale_factor = 5u;
-    scale_flag[0] = (char) ('0' + (scale_factor % 10u));
-    scale_flag[1] = 'x';
-    scale_flag[2] = '\0';
+    char scale_flag[8];
+    if (scale_percent == 200u)
+    {
+        scale_flag[0] = '\0';
+        if (locale->flag_none != 0)
+        {
+            unsigned i = 0u;
+            while (locale->flag_none[i] != '\0' && i + 1u < sizeof(scale_flag))
+            {
+                scale_flag[i] = locale->flag_none[i];
+                ++i;
+            }
+            scale_flag[i] = '\0';
+        }
+    }
+    else
+    {
+        unsigned scale_factor = 1u + ((scale_percent - 250u) / 50u);
+        if (scale_factor < 1u) scale_factor = 1u;
+        if (scale_factor > 5u) scale_factor = 5u;
+        scale_flag[0] = (char) ('0' + (scale_factor % 10u));
+        scale_flag[1] = 'x';
+        scale_flag[2] = '\0';
+    }
     BuildLabelFlag(scale_label, sizeof(scale_label), locale->settings_scale, scale_flag);
 
     BuildLabelFlag(widescreen_label, sizeof(widescreen_label), locale->settings_widescreen, widescreen_enabled ? locale->flag_on : locale->flag_off);

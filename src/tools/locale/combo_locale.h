@@ -64,6 +64,7 @@ typedef struct {
     const char *flag_off;
     const char *flag_on;
     const char *flag_dual;
+    const char *flag_none;
     const char *flag_na;
     const char *scan_des;
     const char *scan_lcd;

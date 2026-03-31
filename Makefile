@@ -244,6 +244,9 @@ clean:
 sdcard:
 	./scripts/prepare-sd.sh
 
+logserial:
+	./scripts/logserial.sh
+
 sdcard-update:
 	./scripts/update-sd-incremental.sh
 
@@ -277,7 +280,7 @@ package: default initramfs
 	./scripts/prepare-sd.sh
 
 help:
-	@echo "Targets: all (default), clean, sdcard, sdcard-update, initramfs, package, help"
+	@echo "Targets: all (default), clean, sdcard, sdcard-update, initramfs, package, help, logserial"
 	@echo "Circle: default so gera se faltar algo; rebuild forcado apenas com 'make circle'"
 	@echo "clean: limpa build local, artifacts de kernel e objetos/libs em subdirs do Circle"
 	@echo "Configuracao: make menuconfig (gera .config + build/config.mk)"

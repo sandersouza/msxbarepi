@@ -37,6 +37,7 @@ make DEBUG=0
 
 ## Teclas de atalho (com debug compilado)
 - `F11`: liga/desliga overlay de debug.
+  - ao ligar, o runtime força `Settings -> Scale [NONE]` para abrir espaço visual ao painel.
 - `F12`: pausa/retoma emulacao (menu de pausa).
 - `F6`: mute/unmute `Layer 1` (PSG + ruido).
 - `F7`: mute/unmute `Layer 2` (FM-PAC).
@@ -46,7 +47,12 @@ make DEBUG=0
 - `F9`: sem uso na build atual.
 
 ## Tag de build na tela
-- No preset atual de diagnostico MSX2+, a `linha 14` foi reservada para `TM4` (telemetria adicional de boot/VDP/KANJI).
+- No preset atual de diagnostico MSX2+, o painel tenta ficar contido entre as `linhas 1..15`.
+- Neste layout compacto:
+  - `TXTDBG` ocupa a `linha 1` com largura horizontal completa;
+  - `AUD1`, `SYS` e `AC1` fecham o bloco de estado geral nas `linhas 2..4`;
+  - a telemetria `TM` é agrupada por afinidade nas `linhas 5..9`, combinando pares que couberem na mesma linha;
+  - `TM6D` agora fecha a `linha 9`, junto de `TM6C`.
 - Com isso, a tag `@Beta: <OWNER>` nao e exibida nesse preset.
 - Regra operacional de reporte em cada artefato entregue para teste:
   - Sempre informar no chat `BUILD_HASH` e `INT_BUILD`.
@@ -58,8 +64,10 @@ make DEBUG=0
 Objetivo: painel legivel no framebuffer HDMI com MMU/cache ativo, sem depender de UART.
 
 - Overlay compacto no canto superior esquerdo.
+- O painel pode usar a largura horizontal inteira da linha quando isso ajudar a ficar contido até a `linha 15`.
 - Emulador segue rodando ao fundo.
 - Em preset de debug, limitar escala do blit do emulador (ex.: `2x`) para reduzir sobreposicao visual.
+- Para captura de overlay sobre viewport/mailbox pequeno, `Settings -> Scale [NONE]` passa a desligar o indice de escala do mailbox sem mexer na trilha de telemetria (`TM2..TM6D`).
 
 Regras validadas em hardware:
 
@@ -118,42 +126,39 @@ Diretriz visual (overlay e menu):
 - `TXTDBG`: estado geral (MMU/cache/pause).
   - `BUILD`: hash de 16 bits calculado a partir de `MSXBARE_BUILD_BID` para rastreio visual da build em teste.
   - `OS`: contador com largura fixa `000..999` (modulo 1000) para evitar jitter visual na linha.
-- `CI`: contadores de fila/audio/teclado e tentativas de init.
-- `EV1`: diagnostico de perdas na fila de audio:
+- `AUD1`: linha consolidada de diagnostico de perdas/producao/consumo da fila de audio:
   - `Q/E`: writes e erros no write para a fila HDMI do `m_Sound`.
   - `O`: samples sobrescritos na ring interna do host (`overwrite`).
   - `T`: samples descartados por trim de latencia excessiva.
   - `U:a/b`: pulls curtos (`a`) e samples faltantes acumulados (`b`) ao alimentar a HDMI.
-- `EV2`: diagnostico de producao/consumo da ring de audio:
   - `B:a/b`: ultimo batch renderizado pelo core e maior batch visto.
   - `P:a/b`: ultimo pull retornado / ultimo pull solicitado pela HDMI.
   - `R:a/b`: nivel atual da ring interna / pico historico observado.
   - `V`: fps do emulador.
-- `JY1`: joystick bridge/mapeado + estado runtime.
-- `JY2`: frame/PC/repeticao/ring/pacing.
+- `SYS`: linha consolidada de joystick bridge, estado runtime, pacing, save/load e mapper:
+  - `BJ/MJ`: joystick bridge bruto e mapeado.
+  - `F/PC/R`: frame atual, `PC` observado e repeticao do `PC`.
   - `L`: nivel atual da ring interna.
   - `D:a/b`: ultimo trim aplicado (`a`) e drops acumulados totais (`b`, overwrite + trim).
-- `SD1`: telemetria de save/load/carga (SV/C/A/LD/BT).
-- `SD2`: mapper/carts/boot model ativos.
-- `AC1`: estado de chips/features e mixer:
+  - `JP:a/b`: media/max de erro do pacing.
+  - `SV/C/A`: estagio/codigo/auxiliar do save de settings.
+  - `CA/CB`: presenca de cartuchos nos slots A/B.
+  - `BM/MP`: boot mode e model profile ativos.
+  - `RM/MR/IN`: `RAM Mapper`, `MegaRAM` e total de arquivos no `initramfs`.
+- `AC1`: estado consolidado de chips/features, mixer e mute por layer:
   - `FM:x/y`: `x`=setting FM, `y`=mask ativa no mixer.
   - `SCC:x/y`: `x`=setting do `Konami SCC+` interno, `y`=mask ativa no mixer.
   - `AG`: Audio Gain UI (`0..9`).
   - `AE`: ganho efetivo aplicado.
-  - `M`: mute efetivo por gain zero.
+  - `L1/L2/L3`: mute ativo por layer (`PSG`, `FM`, `SCC`).
   - `P7`: registrador PSG mixer.
   - `MS`: bitmask master de canais do mixer.
-- `AC2`: estado por layer:
-  - `L1` + `PSG`: mute layer 1 e atividade de canais PSG.
-  - `L2` + `FM`: mute layer 2 e atividade de canais FM.
-  - `L3` + `SCC`: mute layer 3 e atividade de canais SCC.
-- `TM1`: timing base do core:
+- `TM` linha 1 (`TM1 + TM2`): timing base do core e telemetria VDP/timing útil para MSX2+ (parte 1):
   - `HP/VP/IP`: periodos inteiros atualmente em uso no scheduler.
   - `SL`: scanline atual.
   - `PAL/NTSC`: modo efetivo do VDP.
   - `L212`: flag de 212 linhas.
   - `T`: turbo configurado no menu (`OFF=100`, `PAN=150`, `MAX=200`); nao reflete o turbo Panasonic virtual ligado por software.
-- `TM2`: telemetria VDP/timing útil para MSX2+ (parte 1):
   - `SM`: screen mode atual.
   - `R2`: registrador da nametable/página de display.
   - `R25/R26/R27`: registradores de scroll/máscara.
@@ -162,7 +167,7 @@ Diretriz visual (overlay e menu):
   - `DP`: página de display (`R2[6:5]`).
   - `EP`: página efetiva usada pelo renderer na linha atual, já considerando odd/even do V9958.
   - `I1/F1`: IE1 habilitado (`R0 bit4`) e latch horizontal ativo em `S#1 bit0` (sticky ate leitura de `S#1`, write em `R#19/R#0` ou inicio de VBlank).
-- `TM3`: telemetria VDP/timing útil para MSX2+ (parte 2):
+- `TM` linha 2 (`TM3 + TM4`): telemetria VDP/timing útil para MSX2+ (parte 2) e progresso de boot:
   - `C`: comando VDP atual (`R46` high nibble).
   - `CE/TR`: bits de status do command engine (`S#2 bit0` e `S#2 bit7`).
   - `CS/CP`: contadores desde o reset: inícios de comando total (`CS`) e cópia VRAM->VRAM (`CP`, comandos `LMMM/HMMM/YMMM`).
@@ -170,7 +175,6 @@ Diretriz visual (overlay e menu):
   - `P1:x-y`: seleção ativa da página `4000h` (`PSL[1]-SSL[1]`).
   - `D:e/l`: `e`=setting efetiva (`disk_rom` ligado/desligado), `l`=estado de carga da `DISK.ROM` (`DiskROMLoaded`).
   - `S`: `HScroll512` bruto (bit `R25 bit0`).
-- `TM4`: diagnostico de progresso de boot MSX2+ (parte principal):
   - `I1:a/b`: `a`=eventos de coincidencia de linha (`IE1`) gerados, `b`=ack por leitura de `S#1`.
   - `IA`: quantidade de vezes que o evento IE1 foi armado na fase ativa da linha.
   - `IH`: quantidade de vezes que o IE1 armado foi efetivamente disparado na entrada do HBlank.
@@ -179,7 +183,7 @@ Diretriz visual (overlay e menu):
   - `R1`: valor atual do registrador VDP `R#1`.
   - `R7`: valor atual do registrador VDP `R#7` (cores FG/BG em modos texto/tile).
   - `SO`: estado de `ScreenON` (`R#1 bit6`).
-- `TM4B`: diagnostico de interrupcao de VBlank (linha dedicada):
+- `TM` linha 3 (`TM4B + TM5`): diagnostico de interrupcao de VBlank e pipeline de teclado runtime:
   - `I0`: habilitacao de interrupcao de VBlank (`R#1 bit5`).
   - `S0`: flag de VBlank em `S#0 bit7`.
   - `HR/VR`: estado efetivo de `S#2 bit5/bit6` na fase atual da linha/frame.
@@ -187,28 +191,41 @@ Diretriz visual (overlay e menu):
   - `TL/TD`: linha-alvo de `IE1` e delta assinado entre o compare atual e a scanline corrente.
   - `EO`: odd/even efetivo derivado de `S#2 bit1`.
   - `RP`: página efetiva atualmente selecionada para render.
-- `TM5`: diagnostico do pipeline de teclado runtime:
   - `KQ:a/b`: profundidade atual da fila runtime e `high-water`.
   - `KD`: drops acumulados da fila runtime.
   - `KC:a/b/c`: candidatos `press-only` criados, promovidos e descartados.
   - `KR`: releases aplicados imediatamente.
   - `KP`: presses de gameplay aplicados imediatamente.
-- `TM6A`: trace de writes em registradores VDP — exibe **delta por frame** (variacao desde a ultima leitura, nao acumulado):
+- `TM` linha 4 (`TM6A + TM6B`): trace de writes em registradores VDP e ultimo evento capturado no trace VDP/IRQ:
   - `W9/W15/W18/W19/W25/W26/W27`: writes por frame em cada registrador VDP (cap 9999).
-- `TM6B`: ultimo evento capturado no trace VDP/IRQ das janelas do `SMANBOW2`:
   - `EV`: tipo do ultimo evento (`I0`, `I1A`, `I1F`, `R19`, `R23`, `R25`, `R26`, `R27`, `S1`, `S2`, `CS`, `CE`).
   - `W`: janela do trace (`TI`=titulo, `SV`=save select, `SD`=transicao `STARDATE`).
-  - `PC/SL/LP`: `PC`, scanline e fase de linha (`0`=area ativa, `1`=HBlank) do ultimo evento.
+  - `P9/SL/LP`: `P9` = `PC` do chamador no ultimo micro-passo concluido da porta `0x99`; `SL/LP` continuam sendo scanline e fase de linha (`0`=area ativa, `1`=HBlank) do ultimo evento do trace VDP/IRQ.
   - `B:x/y`: bancos MegaROM ativos em `4000h-7FFFh` e `8000h-BFFFh` no momento do evento.
-  - `R1/R23/S2`: snapshot dos registradores/status mais relevantes naquele ultimo evento.
-- `TM6C`: diagnostico direto do cart `SMANBOW2` / Flash `Manbow2`:
+  - `R1/S2`: snapshot dos registradores/status mais relevantes naquele ultimo evento.
+  - `SR:r/v`: ultimo status register lido pela porta `0x99` e o valor efetivamente retornado (`r`=`R#15`, `v`=byte lido).
+  - `99:o/k/r/a/v`: ultimo micro-passo observado na porta `0x99`:
+    - `o` = operacao (`R`=read status, `L`=primeiro byte/latch, `W`=write generico de registrador, `S`=write em `R#15`, `A`=set de endereco VRAM).
+    - `k` = estado atual de `VKey` apos esse micro-passo.
+    - `r` = `R#15` efetivo apos esse micro-passo.
+    - `a` = `ALatch` atual.
+    - `v` = byte associado ao micro-passo (`byte lido` em `R`; `byte escrito na porta` nos writes).
+- `TM` linha 5 (`TM6C + TM6D`): diagnostico direto do cart `SMANBOW2` / Flash `Manbow2` e observabilidade extra da trilha V9958 stock:
   - `A8`: valor atual do registrador primario de slots.
   - `E`: `EnWrite` efetivo da pagina `4000h-7FFFh` (`1` indica que writes estao indo para RAM, nao para o cart).
   - `C/T`: slot logico do cart ativo em `4000h-7FFFh`, `ROMType` efetivo e origem da classificacao (`0`=nenhuma, `2`=explicito, `3`=`CARTS.CRC`, `4`=`CARTS.SHA`, `5`=fallback SHA local, `6`=heuristica).
   - `B:a/b/c/d`: bancos atuais nas quatro janelas de 8KB (`4000h/6000h/8000h/A000h`).
   - `F`: ultima operacao relevante da Flash (`RD`, `RS`, `AS`, `PG`, `ER`, `CM`).
   - `S/M`: estado interno da sequencia AMD e modo de leitura atual da Flash.
-  - Observacao: para respeitar o limite de 64 caracteres por linha no overlay HDMI, `A/O/V` sairam da `TM6C` e permanecem disponiveis via logs UART (`LOOP MAP ...`).
+  - `A/O/V`: ultimo endereco, offset e valor bruto observados na trilha da Flash.
+  - `R17`: valor atual bruto do registrador indireto `R#17`.
+  - `9B:a>b>c`: ultimo caminho observado em write indireto via `0x9B`:
+    - `a` = `R#17` antes do write;
+    - `b` = registrador-alvo efetivo (`R#17 & 0x3F`);
+    - `c` = `R#17` depois do auto-incremento local.
+  - `V`: ultimo valor escrito em `0x9B`.
+  - `S8/S9`: conteúdo bruto atual de `VDPStatus[8]` / `VDPStatus[9]`.
+  - `P9`: delta por frame de writes na porta `0x9B`.
 
 ## Trace detalhado VDP/IRQ
 
@@ -236,7 +253,7 @@ Diretriz visual (overlay e menu):
   - `F10` permanece como chave reservada para reativacao futura de telemetria direcionada.
   - O fluxo antigo de snapshot manual/telemetry view por `F9/F10` foi removido.
   - No estado atual, a UART fica propositalmente enxuta e nao emite logs periódicos de performance.
-- Os contadores de audio e pacing continuam visiveis no overlay (`EV1/EV2/JY2`) para consulta local sem depender da UART.
+- Os contadores de audio e pacing continuam visiveis no overlay (`AUD1` e `SYS`) para consulta local sem depender da UART.
 
 ## Arquitetura (modular)
 - Renderer da debug layer desacoplado em objeto plugavel:
@@ -248,9 +265,9 @@ Diretriz visual (overlay e menu):
 ## Boas praticas de uso
 - Para testar audio por chip:
   1. habilite overlay (`F11`);
-  2. observe `AC1/AC2`;
+  2. observe `AUD1`, `SYS` e `AC1`;
   3. use `F6/F7/F8` para isolamento por camada e `F10` para silenciar a UART.
-- Em investigacoes de SD/boot, priorize `SD1/SD2` e correlacione com logs do kernel.
+- Em investigacoes de SD/boot, priorize `SYS`, `TM` e correlacione com logs do kernel.
 
 ## Referencias
 - Implementacao principal: `src/combo_debug_overlay.cpp`

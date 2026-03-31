@@ -55,6 +55,7 @@ extern const TComboLocaleStrings g_ComboLocalePT = {
     "DES",
     "LIG",
     "DUAL",
+    "NONE",
     "N/A",
     "DES",
     "LCD",

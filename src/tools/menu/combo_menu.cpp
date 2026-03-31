@@ -1029,7 +1029,7 @@ void CComboPauseMenu::Reset(void)
 
 void CComboPauseMenu::SetScalePercent(unsigned percent)
 {
-    if (percent < 250u)
+    if (percent != 200u && percent < 250u)
     {
         percent = 250u;
     }
@@ -2435,11 +2435,18 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             unsigned next_value = m_ScalePercent;
             if (left_step)
             {
-                next_value = (next_value <= 250u) ? 250u : (next_value - 50u);
+                next_value = (next_value <= 250u) ? 200u : (next_value - 50u);
             }
             if (right_step || enter_edge)
             {
-                next_value = (next_value >= m_MaxScalePercent) ? m_MaxScalePercent : (next_value + 50u);
+                if (next_value == 200u)
+                {
+                    next_value = 250u;
+                }
+                else
+                {
+                    next_value = (next_value >= m_MaxScalePercent) ? m_MaxScalePercent : (next_value + 50u);
+                }
             }
 
             if (next_value != m_ScalePercent)

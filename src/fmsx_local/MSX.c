@@ -378,6 +378,18 @@ static uint8_t g_fmsx_audio_port_trace_active_valid = 0;
 uint32_t FmsxVDPPort99ReadCount = 0;  /* Reads from VDP status port 99h */
 uint32_t FmsxVDPPort99WriteCount = 0; /* Writes to VDP address/control port 99h */
 uint32_t FmsxVDPPort9BWriteCount = 0; /* Writes to indirect VDP register port 9Bh */
+uint8_t FmsxVDPPort9BLastReg17Before = 0;
+uint8_t FmsxVDPPort9BLastTarget = 0;
+uint8_t FmsxVDPPort9BLastReg17After = 0;
+uint8_t FmsxVDPPort9BLastValue = 0;
+uint8_t FmsxVDPLastStatusReadReg = 0;
+uint8_t FmsxVDPLastStatusReadValue = 0;
+uint8_t FmsxVDPLastPort99Op = 0;
+uint8_t FmsxVDPLastPort99Value = 0;
+uint8_t FmsxVDPLastPort99ALatch = 0;
+uint8_t FmsxVDPLastPort99VKey = 1;
+uint8_t FmsxVDPLastPort99R15 = 0;
+uint16_t FmsxVDPLastPort99PC = 0;
 uint32_t FmsxVDPRegWriteCount[64];    /* Per-register VDP write counters */
 uint32_t FmsxVDPStatusReadCount[16];  /* Per-status-register read counters via R#15 */
 uint32_t FmsxKanjiReadCount = 0;      /* Reads from Kanji data port D9h */
@@ -626,6 +638,7 @@ static void fmsx_vdp_render_screen4_partial(uint8_t scanline,unsigned end_column
 static void fmsx_vdp_trace_log(uint8_t event_type);
 static void fmsx_vdp_trace_log_io(uint8_t event_type,uint32_t aux_addr,uint8_t aux_value,uint8_t aux_reg,uint8_t aux_ctrl);
 static void fmsx_vdp_sync_before_cpu_write(void);
+extern void fmsx_vdp_sync_before_status_read(void);
 
 static int fmsx_string_contains(const char *text,const char *needle)
 {
@@ -3239,6 +3252,18 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   FmsxVDPPort99ReadCount = 0;
   FmsxVDPPort99WriteCount = 0;
   FmsxVDPPort9BWriteCount = 0;
+  FmsxVDPPort9BLastReg17Before = 0;
+  FmsxVDPPort9BLastTarget = 0;
+  FmsxVDPPort9BLastReg17After = 0;
+  FmsxVDPPort9BLastValue = 0;
+  FmsxVDPLastStatusReadReg = 0;
+  FmsxVDPLastStatusReadValue = 0;
+  FmsxVDPLastPort99Op = 0;
+  FmsxVDPLastPort99Value = 0;
+  FmsxVDPLastPort99ALatch = 0;
+  FmsxVDPLastPort99VKey = 1;
+  FmsxVDPLastPort99R15 = 0;
+  FmsxVDPLastPort99PC = 0;
   memset(FmsxVDPRegWriteCount,0,sizeof(FmsxVDPRegWriteCount));
   memset(FmsxVDPStatusReadCount,0,sizeof(FmsxVDPStatusReadCount));
   memset(g_fmsx_kmg_trace,0,sizeof(g_fmsx_kmg_trace));
@@ -3533,6 +3558,7 @@ case 0x98: /* VRAM read port */
 case 0x99: /* VDP status registers */
 {
   fmsx_apply_vdp_io_wait(fmsx_vdp_status_wait_cycles());
+  if(!MODEL(MSX_MSX1)) fmsx_vdp_sync_before_status_read();
   const uint8_t status_reg = MODEL(MSX_MSX1)? 0u:(uint8_t)(VDP[15]&0x0Fu);
   const uint8_t live_status1 = fmsx_vdp_status1_live();
   const uint8_t live_status2 = fmsx_vdp_status2_live();
@@ -3542,9 +3568,12 @@ case 0x99: /* VDP status registers */
   if(MODEL(MSX_MSX1)) Port=VDPStatus[0];
   else Port=(status_reg==1u)? live_status1:((status_reg==2u)? live_status2:VDPStatus[status_reg]);
   /*
-   * Keep upstream fMSX behavior here: do not force-reset VKey on status reads.
-   * Some BIOS/software paths depend on the original latch sequencing.
+   * V9938/V9958 references (blueMSX and V9958-Super) reset the 0x99 latch
+   * sequencer on every status read. Keep MSX1/TMS9918 on the upstream path,
+   * but realign the latch on MSX2/2+ to match the V99x8 behavior exercised by
+   * the STS-006 narrowing repro.
    */
+  if(!MODEL(MSX_MSX1)) VKey=1;
   if(status_reg==1u) fmsx_vdp_trace_log(FMSX_VDP_EVENT_S1_READ);
   if(status_reg==2u) fmsx_vdp_trace_log(FMSX_VDP_EVENT_S2_READ);
   /* Update status register's contents */
@@ -3557,6 +3586,14 @@ case 0x99: /* VDP status registers */
       break;
     case 7: VDPStatus[7]=VDP[44]=VDPRead();break;
   }
+  FmsxVDPLastStatusReadReg = status_reg;
+  FmsxVDPLastStatusReadValue = Port;
+  FmsxVDPLastPort99Op = 1u;
+  FmsxVDPLastPort99Value = Port;
+  FmsxVDPLastPort99ALatch = ALatch;
+  FmsxVDPLastPort99VKey = VKey;
+  FmsxVDPLastPort99R15 = MODEL(MSX_MSX1)? 0u:(uint8_t)(VDP[15]&0x0Fu);
+  FmsxVDPLastPort99PC = CPU.PC.W;
   /* Return the status register value */
   return(Port);
 }
@@ -3767,7 +3804,17 @@ case 0x98: /* VDP Data */
 case 0x99: /* VDP Address Latch */
   FmsxVDPPort99WriteCount++;
   fmsx_apply_vdp_io_wait(fmsx_vdp_write_wait_cycles());
-  if(VKey) { ALatch=Value;VKey=0; }
+  if(VKey)
+  {
+    ALatch=Value;
+    VKey=0;
+    FmsxVDPLastPort99Op = 2u;
+    FmsxVDPLastPort99Value = Value;
+    FmsxVDPLastPort99ALatch = ALatch;
+    FmsxVDPLastPort99VKey = VKey;
+    FmsxVDPLastPort99R15 = MODEL(MSX_MSX1)? 0u:(uint8_t)(VDP[15]&0x0Fu);
+    FmsxVDPLastPort99PC = CPU.PC.W;
+  }
   else
   {
     fmsx_vdp_sync_before_cpu_write();
@@ -3784,12 +3831,24 @@ case 0x99: /* VDP Address Latch */
           fmsx_vdp_trace_log_io(FMSX_VDP_EVENT_PORT99_REG,0u,ALatch,reg,Value);
           VDPOut(reg,ALatch);
         }
+        FmsxVDPLastPort99Op = (reg==15u)? 4u:3u;
+        FmsxVDPLastPort99Value = Value;
+        FmsxVDPLastPort99ALatch = ALatch;
+        FmsxVDPLastPort99VKey = VKey;
+        FmsxVDPLastPort99R15 = MODEL(MSX_MSX1)? 0u:(uint8_t)(VDP[15]&0x0Fu);
+        FmsxVDPLastPort99PC = CPU.PC.W;
         break;
       }
       case 0x00:
       case 0x40:
         /* Set the VRAM access address */
         VAddr=(((uint16_t)Value<<8)+ALatch)&0x3FFF;
+        FmsxVDPLastPort99Op = 5u;
+        FmsxVDPLastPort99Value = Value;
+        FmsxVDPLastPort99ALatch = ALatch;
+        FmsxVDPLastPort99VKey = VKey;
+        FmsxVDPLastPort99R15 = MODEL(MSX_MSX1)? 0u:(uint8_t)(VDP[15]&0x0Fu);
+        FmsxVDPLastPort99PC = CPU.PC.W;
         fmsx_vdp_trace_log_io(
           FMSX_VDP_EVENT_PORT99_ADDR,
           (((uint32_t)VDP[14])<<14) | (uint32_t)(VAddr&0x3FFFu),
@@ -3840,13 +3899,17 @@ case 0x9B: /* VDP Register Access */
   FmsxVDPPort9BWriteCount++;
   fmsx_apply_vdp_io_wait(fmsx_vdp_write_wait_cycles());
   if(MODEL(MSX_MSX1)) return;
+  FmsxVDPPort9BLastReg17Before = VDP[17];
   J=VDP[17]&0x3F;
+  FmsxVDPPort9BLastTarget = J;
+  FmsxVDPPort9BLastValue = Value;
   if(J!=17)
   {
     fmsx_vdp_sync_before_cpu_write();
     VDPOut(J,Value);
   }
   if(!(VDP[17]&0x80)) VDP[17]=(J+1)&0x3F;
+  FmsxVDPPort9BLastReg17After = VDP[17];
   return;
 
 case 0xA1: /* PSG Data */

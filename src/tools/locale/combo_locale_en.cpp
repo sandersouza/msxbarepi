@@ -55,6 +55,7 @@ extern const TComboLocaleStrings g_ComboLocaleEN = {
     "OFF",
     "ON",
     "DUAL",
+    "NONE",
     "N/A",
     "OFF",
     "LCD",

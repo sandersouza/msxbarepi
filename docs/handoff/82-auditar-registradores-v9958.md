@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 82-auditar-registradores-v9958
 
-Ultima atualizacao: 30/03/2026 (14:18 -03)
+Ultima atualizacao: 31/03/2026 (18:45 -03)
 
 ## Objetivo da branch
 
@@ -88,8 +88,409 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
   - `TM3` para `CE/TR`
   - `TM4/TM4B` para `IE1`, alvo/delta de linha e `EO`
   - `TM6B` + UART `VDP EVT` para `R19/R23/R25/R26/R27`, `S1/S2`, `CS/CE`
+- Corte de observabilidade consolidado nesta rodada:
+  - a telemetria atual cobre bem `S#1`, `S#2`, `R#19`, `R#23`, `R#25`, `R#26`, `R#27`, `CS/CE`, writes em `0x98/0x99` e delta de `0x9B`
+  - a telemetria atual **nao** expõe `S#8`, `S#9`, `R#17` nem o alvo efetivo de cada write indireto via `0x9B`
+- Destravamento aplicado nesta rodada:
+  - o overlay ganhou `TM6D` em `src/kernel.cpp`
+  - `TM6D` expõe `R17`, ultimo caminho de `0x9B` (`before > target > after`), ultimo valor escrito em `0x9B` e o conteudo bruto atual de `S#8/S#9`
+- Consequencia pratica:
+  - `IRQ-001`, `IRQ-003`, `CMD-004` e `REN-002..REN-008` continuam plenamente validaveis com a instrumentacao existente
+  - `STS-006` e o residual de `REG-004` deixam de ficar bloqueados por invisibilidade bruta e passam a depender de repro/captura orientada em hardware
 - Risco explicitado para a proxima rodada:
   - `REN-008` ainda pode ficar parcialmente bloqueada sem captura visual, porque a telemetria atual nao expõe um contador dedicado do deslocamento final de sprite na saida HDMI
+- Bloqueios explicitados para a proxima rodada:
+  - `STS-006`: a visibilidade de `S#8/S#9` foi aberta, mas ainda falta um repro dirigido de `SRCH` para desempatar live vs latched
+  - residual de `REG-004`: a visibilidade de `R#17/0x9B` foi aberta, mas ainda falta captura orientada em hardware para ver a caminhada indireta no boot logo ou em repro dedicado
+- Refinamento estático desta rodada para `REG-004`:
+  - `third_party/V9958-Super/docs/revisions.md` registra correções em `2021` para auto-incremento/invalid write acima de `R#47`
+  - porém, tanto o snapshot atual de `third_party/V9958-Super/src/vdp/vdp_register.sv` quanto o lineage `ocm-pld-dev` ainda deixam visível o caminho `VDPR17REGNUM <= VDPR17REGNUM + 1` sem guardrail superior explícito no trecho auditado
+  - consequência: o texto do `revisions.md` não basta para fechar a linha; `REG-004` permanece `partial` até captura dinâmica
+- Destravamento operacional desta rodada:
+  - foi criado o pacote `docs/reverse-engineering/issues/issue-82/dynamic-capture-recipes.md`
+  - ele fixa repros dirigidos para:
+    - `STS-006` com `SRCH` sintético em BASIC usando `TM3 + TM6D`
+    - residual de `REG-004` com caminhada direta de `R17/0x9B` em BASIC usando `TM6D`
+    - `Knightmare Gold`, boot logo `MSX2+` e `Gradius2E/Nemesis2E` com ordem explícita de captura por linha da matriz
+- Destravamento adicional desta rodada:
+  - os dois repros sintéticos também passaram a existir como discos MSX bootáveis em `sdcard/disks/DEBUG/`
+  - imagens geradas:
+    - `V9958_STS006_SRCH.DSK`
+    - `V9958_REG004_R17.DSK`
+  - cada disco contém `AUTOEXEC.BAS`, o programa alvo (`STS006.BAS` ou `REG004.BAS`) e `README.TXT`
+  - os fontes host ficaram em `sdcard/disks/DEBUG/src/`
+  - o gerador reprodutível ficou em `scripts/build-v9958-debug-disks.py`
+  - validação local fechada:
+    - ambos os `.DSK` foram gerados com `720KB`
+    - o root das imagens foi verificado localmente para garantir `AUTOEXEC.BAS` + programa alvo
+  - observação importante:
+    - `make sdcard` / `scripts/prepare-sd.sh` ignoram `sdcard/disks/` por design; esses discos de debug não entram automaticamente no payload de boot
+- Ajuste corretivo após o primeiro teste em hardware do disco `STS-006`:
+  - o vídeo de campo mostrou o `V9958_STS006_SRCH.DSK` entrando em laço de reboot/reentrada via `AUTOEXEC`
+  - o quadro capturado confirma o sintoma de reentrada, mas não permite cravar visualmente se o reset exato ocorre ainda em `SCREEN 5` ou na escrita de `R46=60`
+  - para destravar a próxima medição, `STS006.BAS` foi endurecido em duas frentes:
+    - agora exige soltar a tecla antes de cada avanço, evitando reentrada automática quando há reset e a tecla continua pressionada
+    - o repro foi quebrado em duas fases manuais: fase 1 prepara `SCREEN 5` e os parâmetros; fase 2 escreve `R46=60` para disparar o `SRCH`
+  - o gerador `scripts/build-v9958-debug-disks.py` foi sincronizado e o disco `sdcard/disks/DEBUG/V9958_STS006_SRCH.DSK` foi regenerado localmente
+  - consequência prática: o próximo teste em hardware já consegue responder se o reset vem antes ou exatamente na fase que escreve `R46=60`
+- Ajuste corretivo após o segundo teste em hardware do disco `STS-006`:
+  - a execução manual por `RUN "AUTOEXEC.BAS"` deixou de reiniciar, mas a fase 1 ainda parecia “presa” porque o repro entrava em `SCREEN 5` escuro antes da fase 2
+  - leitura operacional do vídeo:
+    - o fluxo chega na tela de instrução da fase 1
+    - após a tecla, o programa entra em `SCREEN 5`
+    - o quadro preto sozinho não prova travamento; ele é compatível com espera intencional pela fase 2
+  - para eliminar a ambiguidade no próximo teste:
+    - o `AUTOEXEC.BAS` do `STS006` passou a ser passivo e agora apenas instrui a rodar `RUN "STS006.BAS"` manualmente
+    - a fase 1 passou a usar uma tela visível em `SCREEN 5` com faixas claras no topo, separando espera intencional de “tela preta = travou”
+  - o gerador `scripts/build-v9958-debug-disks.py` foi sincronizado novamente e o disco `sdcard/disks/DEBUG/V9958_STS006_SRCH.DSK` foi regenerado localmente
+- Ajuste corretivo após o terceiro teste em hardware do disco `STS-006`:
+  - o vídeo de campo mostrou travamento em tela ciano com a faixa branca já desenhada
+  - isso fecha um corte importante:
+    - o fluxo já passou por `SCREEN 5`
+    - o fluxo já passou pelos `LINE` visuais da etapa inicial
+    - logo, o congelamento acontece depois disso e antes de confirmar o `SRCH`
+  - para localizar o ponto exato, `STS006.BAS` foi quebrado de novo:
+    - `1A`: `SCREEN 5` + barras
+    - `1B`: `PSET` do pixel alvo
+    - `1C`: writes em `R32..R35`
+    - `1D`: writes em `R44..R45`
+    - `1E`: leitura de `S2/S8/S9`
+    - `2`: write em `R46=60`
+  - consequência prática: o próximo teste não mede mais “fase 1 travou”; ele identifica exatamente qual subetapa congela
+- Ajuste corretivo após o quarto teste em hardware do disco `STS-006`:
+  - a tela continuou “presa” no ciano com a faixa branca, o que mantém o freeze aparente antes de `1B`
+  - porém a revisão do próprio repro mostrou que a instrumentação anterior ainda dependia de prompts/teclas invisíveis dentro do `SCREEN 5`
+  - correção aplicada:
+    - `STS006.BAS` agora pede tecla apenas uma vez, ainda em `SCREEN 0`
+    - depois disso, as subetapas avançam sozinhas por tempo curto e codificam progresso apenas por cor
+  - nova leitura operacional da sequência:
+    - `ciano`: `SCREEN 5` + barras
+    - `magenta`: `PSET`
+    - `verde`: `R32..R35`
+    - `amarelo`: `R44..R45`
+    - `branco`: leitura de `S2/S8/S9`
+    - `vermelho`: write em `R46=60`
+  - consequência prática: se o próximo teste ainda congelar no ciano, o bloqueio real fica reduzido ao intervalo entre a entrada em `SCREEN 5` e o `PSET`, sem ruído de input invisível
+- Ajuste corretivo após o quinto teste em hardware do disco `STS-006`:
+  - o vídeo novo finalmente avançou além do ciano e chegou ao amarelo
+  - isso fecha mais um corte:
+    - `SCREEN 5` + barras: OK
+    - `PSET`: OK
+    - writes em `R32..R35`: OK
+    - writes em `R44..R45`: OK
+  - o freeze aparente agora cai para o bloco seguinte, que antes estava agrupado como leitura única de `S2/S8/S9`
+  - para localizar o ponto exato, `STS006.BAS` foi refinado mais uma vez:
+    - `branco`: leitura de `S2`
+    - `cinza`: leitura de `S8`
+    - `azul`: leitura de `S9`
+    - `vermelho`: write em `R46=60`
+  - consequência prática: o próximo teste deve responder exatamente qual leitura de status trava antes de qualquer conclusão sobre o `SRCH` em si
+- Ajuste corretivo após o sexto teste em hardware do disco `STS-006`:
+  - o campo confirmou explicitamente: continua travando no amarelo
+  - inferência operacional imediata:
+    - o freeze não está em `SCREEN 5`, `PSET`, `R32..R35` nem `R44..R45`
+    - o freeze aparece antes mesmo de completar o primeiro bloco de leitura de status
+  - para sair da ambiguidade remanescente, `STS006.BAS` foi temporariamente estreitado:
+    - mantém apenas a preparação até o amarelo
+    - depois isola o caminho de `S2` em três estados:
+      - `branco`: antes de selecionar `S2`
+      - `cinza`: depois de selecionar `S2` (`R15=2`)
+      - `azul`: depois de ler `S2` (`INP(&H99)`)
+  - consequência prática: o próximo teste responde se o travamento acontece ao selecionar `S2` ou ao ler `S2`, sem carregar `S8`, `S9` nem `R46`
+- Ajuste corretivo após o sétimo teste em hardware do disco `STS-006`:
+  - o campo confirmou travamento no branco
+  - inferência operacional imediata:
+    - o freeze aparece antes mesmo de completar o primeiro write de seleção de `S2`
+    - portanto, o suspeito direto cai no caminho de `OUT &H99,2` e não mais em `INP(&H99)` nem no segundo write de `R15`
+  - para fechar o ponto exato, `STS006.BAS` foi refinado mais uma vez:
+    - `branco`: antes de qualquer write de seleção
+    - `cinza`: depois de `OUT &H99,2`
+    - `azul`: depois de `OUT &H99,143`
+    - `vermelho`: depois de `INP(&H99)` para `S2`
+  - consequência prática: o próximo teste responde se o travamento acontece no primeiro write `0x99`, no segundo write `0x99` ou só na leitura final
+- Ajuste corretivo após o oitavo teste em hardware do disco `STS-006`:
+  - o campo confirmou novamente travamento no branco
+  - inferência operacional consolidada:
+    - o freeze acontece antes de completar o primeiro write `OUT &H99,2`
+    - isso desloca a suspeita para o tratamento local da porta `0x99` em si, antes de qualquer seleção completa de `R15`
+  - a trilha experimental do `STS006` já está no menor recorte útil do lado BASIC:
+    - preparação visual até o amarelo
+    - `branco`: imediatamente antes do primeiro `OUT &H99,2`
+    - `cinza`: imediatamente depois do primeiro `OUT &H99,2`
+    - `azul`: imediatamente depois do segundo `OUT &H99,143`
+    - `vermelho`: imediatamente depois do `INP(&H99)`
+  - consequência prática:
+    - não vale mais aprofundar o BASIC antes de inspecionar o caminho local de `OutZ80(0x99, ...)`
+    - o próximo passo técnico sai do repro em disco e entra na auditoria do latch `VKey/ALatch` e do commit de registrador/status no core local
+- Corte técnico seguinte na trilha `IO-004`:
+  - a auditoria local do core confirmou que o primeiro byte em `OutZ80(0x99, ...)` só faz `ALatch=Value` e `VKey=0`
+  - como o repro continuou travando antes mesmo de completar esse primeiro write, o sintoma ficou compatível com latch da `0x99` já dessintonizado antes do teste explícito
+  - isso colou o achado dinâmico na divergência estática `IO-004`, onde `blueMSX` e `V9958-Super` resetam o sequenciador de latch ao ler `0x99`, enquanto o core local preservava `VKey`
+- Ajuste experimental aplicado no core local:
+  - em `src/fmsx_local/MSX.c`, leitura de status pela porta `0x99` voltou a realinhar `VKey` para `primeiro byte` em perfis não-`MSX1`
+  - o caminho `MSX1/TMS9918` foi preservado no comportamento upstream atual para reduzir risco de regressão fora da trilha `V9958`
+  - build local validada:
+    - `BUILD_BID=202603311745-issue82-vkey-status-read-reset`
+    - `BUILD_ID=E82F`
+    - `BUILD_HASH=93807BAF`
+  - consequência prática:
+    - o próximo teste em hardware deve repetir o disco `V9958_STS006_SRCH.DSK` já estreitado para `S2`
+    - se o travamento sair do branco, a evidência dinâmica passa a sustentar `IO-004` como candidato real de correção, não só conflito estático
+- Resultado seguinte em hardware com a build `E82F`:
+  - o disco estreitado de `STS-006`, reduzido ao caminho `OUT/IN 0x99` para `S2`, passou até o fim e voltou com `OK` no BASIC
+  - isso fecha o corte operacional do narrowing:
+    - o travamento anterior antes de `OUT &H99,2` deixou de acontecer
+    - a evidência dinâmica agora sustenta `IO-004` como causa real plausível do freeze, e não apenas conflito estático de matriz
+  - consequência prática:
+    - o `V9958_STS006_SRCH.DSK` foi restaurado para o repro completo de `SRCH`
+    - o próximo teste em hardware volta ao alvo original da linha `STS-006`: decidir `S#8/S#9` live vs latched com `TM3 + TM6D`
+- Resultado seguinte em hardware ainda na build `E82F`:
+  - o repro completo de `SRCH` parou no vermelho
+  - porém, a inspeção do quadro do próprio vídeo mostrou:
+    - `TM3`: `CE=0`
+    - `TM6B`: `S2=00`
+    - `TM6D`: `S8/S9=00/00`
+  - inferência operacional imediata:
+    - o recorte já não aponta mais para `SRCH` preso no command engine
+    - o suspeito agora é o primeiro polling de `S2/S8/S9` logo após o disparo em `R46=&H60`
+  - consequência prática:
+    - `STS006.BAS` voltou a ser estreitado temporariamente
+    - a nova variante isola, em cores, o primeiro select/read de `S2`, `S8` e `S9` logo após o `SRCH`
+- Resultado seguinte em hardware ainda na build `E82F`:
+  - o narrowing pós-`R46` parou no amarelo
+  - nesse recorte, o amarelo já significa:
+    - seleção de `S9` concluída
+    - trava remanescente localizada antes de concluir `S9=INP(&H99)`
+  - como o caminho local de leitura em `InZ80(0x99)` não tem side effect especial para `S#9`, foi adicionada uma telemetria mínima extra para o próximo round:
+    - `TM6B` agora exibe `SR:r/v`, o último status register lido pela porta `0x99` e o valor efetivamente retornado
+  - build local validada para esse corte:
+    - `BUILD_BID=202603311840-issue82-status9-read-observe`
+    - `BUILD_ID=F6A2`
+    - `BUILD_HASH=7F2D898F`
+  - consequência prática:
+    - o próximo teste em hardware mantém o mesmo disco amarelo do `STS006`
+    - o dado decisivo passa a ser: o overlay chega a mostrar `SR:9/xx` antes do freeze ou não
+- Resultado seguinte em hardware já na build `F6A2`:
+  - o novo vídeo voltou a parar no amarelo, mas o quadro útil mostrou `TM6B SR:2/0E`
+  - inferência operacional imediata:
+    - esse amarelo não é o amarelo tardio de `S9`
+    - o disco ainda estava congelando no pre-read residual anterior a `R46=&H60`
+  - consequência prática:
+    - o repro em disco foi corrigido para remover completamente o bloco de pre-read antes do `SRCH`
+    - as cores tardias (`vermelho` em diante) passam a pertencer apenas ao primeiro polling pós-`R46`
+    - o próximo teste em hardware mantém a build `F6A2`, mas exige copiar o `.DSK` novo de novo
+- Resultado seguinte em hardware ainda na build `F6A2`:
+  - o disco já sem pre-read residual passou até o fim e imprimiu:
+    - `S2=31`
+    - `S8=31`
+    - `S9=31`
+    - `X=287`
+  - inferência operacional imediata:
+    - esse retorno não combina com o comportamento esperado do `SearchEngine()` local para `S#9`, que deveria expor `0xFE/0xFF` no bit alto final
+    - o resultado passa a cheirar mais a leitura contaminada por interleaving na porta `0x99` do que a valor real do `SRCH`
+  - consequência prática:
+    - `STS006.BAS` foi estreitado mais uma vez, agora trocando o polling BASIC puro por uma rotina Z80 mínima com `DI/EI`
+    - o helper lê `S2`, `S8` e `S9` atomicamente via `0x99` e devolve os bytes por `PEEK`, eliminando a janela onde BIOS/IRQ/BASIC podem dessintonizar o latch
+    - o próximo teste em hardware mantém a build `F6A2`, mas precisa do `.DSK` regenerado com a rotina atômica
+- Resultado seguinte em hardware ainda na build `F6A2`:
+  - a variante com `USR` repetido passou a travar no rosa
+  - o quadro útil do overlay mostrou:
+    - `TM6B SR:8/00`
+    - `TM6D S:00/FE`
+  - inferência operacional imediata:
+    - o helper atômico já conseguiu ler `S8=00`
+    - o backing store local de `S9` já estava em `FE`
+    - o ruído remanescente agora parece vir do próprio uso repetido de `USR`, não mais do valor bruto exposto pelo core
+  - consequência prática:
+    - `STS006.BAS` foi simplificado para um único helper Z80 com `DI/EI` que lê `S2/S8/S9` em um único burst
+    - o próximo teste em hardware mantém a build `F6A2`, mas requer o `.DSK` regenerado com esse helper único
+- Resultado seguinte em hardware ainda na build `F6A2`:
+  - o vídeo seguinte parou numa cor descrita em campo como `branco gelo`
+  - a inspeção do quadro útil mostra que esse tom pertence mesmo ao `branco` da variante de helper único, isto é, ao estado logo após o burst atômico `S2/S8/S9`
+  - consequência prática:
+    - o repro em disco deixou de usar o helper único
+    - `STS006.BAS` passou a separar o bloco tardio em três passos:
+      - helper 1: burst atômico `S2/S8`
+      - helper 2: `select S9`
+      - helper 3: `read S9`
+    - as cores tardias também foram trocadas para remover o par ambíguo `cinza/branco`; a sequência útil agora fica `vermelho -> azul -> rosa -> amarelo`
+    - o próximo teste em hardware mantém a build `F6A2` e depende só do `.DSK` regenerado
+- Resultado seguinte em hardware ainda na build `F6A2`:
+  - o vídeo seguinte parou no rosa já com a variante `split S2 select/read`
+  - o quadro útil do overlay mostrou:
+    - `TM3 CE=0`
+    - `TM6B SR:8/00`
+    - `TM6D S:00/00`
+  - inferência operacional imediata:
+    - o `SRCH` já terminou antes do freeze
+    - o fluxo já saiu de `S2` e entrou no helper de `S8`
+    - como o disco ainda não segurava atraso entre as cores tardias, os `pulos rápidos` vistos em campo são coerentes com a ausência desse `delay`, não necessariamente com múltiplos freezes distintos
+    - o resíduo agora caiu no helper de `S8`, antes de o programa conseguir pintar a cor seguinte
+  - consequência prática:
+    - `STS006.BAS` foi estreitado outra vez
+    - o helper de `S8` foi quebrado em dois passos separados:
+      - helper 3: `select S8`
+      - helper 4: `read S8`
+    - o restante do bloco tardio continua separado em:
+      - helper 1: `select S2`
+      - helper 2: `read S2`
+      - helper 5: `select S9`
+      - helper 6: `read S9`
+    - cada marcador tardio agora também segura um `delay` curto antes do passo seguinte, para o próximo vídeo não perder a transição humana
+    - a sequência útil passa a ser:
+      - `vermelho`: depois de `R46=&H60`
+      - `azul`: depois de `select S2`
+      - `rosa`: depois de `read S2`
+      - `amarelo`: depois de `select S8`
+      - `laranja`: depois de `read S8`
+      - `cinza`: depois de `select S9`
+      - `branco`: depois de `read S9`
+- Pivô de estratégia ainda em 31/03/2026:
+  - o narrowing por BASIC já cumpriu o papel de sair do "freeze genérico" para um corte concreto no caminho da `0x99`, mas o ganho marginal dessa linha caiu demais
+  - a partir daqui, a trilha deixa de depender principalmente de novas cores e passa a depender de telemetria direta do core local sobre micro-passos da `0x99`
+  - a instrumentação nova adicionada ao overlay:
+    - `TM6B 99:o/k/r/a/v`
+    - `o` = último micro-op da `0x99` (`R`, `L`, `W`, `S`, `A`)
+    - `k` = `VKey` após esse micro-op
+    - `r` = `R#15` após esse micro-op
+    - `a` = `ALatch` atual
+    - `v` = byte associado ao micro-op
+  - build local validada para esse corte:
+    - `BUILD_BID=202603311955-issue82-port99-microop`
+    - `BUILD_ID=B6CB`
+    - `BUILD_HASH=98891cf-2e6fdccb7cdbd1682e1fe031365f23616ee02734`
+  - consequência prática:
+    - o próximo vídeo útil já não precisa de mais um estreitamento cego do BASIC
+    - ele precisa mostrar `TM6B` com `99:` durante o freeze para dizer exatamente se o último passo foi `select S2`, `read S2`, `select S8`, `read S8`, `select S9` ou `read S9`
+- Ajuste seguinte ainda em 31/03/2026, agora guiado pelo diff direto com `blueMSX`:
+  - a comparação entre [VDP.c](/Users/sandersouza/Developer/msxbarepi/third_party/bluemsx/blueMSX/Src/VideoChips/VDP.c) (`readStatus()` / `writeLatch()`) e [MSX.c](/Users/sandersouza/Developer/msxbarepi/src/fmsx_local/MSX.c) (`InZ80()` / `OutZ80()`) confirmou que o reset do latch já estava alinhado semanticamente, mas o caminho local de `0x99` ainda não tinha nenhum equivalente ao `sync(vdp, now)` que o `blueMSX` faz antes de expor `S#n`
+  - como nossa arquitetura line-based não oferece um equivalente direto ao `sync()` inteiro do `blueMSX`, foi aplicado o análogo seguro mais próximo:
+    - novo helper em [V9938.c](/Users/sandersouza/Developer/msxbarepi/src/fmsx_local/V9938.c): `fmsx_vdp_sync_before_status_read()`
+    - ele descarrega um slice pendente do command engine exatamente como `VDPRead()` / `VDPWrite()` já faz
+    - [MSX.c](/Users/sandersouza/Developer/msxbarepi/src/fmsx_local/MSX.c) agora chama esse helper no `case 0x99` para perfis `V9938/V9958`, antes de calcular `S#1/S#2` e ler `VDPStatus[R#15]`
+  - build local validada para esse corte:
+    - `BUILD_BID=202603312030-issue82-port99-readstatus-sync`
+    - `BUILD_ID=4A34`
+    - `BUILD_HASH=98891cf-b06a5dd80e0ee69695cd3b5b978948791d7052b7`
+  - consequência prática:
+    - o próximo teste em hardware deve repetir a build nova com o mesmo `STS006`
+    - o dado decisivo continua sendo `TM6B 99:` no freeze, agora já sob um read-path mais próximo do `blueMSX`
+- Diretriz estratégica consolidada ainda em 31/03/2026:
+  - a trilha oficial do projeto para `MSX2+` / `V9958` deixa explícito que o backend local deve convergir incrementalmente para o comportamento do `blueMSX`, porque uma migração completa de backend continua inviável nesta fase
+  - isso vale para todo o backend derivado de `fMSX`, não apenas para `VDP`: `Z80`, core `MSX`, dispositivos, audio, cartuchos, mapeadores e portas de I/O entram na mesma regra de convergência
+  - o `blueMSX` passa a ser a referência semântica primária do comportamento-alvo; `ocm-pld-dev`, `V9958-Super` e outras referências em `third_party/` continuam como fontes de validação cruzada e desempate
+  - consequência prática para a `#82`:
+    - antes de abrir mais narrowing ad hoc, a ordem preferencial passa a ser `diff direto do backend local contra blueMSX -> validação cruzada com RTL/VHDL -> ajuste local adaptado ao baremetal -> teste em hardware`
+- Ajuste seguinte ainda em 31/03/2026, guiado pelo frame da build `4A34`:
+  - o print de campo da `4A34` mostrou `TM6B SR:2/1C 99:R/1/2/02/1C` com `CE=0`
+  - isso fecha duas coisas:
+    - o ajuste inspirado no `blueMSX` mexeu no valor efetivamente retornado por `S#2` (`1C`, não mais `3E`)
+    - o travamento remanescente continua depois de um `read S2` já concluído, então o gargalo não está mais no micro-op da `0x99` em si
+  - a ambiguidade que sobrou passou a ser a origem desse `99:R`:
+    - se veio do helper `USR`, o resíduo mora no retorno ao BASIC / caminho de CPU logo após o `IN`
+    - se veio de BIOS/runtime, a trilha ainda não chegou onde o repro parecia indicar
+  - para fechar isso sem abrir outro ciclo de BASIC, `TM6B` agora troca o `PC` antigo do trace por `P9`, o `PC` do chamador no último micro-passo concluído da porta `0x99`
+  - build local validada para esse corte:
+    - `BUILD_BID=202603312145-issue82-port99-caller-pc`
+    - `BUILD_ID=3360`
+    - `BUILD_HASH=98891cf-7a6da3c038b872fe3143f50c434fec73ebbe958c`
+  - consequência prática:
+    - o próximo print útil deve mostrar `TM6B P9:` junto do `99:`
+    - se `P9` cair em `D0xx`, o último `read S2` veio do helper do disco e o próximo ataque sai do VDP e entra no retorno da rotina Z80/BASIC
+    - se `P9` cair em ROM/BIOS, a trilha ainda tem interferência externa no caminho da `0x99`
+- Ajuste seguinte ainda em 31/03/2026, fechado pelo print da build `3360`:
+  - o print útil mostrou `TM6B P9:148E SR:2/1C 99:R/1/2/02/1C`
+  - `148E` cai em ROM/BASIC, não no helper temporário em `D000h`
+  - isso fecha a ambiguidade:
+    - o repro baseado em `USR` continua contaminado pelo interpretador no caminho crítico da `0x99`
+    - portanto, o `TM6B 99:` desse disco antigo já não pode mais ser lido como “último passo do helper”
+  - consequência prática imediata:
+    - o disco `STS006` foi refeito para tirar o `USR` do caminho crítico
+    - `STS006.BAS` agora só prepara `SCREEN 5`, o pixel alvo e `R32..R45`, pinta a tela de vermelho e chama `BLOAD "STS006.BIN",R`
+    - `STS006.BIN` roda como runner Z80 único em `D000h`, escreve `R46=&H60`, faz o polling de `S2` até `CE=0` e captura em `D100..D10B`:
+      - contador de loops com `CE=1`
+      - `first-CE S2/S8/S9`
+      - `last-CE S8/S9`
+      - `final S2/S8/S9`
+      - flags de mudança em `S8/S9` enquanto `CE=1`
+  - não houve nova build de kernel neste corte:
+    - o próximo teste continua na build `3360`
+    - o que muda é apenas o `.DSK` regenerado
+- Ajuste seguinte ainda em 31/03/2026, fechado pela primeira execução do runner binário:
+  - o `STS006` novo voltou com `CE LOOPS=0`, `FLAGS=0`, `FINAL S2=60`, `FINAL S8=0`, `FINAL S9=254`, `FINAL X=0`
+  - esse resultado já não aponta para freeze na `0x99`; ele fecha uma falha semântica do próprio repro
+  - a comparação direta contra o core local e o `blueMSX` mostrou o mesmo ponto:
+    - em `SRCH`, `ARG bit1` (`R45 & 0x02`) seleciona a variante `!=`
+    - portanto, o `R45=2` antigo fazia o comando encerrar imediatamente no primeiro pixel de fundo em `X=0`
+  - consequência prática imediata:
+    - o disco `STS006` foi ajustado sem mudar o runner `STS006.BIN`
+    - `STS006.BAS` agora prepara `SCREEN 7`, coloca o pixel-alvo em `X=511` e arma `R45=0` para forçar uma busca longa por igualdade (`==`)
+    - esse repro continua removendo `USR/BASIC` do caminho crítico da `0x99`, mas passa a dar uma chance real de observar `CE=1` e mudanças em `S8/S9`
+  - não houve nova build de kernel neste corte:
+    - o próximo teste continua na build `3360`
+    - o que muda é apenas o `.DSK` regenerado
+- Ajuste seguinte ainda em 31/03/2026, fechado pelo round `SCREEN 7 + X=511 + ARG=0`:
+  - o `STS006` ainda voltou com `CE LOOPS=0`, `FLAGS=0` e `FINAL X=0`
+  - esse retorno expôs outro defeito do próprio repro:
+    - os marcadores visuais em BASIC ainda preenchiam a tela inteira de novo depois do `PSET`
+    - portanto, o padrão de teste era destruído antes do `SRCH`, contaminando a leitura de `X`
+  - consequência prática imediata:
+    - o BASIC deixou de escrever `R32..R45`
+    - o BASIC deixou de usar fills visuais destrutivos depois de pintar o padrão
+    - `STS006.BIN` agora espera `CE=0`, reprograma `R32..R45` e só então dispara `R46=&H60`
+  - não houve nova build de kernel neste corte:
+    - o próximo teste continua na build `3360`
+    - o que muda é apenas o `.DSK` regenerado
+- Ajuste seguinte ainda em 31/03/2026, fechado pelo runner binário já sem ruído de setup:
+  - o `STS006` enfim voltou com um `SRCH` válido:
+    - `CE LOOPS=1`
+    - `FIRST CE S2/S8/S9 = FF/FF/FF`
+    - `LAST CE S8/S9 = FF/FF`
+    - `FINAL S2/S8/S9 = 14/FF/FF`
+    - `FINAL X = 511`
+  - o overlay no mesmo quadro também já mostrava `TM6D S:FF/FF`
+  - leitura prática:
+    - o repro agora está correto e já confirma o hit no alvo `X=511`
+    - durante a janela observada com `CE=1`, `S8/S9` não mostraram caminhada intermediária visível
+    - porém a janela útil ainda ficou curta demais (`CE LOOPS=1`) para fechar sozinha o desempate `live vs latched`
+    - o `FLAGS=129` bruto desse runner deve ser lido como `F0=1` e `F1/F2=0`; o bit alto `0x80` ainda é marcador interno do primeiro sample
+  - consequência prática imediata:
+    - o próximo ataque saiu do disco e voltou ao core
+    - `src/fmsx_local/V9938.c` foi alinhado ao modelo do `blueMSX`: o start de comando por `R46` agora apenas arma `CE/state` e não consome mais um slice imediatamente
+    - isso busca abrir uma janela mais fiel de `CE=1` para o próximo round do `STS006`
+  - build local validada para esse corte:
+    - `BUILD_BID=202603312330-issue82-vdpdraw-deferred-start`
+    - `BUILD_ID=FFC6`
+    - `BUILD_HASH=98891cf-98891cfce0e7f23f86a7269f492eff639b106655`
+- Ajuste seguinte ainda em 31/03/2026, fechado pelo teste em hardware da build `FFC6`:
+  - o mesmo `STS006` repetido com o start de comando alinhado ao `blueMSX` voltou com:
+    - `CE LOOPS=1`
+    - `FIRST CE S2/S8/S9 = 00/00/00`
+    - `LAST CE S8/S9 = 00/00`
+    - `FINAL S2/S8/S9 = 14/FF/FF`
+    - `FINAL X = 511`
+  - o quadro do overlay no mesmo instante ainda mostrava `TM6D S:FF/FF`
+  - leitura prática:
+    - a mudança em `VDPDraw()` não aumentou a janela de `CE=1`
+    - mas ela removeu o último ruído importante da coleta: agora ficou explícito que, durante `CE=1`, `S8/S9` ficaram em `00/00` e só saltaram para `FF/FF` depois do fim do comando
+    - isso fecha o comportamento do nosso core do lado `blueMSX`/`latched-on-complete`, e enfraquece de vez o modelo `live SXTMP` para o alvo de implementação desta branch
+    - a linha global da matriz continua `disputed` apenas porque a referência `V9958-Super` segue divergindo, não porque o comportamento do core local ainda esteja ambíguo
+  - consequência prática imediata:
+    - `STS-006` fica operacionalmente fechado para a convergência com `blueMSX`
+    - o próximo teste útil da issue volta a ser o residual de `REG-004` com `V9958_REG004_R17.DSK`
+- Ajuste seguinte ainda em 31/03/2026, fechado pelo teste em hardware de `REG004` na build `FFC6`:
+  - o quadro final mostrou em `TM6D`:
+    - `R17:34`
+    - `9B:33>33>34`
+    - `V:A5`
+  - leitura prática:
+    - o write indireto via `0x9B` não travou em `2Fh`
+    - o core local continuou incrementando `R#17` acima de `R#47`, chegando a `34h` após seis writes partindo de `2Eh`
+    - isso converge com o comportamento de referência do `blueMSX`, cujo `writeRegister()` também faz `vdpRegs[17] = (reg + 1) & 0x3f` sem clamp em `2Fh`
+    - a janela funcional do command engine continua fechando em `R#32..R#46`; acima disso, o efeito prático observado é “incrementa e grava shadow/inerte”, não “clampa”
+  - consequência prática imediata:
+    - o residual local de `REG-004` fica operacionalmente fechado do lado `blueMSX`
+    - a linha global da matriz continua `partial` apenas porque o snapshot/lineage HDL ainda não fecha esse detalhe com a mesma nitidez
 - Comentarios de progresso ja publicados na issue remota `#231`; o proximo comentario remoto deve registrar esse corte do renderer e o bloqueio conhecido de `IO-004`.
 - O proximo comentario remoto da `#231` tambem deve registrar:
   - `REG-001` como `match`
@@ -100,10 +501,22 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 ## Estado da camada de descoberta
 
 - `#231`: bootstrap inicial concluído e primeira passada estática granular já incorporada à matriz, incluindo o recorte do renderer por modo; issue segue em `In progress`
+- Desbloqueio operacional para a próxima rodada de hardware:
+  - o menu de `Scale` ganhou o estado `NONE`, abaixo do antigo `1x`
+  - `Scale [NONE]` permanece como degrau extra abaixo de `1x`, preserva `1x..5x`, e a geometria efetiva do viewport usa `2.0x`
+  - a mudança foi feita para viabilizar as capturas da `#235` sem perder a build de observabilidade já preparada
+  - o overlay `TXTDBG` foi compactado para usar a largura horizontal completa e consolidar indicadores do mesmo grupo na mesma linha sempre que couberem
+  - no layout atual, o bloco inteiro fecha nas linhas `1..9`, com `TXTDBG` em `1`, `AUD1/SYS/AC1` em `2..4` e as linhas `TM` agrupadas por afinidade em `5..9`
+  - ao ligar o overlay com `F11`, o runtime agora força automaticamente `Scale [NONE]`
+  - build local validada para esse corte:
+    - `BUILD_BID=202603310045-issue82-txtdbg-15lines`
+    - `BUILD_ID=24E7`
+    - `BUILD_HASH=98891cf-98891cfce0e7f23f86a7269f492eff639b106655`
+    - observação: a build saiu de worktree local com mudanças não commitadas da branch `82`
 - Próximo passo objetivo na branch atual:
-  1. confirmar dinamicamente `IRQ-001`, `IRQ-003` e `CMD-004` agora que o desempate estático ganhou suporte do `ocm-pld-dev`
-  2. confirmar dinamicamente `STS-006` para desempatar `SXTMP` live vs latched em `S#8/S#9`
-  3. confirmar dinamicamente `REN-002..REN-008`, com foco em `SCREEN 4`, odd/even page, left-edge mask e alinhamento de sprite sob `R27`
+  1. executar em hardware os discos `sdcard/disks/DEBUG/V9958_STS006_SRCH.DSK` e `sdcard/disks/DEBUG/V9958_REG004_R17.DSK`
+  2. fechar primeiro `STS-006` e o residual de `REG-004`, porque agora já existe repro sintético direto para ambos via `AUTOEXEC.BAS`
+  3. em seguida confirmar dinamicamente `IRQ-001`, `IRQ-003`, `CMD-004` e `REN-002..REN-008`
   4. se `REN-008` continuar inconclusiva, registrar bloqueio explícito por falta de observabilidade direta de sprite em vez de abrir telemetria nova cedo demais
   5. só então promover a `#232` como próxima issue ativa
 
@@ -168,13 +581,25 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 - Mudancas de codigo no core: tentativa revertida; core restaurado ao baseline anterior da branch
 - Validacao em hardware do alias: falhou
 - Validacao em hardware do baseline restaurado: pendente
+- Build local da telemetria `TM6D`: OK (`make -j4 DEBUG=1 BUILD_BID=202603301455-issue82-vdp-observability`)
+- `BUILD_ID` da telemetria `TM6D`: `16D6`
+- `BUILD_HASH` da telemetria `TM6D`: `98891cfc-9e23387dc2ea0bf0542319be174b90aa3febb6af`
+- Escopo dessa build:
+  - nova linha `TM6D` no overlay
+  - snapshot de `R17`, `S#8`, `S#9` e ultimo write indireto em `0x9B`
+- Validacao em hardware da telemetria `TM6D`: pendente
+- Discos de repro gerados localmente: OK
+  - `sdcard/disks/DEBUG/V9958_STS006_SRCH.DSK`
+  - `sdcard/disks/DEBUG/V9958_REG004_R17.DSK`
+  - conteúdo validado no root: `AUTOEXEC.BAS`, programa alvo, `README.TXT`
 
 ## Proximo passo sugerido
 
-1. Confirmar dinamicamente `IRQ-001`, `IRQ-003` e `CMD-004` agora que o desempate estático ganhou suporte do `ocm-pld-dev`.
-2. Confirmar dinamicamente `REN-002..REN-008`, com foco em `SCREEN 4`, odd/even page, left-edge mask e alinhamento de sprite sob `R27`.
-3. Se `REN-008` continuar inconclusiva, registrar bloqueio explícito por falta de observabilidade direta de sprite em vez de abrir telemetria nova cedo demais.
-4. Só então promover a `#232` como próxima issue de descoberta estática detalhada.
+1. Rodar em hardware `V9958_STS006_SRCH.DSK` e `V9958_REG004_R17.DSK` com `F11` ativo para capturar `TM3/TM6D`.
+2. Confirmar dinamicamente `IRQ-001`, `IRQ-003` e `CMD-004` agora que o desempate estático ganhou suporte do `ocm-pld-dev`.
+3. Confirmar dinamicamente `REN-002..REN-008`, com foco em `SCREEN 4`, odd/even page, left-edge mask e alinhamento de sprite sob `R27`.
+4. Se `REN-008` continuar inconclusiva, registrar bloqueio explícito por falta de observabilidade direta de sprite em vez de abrir telemetria nova cedo demais.
+5. Só então promover a `#232` como próxima issue de descoberta estática detalhada.
 
 ## Gestao paralela registrada nesta branch
 

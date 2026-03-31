@@ -101,9 +101,19 @@ Criar o documento canônico da auditoria comparativa do V9958 stock em `docs/rev
 - `IO-004` segue sem correção local deliberadamente:
   - o histórico da branch `fix-acurating-timing-vdp9958` já registra regressão ao forçar reset de `VKey` em leitura de `0x99`
   - a linha fica tratada como `conflict` fechado, mas bloqueada para “fix” sem repro dinâmico novo
+- Atualização dinâmica de 31/03/2026:
+  - o repro estreitado de `STS-006`, reduzido ao caminho de seleção/leitura de `S2`, deixou de travar em hardware com a build experimental `E82F`
+  - isso não fecha ainda a correção de `IO-004`, mas transforma o conflito estático em candidato forte de causa real para o freeze observado antes do `SRCH`
+  - consequência prática: o repro em disco voltou do narrowing de `S2` para o `SRCH` completo, para retomar o desempate de `STS-006`
 - O corte de `REG-004` também ficou mais objetivo:
   - o decode funcional do `command engine` fecha em `R#32..R#46` nas três bases
   - o aberto remanescente não é mais “se `R#47+` pertence ao engine”, e sim o guardrail exato do auto-incremento indireto de `R#17` quando a caminhada passa de `R#47`
+  - a leitura desta rodada mostrou um detalhe de precedência importante:
+    - `third_party/V9958-Super/docs/revisions.md` registra, em `30/05/2021` e `02/06/2021`, correções de auto-incremento e invalid write acima de `R#47`
+    - porém, tanto o snapshot atual em `third_party/V9958-Super/src/vdp/vdp_register.sv` quanto o lineage `ocm-pld-dev` ainda exibem o caminho visível de `VDPR17REGNUM <= VDPR17REGNUM + 1` sem guardrail superior explícito no trecho auditado
+  - consequência:
+    - `REG-004` continua `partial`
+    - a matriz não pode assumir o texto de `revisions.md` como baseline suficiente sem fechar a evidência dinâmica do caminho real
 - Nova disputa aberta para a fase dinâmica:
   - `STS-006`: `blueMSX` e o core local tratam `S#8/S#9` como valor latched ao fim do `SRCH`, enquanto `V9958-Super`/`ocm-pld-dev` expõem `SXTMP` live do command core
   - essa linha agora precisa de evidência dinâmica antes de qualquer correção em `MSX.c` / `V9938.c`
@@ -115,6 +125,9 @@ Criar o documento canônico da auditoria comparativa do V9958 stock em `docs/rev
   - `IRQ-001`, `IRQ-003`, `CMD-004`
   - `STS-006`
   - `REN-002..REN-008`, com foco em `SCREEN 4`, odd/even page, left-edge mask e alinhamento de sprite sob `R27`
+- A coleta dinâmica agora já tem um pacote dirigido em:
+  - `docs/reverse-engineering/issues/issue-82/dynamic-capture-recipes.md`
+  - ele cobre o repro sintético de `SRCH` para `STS-006`, o repro direto de `R17/0x9B` para `REG-004` e a ordem de captura para boot logo, `Knightmare Gold` e `Gradius2E/Nemesis2E`
 
 ## Testes e cenários
 - Validar que o documento aponta para arquivos e módulos reais do repositório

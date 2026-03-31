@@ -886,6 +886,23 @@ uint8_t VDPRead(void)
   return(VDP[44]);
 }
 
+/** fmsx_vdp_sync_before_status_read() ***********************/
+/** Minimal status-read sync for V9938/V9958 command state. **/
+/*************************************************************/
+void fmsx_vdp_sync_before_status_read(void)
+{
+  /*
+   * blueMSX runs readStatus() through sync(vdp, now) before exposing S#n.
+   * Our local architecture does not have a direct equivalent to that full
+   * time-based sync hook, but the closest safe analogue is the same command
+   * slice flush already used by VDPRead()/VDPWrite(). This keeps CE/S7/S8/S9
+   * from lagging one CPU-side status read behind when the command engine has
+   * pending work in the current slice.
+   */
+  if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
+  VdpTraceSyncCE();
+}
+
 /** VDPDraw() ************************************************/
 /** Perform a given V9938 operation Op.                     **/
 /*************************************************************/
@@ -999,8 +1016,11 @@ uint8_t VDPDraw(uint8_t Op)
   /* Command execution started */
   VDPStatus[2]|=0x01;
 
-  /* Start execution if we still have time slices */
-  if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
+  /*
+   * blueMSX only arms CE/state here and lets execution advance on the next
+   * sync point. Do not consume a command slice immediately on R#46 start,
+   * or short commands collapse into the same CPU-side status probe.
+   */
   VdpTraceSyncCE();
 
   /* Operation successfull initiated */
