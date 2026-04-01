@@ -179,6 +179,12 @@ INLINE void VdpTraceSyncCE(void)
   }
 }
 
+INLINE void VdpSyncCommandSlice(void)
+{
+  if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
+  VdpTraceSyncCE();
+}
+
 /* Command budget per LoopVDP() call.
  * MSX2+ BIOS logo relies heavily on VDP block commands and stalls if the
  * command engine progresses too conservatively. Use a larger quantum there.
@@ -871,8 +877,7 @@ void VDPWrite(uint8_t V)
 {
   VDPStatus[2]&=0x7F;
   VDPStatus[7]=VDP[44]=V;
-  if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
-  VdpTraceSyncCE();
+  VdpSyncCommandSlice();
 }
 
 /** VDPRead() ************************************************/
@@ -881,8 +886,7 @@ void VDPWrite(uint8_t V)
 uint8_t VDPRead(void)
 {
   VDPStatus[2]&=0x7F;
-  if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
-  VdpTraceSyncCE();
+  VdpSyncCommandSlice();
   return(VDP[44]);
 }
 
@@ -899,8 +903,20 @@ void fmsx_vdp_sync_before_status_read(void)
    * from lagging one CPU-side status read behind when the command engine has
    * pending work in the current slice.
    */
-  if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
-  VdpTraceSyncCE();
+  VdpSyncCommandSlice();
+}
+
+/** fmsx_vdp_sync_before_cpu_mutation() **********************/
+/** Minimal write-side sync for V9938/V9958 command state. **/
+/*************************************************************/
+void fmsx_vdp_sync_before_cpu_mutation(void)
+{
+  /*
+   * blueMSX syncs the VDP before CPU-driven VRAM/register writes as well.
+   * Mirror that behavior with the same coarse command-slice flush used by
+   * status reads so CE/TR can advance before the write is applied.
+   */
+  VdpSyncCommandSlice();
 }
 
 /** VDPDraw() ************************************************/

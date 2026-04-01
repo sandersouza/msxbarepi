@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 82-auditar-registradores-v9958
 
-Ultima atualizacao: 31/03/2026 (18:45 -03)
+Ultima atualizacao: 31/03/2026 (21:04 -03)
 
 ## Objetivo da branch
 
@@ -10,6 +10,21 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 
 - Issue remota: [#82 - [P1] Validar VDP9958 e modos adicionais do MSX2+](https://github.com/sandersouza/msxbarepi/issues/82)
 - Branch vinculada via `gh issue develop`: `82-auditar-registradores-v9958`
+
+## Regra de branching da trilha
+
+- A branch `82-auditar-registradores-v9958` permanece como umbrella da trilha.
+- Cada sub-issue que usar a `#82` como umbrella deve abrir uma branch derivada desta branch umbrella, e nao diretamente de `main`.
+- Cada sub-issue deve abrir PR para `82-auditar-registradores-v9958`.
+- O merge das sub-issues acontece primeiro na branch umbrella; so ao consolidar a trilha a `#82` abre PR proprio para `main`.
+
+## Atualizacao incremental de 31/03/2026 - decisao da subtrilha `#235`
+
+- Na branch derivada `235-validar-corpus-dinamico-v9958-stock`, `IRQ-001` e `IRQ-003` passaram a ser tratadas como estaveis operacionalmente para a trilha.
+- Essa decisao nao troca o veredito global da matriz para `match`; as duas linhas permanecem `partial`.
+- Consequencia pratica na umbrella:
+  - `IRQ-001` e `IRQ-003` deixam de bloquear a passada dinamica da `#235`
+  - o foco remanescente da issue se desloca para `CMD-004` e `REN-002..REN-008`
 
 ## Reestruturacao da trilha em 29/03/2026
 
