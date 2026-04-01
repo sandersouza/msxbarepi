@@ -126,6 +126,7 @@ Usar apenas a instrumentação já existente no projeto para fechar ou bloquear 
   - overlay: `TM2` (`R25/R26/R27`, `EP`)
   - trace: `TM6B` (`R25`, `R26`, `R27`) e UART `VDP EVT`
   - objetivo: fechar scroll high-res, troca de página e alinhamento do plano interleaved do `SCREEN 7`
+  - estado operacional na `#235`: bloqueado por falta de evidência dinâmica útil no corpus atual
 - `REN-005` (`SCREEN 8`):
   - repro principal: boot logo `MSX2+`
   - overlay: `TM2` (`R25/R26/R27`, `EP`)
@@ -146,6 +147,7 @@ Usar apenas a instrumentação já existente no projeto para fechar ou bloquear 
   - overlay: `TM2` (`R25/R26/R27`, `EP`)
   - trace: `TM6B` (`R27`) e UART `VDP EVT`
   - objetivo: fechar o backdrop por telemetria existente e registrar explicitamente se o alinhamento prático de sprite continuar dependendo de evidência visual/screenshot
+  - estado operacional na `#235`: bloqueado por falta de evidência dinâmica útil no corpus atual
 
 ## Riscos e bloqueios esperados
 - `STS-006` continua dependente de repro dirigido:
@@ -743,6 +745,35 @@ Usar apenas a instrumentação já existente no projeto para fechar ou bloquear 
   - `CMD004` deixa de ser repro dinâmico útil desta issue;
   - `CMD-004` volta a ficar sustentada apenas pela base estática e deixa de bloquear a `#235`;
   - o freeze pós-comando em `SCREEN 4` pode virar uma trilha separada se continuar relevante depois do fechamento desta issue.
+
+## Atualizacao incremental de 01/04/2026 - round `Gradius2E/Nemesis2E` ficou em `SCREEN 4`
+
+- O vídeo de `01/04/2026 15:57:10` trouxe gameplay estável e overlay legível, mas não entrou no path high-res que esta issue ainda precisa.
+- Nos frames úteis observados:
+  - `SM:04` permaneceu estável;
+  - `R25:00`, `R26:00`, `R27:00`, `EP:0` ficaram estáveis;
+  - `CE:0` e `TR:0` permaneceram zerados;
+  - `TM6B` mostrou só reads ordinários de status (`SR:0/9F` e `SR:1/04`);
+  - não houve corrupção visual óbvia no trecho de gameplay e scroll observado.
+- Leitura operacional:
+  - o round reforça estabilidade prática de `SCREEN 4`, não `REN-004`/`REN-008`;
+  - ele não fecha `REN-004`, porque o repro não entrou em `SM:06/07`;
+  - ele não fecha `REN-008`, porque `R27` ficou zerado e o path de mask/alinhamento de sprite em high-res não foi exercitado.
+- Consequencia operacional:
+  - este vídeo não avança os itens remanescentes da issue;
+  - o próximo round da `#235` precisa de um repro do corpus que realmente entre no modo alvo, ou de bloqueio explícito dessas linhas por falta de evidência dinâmica dentro do corpus atual.
+
+## Decisao operacional de 01/04/2026 - `REN-004` e `REN-008` bloqueadas
+
+- Por decisão da trilha, `REN-004` e `REN-008` passam a ficar explicitamente bloqueadas nesta issue por falta de evidência dinâmica útil dentro do corpus atual.
+- Justificativa:
+  - o vídeo mais recente de `Gradius2E/Nemesis2E` permaneceu em `SM:04`, com `R25/R26/R27=00`, `EP:0`, `CE/TR=0` e sem evento útil em `TM6B`;
+  - os outros repros do corpus (`boot logo`, `MSXDIAG`, `UNKNOWN1.DSK`) também não forneceram uma janela high-res confiável com `SM:06/07` e `R27` relevante;
+  - insistir em rounds adicionais sem mudar de corpus deixou de produzir evidência nova.
+- Consequencia operacional:
+  - essas duas linhas deixam de bloquear o fechamento prático da `#235`;
+  - a matriz canônica preserva o estado técnico de implementação, mas a issue local passa a tratá-las como `blocked by missing dynamic evidence`;
+  - qualquer fechamento futuro por captura deve partir de repro melhor ou de trilha específica.
 
 ## Referências iniciais
 - `docs/debug-layer.md`

@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 235-validar-corpus-dinamico-v9958-stock
 
-Ultima atualizacao: 31/03/2026 (23:45 -03)
+Ultima atualizacao: 01/04/2026 (16:20 -03)
 
 ## Objetivo da branch
 
@@ -22,24 +22,21 @@ Fechar a issue `#235` com a passada dinamica restante do `V9958 stock`, usando a
   - `TM6D` mostrou `R17:34 9B:33>33>34 V:A5`
   - o auto-incremento indireto via `0x9B` continuou acima de `2Fh`
 - A issue `#235` continua aberta porque ainda faltam as linhas:
-  - `CMD-004`
-  - `REN-002..REN-008`
+  - consolidar os bloqueios/encaminhamentos finais de `CMD-004`, `REN-004` e `REN-008`
+  - reavaliar se `REN-003`, `REN-005`, `REN-006` e `REN-007` ainda exigem round adicional nesta branch
 
 ## Proximo passo objetivo
 
-1. Parar de investir novos rounds em `CMD004` nesta issue.
-2. Executar `Gradius2E` ou `Nemesis2E` com `TM2`, `TM4B`, `TM6B` e, se couber, `TM3`.
-3. Coletar evidencia para:
-   - `REN-004`
-   - `REN-008`
-4. Se o video trouxer `SM:06/07`, `R25/R26/R27` ativos e scroll/sprite coerentes sem corrupcao visual, promover essas duas linhas para estado operacionalmente estavel na `#235`.
+1. Tratar `CMD-004` como sustentada pela base estatica e fora do caminho dinamico desta issue.
+2. Tratar `REN-004` e `REN-008` como bloqueadas por falta de evidencia dinamica dentro do corpus atual.
+3. Reavaliar se `REN-003`, `REN-005`, `REN-006` e `REN-007` ainda exigem novo round pratico ou se a `#235` ja pode seguir para consolidacao/encerramento.
 
 ## Orientacao operacional imediata
 
-- Build candidata atual: `FFC6`
+- Build candidata atual: `1052`
 - Roteiro de captura: `docs/reverse-engineering/issues/issue-82/dynamic-capture-recipes.md`
 - Issue local espelho: `docs/milestones/m11/235-validar-corpus-dinamico-v9958-stock-telemetria-existente.md`
-- O worktree desta branch herdou mudancas locais de documentacao/fluxo da umbrella `#82` ainda nao commitadas.
+- O worktree desta branch esta limpo fora das atualizacoes documentais correntes.
 
 ## Atualizacao incremental de 31/03/2026 - primeiro round `Knightmare Gold`
 
@@ -396,3 +393,32 @@ Fechar a issue `#235` com a passada dinamica restante do `V9958 stock`, usando a
   - `CMD004` deixa de ser repro util desta issue;
   - a linha `CMD-004` volta a ficar sustentada pela base estatica (`blueMSX` + core local + lineage HDL), sem mais bloquear a `#235`;
   - qualquer investigacao do freeze pos-comando em `SCREEN 4` deve nascer como trilha propria, separada do fechamento desta issue.
+
+## Atualizacao incremental de 01/04/2026 - video de `Gradius2E/Nemesis2E` nao entrou em high-res
+
+- O video capturado em `01/04/2026 15:57:10` trouxe gameplay util, com overlay legivel durante praticamente todo o round.
+- Nos frames amostrados ao longo do video:
+  - `SM:04` permaneceu estavel;
+  - `R25:00`, `R26:00`, `R27:00`, `EP:0` permaneceram estaveis;
+  - `CE:0` e `TR:0` ficaram zerados nos quadros uteis;
+  - `TM6B` mostrou apenas reads ordinarios de status (`SR:0/9F` e `SR:1/04`), sem burst util de command path ou alteracao de `R25/R26/R27`;
+  - o gameplay e o scroll ficaram visualmente coerentes, sem corrupcao obvia de sprite/backdrop no trecho amostrado.
+- Leitura operacional:
+  - este round reforca apenas estabilidade pratica do path plain em `SCREEN 4`;
+  - ele nao avanca `REN-004` nem `REN-008`, porque o repro observado nao entrou em `SM:06/07` nem exerceu `R27`/page flip/high-res;
+  - se este era mesmo o binario pretendido de `Gradius2E/Nemesis2E`, o software capturado deixou de servir como repro high-res para esta issue.
+- Consequencia pratica:
+  - a branch nao promove `REN-004` nem `REN-008` com base neste video;
+  - o proximo passo da `#235` precisa de um repro do corpus que realmente entre no modo alvo, ou de bloqueio explicito dessas linhas por falta de evidencia dinamica dentro do corpus atual.
+
+## Decisao operacional de 01/04/2026 - `REN-004` e `REN-008` bloqueadas
+
+- Por decisao da trilha, `REN-004` e `REN-008` passam a ser tratadas como bloqueadas por falta de evidencia dinamica dentro do corpus atual da `#235`.
+- Justificativa:
+  - o round mais recente de `Gradius2E/Nemesis2E` permaneceu em `SM:04`, com `R25/R26/R27=00`, `EP:0`, `CE/TR=0` e apenas reads ordinarios em `TM6B`;
+  - os repros anteriores do corpus (`boot logo`, `MSXDIAG`, `UNKNOWN1.DSK`) tambem nao entregaram um caminho high-res limpo que sustentasse `SM:06/07` com `R27` relevante;
+  - insistir em novos rounds sem um repro que realmente entre no modo alvo deixou de ter retorno pratico nesta issue.
+- Consequencia pratica:
+  - `REN-004` e `REN-008` deixam de bloquear a `#235`;
+  - a linha tecnica na matriz continua a mesma (`conflict`/`partial`), mas o estado operacional da branch passa a ser `blocked by missing dynamic evidence`;
+  - qualquer tentativa futura de fechar essas duas linhas dinamicamente deve nascer de corpus melhor ou de trilha dedicada, nao como continuidade cega desta rodada.
