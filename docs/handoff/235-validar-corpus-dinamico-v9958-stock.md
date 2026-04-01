@@ -27,10 +27,12 @@ Fechar a issue `#235` com a passada dinamica restante do `V9958 stock`, usando a
 
 ## Proximo passo objetivo
 
-1. Executar `Knightmare Gold` com `TM2`, `TM4B`, `TM6B` e `TM6D` visiveis.
-2. Coletar evidencia para:
-   - `REN-002`
-3. Reavaliar o boot logo `MSX2+` como repro de `CMD-004` e `REN-003/005/006/007`; se continuar preso em `SM:06`, mudar o foco para `MSXDIAG` e/ou outro repro do corpus.
+1. Parar de investir novos rounds em `CMD004` nesta issue.
+2. Executar `Gradius2E` ou `Nemesis2E` com `TM2`, `TM4B`, `TM6B` e, se couber, `TM3`.
+3. Coletar evidencia para:
+   - `REN-004`
+   - `REN-008`
+4. Se o video trouxer `SM:06/07`, `R25/R26/R27` ativos e scroll/sprite coerentes sem corrupcao visual, promover essas duas linhas para estado operacionalmente estavel na `#235`.
 
 ## Orientacao operacional imediata
 
@@ -361,3 +363,36 @@ Fechar a issue `#235` com a passada dinamica restante do `V9958 stock`, usando a
   - `ON BYTE=165`
   - `bit0/bit1` das flags marcam mudanca real em `VRAM[0]`;
   - `bit2/bit3` ficam só como telemetria auxiliar de `CE`.
+
+## Atualizacao incremental de 01/04/2026 - helper asm do `CMD004` descartado
+
+- O round seguinte do `CMD004` ainda voltou inconclusivo:
+  - `OFF CLR=64 BYTE=64`
+  - `ON CLR=64 BYTE=64`
+  - isso provou que o proprio helper asm de VRAM ainda estava contaminando a leitura base, antes mesmo do `HMMV`.
+- Correcao de metodo aplicada:
+  - o `CMD004.BAS` deixou de depender do helper asm para a medicao;
+  - a variante atual e 100% BASIC para a parte de leitura/escrita de VRAM, usando `VPOKE 0,0` / `VPEEK(0)`;
+  - o teste continua armando o `HMMV` via `OUT &H99` e polling de `S#2`, mas a verificacao final de byte passou para o caminho BIOS/BASIC.
+- Novo criterio esperado:
+  - `OFF CLR=0`
+  - `OFF BYTE=0`
+  - `ON CLR=0`
+  - `ON BYTE=165`
+
+## Atualizacao incremental de 01/04/2026 - `CMD004` bloqueado como repro dinamico
+
+- O round seguinte da variante pura em BASIC tambem travou antes do resumo final.
+- O quadro congelado mostrou:
+  - `SM:04`
+  - `R25:00`
+  - `CE=0`, `TR=0`
+  - ultimo status lido em `TM6B`: `SR:2/0C 99:R/1/2/02/0C`
+- Leitura tecnica:
+  - o `HMMV` do caso `OFF` ja tinha terminado;
+  - o freeze nao ficou mais no command engine nem no `R25 bit6`;
+  - o repro passou a bater em um caminho de VRAM/BASIC pos-comando, antes mesmo de chegar ao caso `R25=64`.
+- Decisao operacional:
+  - `CMD004` deixa de ser repro util desta issue;
+  - a linha `CMD-004` volta a ficar sustentada pela base estatica (`blueMSX` + core local + lineage HDL), sem mais bloquear a `#235`;
+  - qualquer investigacao do freeze pos-comando em `SCREEN 4` deve nascer como trilha propria, separada do fechamento desta issue.

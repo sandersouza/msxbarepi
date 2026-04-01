@@ -711,6 +711,39 @@ Usar apenas a instrumentação já existente no projeto para fechar ou bloquear 
   - `ON BYTE=165`
   - flags `bit0/bit1` marcam mudança real de VRAM, e `bit2/bit3` ficam só como telemetria auxiliar de `CE`.
 
+## Atualizacao incremental de 01/04/2026 - helper asm do `CMD004` descartado
+
+- O round seguinte do `CMD004` ainda voltou inconclusivo:
+  - `OFF CLR=64 BYTE=64`
+  - `ON CLR=64 BYTE=64`
+  - isso mostrou que o helper asm ainda contaminava a propria leitura base de VRAM.
+- Ajuste aplicado:
+  - o `CMD004.BAS` deixou de depender do helper asm para a leitura/escrita de VRAM;
+  - a variante atual usa `VPOKE 0,0` / `VPEEK(0)` diretamente no BASIC para medir o byte-base e o byte final;
+  - o armamento do `HMMV` continua via `OUT &H99`, com polling de `S#2`.
+- Novo critério esperado:
+  - `OFF CLR=0`
+  - `OFF BYTE=0`
+  - `ON CLR=0`
+  - `ON BYTE=165`
+
+## Atualizacao incremental de 01/04/2026 - `CMD004` bloqueado como repro dinâmico
+
+- O round seguinte da variante pura em BASIC também travou antes do resumo final.
+- O quadro congelado mostrou:
+  - `SM:04`
+  - `R25:00`
+  - `CE=0`, `TR=0`
+  - último status lido em `TM6B`: `SR:2/0C 99:R/1/2/02/0C`
+- Interpretação:
+  - o `HMMV` do caso `OFF` já tinha terminado;
+  - o congelamento não ficou no command engine nem chegou ao caso `R25 bit6 = 1`;
+  - o repro passou a esbarrar em um caminho pós-comando de VRAM/BASIC em `SCREEN 4`.
+- Decisão operacional:
+  - `CMD004` deixa de ser repro dinâmico útil desta issue;
+  - `CMD-004` volta a ficar sustentada apenas pela base estática e deixa de bloquear a `#235`;
+  - o freeze pós-comando em `SCREEN 4` pode virar uma trilha separada se continuar relevante depois do fechamento desta issue.
+
 ## Referências iniciais
 - `docs/debug-layer.md`
 - `docs/reverse-engineering/msxdiag/`

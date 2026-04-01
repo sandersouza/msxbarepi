@@ -466,6 +466,8 @@ start:
 
 run_case_off:
 	    call clear_vram0
+	    call read_vram0
+	    ld (RESULTS+5),a
 	    call setup_hmmv
 	    ld a,$C0
 	    out (PORTVDP),a
@@ -492,6 +494,8 @@ run_case_off:
 
 run_case_on:
 	    call clear_vram0
+	    call read_vram0
+	    ld (RESULTS+6),a
 	    call setup_hmmv
 	    ld a,$C0
 	    out (PORTVDP),a
@@ -556,14 +560,22 @@ setup_hmmv:
 	    ret
 
 clear_vram0:
+	    call set_reg14_zero
 	    xor a
 	    call set_vram_write0
 	    out (PORTVRAM),a
 	    ret
 
 read_vram0:
+	    call set_reg14_zero
 	    call set_vram_read0
 	    in a,(PORTVRAM)
+	    ret
+
+set_reg14_zero:
+	    xor a
+	    ld b,14
+	    call write_reg
 	    ret
 
 set_vram_write0:
@@ -675,14 +687,13 @@ read_s2:
             volume_label="CMD004R25",
             autoexec_target="CMD004.BAS",
             program_name="CMD004.BAS",
-            program_text="""5 DEFINT A-Z:CLEAR 200,&HD200
+            program_text="""5 DEFINT A-Z
 10 KEY OFF:SCREEN 0:WIDTH 40:COLOR 15,4,4:CLS
-15 D=&HD500
 20 PRINT "V9958 CMD-004 / R25 BIT6"
 30 PRINT
-40 PRINT "BIN RUNNER VIA BLOAD,R"
-50 PRINT "COMPARES VRAM SIDE EFFECT"
-60 PRINT "OF HMMV IN SCREEN 4."
+40 PRINT "PURE BASIC / VPOKE+VPEEK"
+50 PRINT "COMPARES VRAM EFFECT OF"
+60 PRINT "HMMV IN SCREEN 4."
 70 PRINT "R25 BIT6 OFF THEN ON."
 80 PRINT "USE F11 IF YOU WANT OVERLAY."
 90 PRINT
@@ -690,36 +701,65 @@ read_s2:
 110 GOSUB 3000
 120 GOSUB 3100
 130 SCREEN 4:COLOR 15,1,1:CLS
-140 BLOAD"CMD004.BIN",R
-150 SCREEN 0:WIDTH 40:COLOR 15,4,4:CLS
-160 PRINT "V9958 CMD-004 / R25 BIT6"
-170 PRINT
-180 IF PEEK(D)<>166 THEN PRINT "RUNNER DID NOT RETURN.":END
-190 B0=PEEK(D+1)
-200 B1=PEEK(D+2)
-210 S0=PEEK(D+3)
-220 S1=PEEK(D+4)
-230 FG=PEEK(D+9)
-240 PRINT "OFF BYTE=";B0;" S2=";S0
-250 PRINT " ON BYTE=";B1;" S2=";S1
-260 PRINT "FLAGS=";FG
-270 PRINT "F0=OFF CHG F1=ON CHG"
-280 PRINT "F2=OFF SAW CE F3=ON SAW CE"
-290 PRINT "EXPECT OFF=0 ON=165."
-300 END
+140 GOSUB 4000
+150 GOSUB 4100
+160 SCREEN 0:WIDTH 40:COLOR 15,4,4:CLS
+170 PRINT "V9958 CMD-004 / R25 BIT6"
+180 PRINT
+190 PRINT "OFF CLR=";C0;" BYTE=";B0;" S2=";S0
+200 PRINT " ON CLR=";C1;" BYTE=";B1;" S2=";S1
+210 PRINT "FLAGS=";FG
+220 PRINT "F0=OFF CHG F1=ON CHG"
+230 PRINT "F2=OFF SAW CE F3=ON SAW CE"
+240 PRINT "EXPECT CLR=0 OFF=0 ON=165."
+250 END
 3000 A$=INKEY$:IF A$<>"" THEN 3000
 3010 RETURN
 3100 A$=INKEY$:IF A$="" THEN 3100
 3110 GOSUB 3000
 3120 RETURN
+4000 FG=0
+4010 GOSUB 5000
+4020 VPOKE 0,0:C0=VPEEK(0)
+4030 GOSUB 6000
+4040 GOSUB 7000:S0=S
+4050 B0=VPEEK(0)
+4060 IF B0<>0 THEN FG=FG OR 1
+4070 IF (S0 AND 1)<>0 THEN FG=FG OR 4
+4080 RETURN
+4100 GOSUB 5100
+4110 VPOKE 0,0:C1=VPEEK(0)
+4120 GOSUB 6000
+4130 GOSUB 7000:S1=S
+4140 B1=VPEEK(0)
+4150 IF B1<>0 THEN FG=FG OR 2
+4160 IF (S1 AND 1)<>0 THEN FG=FG OR 8
+4170 RETURN
+5000 R=25:V=0:GOSUB 9000:RETURN
+5100 R=25:V=64:GOSUB 9000:RETURN
+6000 R=36:V=0:GOSUB 9000
+6010 R=37:V=0:GOSUB 9000
+6020 R=38:V=0:GOSUB 9000
+6030 R=39:V=0:GOSUB 9000
+6040 R=40:V=255:GOSUB 9000
+6050 R=41:V=0:GOSUB 9000
+6060 R=42:V=1:GOSUB 9000
+6070 R=43:V=0:GOSUB 9000
+6080 R=44:V=165:GOSUB 9000
+6090 R=45:V=0:GOSUB 9000
+6100 OUT &H99,&HC0:OUT &H99,&HAE
+6110 GOSUB 7000
+6120 IF (S AND 1)<>0 THEN 6110
+6130 RETURN
+7000 OUT &H99,2:OUT &H99,143:S=INP(&H99):RETURN
+9000 OUT &H99,V:OUT &H99,128+R:RETURN
 """,
             readme_text=(
                 "V9958 CMD-004 / R25 BIT6\r\n"
                 "AUTOEXEC stays passive; launch manually with RUN\"CMD004.BAS\".\r\n"
-                "This runner compares the VRAM side effect of the same HMMV command in SCREEN 4 with R25 bit6 off and then on.\r\n"
-                "Goal: avoid relying on a CE window that may collapse before the first CPU-side status poll.\r\n"
-                "The runner clears VRAM byte 0, runs HMMV with R25 bit6 off, samples VRAM byte 0, repeats with R25 bit6 on, and returns the two bytes plus final S2 values and flags.\r\n"
-                "Results return in D500..D509: signature, OFF byte, ON byte, final S2 values and flags.\r\n"
+                "Current variant is pure BASIC and uses VPOKE/VPEEK to compare the VRAM side effect of the same HMMV command in SCREEN 4 with R25 bit6 off and then on.\r\n"
+                "Goal: avoid ambiguity from the previous asm helper, whose direct VRAM probe was itself returning a contaminated baseline.\r\n"
+                "The program clears VRAM byte 0, runs HMMV with R25 bit6 off, samples VPEEK(0), repeats with R25 bit6 on, and prints the two bytes plus final S2 values and flags.\r\n"
                 "Expected result for a passing core: OFF byte stays 0, ON byte becomes 165 (A5h).\r\n"
             ),
             autoexec_text=(
