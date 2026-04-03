@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 82-auditar-registradores-v9958
 
-Ultima atualizacao: 31/03/2026 (21:04 -03)
+Ultima atualizacao: 02/04/2026 (10:05 -03)
 
 ## Objetivo da branch
 
@@ -17,6 +17,21 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 - Cada sub-issue que usar a `#82` como umbrella deve abrir uma branch derivada desta branch umbrella, e nao diretamente de `main`.
 - Cada sub-issue deve abrir PR para `82-auditar-registradores-v9958`.
 - O merge das sub-issues acontece primeiro na branch umbrella; so ao consolidar a trilha a `#82` abre PR proprio para `main`.
+
+## Atualizacao incremental de 02/04/2026 - transicao `#235 -> #236`
+
+- A sub-issue `#235` foi concluida e mergeada na umbrella `82-auditar-registradores-v9958` via PR `#239`.
+- O projeto foi sincronizado com:
+  - issue `#235` em `Done`
+  - PR `#239` em `Done`
+- A proxima subtrilha ativa passa a ser a `#236`, em branch derivada propria:
+  - `236-consolidar-backlog-implementavel-gaps-v9958-stock`
+- Consequencia pratica na umbrella:
+  - a camada de validacao dinamica ja nao e mais o gargalo imediato
+  - o proximo trabalho passa a ser consolidar, a partir da matriz canonica e dos achados da `#235`, o backlog implementavel das correcoes que de fato devem nascer como novas issues
+  - as duas primeiras derivadas de correcao ja visiveis na trilha passam a ser:
+    - `#238` para o bloco critico do boot logo
+    - `#240` para a blindagem de registradores invalidos/inertes
 
 ## Atualizacao incremental de 31/03/2026 - decisao da subtrilha `#235`
 
