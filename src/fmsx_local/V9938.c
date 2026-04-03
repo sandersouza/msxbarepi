@@ -31,6 +31,8 @@
 
 extern retro_log_printf_t log_cb;
 extern void fmsx_vdp_trace_command_transition(uint8_t active);
+extern uint64_t fmsx_vdp_cpu_cycles_now(void);
+extern int HPeriod;
 
 /*************************************************************/
 /** Other useful defines                                    **/
@@ -165,9 +167,12 @@ static void HmmcEngine(void);
 static uint8_t Mask[4] = { 0x0F,0x03,0x0F,0xFF };
 static int  PPB[4]  = { 2,4,2,1 };
 static int  PPL[4]  = { 256,512,512,256 };
-static int  VdpOpsCnt=1;
+static int  VdpOpsCnt=0;
 static void (*VdpEngine)(void)=0;
 static uint8_t VdpTraceCE = 0;
+static uint64_t VdpLastCpuCycles = 0u;
+static uint32_t VdpCycleRemainder = 0u;
+static uint8_t VdpCycleValid = 0u;
 
 INLINE void VdpTraceSyncCE(void)
 {
@@ -179,15 +184,19 @@ INLINE void VdpTraceSyncCE(void)
   }
 }
 
-INLINE void VdpSyncCommandSlice(void)
+INLINE void VdpPrimeCommandClock(uint64_t now_cycles)
 {
-  if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
-  VdpTraceSyncCE();
+  VdpLastCpuCycles = now_cycles;
+  VdpCycleRemainder = 0u;
+  VdpCycleValid = 1u;
 }
 
-/* Command budget per LoopVDP() call.
- * MSX2+ BIOS logo relies heavily on VDP block commands and stalls if the
- * command engine progresses too conservatively. Use a larger quantum there.
+/* Command budget per full scanline.
+ * Keep the current local throughput baseline, but stop delivering it in a
+ * single coarse lump at LoopVDP(). The first timing cut for issue #238 keeps
+ * the same average work per scanline and redistributes it over real CPU time,
+ * approximating blueMSX's time-driven sync without rewriting all local timing
+ * tables in the same patch.
  */
 INLINE int VdpOpsQuantum(void)
 {
@@ -197,6 +206,44 @@ INLINE int VdpOpsQuantum(void)
    * without altering frame cadence.
    */
   return MODEL(MSX_MSX2P) ? 250000 : 12500;
+}
+
+INLINE void VdpSyncCommandTime(void)
+{
+  const uint64_t now_cycles = fmsx_vdp_cpu_cycles_now();
+  const uint64_t line_cycles = (uint64_t)(unsigned)(HPeriod>0 ? HPeriod : CPU_HPERIOD);
+
+  if(!VdpCycleValid)
+  {
+    VdpPrimeCommandClock(now_cycles);
+  }
+  else if(now_cycles < VdpLastCpuCycles)
+  {
+    VdpPrimeCommandClock(now_cycles);
+    VdpOpsCnt = 0;
+  }
+  else if(now_cycles > VdpLastCpuCycles)
+  {
+    const uint64_t delta_cycles = now_cycles - VdpLastCpuCycles;
+    const uint64_t scaled_budget =
+      delta_cycles * (uint64_t)(unsigned)VdpOpsQuantum() + (uint64_t)VdpCycleRemainder;
+
+    VdpLastCpuCycles = now_cycles;
+    VdpOpsCnt += (int)(scaled_budget / line_cycles);
+    VdpCycleRemainder = (uint32_t)(scaled_budget % line_cycles);
+  }
+
+  if(VdpEngine)
+  {
+    if(VdpOpsCnt>0) VdpEngine();
+  }
+  else
+  {
+    VdpOpsCnt = 0;
+    VdpCycleRemainder = 0u;
+  }
+
+  VdpTraceSyncCE();
 }
 
 INLINE int VdpCommandScreenMode(void)
@@ -877,7 +924,7 @@ void VDPWrite(uint8_t V)
 {
   VDPStatus[2]&=0x7F;
   VDPStatus[7]=VDP[44]=V;
-  VdpSyncCommandSlice();
+  VdpSyncCommandTime();
 }
 
 /** VDPRead() ************************************************/
@@ -886,7 +933,7 @@ void VDPWrite(uint8_t V)
 uint8_t VDPRead(void)
 {
   VDPStatus[2]&=0x7F;
-  VdpSyncCommandSlice();
+  VdpSyncCommandTime();
   return(VDP[44]);
 }
 
@@ -903,7 +950,7 @@ void fmsx_vdp_sync_before_status_read(void)
    * from lagging one CPU-side status read behind when the command engine has
    * pending work in the current slice.
    */
-  VdpSyncCommandSlice();
+  VdpSyncCommandTime();
 }
 
 /** fmsx_vdp_sync_before_cpu_mutation() **********************/
@@ -916,7 +963,7 @@ void fmsx_vdp_sync_before_cpu_mutation(void)
    * Mirror that behavior with the same coarse command-slice flush used by
    * status reads so CE/TR can advance before the write is applied.
    */
-  VdpSyncCommandSlice();
+  VdpSyncCommandTime();
 }
 
 /** VDPDraw() ************************************************/
@@ -1031,6 +1078,7 @@ uint8_t VDPDraw(uint8_t Op)
 
   /* Command execution started */
   VDPStatus[2]|=0x01;
+  VdpPrimeCommandClock(fmsx_vdp_cpu_cycles_now());
 
   /*
    * blueMSX only arms CE/state here and lets execution advance on the next
@@ -1048,17 +1096,5 @@ uint8_t VDPDraw(uint8_t Op)
 /*************************************************************/
 void LoopVDP(void)
 {
-  const int quantum = VdpOpsQuantum();
-
-  if(VdpOpsCnt<=0)
-  {
-    VdpOpsCnt+=quantum;
-    if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
-  }
-  else
-  {
-    VdpOpsCnt=quantum;
-    if(VdpEngine) VdpEngine();
-  }
-  VdpTraceSyncCE();
+  VdpSyncCommandTime();
 }

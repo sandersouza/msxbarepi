@@ -198,6 +198,11 @@ uint64_t fmsx_audio_cpu_cycles_now(void)
   return g_fmsx_audio_cycle_base + (uint64_t)(unsigned)elapsed;
 }
 
+uint64_t fmsx_vdp_cpu_cycles_now(void)
+{
+  return fmsx_audio_cpu_cycles_now();
+}
+
 unsigned fmsx_audio_effective_cpu_clock_hz(void)
 {
   uint64_t hz;

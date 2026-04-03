@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 82-auditar-registradores-v9958
 
-Ultima atualizacao: 03/04/2026 (00:18 -03)
+Ultima atualizacao: 03/04/2026 (11:30 -03)
 
 ## Objetivo da branch
 
@@ -45,6 +45,27 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
   - a camada de consolidacao do backlog ja nao e mais o gargalo imediato
   - o proximo trabalho passa a ser implementacao real no core do bloco critico do boot logo
   - a `#240` permanece em `Backlog` como trilha separada para `REG-003`
+
+## Atualizacao incremental de 03/04/2026 - primeiro patch tecnico da `#238`
+
+- Na branch derivada `238-fechar-boot-logo-msx2plus-precisao-core-v9958`, entrou o primeiro corte funcional de core para `BL-001` com a base de `BL-002`.
+- Diff de referencia usado:
+  - `blueMSX/VDP.c:readStatus(), write(), sync()`
+  - `blueMSX/V9938.c:vdpCmdExecute()`
+- Implementacao local aplicada:
+  - `src/fmsx_local/MSX.c` agora expõe `fmsx_vdp_cpu_cycles_now()` como contador monotônico de CPU para o bloco de comandos
+  - `src/fmsx_local/V9938.c` deixou de drenar apenas um slice por sync e passou a acumular budget temporal do engine em `LoopVDP()`, status read e CPU mutation
+  - `R#46` permanece apenas armando `CE/state`
+- Restricao assumida nesta rodada:
+  - os `timing[]` do backend local nao foram reescalados para os numeros absolutos do `blueMSX`
+  - o patch preserva a vazao media local por scanline e redistribui esse budget no tempo, como corte intermediario seguro para o boot logo
+- Build local validada:
+  - `BUILD_BID=202604031130-issue238-vdp-time-sync`
+  - `BUILD_ID=050B`
+  - `BUILD_HASH=26d676a-2b85c3c8dce987f4281c92bfb4249fd6d256de35`
+- Proximo gate da umbrella:
+  - validar em hardware o boot logo `MSX2+` com a build `050B`
+  - se a cadencia melhorar e restarem tarjas/pagina errada, o proximo ataque segue para `REN-004` + recorte central de `REN-007`
 
 ## Atualizacao incremental de 31/03/2026 - decisao da subtrilha `#235`
 

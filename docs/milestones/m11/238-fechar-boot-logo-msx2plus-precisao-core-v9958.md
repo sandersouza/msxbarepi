@@ -132,3 +132,21 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
   - sync temporal de status
   - command engine por tempo
   - renderer `SCREEN 6/7` page-aware
+
+## Atualizacao incremental de 03/04/2026 - primeiro corte de implementacao
+- O primeiro patch de core desta issue entrou em `src/fmsx_local/MSX.c` e `src/fmsx_local/V9938.c`.
+- Referencia primaria usada no diff:
+  - `blueMSX/VDP.c:readStatus(), write(), sync()`
+  - `blueMSX/V9938.c:vdpCmdExecute()`
+- Decisao tecnica desta rodada:
+  - trocar o flush coarse de "um slice" por acumulacao temporal do engine baseada no contador monotônico de CPU do core local
+  - preservar, neste primeiro corte, a vazao media local por scanline para evitar trocar ao mesmo tempo a escala dos `timing[]`
+- Efeito esperado para hardware:
+  - `S#2/S#7/S#8/S#9` deixam de chegar um passo atrasados em relacao ao polling do BIOS
+  - o boot logo deve ganhar cadencia melhor antes de qualquer rework de renderer
+- Build local validada:
+  - `BUILD_BID=202604031130-issue238-vdp-time-sync`
+  - `BUILD_ID=050B`
+  - `BUILD_HASH=26d676a-2b85c3c8dce987f4281c92bfb4249fd6d256de35`
+- Proximo gate:
+  - validar o boot logo `MSX2+` em hardware com a build `050B`

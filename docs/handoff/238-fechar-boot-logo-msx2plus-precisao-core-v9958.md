@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 238-fechar-boot-logo-msx2plus-precisao-core-v9958
 
-Ultima atualizacao: 03/04/2026 (00:18 -03)
+Ultima atualizacao: 03/04/2026 (11:30 -03)
 
 ## Objetivo da branch
 
@@ -71,3 +71,28 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
   - `CMD-005`
   - `REN-004`
   - recorte central de `REN-007`
+
+## Atualizacao incremental de 03/04/2026 - primeiro patch de core (`BL-001` + base de `BL-002`)
+
+- Foi aplicado o primeiro corte funcional no bloco de comandos do `V9958`:
+  - `src/fmsx_local/MSX.c`
+  - `src/fmsx_local/V9938.c`
+- Alvo semantico principal usado no diff:
+  - `third_party/bluemsx/blueMSX/Src/VideoChips/VDP.c`
+  - `third_party/bluemsx/blueMSX/Src/VideoChips/V9938.c`
+- O que mudou no core local:
+  - `fmsx_vdp_sync_before_status_read()`, `fmsx_vdp_sync_before_cpu_mutation()`, `VDPRead()`, `VDPWrite()` e `LoopVDP()` deixaram de drenar no maximo um slice do engine
+  - o engine agora acumula budget por delta de tempo monotônico do CPU (`fmsx_vdp_cpu_cycles_now()`), em vez de depender exclusivamente do lump fixo por `LoopVDP()`
+  - `R#46` continua apenas armando `CE/state`; o patch nao reintroduz consumo imediato no start do comando
+- Restricao arquitetural assumida nesta rodada:
+  - o backend local nao espelha literalmente o `systemTime` do `blueMSX`
+  - os `timing[]` locais ja estao calibrados para a escala historica do backend derivado de `fMSX`
+  - por isso, o primeiro patch preserva a vazao media local por scanline e redistribui esse budget ao longo do tempo real do core, em vez de trocar os `timing[]` absolutos no mesmo ciclo
+- Build local validada:
+  - `BUILD_BID=202604031130-issue238-vdp-time-sync`
+  - `BUILD_ID=050B`
+  - `BUILD_HASH=26d676a-2b85c3c8dce987f4281c92bfb4249fd6d256de35`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado operacional apos este corte:
+  - ainda falta validacao em hardware do boot logo `MSX2+`
+  - se o logo ganhar cadencia mas ainda mostrar tarjas/pagina errada, o proximo ataque continua sendo `REN-004` + recorte central de `REN-007`
