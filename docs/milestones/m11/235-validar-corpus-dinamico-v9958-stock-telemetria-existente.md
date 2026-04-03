@@ -5,7 +5,7 @@
 - Estado remoto: OPEN
 - Prioridade: P1
 - Labels: `priority:P1`, `type:feature`, `area:video`, `area:emulation`, `documentation`
-- Estado local atual: IN PROGRESS
+- Estado local atual: IN REVIEW
 - Branch ativa: `235-validar-corpus-dinamico-v9958-stock`
 
 ## Objetivo
@@ -774,6 +774,21 @@ Usar apenas a instrumentação já existente no projeto para fechar ou bloquear 
   - essas duas linhas deixam de bloquear o fechamento prático da `#235`;
   - a matriz canônica preserva o estado técnico de implementação, mas a issue local passa a tratá-las como `blocked by missing dynamic evidence`;
   - qualquer fechamento futuro por captura deve partir de repro melhor ou de trilha específica.
+
+## Atualizacao incremental de 02/04/2026 - issue `#235` em review com PR aberto
+
+- A issue `#235` entrou em `In review` no projeto `MSX BarePI`.
+- O PR desta branch foi aberto contra a umbrella `#82`:
+  - [#239 - [235] Validar corpus dinâmico do V9958 stock com telemetria existente](https://github.com/sandersouza/msxbarepi/pull/239)
+  - estado atual: `draft`
+- Acoes concluídas no ciclo:
+  - labels do PR alinhadas à issue (`documentation`, `priority:P1`, `area:video`, `type:feature`, `area:emulation`)
+  - milestone do PR ajustada para `Release: Suporte MSX2+`
+  - PR vinculado ao projeto `MSX BarePI`
+  - comentário publicado na issue com o link do PR e o resumo técnico da rodada
+- Consequencia operacional:
+  - a `#235` deixa a fase de captura/descoberta;
+  - o próximo gate passa a ser review/aprovação do PR e decisão de fechamento prático da issue.
 
 ## Referências iniciais
 - `docs/debug-layer.md`

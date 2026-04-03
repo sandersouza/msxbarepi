@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 235-validar-corpus-dinamico-v9958-stock
 
-Ultima atualizacao: 01/04/2026 (16:20 -03)
+Ultima atualizacao: 02/04/2026 (09:20 -03)
 
 ## Objetivo da branch
 
@@ -12,6 +12,7 @@ Fechar a issue `#235` com a passada dinamica restante do `V9958 stock`, usando a
 - Branch vinculada via `gh issue develop`: `235-validar-corpus-dinamico-v9958-stock`
 - Branch base/umbrella: `82-auditar-registradores-v9958`
 - Target de PR desta branch: `82-auditar-registradores-v9958`
+- PR remoto desta branch: [#239 - [235] Validar corpus dinâmico do V9958 stock com telemetria existente](https://github.com/sandersouza/msxbarepi/pull/239) (`draft`)
 
 ## Estado herdado da umbrella
 
@@ -27,16 +28,34 @@ Fechar a issue `#235` com a passada dinamica restante do `V9958 stock`, usando a
 
 ## Proximo passo objetivo
 
-1. Tratar `CMD-004` como sustentada pela base estatica e fora do caminho dinamico desta issue.
-2. Tratar `REN-004` e `REN-008` como bloqueadas por falta de evidencia dinamica dentro do corpus atual.
-3. Reavaliar se `REN-003`, `REN-005`, `REN-006` e `REN-007` ainda exigem novo round pratico ou se a `#235` ja pode seguir para consolidacao/encerramento.
+1. Aguardar review do PR `#239` contra a umbrella `82-auditar-registradores-v9958`.
+2. Na review, confirmar se `CMD-004`, `REN-004` e `REN-008` ficam aceitos com o encaminhamento atual:
+   - `CMD-004` sustentada pela base estatica
+   - `REN-004` e `REN-008` bloqueadas por falta de evidencia dinamica util no corpus atual
+3. Depois da aprovacao, decidir se a `#235` pode ir para `Done` ou se ainda pede um ultimo round para `REN-003`, `REN-005`, `REN-006` e `REN-007`.
 
 ## Orientacao operacional imediata
 
 - Build candidata atual: `1052`
 - Roteiro de captura: `docs/reverse-engineering/issues/issue-82/dynamic-capture-recipes.md`
 - Issue local espelho: `docs/milestones/m11/235-validar-corpus-dinamico-v9958-stock-telemetria-existente.md`
+- Estado remoto atual:
+  - issue `#235`: `In review`
+  - PR `#239`: `draft`, tambem em `In review` no projeto `MSX BarePI`
 - O worktree desta branch esta limpo fora das atualizacoes documentais correntes.
+
+## Atualizacao incremental de 02/04/2026 - PR aberto e issue em review
+
+- A branch `235-validar-corpus-dinamico-v9958-stock` entrou oficialmente em review.
+- Acoes concluídas neste ciclo:
+  - PR draft aberto contra a umbrella: `#239`;
+  - labels, milestone e vinculo ao projeto `MSX BarePI` alinhados no PR;
+  - comentario de amarracao publicado na issue `#235` com o link do PR e o resumo da rodada;
+  - status da issue `#235` atualizado para `In review` no projeto;
+  - status do item do PR `#239` tambem atualizado para `In review` no projeto.
+- Consequencia pratica:
+  - a trilha deixa de abrir novos repros nesta branch ate a review;
+  - o proximo gate passa a ser a aprovacao do PR `#239` e a decisao final sobre fechamento da `#235`.
 
 ## Atualizacao incremental de 31/03/2026 - primeiro round `Knightmare Gold`
 
