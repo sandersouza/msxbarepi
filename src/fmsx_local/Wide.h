@@ -238,6 +238,81 @@ void RefreshLine6(uint8_t Y)
     }
   }
 }
+
+void RefreshLine6WideRange(uint8_t Y,unsigned X0,unsigned X1)
+{
+  uint8_t C,*R,*T0,*T1;
+  int PIdx,Src;
+  unsigned Coarse;
+  unsigned Fine;
+  unsigned LeftMask;
+  unsigned VirtualWidth;
+  unsigned Px0;
+  unsigned Px1;
+  uint8_t BgRaw[1024];
+  uint8_t BgIndex;
+  uint8_t MaskBg;
+  uint8_t ZBuf[304];
+  uint16_t *P=RefreshBorder512(Y,XPal[BGColor&0x03]);
+  if(!P) return;
+
+  if(X0>64u) X0=64u;
+  if(X1>64u) X1=64u;
+  if(X1<=X0) return;
+
+  Px0=X0<<3;
+  Px1=X1<<3;
+  RefreshBorder6Wide(P);
+
+  if(!FMSX_SCREEN_ON)
+  {
+    const uint16_t Bg = XPal[BGColor&0x03];
+    for(PIdx=(int)Px0;PIdx<(int)Px1;++PIdx) P[PIdx]=Bg;
+    return;
+  }
+
+  LastScanline = Y + FirstLine;
+  ColorSprites(Y,ZBuf);
+  R=ZBuf+32;
+  Coarse = V9958CoarseScroll512();
+  Fine = V9958FineScroll512();
+  LeftMask = V9958MaskLeft512()<<1;
+  VirtualWidth = V9958VirtualWidth512();
+
+  V9958WideBitmapPages(Y,VirtualWidth,&T0,&T1);
+  for(PIdx=0;PIdx<128;PIdx++)
+  {
+    BgRaw[(PIdx<<2)+0]=T0[PIdx]>>6;
+    BgRaw[(PIdx<<2)+1]=(T0[PIdx]>>4)&0x03;
+    BgRaw[(PIdx<<2)+2]=(T0[PIdx]>>2)&0x03;
+    BgRaw[(PIdx<<2)+3]=T0[PIdx]&0x03;
+  }
+
+  if(VirtualWidth>512u)
+  {
+    for(PIdx=0;PIdx<128;PIdx++)
+    {
+      BgRaw[512+(PIdx<<2)+0]=T1[PIdx]>>6;
+      BgRaw[512+(PIdx<<2)+1]=(T1[PIdx]>>4)&0x03;
+      BgRaw[512+(PIdx<<2)+2]=(T1[PIdx]>>2)&0x03;
+      BgRaw[512+(PIdx<<2)+3]=T1[PIdx]&0x03;
+    }
+  }
+
+  MaskBg=BGColor&0x03u;
+  for(PIdx=(int)Px0;PIdx<(int)Px1;PIdx++)
+  {
+    BgIndex=MaskBg;
+    if(PIdx>=(int)LeftMask)
+    {
+      Src=PIdx-(int)Fine+(int)Coarse;
+      BgIndex=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
+    }
+
+    C=R[PIdx>>1];
+    P[PIdx]=XPal[C? C:BgIndex];
+  }
+}
   
 /** RefreshScr7() ********************************************/
 /** Function to be called to update SCREEN 7.               **/
@@ -305,6 +380,84 @@ void RefreshLine7(uint8_t Y)
       C=R[PIdx>>1];
       P[PIdx]=XPal[C? C:BgIndex];
     }
+  }
+}
+
+void RefreshLine7WideRange(uint8_t Y,unsigned X0,unsigned X1)
+{
+  uint8_t C,*R,*T0,*T1,*Plane0,*Plane1;
+  int PIdx,Src;
+  unsigned Coarse;
+  unsigned Fine;
+  unsigned LeftMask;
+  unsigned VirtualWidth;
+  unsigned Px0;
+  unsigned Px1;
+  uint8_t BgRaw[1024];
+  uint8_t BgIndex;
+  uint8_t MaskBg;
+  uint8_t ZBuf[304];
+  uint16_t *P=RefreshBorder512(Y,XPal[BGColor]);
+  if(!P) return;
+
+  if(X0>64u) X0=64u;
+  if(X1>64u) X1=64u;
+  if(X1<=X0) return;
+
+  Px0=X0<<3;
+  Px1=X1<<3;
+
+  if(!FMSX_SCREEN_ON)
+  {
+    const uint16_t Bg = XPal[BGColor];
+    for(PIdx=(int)Px0;PIdx<(int)Px1;++PIdx) P[PIdx]=Bg;
+    return;
+  }
+
+  LastScanline = Y + FirstLine;
+  ColorSprites(Y,ZBuf);
+  R=ZBuf+32;
+  Coarse = V9958CoarseScroll512();
+  Fine = V9958FineScroll512();
+  LeftMask = V9958MaskLeft512();
+  VirtualWidth = V9958VirtualWidth512();
+
+  V9958WideBitmapPages(Y,VirtualWidth,&T0,&T1);
+  Plane0=T0;
+  Plane1=V9958VRAMOffsetPtr(T0,(int)V9958InterleavedPlaneOffset());
+  for(PIdx=0;PIdx<128;PIdx++)
+  {
+    BgRaw[(PIdx<<2)+0]=Plane0[PIdx]>>4;
+    BgRaw[(PIdx<<2)+1]=Plane0[PIdx]&0x0F;
+    BgRaw[(PIdx<<2)+2]=Plane1[PIdx]>>4;
+    BgRaw[(PIdx<<2)+3]=Plane1[PIdx]&0x0F;
+  }
+
+  if(VirtualWidth>512u)
+  {
+    Plane0=T1;
+    Plane1=V9958VRAMOffsetPtr(T1,(int)V9958InterleavedPlaneOffset());
+    for(PIdx=0;PIdx<128;PIdx++)
+    {
+      BgRaw[512+(PIdx<<2)+0]=Plane0[PIdx]>>4;
+      BgRaw[512+(PIdx<<2)+1]=Plane0[PIdx]&0x0F;
+      BgRaw[512+(PIdx<<2)+2]=Plane1[PIdx]>>4;
+      BgRaw[512+(PIdx<<2)+3]=Plane1[PIdx]&0x0F;
+    }
+  }
+
+  MaskBg=BGColor;
+  for(PIdx=(int)Px0;PIdx<(int)Px1;PIdx++)
+  {
+    BgIndex=MaskBg;
+    if(PIdx>=(int)LeftMask)
+    {
+      Src=PIdx-(int)Fine+(int)Coarse;
+      BgIndex=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
+    }
+
+    C=R[PIdx>>1];
+    P[PIdx]=XPal[C? C:BgIndex];
   }
 }
 

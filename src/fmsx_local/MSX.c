@@ -300,7 +300,7 @@ static uint8_t FmsxVDPLineVScrollLatched = 0; /* VScroll captured at scanline st
 static int FmsxVDPUCountLatched = 0;  /* Frame visibility accumulator for current scanline */
 static uint8_t FmsxVDPDrawingLatched = 0; /* Drawing state for current scanline */
 static uint8_t FmsxVDPLineRendered = 0;   /* Current scanline already composed before HBlank */
-static uint8_t FmsxVDPLineChunkEnd = 0;   /* Screen 4 partial render end column (0..32) */
+static uint8_t FmsxVDPLineChunkEnd = 0;   /* Partial render end column for current scanline */
 uint32_t FmsxIE1EventCount = 0;       /* Number of VDP line-coincidence events */
 uint32_t FmsxIE1AckCount = 0;         /* Number of S#1 reads that clear IE1 flag */
 uint32_t FmsxIE1ArmedCount = 0;       /* Number of times IE1 was armed on active line */
@@ -637,9 +637,12 @@ static int fmsx_vdp_ie1_target_delta(void);
 static uint8_t fmsx_vdp_effective_odd_page(void);
 static int fmsx_vdp_hscroll_active256_local(void);
 void RefreshLine4PlainRange(uint8_t Y,unsigned X0,unsigned X1);
+void RefreshLine6WideRange(uint8_t Y,unsigned X0,unsigned X1);
+void RefreshLine7WideRange(uint8_t Y,unsigned X0,unsigned X1);
 static uint8_t fmsx_vdp_render_page(void);
 static void fmsx_vdp_render_scanline(uint8_t scanline,uint8_t drawing,int ucount);
 static void fmsx_vdp_render_screen4_partial(uint8_t scanline,unsigned end_column);
+static void fmsx_vdp_render_screen67_partial(uint8_t scanline,unsigned end_column);
 static void fmsx_vdp_trace_log(uint8_t event_type);
 static void fmsx_vdp_trace_log_io(uint8_t event_type,uint32_t aux_addr,uint8_t aux_value,uint8_t aux_reg,uint8_t aux_ctrl);
 static void fmsx_vdp_sync_before_cpu_write(void);
@@ -1374,7 +1377,6 @@ static void fmsx_vdp_sync_before_cpu_write(void)
    * the end of the line; if the line is still composed later in HBlank, those
    * writes bleed backwards into the line that just finished scanning out.
    */
-  if(!fmsx_vdp_kmg_sync_window_active()) goto sync_command;
   if(!FmsxVDPDrawingLatched) goto sync_command;
   if(FmsxVDPUCountLatched<100) goto sync_command;
   if((ScanLine<0)||(ScanLine>=256)) goto sync_command;
@@ -1394,6 +1396,28 @@ static void fmsx_vdp_sync_before_cpu_write(void)
     FmsxVDPLineChunkEnd=32u;
     goto sync_command;
   }
+
+  /*
+   * blueMSX keeps SCREEN 6/7 rendering incremental across the current line.
+   * The boot logo mutates VRAM/register state while the scanout is active, so
+   * freezing the whole line here makes the already-visible prefix inherit the
+   * future state. Render only the scanned suffix before committing the write.
+   */
+  if((ScrMode==6)||(ScrMode==7))
+  {
+    const unsigned display_ticks = (unsigned)fmsx_vdp_active_vdp_ticks();
+    const unsigned line_ticks = fmsx_vdp_line_ticks_now();
+    const unsigned end_column =
+      (line_ticks >= display_ticks)
+        ? 64u
+        : (unsigned)(((unsigned long long)line_ticks * 64u + display_ticks - 1u) / display_ticks);
+
+    if(end_column>FmsxVDPLineChunkEnd)
+      fmsx_vdp_render_screen67_partial((uint8_t)ScanLine,end_column);
+    goto sync_command;
+  }
+
+  if(!fmsx_vdp_kmg_sync_window_active()) goto sync_command;
 
   fmsx_vdp_render_scanline((uint8_t)ScanLine,FmsxVDPDrawingLatched,FmsxVDPUCountLatched);
   FmsxVDPLineRendered=1;
@@ -1416,6 +1440,20 @@ static void fmsx_vdp_render_screen4_partial(uint8_t scanline,unsigned end_column
   FmsxVDPRenderVScrollOverride = -1;
   FmsxVDPLineChunkEnd=(uint8_t)end_column;
   if(FmsxVDPLineChunkEnd>=32u) FmsxVDPLineRendered=1;
+}
+
+static void fmsx_vdp_render_screen67_partial(uint8_t scanline,unsigned end_column)
+{
+  if(end_column>64u) end_column=64u;
+  if(end_column<=FmsxVDPLineChunkEnd) return;
+
+  FmsxVDPRenderVScrollOverride = (int)FmsxVDPLineVScrollLatched;
+  if(ScrMode==6) RefreshLine6WideRange(scanline,(unsigned)FmsxVDPLineChunkEnd,end_column);
+  else           RefreshLine7WideRange(scanline,(unsigned)FmsxVDPLineChunkEnd,end_column);
+  FmsxVDPRenderVScrollOverride = -1;
+
+  FmsxVDPLineChunkEnd=(uint8_t)end_column;
+  if(FmsxVDPLineChunkEnd>=64u) FmsxVDPLineRendered=1;
 }
 
 static void fmsx_vdp_render_scanline(uint8_t scanline,uint8_t drawing,int ucount)
@@ -4954,6 +4992,8 @@ uint16_t LoopZ80(Z80 *R)
   {
     if((ScrMode==4) && !fmsx_vdp_hscroll_active256_local() && FmsxVDPLineChunkEnd)
       fmsx_vdp_render_screen4_partial((uint8_t)ScanLine,32u);
+    else if(((ScrMode==6)||(ScrMode==7)) && FmsxVDPLineChunkEnd)
+      fmsx_vdp_render_screen67_partial((uint8_t)ScanLine,64u);
     else
       fmsx_vdp_render_scanline((uint8_t)ScanLine,FmsxVDPDrawingLatched,FmsxVDPUCountLatched);
   }
