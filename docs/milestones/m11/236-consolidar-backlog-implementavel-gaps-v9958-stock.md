@@ -5,7 +5,7 @@
 - Estado remoto: OPEN
 - Prioridade: P1
 - Labels: `priority:P1`, `type:feature`, `area:video`, `area:emulation`, `documentation`
-- Estado local atual: BACKLOG
+- Estado local atual: IN PROGRESS
 
 ## Objetivo
 Converter a matriz comparativa do V9958 stock em backlog real de correções, com itens priorizados, reprodutíveis e mapeados para os arquivos-alvo do nosso core.
@@ -70,3 +70,38 @@ Converter a matriz comparativa do V9958 stock em backlog real de correções, co
 - `src/fmsx_local/MSX.c`
 - `src/fmsx_local/V9938.c`
 - `src/fmsx_local/Common.h`
+
+## Vinculo operacional
+- Branch derivada ativa: `236-consolidar-backlog-implementavel-gaps-v9958-stock`
+- Branch umbrella/base: `82-auditar-registradores-v9958`
+- PR alvo desta branch: `82-auditar-registradores-v9958`
+
+## Atualização incremental de 02/04/2026
+- A `#235` foi concluida e mergeada na umbrella `#82` via PR `#239`.
+- Esta issue passou a ser a trilha ativa da umbrella e entrou em fase de consolidacao do backlog implementavel.
+- O objetivo imediato desta branch nao e mexer no core, e sim transformar a matriz canonica e os achados dinamicos em issues de implementacao priorizadas, com repro e aceite objetivos.
+- A issue derivada `#240` foi aberta nesta rodada para cobrir `BL-005` / `REG-003`, e a `#238` foi confirmada como a primeira issue de implementacao do bloco critico do boot logo.
+
+## Backlog consolidado da rodada
+
+| Item | Linhas da matriz | Estado operacional | Prioridade | Arquivos-alvo prováveis | Repro obrigatório | Encaminhamento |
+| --- | --- | --- | --- | --- | --- | --- |
+| `BL-001` | `IO-004` | implementável agora | `P1` | `src/fmsx_local/MSX.c`, `src/fmsx_local/V9938.c` | `STS006`, boot logo `MSX2+`, `UNKNOWN1.DSK` | consolidado dentro da issue `#238` |
+| `BL-002` | `CMD-005` | implementável agora | `P0` | `src/fmsx_local/V9938.c`, `src/fmsx_local/MSX.c` | boot logo `MSX2+`, `Knightmare Gold`, `Gradius2E/Nemesis2E`, `UNKNOWN1.DSK` | consolidado dentro da issue `#238` |
+| `BL-003` | `CMD-002`, `CMD-003`, parte operacional de `STS-005` | já alinhado; não abre issue nova | `n/a` | `src/fmsx_local/MSX.c`, `src/fmsx_local/V9938.c` | `STS006`, `REG004` | manter apenas como gate de regressão |
+| `BL-004` | `REN-004`, parte relevante de `REN-007` | implementável agora para o recorte do boot logo | `P1` | `src/fmsx_local/Common.h`, `src/fmsx_local/Wide.h`, `src/fmsx_local/MSX.c` | boot logo `MSX2+`, `Gradius2E/Nemesis2E` | consolidado dentro da issue `#238` |
+| `BL-005` | `REG-003` | implementável agora | `P2` | `src/fmsx_local/MSX.c` | repro sintético de registradores inválidos + sanity com `REG004` | abrir issue derivada própria |
+| `BL-006` | `REG-004` | operacionalmente fechado | `n/a` | `src/fmsx_local/MSX.c` | `REG004` | só documentar decisão final ao encerrar a trilha |
+| `BL-007` | `STS-006` | decisão de alvo já fechada | `n/a` | `src/fmsx_local/V9938.c` | `STS006` | não abrir issue nova; manter `blueMSX` como alvo |
+| `BL-008` | `CMD-004` | sem repro dinâmico útil; não promover nesta rodada | `deferred` | `src/fmsx_local/V9938.c`, `src/fmsx_local/MSX.c` | repro ainda inconclusivo | sustentar pela base estática até surgir repro melhor |
+| `BL-009` | `REN-002` | desvio leve, sem bloqueio atual | `P2` | `src/fmsx_local/Common.h` | `Knightmare Gold` | manter em backlog técnico, sem issue nova nesta rodada |
+| `BL-010` | `REN-005`, `REN-006` | parcial, mas sem bug de campo prioritário nesta rodada | `P2` | `src/fmsx_local/Common.h`, `src/fmsx_local/MSX.c` | corpus high-color dedicado | manter em backlog técnico, sem issue nova nesta rodada |
+| `BL-011` | cauda de `REN-007`, `REN-008` | bloqueado por falta de evidência dinâmica útil no corpus atual | `blocked` | `src/fmsx_local/Common.h`, `src/fmsx_local/Wide.h`, `src/fmsx_local/MSX.c` | repro high-res com `R27`/odd-even relevante | não abrir issue nova nesta rodada |
+
+## Decisão de consolidação
+- A issue `#238` já existe no remoto e passa a ser tratada como a primeira issue de implementação derivada da `#236`, cobrindo o bloco crítico do boot logo:
+  - `BL-001`
+  - `BL-002`
+  - `BL-004`
+- A derivada ainda faltante nesta rodada é a blindagem dos registradores inválidos stock (`BL-005`).
+- Os itens `BL-008`, `BL-009`, `BL-010` e `BL-011` permanecem no backlog consolidado, mas não sobem para implementação imediata nesta rodada.
