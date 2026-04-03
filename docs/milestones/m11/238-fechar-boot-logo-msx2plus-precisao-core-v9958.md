@@ -226,3 +226,22 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Proximo teste:
   - retestar o boot logo `MSX2+` em hardware com a `E520`
   - se o `MASK` nao mudar, promover o proximo corte para o source/page streaming de `SCREEN 6`
+
+## Atualizacao incremental de 03/04/2026 - retorno controlado ao pacing do command engine
+
+- O round seguinte em hardware da `E520` confirmou ausencia de ganho visual: nada mudou no boot logo.
+- Decisao tecnica desta rodada:
+  - parar de insistir em recortes visuais pequenos de `Wide.h`
+  - voltar ao eixo de throughput do command engine, mas sem repetir o experimento absoluto descartado na `E3EC`
+- Mudanca aplicada em `src/fmsx_local/V9938.c`:
+  - `VdpOpsQuantum()` passa a elevar o budget so quando `CE=1`
+  - `SCREEN 6/7/8` recebem uplift maior (`500000`)
+  - outros caminhos `MSX2+` com `CE=1` recebem uplift moderado (`300000`)
+  - sem comando ativo, o baseline seguro da branch permanece em `250000`
+- Build local validada:
+  - `BUILD_BID=202604031930-issue238-screen6-ce-uplift`
+  - `BUILD_ID=2865`
+  - `BUILD_HASH=<pendente de commit final da rodada>`
+- Proximo teste:
+  - retestar o boot logo `MSX2+` em hardware
+  - se a cadencia continuar identica, promover o proximo corte para sincronizacao de scanout com progresso parcial do engine

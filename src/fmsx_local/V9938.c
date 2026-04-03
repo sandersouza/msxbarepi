@@ -200,12 +200,24 @@ INLINE void VdpPrimeCommandClock(uint64_t now_cycles)
  */
 INLINE int VdpOpsQuantum(void)
 {
+  int quantum = MODEL(MSX_MSX2P) ? 250000 : 12500;
+
   /*
-   * MSX2+ BIOS logo and some command-heavy transitions rely on sustained
-   * VDP copy throughput. Keep command progression higher on V9958 profiles
-   * without altering frame cadence.
+   * The conservative time-sync baseline from issue #238 restored boot safety,
+   * but hardware still shows the MSX2+ logo in SCREEN 6 progressing too
+   * slowly. BlueMSX advances the command engine continuously from time, while
+   * our local core still uses heavier historic timing tables. Instead of
+   * reintroducing the discarded absolute-timing cut, apply a bounded uplift
+   * only while CE is active, with extra headroom for the high-resolution
+   * bitmap modes that drive the logo.
    */
-  return MODEL(MSX_MSX2P) ? 250000 : 12500;
+  if(MODEL(MSX_MSX2P) && (VDPStatus[2]&0x01u))
+  {
+    if((ScrMode>=6)&&(ScrMode<=8)) quantum = 500000;
+    else quantum = 300000;
+  }
+
+  return quantum;
 }
 
 INLINE void VdpSyncCommandTime(void)

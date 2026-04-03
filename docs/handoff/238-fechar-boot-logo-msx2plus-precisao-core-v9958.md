@@ -190,3 +190,28 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
 - Proximo gate:
   - retestar o boot logo `MSX2+` em hardware com a `E520`
   - verificar se o `MASK` finalmente muda de leitura visual; se nao mudar, o proximo corte deixa de ser borda/mask e passa a ser streaming/page source de `SCREEN 6`
+
+## Atualizacao incremental de 03/04/2026 - retorno controlado ao pacing do command engine
+
+- O reteste em hardware da `E520` confirmou que o recorte visual ainda nao move o sintoma: nada mudou no boot logo.
+- Leitura consolidada desta rodada:
+  - borda/mask nao sao mais o primeiro gargalo
+  - o ponto que ainda conversa com o que aparece em campo e a cadencia do command engine em `SM:06`
+  - o experimento `E3EC` continua descartado; a volta ao pacing deve ser incremental e limitada
+- Novo corte aplicado em `src/fmsx_local/V9938.c`:
+  - `VdpOpsQuantum()` deixa de usar um valor unico para todo `MSX2+`
+  - com `CE=1`, o budget sobe de forma limitada
+  - `SCREEN 6/7/8` ganham uplift maior (`500000`) enquanto o restante do `MSX2+` fica em uplift moderado (`300000`)
+  - sem `CE`, o baseline seguro da branch continua igual (`250000`)
+- Racional tecnico:
+  - o `blueMSX` continua sendo a referencia semantica primaria para um engine mais "continuous-time"
+  - este corte nao reintroduz os `timing[]` absolutos descartados na `E3EC`
+  - a intencao e recuperar throughput do boot logo sem reabrir a regressao de pre-logo azul
+- Build local validada:
+  - `BUILD_BID=202604031930-issue238-screen6-ce-uplift`
+  - `BUILD_ID=2865`
+  - `BUILD_HASH=<pendente de commit final da rodada>`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Proximo gate:
+  - retestar o boot logo `MSX2+` em hardware
+  - verificar se a cadencia finalmente muda; se permanecer identica, o proximo corte sobe para sincronizacao de scanout/renderer com estado parcial do command engine, e nao mais para ajustes cosmeticos

@@ -739,3 +739,8 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
   - remocao da heuristica local de reorder de paginas baseada em `ChrTab`
   - borda lateral alternada para `SCREEN 6` wide
   - `left-edge mask` fisico de `16` pixels no modo wide
+- O reteste em hardware da `E520` nao moveu o quadro visivel do boot logo.
+- A trilha filha `#238` voltou entao ao pacing do command engine em `src/fmsx_local/V9938.c`, mas sem reabrir o experimento absoluto descartado:
+  - `BUILD_BID=202604031930-issue238-screen6-ce-uplift`
+  - `BUILD_ID=2865`
+  - corte focado em elevar `VdpOpsQuantum()` apenas com `CE=1`, com uplift extra para `SCREEN 6/7/8`
