@@ -22,7 +22,14 @@ retro_log_printf_t log_cb = 0;
 #define HIRES_INTERLACED 1
 #define HIRES_PROGRESSIVE 2
 
-static int g_hires_mode = HIRES_OFF;
+/*
+ * Libretro selects this from the `fmsx_hires` frontend option. Baremetal has
+ * no equivalent toggle yet, and leaving the default at OFF suppresses the
+ * interlaced/odd-even presentation path entirely even when the VDP requests it.
+ * Keep high-res output enabled by default so MSX2+/V9958 screens can exercise
+ * the same display path that blueMSX exposes.
+ */
+static int g_hires_mode = HIRES_INTERLACED;
 static int g_overscan = 0;
 static unsigned g_frame_number = 0;
 

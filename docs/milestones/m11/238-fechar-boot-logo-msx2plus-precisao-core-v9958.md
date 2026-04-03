@@ -184,3 +184,23 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Proximo teste:
   - retestar o boot logo do `MSX2+` em hardware com a `70ED`
   - decidir se o proximo corte segue para border/interlace/odd-even streaming ou se esta rodada ja remove parte relevante da pagina errada
+
+## Atualizacao incremental de 03/04/2026 - host hi-res/interlaced reabilitado
+
+- O teste de hardware da `70ED` nao trouxe melhora perceptivel:
+  - `MASK` permaneceu visivel
+  - pagina errada/tarja nao melhorou
+  - a cadencia seguiu lenta
+  - o quadro continuou sem aparencia de interlace
+- Diagnostico seguinte da issue:
+  - o problema nao estava apenas no renderer `SCREEN 6/7`
+  - o host baremetal ainda herdava um default equivalente a `fmsx_hires=OFF` do `libretro`, o que suprimia o path hi-res/interlaced sempre que o projeto nao oferecia um frontend equivalente
+- Mudanca aplicada:
+  - `src/fmsx_host_stubs.c` passa a inicializar `g_hires_mode` em `HIRES_INTERLACED`
+- Build local validada:
+  - `BUILD_BID=202604031710-issue238-hires-default-interlaced`
+  - `BUILD_ID=C2C2`
+  - `BUILD_HASH=d195e4d-5ab3d9413e1422b2cc97922bdec5c5c3dfba61ff`
+- Proximo teste:
+  - validar em hardware se o boot logo finalmente passa a mostrar comportamento interlaced/odd-even
+  - so depois voltar ao proximo corte de renderer page-aware

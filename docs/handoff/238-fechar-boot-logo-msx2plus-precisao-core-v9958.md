@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 238-fechar-boot-logo-msx2plus-precisao-core-v9958
 
-Ultima atualizacao: 03/04/2026 (16:35 -03)
+Ultima atualizacao: 03/04/2026 (17:25 -03)
 
 ## Objetivo da branch
 
@@ -140,3 +140,28 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
   - artefato: `artifacts/kernel8-issue238.img`
 - Proximo gate:
   - validar em hardware se esta build reduz pagina errada/tarja e melhora a leitura visual do boot logo sem perder o baseline seguro de boot da `CBAC`
+
+## Atualizacao incremental de 03/04/2026 - habilitacao do path hi-res interlaced no baremetal
+
+- O primeiro corte de renderer (`70ED`) nao moveu os sintomas principais em hardware:
+  - `MASK` continuou visivel
+  - pagina errada/tarja nao melhorou de forma perceptivel
+  - a cadencia permaneceu lenta
+  - o quadro continuou sem aparencia pratica de interlace
+- O diff seguinte nao entrou mais no renderer em si; ele atacou o host local:
+  - arquivo alterado: `src/fmsx_host_stubs.c`
+  - referencia conceitual usada: `third_party/fmsx/libretro.c`
+- Diagnostico fechado:
+  - o baremetal herdava de `libretro` a variavel `hires_mode`, mas sem um equivalente do frontend `fmsx_hires`
+  - como o default local estava em `HIRES_OFF`, o caminho de apresentacao hi-res/interlaced permanecia desligado mesmo quando o VDP ativava `InterlaceON`
+- Mudanca aplicada:
+  - o host baremetal passa a inicializar `g_hires_mode` em `HIRES_INTERLACED`
+  - isso reabre o caminho de apresentacao odd/even/interlaced sem depender de uma opcao de frontend inexistente no projeto
+- Build local validada:
+  - `BUILD_BID=202604031710-issue238-hires-default-interlaced`
+  - `BUILD_ID=C2C2`
+  - `BUILD_HASH=d195e4d-5ab3d9413e1422b2cc97922bdec5c5c3dfba61ff`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Proximo gate:
+  - validar em hardware se o boot logo finalmente ganha leitura pratica de interlace/odd-even
+  - se isso acontecer, o proximo corte volta ao renderer `SCREEN 6/7` para atacar `MASK`/pagina errada com o path hi-res ja habilitado

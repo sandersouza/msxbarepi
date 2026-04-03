@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 82-auditar-registradores-v9958
 
-Ultima atualizacao: 03/04/2026 (16:35 -03)
+Ultima atualizacao: 03/04/2026 (17:25 -03)
 
 ## Objetivo da branch
 
@@ -97,6 +97,26 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 - Consequencia pratica na umbrella:
   - a branch `238-fechar-boot-logo-msx2plus-precisao-core-v9958` deixa de insistir em pacing absoluto do engine nesta rodada
   - o proximo veredito da trilha passa a ser visual: se a build `70ED` atacar pagina errada/tarja sem perder o boot seguro da `CBAC`
+
+## Atualizacao incremental de 03/04/2026 - host hi-res reabilitado na `#238`
+
+- O teste de hardware da `70ED` mostrou que o primeiro corte de renderer ainda nao bastava:
+  - `MASK` visivel
+  - pagina errada/tarja sem melhora perceptivel
+  - cadencia igual
+  - sem leitura visual de interlace
+- A trilha ativa da `#238` recuou um nivel e atacou o host baremetal:
+  - `src/fmsx_host_stubs.c` herdava do `libretro` um `hires_mode` default `OFF`
+  - sem um frontend `fmsx_hires` no baremetal, isso mantinha o caminho hi-res/interlaced desligado mesmo quando o VDP ativava `InterlaceON`
+- Mudanca aplicada na branch derivada:
+  - o default do host passa a `HIRES_INTERLACED`
+- Build local validada:
+  - `BUILD_BID=202604031710-issue238-hires-default-interlaced`
+  - `BUILD_ID=C2C2`
+  - `BUILD_HASH=d195e4d-5ab3d9413e1422b2cc97922bdec5c5c3dfba61ff`
+- Consequencia pratica na umbrella:
+  - o proximo round da `#238` deixa de testar apenas `MASK`/pagina
+  - passa primeiro a validar se o caminho odd/even/interlaced do host realmente reaparece em hardware
 
 ## Atualizacao incremental de 31/03/2026 - decisao da subtrilha `#235`
 
