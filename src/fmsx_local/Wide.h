@@ -29,6 +29,36 @@ static void ClearLine512(uint16_t *P,uint16_t C)
   for(J=0;J<512;J++) P[J]=C;
 }
 
+/**
+ * BlueMSX builds SCREEN 6/7 scanlines as a streaming two-page canvas driven
+ * by chrTabBase bit15 + hScroll512. Our local renderer still composes via
+ * BgRaw, but the logical left-to-right page order must match that reference
+ * before scroll is applied or the MSX2+ boot logo shows the wrong half/page.
+ */
+static void V9958WideBitmapPages(uint8_t Y,unsigned VirtualWidth,uint8_t **Page0,uint8_t **Page1)
+{
+  uint8_t *Base;
+  uint8_t *Next;
+  unsigned BasePos;
+
+  Base=V9958BitmapLinePtr(ChrTab,Y);
+  Next=V9958ScrollPagePtr(Base,0x8000);
+
+  if((VirtualWidth>512u)&&VRAM)
+  {
+    BasePos=(unsigned)(ChrTab-VRAM);
+    if(BasePos&0x8000u)
+    {
+      *Page0=Next;
+      *Page1=Base;
+      return;
+    }
+  }
+
+  *Page0=Base;
+  *Page1=Next;
+}
+
 /** RefreshBorder512() ***************************************/
 /** This function is called from RefreshLine#() to refresh  **/
 /** the screen border. It returns a pointer to the start of **/
@@ -143,7 +173,7 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
 /*************************************************************/
 void RefreshLine6(uint8_t Y)
 {
-  uint8_t C,*T,*R,*T0,*T1;
+  uint8_t C,*R,*T0,*T1;
   int PIdx,Src;
   unsigned Coarse;
   unsigned Fine;
@@ -162,13 +192,12 @@ void RefreshLine6(uint8_t Y)
     LastScanline = Y + FirstLine;
     ColorSprites(Y,ZBuf);
     R=ZBuf+32;
-    T=V9958BitmapLinePtr(ChrTab,Y);
     Coarse = V9958CoarseScroll512();
     Fine = V9958FineScroll512();
     LeftMask = V9958MaskLeft512();
     VirtualWidth = V9958VirtualWidth512();
 
-    T0=T;
+    V9958WideBitmapPages(Y,VirtualWidth,&T0,&T1);
     for(PIdx=0;PIdx<128;PIdx++)
     {
       BgRaw[(PIdx<<2)+0]=T0[PIdx]>>6;
@@ -179,8 +208,6 @@ void RefreshLine6(uint8_t Y)
 
     if(VirtualWidth>512u)
     {
-      /* SCR6 next horizontal page is +0x8000 in fMSX VRAM layout. */
-      T1=V9958ScrollPagePtr(T0,0x8000);
       for(PIdx=0;PIdx<128;PIdx++)
       {
         BgRaw[512+(PIdx<<2)+0]=T1[PIdx]>>6;
@@ -190,7 +217,7 @@ void RefreshLine6(uint8_t Y)
       }
     }
 
-    MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];
+    MaskBg=BGColor&0x03u;
     for(PIdx=0;PIdx<512;PIdx++)
     {
       BgIndex=MaskBg;
@@ -211,7 +238,7 @@ void RefreshLine6(uint8_t Y)
 /*************************************************************/
 void RefreshLine7(uint8_t Y)
 {
-  uint8_t C,*T,*R,*T0,*T1,*Plane0,*Plane1;
+  uint8_t C,*R,*T0,*T1,*Plane0,*Plane1;
   int PIdx,Src;
   unsigned Coarse;
   unsigned Fine;
@@ -230,13 +257,12 @@ void RefreshLine7(uint8_t Y)
     LastScanline = Y + FirstLine;
     ColorSprites(Y,ZBuf);
     R=ZBuf+32;
-    T=V9958BitmapLinePtr(ChrTab,Y);
     Coarse = V9958CoarseScroll512();
     Fine = V9958FineScroll512();
     LeftMask = V9958MaskLeft512();
     VirtualWidth = V9958VirtualWidth512();
 
-    T0=T;
+    V9958WideBitmapPages(Y,VirtualWidth,&T0,&T1);
     Plane0=T0;
     Plane1=V9958VRAMOffsetPtr(T0,(int)V9958InterleavedPlaneOffset());
     for(PIdx=0;PIdx<128;PIdx++)
@@ -249,8 +275,6 @@ void RefreshLine7(uint8_t Y)
 
     if(VirtualWidth>512u)
     {
-      /* SCR7 multipage follows the same +0x8000 page step as SCR5/6/8. */
-      T1=V9958ScrollPagePtr(T0,0x8000);
       Plane0=T1;
       Plane1=V9958VRAMOffsetPtr(T1,(int)V9958InterleavedPlaneOffset());
       for(PIdx=0;PIdx<128;PIdx++)
@@ -262,7 +286,7 @@ void RefreshLine7(uint8_t Y)
       }
     }
 
-    MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];
+    MaskBg=BGColor;
     for(PIdx=0;PIdx<512;PIdx++)
     {
       BgIndex=MaskBg;

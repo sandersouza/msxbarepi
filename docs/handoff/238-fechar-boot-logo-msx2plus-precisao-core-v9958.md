@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 238-fechar-boot-logo-msx2plus-precisao-core-v9958
 
-Ultima atualizacao: 03/04/2026 (14:45 -03)
+Ultima atualizacao: 03/04/2026 (16:35 -03)
 
 ## Objetivo da branch
 
@@ -117,3 +117,26 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
 - Consequencia pratica para a branch:
   - o proximo corte tecnico volta a partir da base segura `050B`
   - renderer `SCREEN 6/7` page-aware + odd/even/interlace passa a ser o proximo alvo principal, em vez de insistir no pacing absoluto que travou o BIOS
+
+## Atualizacao incremental de 03/04/2026 - primeiro corte de renderer `SCREEN 6/7`
+
+- A validacao em hardware da build `CBAC` confirmou o estado seguro esperado da branch:
+  - o boot logo volta a sair da tela azul e chega a iniciar
+  - a cadencia continua lenta
+  - permanecem sintomas visuais de `MASK`/pagina errada, coerentes com `REN-004` + recorte central de `REN-007`
+- Com isso, a branch saiu do bloco de timing absoluto do engine e entrou no primeiro patch de renderer high-res:
+  - arquivo alterado: `src/fmsx_local/Wide.h`
+  - referencia primaria usada: `third_party/bluemsx/blueMSX/Src/VideoChips/Common.h`
+- O que mudou neste corte:
+  - `SCREEN 6/7` continuam montando a linha via `BgRaw`, mas a ordem logica das paginas passa a respeitar `chrTabBase bit15` quando `hScroll512`/multipage estao ativos, em vez de assumir sempre "pagina atual depois pagina seguinte"
+  - o `left-edge mask` deixa de herdar a cor do primeiro pixel scrolado e volta a usar a cor de fundo do modo, alinhando o comportamento ao fluxo observado no `blueMSX`
+- Restricao assumida nesta rodada:
+  - ainda nao foi portada a composicao streaming completa com `jumpTable` no renderer local
+  - o objetivo desta build e validar se a simples correcao de ordem logica de pagina + cor do mask ja move o boot logo para um estado visual mais proximo do alvo, sem reintroduzir o hang descartado em `E3EC`
+- Build local validada:
+  - `BUILD_BID=202604031620-issue238-screen67-page-order`
+  - `BUILD_ID=70ED`
+  - `BUILD_HASH=a621e95-c5907ef75b5ef5ef9c92110459d20bcaa8ebac0f`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Proximo gate:
+  - validar em hardware se esta build reduz pagina errada/tarja e melhora a leitura visual do boot logo sem perder o baseline seguro de boot da `CBAC`

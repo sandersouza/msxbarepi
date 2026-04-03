@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 82-auditar-registradores-v9958
 
-Ultima atualizacao: 03/04/2026 (14:45 -03)
+Ultima atualizacao: 03/04/2026 (16:35 -03)
 
 ## Objetivo da branch
 
@@ -80,6 +80,23 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
   - `BUILD_BID=202604031435-issue238-drop-abs-timing-regression`
   - `BUILD_ID=CBAC`
   - `BUILD_HASH=6967d68-ef1f9b429bfa4c1a6b3fd11d0ad9a32adf1247dd`
+
+## Atualizacao incremental de 03/04/2026 - primeiro corte de renderer high-res na `#238`
+
+- A validacao em hardware da `CBAC` fechou o gate de seguranca da umbrella:
+  - o boot logo voltou a iniciar
+  - a branch saiu do estado de regressao de boot
+  - restaram cadencia lenta + sintomas visuais de `MASK`/pagina errada
+- A trilha ativa da `#238` entrou no primeiro corte de `REN-004`/`REN-007`:
+  - `src/fmsx_local/Wide.h` passa a ordenar `SCREEN 6/7` conforme a pagina logica esperada pelo `blueMSX` quando `chrTabBase bit15` e `hScroll512` entram juntos
+  - o `left-edge mask` de `SCREEN 6/7` deixa de usar a cor do primeiro pixel scrolado e volta a usar a cor de fundo do modo
+- Build local validada:
+  - `BUILD_BID=202604031620-issue238-screen67-page-order`
+  - `BUILD_ID=70ED`
+  - `BUILD_HASH=a621e95-c5907ef75b5ef5ef9c92110459d20bcaa8ebac0f`
+- Consequencia pratica na umbrella:
+  - a branch `238-fechar-boot-logo-msx2plus-precisao-core-v9958` deixa de insistir em pacing absoluto do engine nesta rodada
+  - o proximo veredito da trilha passa a ser visual: se a build `70ED` atacar pagina errada/tarja sem perder o boot seguro da `CBAC`
 
 ## Atualizacao incremental de 31/03/2026 - decisao da subtrilha `#235`
 

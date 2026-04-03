@@ -166,3 +166,21 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Leitura operacional:
   - a base segura da branch continua sendo o primeiro corte temporal (`050B`)
   - o proximo trabalho util volta a ser renderer `SCREEN 6/7` page-aware + odd/even/interlace
+
+## Atualizacao incremental de 03/04/2026 - primeiro corte de renderer `SCREEN 6/7`
+
+- A base segura da issue foi confirmada em hardware com a `CBAC`: lenta, mas voltando a entrar no boot logo.
+- O foco ativo da issue saiu do engine e entrou no primeiro corte do renderer high-res:
+  - `src/fmsx_local/Wide.h`
+  - alvo primario: `REN-004`
+  - recorte associado: parte central de `REN-007`
+- Implementacao desta rodada:
+  - `SCREEN 6/7` passam a respeitar a ordem logica de paginas derivada de `chrTabBase bit15` quando `R#2 bit5 + multipage` estao ativos
+  - o `left-edge mask` em `SCREEN 6/7` deixa de usar o primeiro pixel scrolado como cor de preenchimento e volta a usar a cor de fundo do modo, alinhando o comportamento ao renderer do `blueMSX`
+- Build local validada:
+  - `BUILD_BID=202604031620-issue238-screen67-page-order`
+  - `BUILD_ID=70ED`
+  - `BUILD_HASH=a621e95-c5907ef75b5ef5ef9c92110459d20bcaa8ebac0f`
+- Proximo teste:
+  - retestar o boot logo do `MSX2+` em hardware com a `70ED`
+  - decidir se o proximo corte segue para border/interlace/odd-even streaming ou se esta rodada ja remove parte relevante da pagina errada
