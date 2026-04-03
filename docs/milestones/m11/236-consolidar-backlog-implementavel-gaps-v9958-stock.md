@@ -2,10 +2,10 @@
 
 - URL: https://github.com/sandersouza/msxbarepi/issues/236
 - Milestone: Release: Suporte MSX2+ (m11)
-- Estado remoto: OPEN
+- Estado remoto: CLOSED
 - Prioridade: P1
 - Labels: `priority:P1`, `type:feature`, `area:video`, `area:emulation`, `documentation`
-- Estado local atual: IN PROGRESS
+- Estado local atual: DONE
 
 ## Objetivo
 Converter a matriz comparativa do V9958 stock em backlog real de correções, com itens priorizados, reprodutíveis e mapeados para os arquivos-alvo do nosso core.
@@ -81,6 +81,12 @@ Converter a matriz comparativa do V9958 stock em backlog real de correções, co
 - Esta issue passou a ser a trilha ativa da umbrella e entrou em fase de consolidacao do backlog implementavel.
 - O objetivo imediato desta branch nao e mexer no core, e sim transformar a matriz canonica e os achados dinamicos em issues de implementacao priorizadas, com repro e aceite objetivos.
 - A issue derivada `#240` foi aberta nesta rodada para cobrir `BL-005` / `REG-003`, e a `#238` foi confirmada como a primeira issue de implementacao do bloco critico do boot logo.
+
+## Atualização incremental de 03/04/2026
+- O PR `#241` foi aprovado e mergeado na umbrella `#82`.
+- A issue remota `#236` foi fechada.
+- O item da issue `#236` no projeto `MSX BarePI` foi movido para `Done`.
+- A próxima issue ativa da camada de correção passa a ser a `#238`.
 
 ## Backlog consolidado da rodada
 

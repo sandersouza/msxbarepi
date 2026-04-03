@@ -5,7 +5,7 @@
 - Estado remoto: OPEN
 - Prioridade: P1
 - Labels: `bug`, `priority:P1`, `area:video`, `area:timing`, `area:emulation`
-- Estado local atual: BACKLOG
+- Estado local atual: IN PROGRESS
 
 ## Objetivo
 Implementar a precisão mínima necessária no nosso core do `V9958 stock` para fazer o boot logo do `MSX2+` funcionar com cadência, paginação e composição corretas, usando `blueMSX` como referência semântica principal e `V9958-Super` como validação cruzada de HDL.
@@ -119,3 +119,16 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - `docs/reverse-engineering/msx2plus/boot-logo/fix-strategy.md`
 - `docs/reverse-engineering/msx2plus/vdp9958-stock/implementation-backlog.md`
 - `docs/reverse-engineering/issues/issue-82/README.md`
+
+## Vinculo operacional
+- Branch derivada ativa: `238-fechar-boot-logo-msx2plus-precisao-core-v9958`
+- Branch umbrella/base: `82-auditar-registradores-v9958`
+- PR alvo desta branch: `82-auditar-registradores-v9958`
+
+## Atualização incremental de 03/04/2026
+- A `#236` foi concluida e mergeada na umbrella `#82` via PR `#241`.
+- Esta issue passa a ser a primeira frente ativa de implementação da camada de correção do `V9958 stock`.
+- O objetivo imediato desta branch deixa de ser descoberta e passa a ser implementar, na ordem já consolidada:
+  - sync temporal de status
+  - command engine por tempo
+  - renderer `SCREEN 6/7` page-aware

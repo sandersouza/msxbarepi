@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 82-auditar-registradores-v9958
 
-Ultima atualizacao: 02/04/2026 (10:05 -03)
+Ultima atualizacao: 03/04/2026 (00:18 -03)
 
 ## Objetivo da branch
 
@@ -32,6 +32,19 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
   - as duas primeiras derivadas de correcao ja visiveis na trilha passam a ser:
     - `#238` para o bloco critico do boot logo
     - `#240` para a blindagem de registradores invalidos/inertes
+
+## Atualizacao incremental de 03/04/2026 - transicao `#236 -> #238`
+
+- A sub-issue `#236` foi concluida e mergeada na umbrella `82-auditar-registradores-v9958` via PR `#241`.
+- O projeto foi sincronizado com:
+  - issue `#236` em `Done`
+  - PR `#241` em `Done`
+- A proxima subtrilha ativa passa a ser a `#238`, em branch derivada propria:
+  - `238-fechar-boot-logo-msx2plus-precisao-core-v9958`
+- Consequencia pratica na umbrella:
+  - a camada de consolidacao do backlog ja nao e mais o gargalo imediato
+  - o proximo trabalho passa a ser implementacao real no core do bloco critico do boot logo
+  - a `#240` permanece em `Backlog` como trilha separada para `REG-003`
 
 ## Atualizacao incremental de 31/03/2026 - decisao da subtrilha `#235`
 

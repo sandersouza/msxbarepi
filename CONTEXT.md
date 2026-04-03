@@ -2,13 +2,16 @@
 
 Ponto de entrada rapido para contexto operacional do projeto.
 
-- Contexto completo e historico de handoff da branch atual: [docs/handoff/236-consolidar-backlog-implementavel-gaps-v9958-stock.md](docs/handoff/236-consolidar-backlog-implementavel-gaps-v9958-stock.md)
+- Contexto completo e historico de handoff da branch atual: [docs/handoff/238-fechar-boot-logo-msx2plus-precisao-core-v9958.md](docs/handoff/238-fechar-boot-logo-msx2plus-precisao-core-v9958.md)
 - Regra operacional da trilha `#82`: `82-auditar-registradores-v9958` permanece como branch umbrella; cada sub-issue da trilha deve abrir branch derivada dela, subir PR contra a umbrella e so depois entrar no PR final `#82 -> main`.
-- Branch ativa da rodada: `236-consolidar-backlog-implementavel-gaps-v9958-stock`, derivada da umbrella `82-auditar-registradores-v9958`, para converter a camada de descoberta da `#82/#235` em backlog implementavel de correcao para o `V9958 stock`.
-- Atualizacao incremental da `#236`: a subtrilha `#235` ja foi encerrada com o merge do PR `#239` na umbrella `82-auditar-registradores-v9958`; a issue `#235` e o PR `#239` foram movidos para `Done` no projeto `MSX BarePI`, a branch remota da `#235` foi deletada e a branch local correspondente tambem foi removida. A rodada ativa passa a ser a `#236`, cujo objetivo imediato e consolidar, a partir da matriz canonica e dos achados dinamicos da `#235`, o backlog real de correcoes do `V9958 stock` com prioridade, repro, criterio de aceite e arquivo-alvo provavel antes de abrir novas issues de implementacao.
-- Atualizacao incremental da `#236`: a consolidacao desta rodada ja fechou dois encaminhamentos concretos para a camada de correcao:
-  - `#238` foi confirmada como a primeira issue de implementacao do bloco critico do boot logo (`IO-004`, `CMD-005` e renderer high-res relevante)
-  - `#240` foi aberta para cobrir `REG-003` e o saneamento stock dos registradores invalidos/inertes
+- Branch ativa da rodada: `238-fechar-boot-logo-msx2plus-precisao-core-v9958`, derivada da umbrella `82-auditar-registradores-v9958`, para atacar a primeira issue de implementacao real do backlog do `V9958 stock`.
+- Atualizacao incremental da `#236`: a consolidacao do backlog implementavel foi concluida, o PR `#241` foi mergeado na umbrella `82-auditar-registradores-v9958`, a issue `#236` foi fechada e o item da issue no projeto `MSX BarePI` foi movido para `Done`.
+- Atualizacao incremental da `#238`: a primeira issue tecnica ativa da camada de correcao passa a ser a `#238`, cobrindo o bloco critico do boot logo do `MSX2+`:
+  - `IO-004`
+  - `CMD-005`
+  - `REN-004`
+  - recorte central de `REN-007`
+- Atualizacao incremental da trilha: a issue `#240` permanece em `Backlog` como derivada separada para `REG-003` e o saneamento stock de registradores invalidos/inertes.
 - Atualizacao incremental da `#235`: a branch entrou oficialmente em review. O draft PR [#239](https://github.com/sandersouza/msxbarepi/pull/239) foi aberto contra a umbrella `82-auditar-registradores-v9958`, recebeu as mesmas labels da issue, milestone `Release: Suporte MSX2+` e vinculo ao projeto `MSX BarePI`; a issue `#235` e o item do PR no projeto foram movidos para `In review`. O proximo gate da trilha deixa de ser captura em hardware e passa a ser review/aprovacao do PR e decisao final sobre fechamento pratico da issue.
 - Atualizacao incremental da `#235`: o `UNKNOWN1.DSK` passou na build `1052`. A sequencia fechou em dois cortes coerentes com a referencia primaria: a build `DD8E` removeu o hang anterior de command engine (`CE=1`, `TR=1`) em `SCREEN 5`, e a build `1052` removeu o segundo ponto de parada em polling de `S#1` (`P9:C516 ... 99:R/1/1/01/04`) ao alinhar `src/fmsx_local/MSX.c:fmsx_vdp_status1_live()` ao modelo do `blueMSX` para `IE1=0`. O demo agora roda normalmente e deixa de ser bug aberto na branch; passa a ser smoke/stress pass complementar de `VDP + disk + audio`. O backlog principal da `#235` volta a ser `CMD-004` e `REN-003..REN-008`.
 - Atualizacao incremental da `#235`: como boot logo `MSX2+`, `MSXDIAG` e o proprio `UNKNOWN1.DSK` nao exercitaram `R25 bit6` de forma decisiva, a branch ganhou um repro sintético novo para `CMD-004`: `sdcard/disks/DEBUG/V9958_CMD004_R25.DSK`. O runner `CMD004.BIN` compara o mesmo `HMMV` em `SCREEN 4` com `R25 bit6` desligado e ligado, devolvendo se `CE` ficou ativo em cada caso. Resultado esperado para um core alinhado ao `blueMSX`: `OFF LOOPS=0`, `ON LOOPS>0`. O próximo round de hardware da `#235` deve usar esse disco antes de voltar aos `REN-003..REN-008`.
