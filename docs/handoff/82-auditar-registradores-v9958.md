@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 82-auditar-registradores-v9958
 
-Ultima atualizacao: 03/04/2026 (14:35 -03)
+Ultima atualizacao: 03/04/2026 (14:45 -03)
 
 ## Objetivo da branch
 
@@ -76,6 +76,10 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 - Consequencia pratica na umbrella:
   - a branch `238-fechar-boot-logo-msx2plus-precisao-core-v9958` volta ao baseline temporal seguro da `050B`
   - o proximo ataque tecnico da trilha deixa de ser a escala absoluta do engine e volta a ser o renderer `SCREEN 6/7` page-aware, com odd/even/interlace
+- Build local do rollback:
+  - `BUILD_BID=202604031435-issue238-drop-abs-timing-regression`
+  - `BUILD_ID=CBAC`
+  - `BUILD_HASH=6967d68-ef1f9b429bfa4c1a6b3fd11d0ad9a32adf1247dd`
 
 ## Atualizacao incremental de 31/03/2026 - decisao da subtrilha `#235`
 

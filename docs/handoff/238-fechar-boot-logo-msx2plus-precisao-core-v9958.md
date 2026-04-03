@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 238-fechar-boot-logo-msx2plus-precisao-core-v9958
 
-Ultima atualizacao: 03/04/2026 (14:35 -03)
+Ultima atualizacao: 03/04/2026 (14:45 -03)
 
 ## Objetivo da branch
 
@@ -109,6 +109,11 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
 - Implementacao restaurada em `src/fmsx_local/V9938.c`:
   - `VdpOpsQuantum()` volta ao modelo da `050B`
   - `srch_timing`, `line_timing`, `hmmv_timing`, `lmmv_timing`, `ymmm_timing`, `hmmm_timing` e `lmmm_timing` voltam aos valores locais anteriores ao experimento `E3EC`
+- Build local validada apos o rollback:
+  - `BUILD_BID=202604031435-issue238-drop-abs-timing-regression`
+  - `BUILD_ID=CBAC`
+  - `BUILD_HASH=6967d68-ef1f9b429bfa4c1a6b3fd11d0ad9a32adf1247dd`
+  - artefato: `artifacts/kernel8-issue238.img`
 - Consequencia pratica para a branch:
   - o proximo corte tecnico volta a partir da base segura `050B`
   - renderer `SCREEN 6/7` page-aware + odd/even/interlace passa a ser o proximo alvo principal, em vez de insistir no pacing absoluto que travou o BIOS

@@ -159,6 +159,10 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Decisao tecnica:
   - restaurar o comportamento temporal da `050B`
   - nao insistir nesta issue no alinhamento literal dos `timing[]` enquanto o BIOS ainda trava antes do logo
+- Build local validada apos o rollback:
+  - `BUILD_BID=202604031435-issue238-drop-abs-timing-regression`
+  - `BUILD_ID=CBAC`
+  - `BUILD_HASH=6967d68-ef1f9b429bfa4c1a6b3fd11d0ad9a32adf1247dd`
 - Leitura operacional:
   - a base segura da branch continua sendo o primeiro corte temporal (`050B`)
   - o proximo trabalho util volta a ser renderer `SCREEN 6/7` page-aware + odd/even/interlace
