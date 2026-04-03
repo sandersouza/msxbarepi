@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 82-auditar-registradores-v9958
 
-Ultima atualizacao: 03/04/2026 (11:30 -03)
+Ultima atualizacao: 03/04/2026 (13:50 -03)
 
 ## Objetivo da branch
 
@@ -66,6 +66,23 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 - Proximo gate da umbrella:
   - validar em hardware o boot logo `MSX2+` com a build `050B`
   - se a cadencia melhorar e restarem tarjas/pagina errada, o proximo ataque segue para `REN-004` + recorte central de `REN-007`
+
+## Atualizacao incremental de 03/04/2026 - segundo corte tecnico da `#238`
+
+- O primeiro round de hardware da `#238` com a build `050B` mostrou que o ajuste temporal inicial ainda foi conservador demais:
+  - o pacing do logo permaneceu lento
+  - a mascara do VDP continuou visivel
+  - a leitura pratica de odd/even/interlace ainda nao apareceu
+- Novo corte aplicado na branch `238-fechar-boot-logo-msx2plus-precisao-core-v9958`:
+  - `src/fmsx_local/V9938.c` passou a usar escala temporal equivalente ao `blueMSX` no engine (`delta_cycles => budget`)
+  - os `timing[]` do command engine foram realinhados para os valores-base do `blueMSX`
+- Build local validada:
+  - `BUILD_BID=202604031350-issue238-vdp-time-scale-bluemsx`
+  - `BUILD_ID=E3EC`
+  - `BUILD_HASH=6eaff06-b97f655de5f0a34c940f4930a1eeb83dfb6665d9`
+- Leitura esperada para o proximo gate:
+  - se a cadencia melhorar de forma clara, a trilha segue para `REN-004` + `REN-007`
+  - se continuar lenta, sera necessario reabrir a calibracao do engine antes do renderer
 
 ## Atualizacao incremental de 31/03/2026 - decisao da subtrilha `#235`
 

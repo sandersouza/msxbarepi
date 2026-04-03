@@ -150,3 +150,16 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
   - `BUILD_HASH=26d676a-2b85c3c8dce987f4281c92bfb4249fd6d256de35`
 - Proximo gate:
   - validar o boot logo `MSX2+` em hardware com a build `050B`
+
+## Atualizacao incremental de 03/04/2026 - reforco do pacing do engine
+- O primeiro round com a build `050B` mostrou melhora insuficiente de pacing; o logo continuou lento demais para o alvo da issue.
+- Novo corte aplicado em `src/fmsx_local/V9938.c`:
+  - `VdpOpsQuantum()` passa a seguir literalmente a escala temporal do `blueMSX` (`delta_cycles => budget`)
+  - os `timing[]` do command engine foram realinhados para a base do `blueMSX`
+- Build local validada:
+  - `BUILD_BID=202604031350-issue238-vdp-time-scale-bluemsx`
+  - `BUILD_ID=E3EC`
+  - `BUILD_HASH=6eaff06-b97f655de5f0a34c940f4930a1eeb83dfb6665d9`
+- Leitura esperada para o proximo round:
+  - o logo precisa ganhar cadencia perceptivelmente melhor
+  - se restarem mascara visivel, pagina errada ou falta de interlace, o gargalo passa a ser renderer `SCREEN 6/7` + odd/even

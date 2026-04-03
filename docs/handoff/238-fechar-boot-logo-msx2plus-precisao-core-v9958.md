@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 238-fechar-boot-logo-msx2plus-precisao-core-v9958
 
-Ultima atualizacao: 03/04/2026 (11:30 -03)
+Ultima atualizacao: 03/04/2026 (13:50 -03)
 
 ## Objetivo da branch
 
@@ -96,3 +96,22 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
 - Estado operacional apos este corte:
   - ainda falta validacao em hardware do boot logo `MSX2+`
   - se o logo ganhar cadencia mas ainda mostrar tarjas/pagina errada, o proximo ataque continua sendo `REN-004` + recorte central de `REN-007`
+
+## Atualizacao incremental de 03/04/2026 - segundo corte do engine (`BL-002` mais literal)
+
+- O feedback do primeiro round em hardware com a build `050B` confirmou que o logo ainda estava lento demais, com mascara visivel e sem leitura pratica de interlace.
+- Decisao tecnica desta rodada:
+  - abandonar a preservacao da vazao media historica do backend local
+  - alinhar o engine de forma mais literal ao `blueMSX`, usando `1 ciclo de CPU = 1 unidade de budget`
+  - alinhar tambem os `timing[]` locais ao conjunto do `blueMSX`, repetindo a tabela-base para PAL/NTSC no primeiro corte
+- Implementacao aplicada em `src/fmsx_local/V9938.c`:
+  - `VdpOpsQuantum()` agora devolve `HPeriod`, fazendo o acumulador temporal colapsar para delta real de CPU cycles
+  - `srch_timing`, `line_timing`, `hmmv_timing`, `lmmv_timing`, `ymmm_timing`, `hmmm_timing` e `lmmm_timing` foram realinhados aos valores do `blueMSX`
+- Restricao assumida nesta rodada:
+  - o renderer `SCREEN 6/7` continua simplificado
+  - portanto, esta build mira primeiro a cadencia do logo; tarjas, mascara e odd/even ainda podem sobrar para `REN-004/REN-007`
+- Build local validada:
+  - `BUILD_BID=202604031350-issue238-vdp-time-scale-bluemsx`
+  - `BUILD_ID=E3EC`
+  - `BUILD_HASH=6eaff06-b97f655de5f0a34c940f4930a1eeb83dfb6665d9`
+  - artefato: `artifacts/kernel8-issue238.img`

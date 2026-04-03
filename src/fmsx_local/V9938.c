@@ -192,20 +192,13 @@ INLINE void VdpPrimeCommandClock(uint64_t now_cycles)
 }
 
 /* Command budget per full scanline.
- * Keep the current local throughput baseline, but stop delivering it in a
- * single coarse lump at LoopVDP(). The first timing cut for issue #238 keeps
- * the same average work per scanline and redistributes it over real CPU time,
- * approximating blueMSX's time-driven sync without rewriting all local timing
- * tables in the same patch.
+ * With the engine now fed by elapsed CPU cycles, match blueMSX semantics:
+ * one CPU cycle of elapsed time contributes one budget unit. Using HPeriod
+ * here makes delta_cycles * quantum / line_cycles collapse back to delta_cycles.
  */
 INLINE int VdpOpsQuantum(void)
 {
-  /*
-   * MSX2+ BIOS logo and some command-heavy transitions rely on sustained
-   * VDP copy throughput. Keep command progression higher on V9958 profiles
-   * without altering frame cadence.
-   */
-  return MODEL(MSX_MSX2P) ? 250000 : 12500;
+  return HPeriod>0 ? HPeriod : CPU_HPERIOD;
 }
 
 INLINE void VdpSyncCommandTime(void)
@@ -261,20 +254,20 @@ INLINE int VdpCommandScreenMode(void)
 
                       /*  SprOn SprOn SprOf SprOf */
                       /*  ScrOf ScrOn ScrOf ScrOn */
-static int srch_timing[8]={ 818, 1025,  818,  830,   /* ntsc */
-                            696,  854,  696,  684 }; /* pal  */
-static int line_timing[8]={ 1063, 1259, 1063, 1161,
-                            904,  1026, 904,  953 };
-static int hmmv_timing[8]={ 439,  549,  439,  531,
-                            366,  439,  366,  427 };
-static int lmmv_timing[8]={ 873,  1135, 873, 1056,
-                            732,  909,  732,  854 };
-static int ymmm_timing[8]={ 586,  952,  586,  610,
-                            488,  720,  488,  500 };
-static int hmmm_timing[8]={ 818,  1111, 818,  854,
-                            684,  879,  684,  708 };
-static int lmmm_timing[8]={ 1160, 1599, 1160, 1172, 
-                            964,  1257, 964,  977 };
+static int srch_timing[8]={  92, 125,  92,  92,   /* ntsc */
+                             92, 125,  92,  92 }; /* pal  */
+static int line_timing[8]={ 120, 147, 120, 120,
+                            120, 147, 120, 120 };
+static int hmmv_timing[8]={  49,  65,  49,  62,
+                             49,  65,  49,  62 };
+static int lmmv_timing[8]={  98, 137,  98, 124,
+                             98, 137,  98, 124 };
+static int ymmm_timing[8]={  65, 125,  65,  68,
+                             65, 125,  65,  68 };
+static int hmmm_timing[8]={  92, 136,  92,  97,
+                             92, 136,  92,  97 };
+static int lmmm_timing[8]={ 129, 197, 129, 132, 
+                            129, 197, 129, 132 };
 
 
 /** VDPVRMP() **********************************************/
