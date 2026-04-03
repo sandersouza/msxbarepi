@@ -204,3 +204,25 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Proximo teste:
   - validar em hardware se o boot logo finalmente passa a mostrar comportamento interlaced/odd-even
   - so depois voltar ao proximo corte de renderer page-aware
+
+## Atualizacao incremental de 03/04/2026 - `C2C2` sem efeito visual e recorte no `SCREEN 6` wide
+
+- O teste de hardware seguinte confirmou que a build `C2C2` nao mudou a leitura visual do boot logo:
+  - `MASK` seguiu visivel
+  - pagina errada/tarja nao mudou
+  - a cadencia permaneceu lenta
+  - nao apareceu leitura pratica de interlace
+- Decisao tecnica desta rodada:
+  - parar de tratar o host `hires_mode` como gargalo principal
+  - recortar o problema no renderer `SCREEN 6` wide, que e o modo ativo do boot logo
+- Mudanca aplicada em `src/fmsx_local/Wide.h`:
+  - remocao da heuristica de reorder de paginas baseada em `ChrTab`, porque o core local ja neutraliza `R#2 bit5` em `fmsx_vdp_r2_base()` no caminho `multipage`
+  - borda lateral de `SCREEN 6` wide passa a usar o padrao alternado `BGColor[hi/lo]` do `blueMSX`
+  - `left-edge mask` fisico de `SCREEN 6` wide passa a cobrir `16` pixels, como no renderer line512 do `blueMSX`
+- Build local validada:
+  - `BUILD_BID=202604031830-issue238-screen6-edge-mask`
+  - `BUILD_ID=E520`
+  - `BUILD_HASH=2bcfd13-da6cb9d57eebc4c7ded4856f93b0d0f840a5038a`
+- Proximo teste:
+  - retestar o boot logo `MSX2+` em hardware com a `E520`
+  - se o `MASK` nao mudar, promover o proximo corte para o source/page streaming de `SCREEN 6`

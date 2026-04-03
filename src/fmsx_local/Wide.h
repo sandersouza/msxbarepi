@@ -30,33 +30,36 @@ static void ClearLine512(uint16_t *P,uint16_t C)
 }
 
 /**
- * BlueMSX builds SCREEN 6/7 scanlines as a streaming two-page canvas driven
- * by chrTabBase bit15 + hScroll512. Our local renderer still composes via
- * BgRaw, but the logical left-to-right page order must match that reference
- * before scroll is applied or the MSX2+ boot logo shows the wrong half/page.
+ * In MSX2+ bitmap multipage scroll, blueMSX neutralizes R#2 bit5 in the
+ * effective base address and then walks the second page through +0x8000.
+ * Our local core mirrors that by masking R#2 bit5 in fmsx_vdp_r2_base(),
+ * so the wide renderer should not try to reorder pages again from ChrTab.
  */
 static void V9958WideBitmapPages(uint8_t Y,unsigned VirtualWidth,uint8_t **Page0,uint8_t **Page1)
 {
   uint8_t *Base;
   uint8_t *Next;
-  unsigned BasePos;
 
   Base=V9958BitmapLinePtr(ChrTab,Y);
   Next=V9958ScrollPagePtr(Base,0x8000);
 
-  if((VirtualWidth>512u)&&VRAM)
-  {
-    BasePos=(unsigned)(ChrTab-VRAM);
-    if(BasePos&0x8000u)
-    {
-      *Page0=Next;
-      *Page1=Base;
-      return;
-    }
-  }
-
   *Page0=Base;
   *Page1=Next;
+}
+
+static void RefreshBorder6Wide(uint16_t *P)
+{
+  const int Left = (WIDTH-256)+2*HAdjust;
+  const int Right = (WIDTH-256)-2*HAdjust;
+  const uint16_t C0 = XPal[(BGColor>>2)&0x03];
+  const uint16_t C1 = XPal[BGColor&0x03];
+  int I;
+
+  for(I=0;I<Left;I++)
+    P[-Left+I] = (I&1)? C1:C0;
+
+  for(I=0;I<Right;I++)
+    P[512+I] = (I&1)? C1:C0;
 }
 
 /** RefreshBorder512() ***************************************/
@@ -186,6 +189,8 @@ void RefreshLine6(uint8_t Y)
   uint16_t *P=RefreshBorder512(Y,XPal[BGColor&0x03]);
   if(!P) return;
 
+  RefreshBorder6Wide(P);
+
   if(!FMSX_SCREEN_ON) ClearLine512(P,XPal[BGColor&0x03]);
   else
   {
@@ -194,7 +199,8 @@ void RefreshLine6(uint8_t Y)
     R=ZBuf+32;
     Coarse = V9958CoarseScroll512();
     Fine = V9958FineScroll512();
-    LeftMask = V9958MaskLeft512();
+    /* blueMSX masks 8 logical pixels, which are 16 physical pixels here */
+    LeftMask = V9958MaskLeft512()<<1;
     VirtualWidth = V9958VirtualWidth512();
 
     V9958WideBitmapPages(Y,VirtualWidth,&T0,&T1);

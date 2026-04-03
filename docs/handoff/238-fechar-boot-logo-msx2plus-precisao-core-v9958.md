@@ -165,3 +165,28 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
 - Proximo gate:
   - validar em hardware se o boot logo finalmente ganha leitura pratica de interlace/odd-even
   - se isso acontecer, o proximo corte volta ao renderer `SCREEN 6/7` para atacar `MASK`/pagina errada com o path hi-res ja habilitado
+
+## Atualizacao incremental de 03/04/2026 - `C2C2` sem efeito visual e recorte no `SCREEN 6` wide
+
+- O round seguinte em hardware confirmou que a build `C2C2` nao moveu o estado visivel do boot logo:
+  - `MASK` continuou visivel
+  - pagina/tarja errada nao melhorou
+  - a cadencia permaneceu lenta
+  - nao apareceu leitura pratica de interlace
+- Diagnostico consolidado desta rodada:
+  - o `hires_mode` default do host deixou de ser o gargalo principal
+  - o sintoma visivel dominante segue no renderer `SCREEN 6` wide
+  - o primeiro patch de `Wide.h` tambem foi insuficiente porque tentava reordenar paginas a partir de `ChrTab`, mas o core local ja neutraliza `R#2 bit5` em `fmsx_vdp_r2_base()` quando `multipage` esta ativo
+- Novo corte aplicado em `src/fmsx_local/Wide.h`, ainda usando `blueMSX/Common.h` como referencia primaria:
+  - remove a heuristica local de reorder de pagina baseada em `ChrTab bit15`
+  - faz o renderer wide de `SCREEN 6` assumir a topologia `base + 0x8000`, alinhada ao contrato local do `ChrTab`
+  - repinta a borda lateral do `SCREEN 6` wide com o padrao alternado de `BGColor[hi/lo]`, espelhando `RefreshBorder6()` do `blueMSX`
+  - dobra o `left-edge mask` fisico do `SCREEN 6` wide para `16` pixels, como no `blueMSX` line512
+- Build local validada:
+  - `BUILD_BID=202604031830-issue238-screen6-edge-mask`
+  - `BUILD_ID=E520`
+  - `BUILD_HASH=2bcfd13-da6cb9d57eebc4c7ded4856f93b0d0f840a5038a`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Proximo gate:
+  - retestar o boot logo `MSX2+` em hardware com a `E520`
+  - verificar se o `MASK` finalmente muda de leitura visual; se nao mudar, o proximo corte deixa de ser borda/mask e passa a ser streaming/page source de `SCREEN 6`

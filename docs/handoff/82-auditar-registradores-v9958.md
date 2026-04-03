@@ -726,3 +726,16 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 - O espelho local correspondente foi criado em `docs/milestones/m18/`.
 - A issue entrou no projeto `MSX BarePI` com status `Backlog`.
 - Nenhuma branch de implementacao foi aberta para essa feature nesta rodada.
+
+## Atualizacao incremental de 03/04/2026 - trilha filha `#238`
+
+- Na branch filha `238-fechar-boot-logo-msx2plus-precisao-core-v9958`, o round de hardware da build `C2C2` confirmou que o ajuste de host `HIRES_INTERLACED` nao moveu a leitura visual do boot logo.
+- O foco tecnico dessa frente voltou ao renderer `SCREEN 6` wide em `src/fmsx_local/Wide.h`, ainda usando `blueMSX/Common.h` como referencia semantica primaria.
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604031830-issue238-screen6-edge-mask`
+  - `BUILD_ID=E520`
+  - `BUILD_HASH=2bcfd13-da6cb9d57eebc4c7ded4856f93b0d0f840a5038a`
+- Escopo do corte:
+  - remocao da heuristica local de reorder de paginas baseada em `ChrTab`
+  - borda lateral alternada para `SCREEN 6` wide
+  - `left-edge mask` fisico de `16` pixels no modo wide
