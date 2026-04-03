@@ -151,15 +151,14 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Proximo gate:
   - validar o boot logo `MSX2+` em hardware com a build `050B`
 
-## Atualizacao incremental de 03/04/2026 - reforco do pacing do engine
-- O primeiro round com a build `050B` mostrou melhora insuficiente de pacing; o logo continuou lento demais para o alvo da issue.
-- Novo corte aplicado em `src/fmsx_local/V9938.c`:
-  - `VdpOpsQuantum()` passa a seguir literalmente a escala temporal do `blueMSX` (`delta_cycles => budget`)
-  - os `timing[]` do command engine foram realinhados para a base do `blueMSX`
-- Build local validada:
-  - `BUILD_BID=202604031350-issue238-vdp-time-scale-bluemsx`
-  - `BUILD_ID=E3EC`
-  - `BUILD_HASH=6eaff06-b97f655de5f0a34c940f4930a1eeb83dfb6665d9`
-- Leitura esperada para o proximo round:
-  - o logo precisa ganhar cadencia perceptivelmente melhor
-  - se restarem mascara visivel, pagina errada ou falta de interlace, o gargalo passa a ser renderer `SCREEN 6/7` + odd/even
+## Atualizacao incremental de 03/04/2026 - regressao `E3EC` descartada
+- O segundo corte de pacing do engine, que tentou colapsar `delta_cycles => budget` na mesma escala absoluta do `blueMSX`, foi testado em hardware e descartado.
+- Evidencia de campo:
+  - a build `E3EC` passou a congelar ainda na tela azul anterior ao boot logo
+  - o problema deixou de ser apenas "cadencia insuficiente" e virou regressao de boot
+- Decisao tecnica:
+  - restaurar o comportamento temporal da `050B`
+  - nao insistir nesta issue no alinhamento literal dos `timing[]` enquanto o BIOS ainda trava antes do logo
+- Leitura operacional:
+  - a base segura da branch continua sendo o primeiro corte temporal (`050B`)
+  - o proximo trabalho util volta a ser renderer `SCREEN 6/7` page-aware + odd/even/interlace
