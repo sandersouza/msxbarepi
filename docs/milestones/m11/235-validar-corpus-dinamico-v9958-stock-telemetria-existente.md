@@ -5,7 +5,8 @@
 - Estado remoto: OPEN
 - Prioridade: P1
 - Labels: `priority:P1`, `type:feature`, `area:video`, `area:emulation`, `documentation`
-- Estado local atual: BACKLOG
+- Estado local atual: IN REVIEW
+- Branch ativa: `235-validar-corpus-dinamico-v9958-stock`
 
 ## Objetivo
 Usar apenas a instrumentação já existente no projeto para fechar ou bloquear explicitamente as linhas `disputed` e as divergências mais importantes da matriz comparativa do V9958 stock.
@@ -40,6 +41,12 @@ Usar apenas a instrumentação já existente no projeto para fechar ou bloquear 
 - Criar harness novo
 - Corrigir o core nesta issue
 - Abrir novos repros fora do corpus definido sem necessidade comprovada
+
+## Desvio controlado de escopo
+- Em 31/03/2026, a issue sofreu um desvio controlado e minimo desse escopo:
+  - o stress repro `UNKNOWN1.DSK` expôs um congelamento repetivel com `SM:05`, `CE=1`, `TR=1` e ultimo write indireto em `R#44`;
+  - a comparacao direta com o `blueMSX` mostrou uma divergencia concreta no write-side sync da VDP;
+  - por isso, um ajuste pequeno de core foi aceito nesta branch para realinhar o path de write com a referencia primaria do projeto e destravar a validacao dinamica.
 
 ## DoR
 - [x] Matriz canônica criada
@@ -119,6 +126,7 @@ Usar apenas a instrumentação já existente no projeto para fechar ou bloquear 
   - overlay: `TM2` (`R25/R26/R27`, `EP`)
   - trace: `TM6B` (`R25`, `R26`, `R27`) e UART `VDP EVT`
   - objetivo: fechar scroll high-res, troca de página e alinhamento do plano interleaved do `SCREEN 7`
+  - estado operacional na `#235`: bloqueado por falta de evidência dinâmica útil no corpus atual
 - `REN-005` (`SCREEN 8`):
   - repro principal: boot logo `MSX2+`
   - overlay: `TM2` (`R25/R26/R27`, `EP`)
@@ -139,6 +147,7 @@ Usar apenas a instrumentação já existente no projeto para fechar ou bloquear 
   - overlay: `TM2` (`R25/R26/R27`, `EP`)
   - trace: `TM6B` (`R27`) e UART `VDP EVT`
   - objetivo: fechar o backdrop por telemetria existente e registrar explicitamente se o alinhamento prático de sprite continuar dependendo de evidência visual/screenshot
+  - estado operacional na `#235`: bloqueado por falta de evidência dinâmica útil no corpus atual
 
 ## Riscos e bloqueios esperados
 - `STS-006` continua dependente de repro dirigido:
@@ -218,6 +227,180 @@ Usar apenas a instrumentação já existente no projeto para fechar ou bloquear 
   - o narrowing por BASIC já rendeu o que precisava:
     - `SRCH` termina (`CE=0`)
     - o conflito inicial de latch em `0x99` colou em `IO-004`
+
+- Atualização incremental ainda em 31/03/2026, primeiro round `Knightmare Gold`:
+  - a primeira captura de `Knightmare Gold` na build `FFC6` mostrou `SM:04` estável e, nos quadros amostrados, `R25:00`, `R26:00`, `R27:00`, `EP:0`, `R19:0024`, `R23:0000` e `EO:42` sem variação relevante
+  - visualmente, o jogo não apresentou corrupção óbvia em `SCREEN 4` durante movimento e transição de salas no trecho observado
+  - leitura operacional:
+    - `REN-002` ganha apenas suporte parcial fraco para o path plain de `SCREEN 4`
+    - `IRQ-001` continua em aberto, porque o vídeo não capturou um momento decisivo de latch/clear de `S#1 bit0`
+    - `IRQ-003` continua em aberto, porque `R19/R23` e `TL/TD` não mudaram de forma útil nos frames inspecionados
+  - próximo passo útil:
+    - repetir `Knightmare Gold` com o mesmo overlay, mas em trecho mais dinâmico e visando quadro onde `S1`, `I1A/I1F`, `TL/TD`, `R19` ou `R23` realmente mudem
+
+- Atualizacao incremental ainda em 31/03/2026, `UNKNOWN1.DSK` e write-side sync:
+  - o primeiro freeze util do `UNKNOWN1.DSK` ficou consistente em:
+    - `SM:05`
+    - `R2:5F`
+    - `R25/R26/R27=00`
+    - `CE:1`
+    - `TR:1`
+    - ultimo write indireto em `R#44` via `TM6D 9B:AC>2C>AC V:05`
+  - leitura operacional:
+    - o repro nao reforca `CMD-004`;
+    - ele aponta para um caso de command engine/CPU-transfer handshake em `SCREEN 5`.
+  - comparacao direta com `blueMSX`:
+    - `blueMSX` sincroniza a VDP antes de writes de VRAM/registradores (`sync(vdp, now)` em `write()`/`vdpUpdateRegisters()`);
+    - o core local so fazia command-slice flush no path de status read, nao no path de write-side VDP.
+  - ajuste minimo aplicado:
+    - `src/fmsx_local/V9938.c` ganhou `VdpSyncCommandSlice()`;
+    - `VDPWrite()`, `VDPRead()` e `fmsx_vdp_sync_before_status_read()` passaram a compartilhar esse helper;
+    - `src/fmsx_local/MSX.c:fmsx_vdp_sync_before_cpu_write()` passou a chamar `fmsx_vdp_sync_before_cpu_mutation()` em todos os writes da VDP, alem do freeze visual especifico do `Knightmare Gold`.
+  - build validada:
+    - `BUILD_BID=202603312345-issue235-vdp-write-sync`
+    - `BUILD_ID=DD8E`
+    - `BUILD_HASH=98891cf`
+  - proximo passo:
+    - repetir `UNKNOWN1.DSK` nessa build e verificar se ele ultrapassa o ponto anterior da trava.
+
+- Atualização incremental ainda em 31/03/2026, segundo round `Knightmare Gold`:
+  - o vídeo maior finalmente capturou uma transição útil entre gameplay, tela de `STAGE 01` e retorno ao jogo
+  - nos quadros de gameplay amostrados:
+    - `SM:04`
+    - `R25:00`, `R26:00`, `R27:00`, `EP:0`
+    - `I1:1`, `F1:0`
+    - `R19:0024`, `R23:0000`
+    - `EO:42`
+  - no quadro de transição:
+    - `I1:0`, `F1:0`
+    - `R19:0000`, `R23:0000`
+    - `EO:35`
+    - `S0:1`
+    - `TM6B` exibiu `SR:0/9F` e `99:R/1/0/01/9F`
+  - leitura operacional:
+    - `REN-002` ganha suporte parcial melhor, porque o `SCREEN 4` continuou visualmente estável no gameplay e na transição
+    - `IRQ-003` ganha indício útil, porque `R19` muda de `0024` para `0000` e volta, mas ainda falta amarrar essa mudança ao comportamento de `TL/TD` no mesmo trecho
+    - `IRQ-001` continua aberta, porque o vídeo ainda não mostrou o latch/clear decisivo de `S#1 bit0` com nitidez suficiente
+  - próximo passo útil:
+    - novo capture pass curto em `Knightmare Gold`, mirando especificamente a borda da transição onde `R19` troca de valor, para tentar pegar `TL/TD`, `I1A/I1F` e `S1` variando no mesmo trecho
+
+- Atualização incremental ainda em 31/03/2026, terceiro round `Knightmare Gold`:
+  - o corte curto seguinte capturou de novo a troca `R19:0000 <-> 0024`, mas com a borda contaminada por `PAU:1`
+  - nos quadros inspecionados:
+    - inicio/fim do corte: `PAU:1`, `R19:0000`
+    - miolo de gameplay: `PAU:0`, `R19:0024`, `SM:04`, `R25/R26/R27=00`, `EP:0`, `I1:1`, `F1:0`
+  - `TM4B` continuou sem variar de forma nitida o bastante para amarrar `TL/TD` ou `S1` ao mesmo evento
+  - leitura operacional:
+    - a alternancia de `R19` fica reforcada
+    - `IRQ-003` continua em aberto porque a correlacao com `TL/TD` segue fraca
+    - `IRQ-001` continua em aberto porque o latch/clear decisivo de `S#1 bit0` nao apareceu
+  - próximo passo útil:
+    - repetir `Knightmare Gold` sem `PAU:1` entrando no quadro e com 3-5s centrados em runtime ativo ao redor da transição
+
+- Decisão operacional ainda em 31/03/2026:
+  - `IRQ-001` e `IRQ-003` passam a ser tratadas como estáveis operacionalmente para a `#235`
+  - justificativa:
+    - a base estática já estava sustentada por `blueMSX` + `ocm-pld-dev`/lineage HDL
+    - os rounds de `Knightmare Gold` não trouxeram sinal contrário
+    - insistir em novos vídeos deixou de ter retorno prático proporcional
+  - consequência prática:
+    - a issue deixa de depender de novas capturas de `Knightmare Gold` para `IRQ-001/003`
+    - as linhas continuam `partial` na matriz, não `match`
+    - o próximo foco operacional passa a ser `CMD-004` e `REN-003..REN-008`
+
+- Atualização incremental ainda em 31/03/2026, boot logo `MSX2+`:
+  - o vídeo do boot logo na build `FFC6` mostrou um comportamento estável, porém menos abrangente do que o roteiro previa
+  - nos quadros amostrados:
+    - `SM:06` permaneceu estável
+    - `R2:3F` e `R25:03` permaneceram estáveis
+    - `R26/R27` oscilaram (`1B/00`, `2D/04`, `33/01`, `02/03`, `00/02`, `00/00`)
+    - `EP:1` e `EO:35` permaneceram estáveis
+    - `CE:0` e `TR:0` ficaram zerados nos quadros inspecionados
+    - `TM6D` mostrou `R17:1A 9B:1B>1B>1C`, sem novo sinal útil do residual `REG-004`
+  - leitura operacional:
+    - o vídeo só dá suporte parcial incidental ao path high-res de `SM:06`, com `R26/R27` variando sem corrupção visual óbvia
+    - não fecha `CMD-004`, porque não mostrou burst útil de `CE/TR`
+    - não fecha `REN-003`, `REN-005` ou `REN-006`, porque o repro observado não entrou nesses modos
+    - não fecha `REN-007`, porque `EP` e `EO` ficaram estáveis demais
+  - próximo passo útil:
+    - migrar `CMD-004` para `MSXDIAG`
+    - reavaliar `REN-003/005/006/007` com repros que realmente entrem nos modos de vídeo alvo
+
+- Atualização incremental ainda em 31/03/2026, primeiro round `MSXDIAG`:
+  - o vídeo de `MSXDIAG` na build `FFC6` cobriu apenas:
+    - splash/boot da ROM;
+    - menus `PAGE 1 OF 2` e `PAGE 2 OF 2`;
+    - tela de instruções de `MIXED MODE`;
+    - `SYSTEM INFORMATION`
+  - nos quadros úteis inspecionados:
+    - splash em `SM:01`, `R2:06`, `R25:00`, `R26:00`, `R27:00`, `EP:0`;
+    - menus, `MIXED MODE` (instrução) e `SYSTEM INFORMATION` em `SM:00`, `R2:00`, `R25:00`, `R26:00`, `R27:00`, `EP:0`;
+    - `TM3` ficou em `CE:0`, `TR:0`, `CS:000`, `CP:000`;
+    - `TM6B` seguiu em reads ordinários de status (`SR:0/...`), sem burst novo do command engine;
+    - o teste de `MIXED MODE` não foi iniciado; a captura ficou na tela de instrução e depois voltou ao menu
+  - leitura operacional:
+    - o round não exerceu `CMD-004`;
+    - com `R25:00` o tempo todo, o vídeo não chegou a tocar o path `commandEnable` por `R25 bit6` fora de `SCR5..SCR12`;
+    - o `MSXDIAG` só continua como repro útil desta linha se o próximo round entrar no teste real que altere modo/registradores de vídeo
+  - próximo passo útil:
+    - repetir `MSXDIAG`, entrar de fato em `MIXED MODE` com `ACCEPT`, deixar o teste rodando alguns segundos e capturar `TM2`, `TM3` e `TM6B`
+    - se mesmo assim `R25` continuar zerado e `CE/TR` mortos, abandonar `MSXDIAG` como repro de `CMD-004` nesta issue
+
+- Atualização incremental ainda em 31/03/2026, segundo round `MSXDIAG`:
+  - o segundo vídeo finalmente entrou no teste real de `MIXED MODE`
+  - nos quadros úteis do teste:
+    - `TM2` mostrou `SM:02`, `R2:15`, `R25:00`, `R26:00`, `R27:00`, `EP:0`
+    - `TM3` permaneceu em `CE:0`, `TR:0`, `CS:000`, `CP:000`
+    - `TM6A` ficou com `25:0000`, `26:0000`, `27:0000` no quadro estável do teste
+    - `TM6B` seguiu mostrando apenas reads ordinários de status, sem burst útil do command engine
+  - houve um quadro transitório azul ao sair do teste com `SM:00` e `TM6A 25/26/27=0002`, mas ele não sustentou estado observável e não veio acompanhado de atividade em `CE/TR`
+  - leitura operacional:
+    - mesmo com o `MIXED MODE` realmente em execução, o `MSXDIAG` não exerceu `CMD-004`
+    - o teste usa um path de vídeo que muda modo/registradores básicos, mas continua sem tocar o caminho de `commandEnable` por `R25 bit6`
+    - nesta issue, `MSXDIAG` deixa de ser repro útil para `CMD-004`
+  - próximo passo útil:
+    - abandonar `MSXDIAG` como caminho principal de `CMD-004`
+    - mover a coleta remanescente para outro repro do corpus que realmente use command engine fora de `SCR5..SCR12`, ou registrar `CMD-004` como sustentada apenas pela base estática se não houver repro dinâmico melhor disponível nesta rodada
+
+- Atualização incremental ainda em 31/03/2026, candidato `UNKNOWN1.DSK`:
+  - novo repro candidato amplo:
+    - `roms/games/disks/DEMOS/UNKNOWN1.DSK`
+  - reverse engineering inicial do root FAT12:
+    - cadeia de boot `AUTOEXEC.BAS -> UR.BAT -> BASIC UR.BAS`
+    - o `UR.BAS` carrega ao menos `SCRIPT.PRG`, `LOADER.PRG`, `MUSIC.PRG`, `INTRO.PRG` e `REPLAY.PRG`
+    - o disco inclui muitos assets de video/script (`*.VRM`, `*.VDP`, `*.NPC`, `*.PRG`) e audio (`*.MUS`, `LETBEAT.SAM` com ~256KB)
+  - textos internos do proprio disco reforcam o perfil tecnico:
+    - `ALIVE.TXT` fala explicitamente do uso dos drives e brinca com “hazardous to your VDP”
+    - `INTRO.TXT` descreve uma parte com `225 stars in 4 bitplanes and 7 colours`
+    - `SCOOP.TXT` anuncia sample ADPCM de `256KB` e oscilloscope de `12.8kHz`
+  - leitura operacional:
+    - o disco e um excelente smoke/stress repro para VDP + disco + audio
+    - ele e util para localizar travas macroscopicas e regressao ampla de pipeline
+    - ele nao substitui sozinho os repros dirigidos da matriz, porque a atribuicao causal por linha fica mais fraca
+  - uso recomendado:
+    - tratar `UNKNOWN1.DSK` como repro complementar de campo
+    - se a demo travar sempre no mesmo bloco/cena, usar o overlay para identificar primeiro o subsistema dominante antes de promover qualquer ajuste no core
+
+- Atualização incremental ainda em 31/03/2026, primeiro freeze em `UNKNOWN1.DSK`:
+  - o vídeo `22.27.31` já pegou a demo travada
+  - sequência útil observada:
+    - fase anterior ainda saudável com `SM:06`, `R2:1F`, `R25/R26/R27=00`, `CE:0`, `TR:0`, e `TM6D 9B:2B>2B>2C`
+    - transição para o bloco problemático em `SM:05`, primeiro com `R2:1F` e depois `R2:5F`
+    - estado congelado repetido por vários segundos:
+      - `SM:05`
+      - `R2:5F`
+      - `R25/R26/R27=00`
+      - `TM3: CE:1 TR:1 CS:001 CP:000`
+      - `TM6B` com último chamador relevante de `0x99` em `P9:2C02`
+      - `TM6D: R17:AC 9B:AC>2C>AC V:05`
+  - leitura operacional:
+    - o freeze não parece ser de renderer puro nem de carga de disco
+    - o quadro congelado aponta para command engine preso em `SCREEN 5`, com `CE/TR` ativos de forma persistente
+    - o último write indireto via `0x9B` caiu em `R#44` (`0x2C`) com valor `05`, isto é, o software estava tocando `CLR/argumento de transferência` imediatamente antes do congelamento
+    - como `R25=00`, este repro não ajuda a fechar `CMD-004`; ele aponta mais para um caso de comando com handshake `TR`/CPU-transfer em `SCREEN 5`
+  - consequência prática:
+    - `UNKNOWN1.DSK` passa a ser excelente repro complementar de travamento do command engine
+    - mas ele sai do alvo principal da `#235` e passa a sugerir backlog técnico próprio para investigar command transfer em `SCREEN 5`
     - o resíduo atual mora no caminho de status da `0x99`, não no command engine
   - o ganho marginal de continuar trocando cores caiu demais
   - consequência prática:
@@ -370,8 +553,6 @@ Usar apenas a instrumentação já existente no projeto para fechar ou bloquear 
 
 ## Decisão operacional desta rodada
 - Próxima coleta dinâmica com telemetria já existente:
-  - `IRQ-001`
-  - `IRQ-003`
   - `CMD-004`
   - `REN-002..REN-008`
 - Próxima coleta dinâmica agora também pode incluir:
@@ -429,6 +610,185 @@ Usar apenas a instrumentação já existente no projeto para fechar ou bloquear 
   - `BUILD_ID=16D6`
   - `BUILD_HASH=98891cfc-9e23387dc2ea0bf0542319be174b90aa3febb6af`
 - Teste em hardware: pendente
+
+## Atualizacao incremental de 31/03/2026 - `UNKNOWN1.DSK` reclassificado para `S#1`
+
+- O round com a build `DD8E` confirmou que o demo continuou parando no mesmo bloco visual, mas nao no mesmo estado interno:
+  - o hang anterior de `CE/TR` em `SCREEN 5` desapareceu;
+  - o quadro nitido passou a mostrar:
+    - `SM:07`
+    - `R2:3F`
+    - `R25/R26/R27=00`
+    - `DP:1`, `EP:0`
+    - `CE:0`, `TR:0`
+    - `TM6B P9:C516 ... SR:1/04 99:R/1/1/01/04`
+- Leitura da evidencia:
+  - o `UNKNOWN1.DSK` deixou de ser repro de hang do command engine e virou repro de polling em `S#1`;
+  - o chamador em `C516h` ficou repetindo leitura de `S#1` com `R#15=1`, recebendo `0x04` e esperando `bit0=1`.
+- Convergencia aplicada com a referencia primaria:
+  - o `blueMSX` expoe `S#1 bit0` como:
+    - latch/IRQ quando `IE1` esta ligado;
+    - janela live de `HBlank/timeHint` quando `IE1` esta desligado;
+  - o core local foi ajustado em `src/fmsx_local/MSX.c:fmsx_vdp_status1_live()` para seguir essa divisao:
+    - `IE1=1`: caminho sticky/IRQ-backed preservado;
+    - `IE1=0`: bit0 live por linha/fase apos o fim da area visivel da linha-alvo.
+- Validacao local do corte:
+  - `scripts/check-third-party-pristine.sh`: OK
+  - `make BUILD_BID=202603312355-issue235-status1-live-window`: OK
+- Build desta rodada:
+  - `BUILD_BID=202603312355-issue235-status1-live-window`
+  - `BUILD_ID=1052`
+  - `BUILD_HASH=287fe40e915f15a16dd10ddf7f34d258735b38af`
+- Proximo passo:
+  - repetir `UNKNOWN1.DSK` na build `1052`;
+  - confirmar se o demo sai do loop atual de `S#1`;
+  - se ainda parar, anexar um unico frame nitido com `TM2`, `TM3`, `TM6B` e `TM6D`.
+
+## Atualizacao incremental de 01/04/2026 - `UNKNOWN1.DSK` passou na build `1052`
+
+- O teste em hardware da build `1052` confirmou o ganho completo:
+  - o `UNKNOWN1.DSK` passou do ponto antigo de freeze;
+  - a demo seguiu rodando normalmente, sem regressar nem ao hang de `CE/TR` nem ao loop de `S#1`.
+- Leitura da evidencia:
+  - o repro complementar de campo agora funciona como smoke/stress pass da stack `VDP + disk + audio`;
+  - a semantica `blueMSX` para `S#1 bit0` com `IE1=0` deixou de ser apenas hipotese estatica e ganhou sustentacao pratica nesta branch.
+- Consequencia operacional:
+  - `UNKNOWN1.DSK` deixa de ser um bug aberto dentro da `#235`;
+  - o demo passa a ser um gate util de regressao para os proximos ajustes do `V9958`;
+  - o foco principal da issue volta para os itens remanescentes do corpus dirigido (`CMD-004` e `REN-003..REN-008`).
+
+## Atualizacao incremental de 01/04/2026 - disco novo para `CMD-004`
+
+- O estado da branch mostrou que:
+  - boot logo `MSX2+` nao fechou `CMD-004`;
+  - `MSXDIAG` tambem nao exerceu `R25 bit6`;
+  - `UNKNOWN1.DSK` e um bom smoke/stress pass, mas os frames uteis ficaram com `R25/R26/R27=00`.
+- Para remover essa dependencia de repro oportunista, a trilha ganhou um disco sintético novo:
+  - `sdcard/disks/DEBUG/V9958_CMD004_R25.DSK`
+  - fontes host:
+    - `sdcard/disks/DEBUG/src/CMD004.BAS`
+    - `sdcard/disks/DEBUG/src/CMD004_RUNNER.asm`
+- O runner compara o mesmo `HMMV` em `SCREEN 4` com `R25 bit6`:
+  - desligado
+  - ligado
+- O veredito esperado do core alinhado ao `blueMSX` e:
+  - `OFF LOOPS=0`
+  - `ON LOOPS>0`
+- Consequencia operacional:
+  - o proximo teste da `#235` deve abrir esse disco e validar `CMD-004` de forma dirigida;
+  - so depois faz sentido voltar aos `REN-003..REN-008`.
+
+## Atualizacao incremental de 01/04/2026 - hotfix do `CMD004`
+
+- O primeiro uso do `V9958_CMD004_R25.DSK` retornou `Syntax error 120`.
+- A causa estava no proprio repro:
+  - o runner em `D200h` gravava o buffer de resultado em `D120h`;
+  - esse endereco fica abaixo da area protegida pelo `CLEAR`, e o runner podia corromper o workspace do BASIC ao voltar.
+- Ajuste aplicado:
+  - `RESULTS` foi movido para `D500h`;
+  - `CMD004.BAS` foi sincronizado para ler `D500..D509`;
+  - o `.DSK` foi regenerado, sem build nova do kernel.
+
+## Atualizacao incremental de 01/04/2026 - segundo hotfix do `CMD004`
+
+- O round imediatamente seguinte ainda voltou com `Syntax error`, agora na linha `180`.
+- Causa provavel do proprio repro:
+  - o `CMD004.BAS` ainda usava nomes como `OFFL` e `ONL`;
+  - no fluxo `RUN "CMD004.BAS"` isso deixa margem para tokenizacao ambigua do parser do MSX BASIC.
+- Ajuste aplicado:
+  - o BASIC foi reescrito com variaveis curtas e neutras (`L0`, `L1`, `S0`, `S1`, `FG`);
+  - o `.DSK` foi regenerado novamente, sem build nova do kernel.
+
+## Atualizacao incremental de 01/04/2026 - `CMD004` deixa de medir só `CE`
+
+- O primeiro round funcional do `CMD004` devolveu `OFF LOOPS=0`, `ON LOOPS=0`, `FLAGS=0`.
+- Interpretação:
+  - o repro finalmente executou;
+  - mas a métrica ainda era fraca demais, porque dependia de ver `CE` em polling de `S#2`, e o `HMMV` pode concluir antes do primeiro probe do runner.
+- Ajuste aplicado:
+  - o `CMD004_RUNNER.asm` agora mede side effect em `VRAM[0]`, não apenas `CE`;
+  - o teste limpa `VRAM[0]`, executa `HMMV` com `R25 bit6` desligado e depois ligado, e devolve os bytes finais observados em `VRAM[0]`.
+- Novo critério esperado:
+  - `OFF BYTE=0`
+  - `ON BYTE=165`
+  - flags `bit0/bit1` marcam mudança real de VRAM, e `bit2/bit3` ficam só como telemetria auxiliar de `CE`.
+
+## Atualizacao incremental de 01/04/2026 - helper asm do `CMD004` descartado
+
+- O round seguinte do `CMD004` ainda voltou inconclusivo:
+  - `OFF CLR=64 BYTE=64`
+  - `ON CLR=64 BYTE=64`
+  - isso mostrou que o helper asm ainda contaminava a propria leitura base de VRAM.
+- Ajuste aplicado:
+  - o `CMD004.BAS` deixou de depender do helper asm para a leitura/escrita de VRAM;
+  - a variante atual usa `VPOKE 0,0` / `VPEEK(0)` diretamente no BASIC para medir o byte-base e o byte final;
+  - o armamento do `HMMV` continua via `OUT &H99`, com polling de `S#2`.
+- Novo critério esperado:
+  - `OFF CLR=0`
+  - `OFF BYTE=0`
+  - `ON CLR=0`
+  - `ON BYTE=165`
+
+## Atualizacao incremental de 01/04/2026 - `CMD004` bloqueado como repro dinâmico
+
+- O round seguinte da variante pura em BASIC também travou antes do resumo final.
+- O quadro congelado mostrou:
+  - `SM:04`
+  - `R25:00`
+  - `CE=0`, `TR=0`
+  - último status lido em `TM6B`: `SR:2/0C 99:R/1/2/02/0C`
+- Interpretação:
+  - o `HMMV` do caso `OFF` já tinha terminado;
+  - o congelamento não ficou no command engine nem chegou ao caso `R25 bit6 = 1`;
+  - o repro passou a esbarrar em um caminho pós-comando de VRAM/BASIC em `SCREEN 4`.
+- Decisão operacional:
+  - `CMD004` deixa de ser repro dinâmico útil desta issue;
+  - `CMD-004` volta a ficar sustentada apenas pela base estática e deixa de bloquear a `#235`;
+  - o freeze pós-comando em `SCREEN 4` pode virar uma trilha separada se continuar relevante depois do fechamento desta issue.
+
+## Atualizacao incremental de 01/04/2026 - round `Gradius2E/Nemesis2E` ficou em `SCREEN 4`
+
+- O vídeo de `01/04/2026 15:57:10` trouxe gameplay estável e overlay legível, mas não entrou no path high-res que esta issue ainda precisa.
+- Nos frames úteis observados:
+  - `SM:04` permaneceu estável;
+  - `R25:00`, `R26:00`, `R27:00`, `EP:0` ficaram estáveis;
+  - `CE:0` e `TR:0` permaneceram zerados;
+  - `TM6B` mostrou só reads ordinários de status (`SR:0/9F` e `SR:1/04`);
+  - não houve corrupção visual óbvia no trecho de gameplay e scroll observado.
+- Leitura operacional:
+  - o round reforça estabilidade prática de `SCREEN 4`, não `REN-004`/`REN-008`;
+  - ele não fecha `REN-004`, porque o repro não entrou em `SM:06/07`;
+  - ele não fecha `REN-008`, porque `R27` ficou zerado e o path de mask/alinhamento de sprite em high-res não foi exercitado.
+- Consequencia operacional:
+  - este vídeo não avança os itens remanescentes da issue;
+  - o próximo round da `#235` precisa de um repro do corpus que realmente entre no modo alvo, ou de bloqueio explícito dessas linhas por falta de evidência dinâmica dentro do corpus atual.
+
+## Decisao operacional de 01/04/2026 - `REN-004` e `REN-008` bloqueadas
+
+- Por decisão da trilha, `REN-004` e `REN-008` passam a ficar explicitamente bloqueadas nesta issue por falta de evidência dinâmica útil dentro do corpus atual.
+- Justificativa:
+  - o vídeo mais recente de `Gradius2E/Nemesis2E` permaneceu em `SM:04`, com `R25/R26/R27=00`, `EP:0`, `CE/TR=0` e sem evento útil em `TM6B`;
+  - os outros repros do corpus (`boot logo`, `MSXDIAG`, `UNKNOWN1.DSK`) também não forneceram uma janela high-res confiável com `SM:06/07` e `R27` relevante;
+  - insistir em rounds adicionais sem mudar de corpus deixou de produzir evidência nova.
+- Consequencia operacional:
+  - essas duas linhas deixam de bloquear o fechamento prático da `#235`;
+  - a matriz canônica preserva o estado técnico de implementação, mas a issue local passa a tratá-las como `blocked by missing dynamic evidence`;
+  - qualquer fechamento futuro por captura deve partir de repro melhor ou de trilha específica.
+
+## Atualizacao incremental de 02/04/2026 - issue `#235` em review com PR aberto
+
+- A issue `#235` entrou em `In review` no projeto `MSX BarePI`.
+- O PR desta branch foi aberto contra a umbrella `#82`:
+  - [#239 - [235] Validar corpus dinâmico do V9958 stock com telemetria existente](https://github.com/sandersouza/msxbarepi/pull/239)
+  - estado atual: `draft`
+- Acoes concluídas no ciclo:
+  - labels do PR alinhadas à issue (`documentation`, `priority:P1`, `area:video`, `type:feature`, `area:emulation`)
+  - milestone do PR ajustada para `Release: Suporte MSX2+`
+  - PR vinculado ao projeto `MSX BarePI`
+  - comentário publicado na issue com o link do PR e o resumo técnico da rodada
+- Consequencia operacional:
+  - a `#235` deixa a fase de captura/descoberta;
+  - o próximo gate passa a ser review/aprovação do PR e decisão de fechamento prático da issue.
 
 ## Referências iniciais
 - `docs/debug-layer.md`

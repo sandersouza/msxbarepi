@@ -639,6 +639,7 @@ static void fmsx_vdp_trace_log(uint8_t event_type);
 static void fmsx_vdp_trace_log_io(uint8_t event_type,uint32_t aux_addr,uint8_t aux_value,uint8_t aux_reg,uint8_t aux_ctrl);
 static void fmsx_vdp_sync_before_cpu_write(void);
 extern void fmsx_vdp_sync_before_status_read(void);
+extern void fmsx_vdp_sync_before_cpu_mutation(void);
 
 static int fmsx_string_contains(const char *text,const char *needle)
 {
@@ -1368,11 +1369,11 @@ static void fmsx_vdp_sync_before_cpu_write(void)
    * the end of the line; if the line is still composed later in HBlank, those
    * writes bleed backwards into the line that just finished scanning out.
    */
-  if(!fmsx_vdp_kmg_sync_window_active()) return;
-  if(!FmsxVDPDrawingLatched) return;
-  if(FmsxVDPUCountLatched<100) return;
-  if((ScanLine<0)||(ScanLine>=256)) return;
-  if(FmsxVDPLineRendered) return;
+  if(!fmsx_vdp_kmg_sync_window_active()) goto sync_command;
+  if(!FmsxVDPDrawingLatched) goto sync_command;
+  if(FmsxVDPUCountLatched<100) goto sync_command;
+  if((ScanLine<0)||(ScanLine>=256)) goto sync_command;
+  if(FmsxVDPLineRendered) goto sync_command;
 
   /*
    * Knightmare Gold's smooth-scroll hook rewrites VRAM rectangles while the
@@ -1386,11 +1387,19 @@ static void fmsx_vdp_sync_before_cpu_write(void)
     fmsx_vdp_render_scanline((uint8_t)ScanLine,FmsxVDPDrawingLatched,FmsxVDPUCountLatched);
     FmsxVDPLineRendered=1;
     FmsxVDPLineChunkEnd=32u;
-    return;
+    goto sync_command;
   }
 
   fmsx_vdp_render_scanline((uint8_t)ScanLine,FmsxVDPDrawingLatched,FmsxVDPUCountLatched);
   FmsxVDPLineRendered=1;
+
+sync_command:
+  /*
+   * blueMSX synchronizes command state before CPU-driven VDP writes. Reuse
+   * the coarse write-side command flush after the local scanline freeze so
+   * transfer commands can advance CE/TR before the mutation lands.
+   */
+  fmsx_vdp_sync_before_cpu_mutation();
 }
 
 static void fmsx_vdp_render_screen4_partial(uint8_t scanline,unsigned end_column)
@@ -1468,12 +1477,39 @@ static void fmsx_vdp_render_scanline(uint8_t scanline,uint8_t drawing,int ucount
 
 static uint8_t fmsx_vdp_status1_live(void)
 {
+  uint8_t status = VDPStatus[1] & (uint8_t)~0x01u;
+
   /*
-   * Space Manbow relies on the horizontal interrupt flag in S#1 even when
-   * IE1 is disabled. The hardware keeps this as a sticky latch and clears it
-   * on S#1 reads, R#19 writes, R#0 writes, or VBlank start.
+   * blueMSX exposes two different S#1 bit0 behaviors:
+   *  - IE1 enabled: bit0 reflects the armed/pending HINT latch.
+   *  - IE1 disabled: bit0 becomes a live HBlank window around the compare
+   *    line, not a sticky latch.
+   *
+   * Keep the existing sticky/IRQ-backed path for IE1-enabled raster users
+   * (Gradius2E/Knightmare Gold), but realign the IE1-disabled path to the
+   * blueMSX live-window model. The local scheduler is line-based, so the best
+   * available approximation is "target line, after visible span".
    */
-  return VDPStatus[1];
+  if(VDP[0]&0x10u)
+  {
+    if((VDPStatus[1]&0x01u)||(IRQPending&INT_IE1))
+      status |= 0x01u;
+    return status;
+  }
+
+  {
+    const int limit = PALVideo ? 256 : (ScanLines212 ? 245 : 235);
+    const unsigned line_ticks = fmsx_vdp_line_ticks_now();
+    const unsigned display_ticks = (unsigned)fmsx_vdp_active_vdp_ticks();
+
+    if((ScanLine>=0)
+    && (ScanLine<limit)
+    && ((uint8_t)ScanLine==fmsx_vdp_ie1_target_line())
+    && (line_ticks>=display_ticks))
+      status |= 0x01u;
+  }
+
+  return status;
 }
 
 static uint8_t fmsx_vdp_ie1_target_line(void)

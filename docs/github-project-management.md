@@ -17,7 +17,9 @@ Data de referência desta versão: 5 de março de 2026.
 - Evitar comandos longos inline no terminal para criar issues; preferir corpo oriundo de arquivo `.md` previamente preparado.
 - Criar branch de issue somente quando formos atuar nela.
 - Toda branch criada para trabalho deve ser criada/vinculada pela issue de origem via `gh issue develop`.
+- Quando uma issue funcionar como umbrella/epic com branch propria, cada sub-issue deve usar branch derivada da branch umbrella, e nao sair direto de `main`.
 - Todo PR deve ser criado somente a partir de uma branch vinculada a uma issue ativa.
+- Quando houver umbrella branch ativa, o PR da sub-issue deve mirar a branch umbrella; somente a branch umbrella abre PR para `main` ao consolidar a trilha.
 - Todo PR deve ser vinculado a milestone e ao projeto origem da issue, além ter as mesmas labels da issue de origem.
 - Sempre atualizar as tasks concluídas diretamente na issue remota.
 - Para cada milestone, manter `docs/milestones/m<numero>/CHALLENGES.md` atualizado com uma entrada por issue contendo: desafio, solução final (ou mitigação), status (`Resolvido`/`Parcial`/`Futuro`) e referência de continuidade quando houver.
@@ -31,8 +33,9 @@ Data de referência desta versão: 5 de março de 2026.
   - ao estabilizar e entrar em testes: `In review`
   - se testes falharem: voltar para `In progress`
   - ao concluir/fechar issue e seguir para a próxima: `Done`
-- Ao estabilizar uma issue, abrir PR `issue-branch -> main` e registrar o link para review.
-- Ao concluir/estabilizar uma issue, é obrigatório abrir o PR da branch da issue para `main` e enviar o link de aprovação ao usuário antes de avançar para a próxima issue; faça isso em `Plan Mode` no agente local, aguardando com a pergunta `O PR foi aprovado?`.
+- Ao estabilizar uma issue sem umbrella ativa, abrir PR `issue-branch -> main` e registrar o link para review.
+- Ao estabilizar uma sub-issue sob umbrella branch ativa, abrir PR `subissue-branch -> umbrella-branch` e registrar o link para review.
+- Ao concluir/estabilizar uma issue, é obrigatório abrir o PR da branch da issue para o target correto (`main` ou branch umbrella ativa) e enviar o link de aprovação ao usuário antes de avançar para a próxima issue; faça isso em `Plan Mode` no agente local, aguardando com a pergunta `O PR foi aprovado?`.
 - Ao confirmar a aprovação do PR, avance para a próxima issue, atualizando o status da issue anterior para `Done` e da nova issue para `In progress`.
 - Caso não hajam mais issues abertas na milestone atual, avance para a próxima milestone, garantindo que as issues estejam organizadas e o status atualizado no projeto.
 - Antes de avançar para a próxima issue/milestone, verifique se a anterior foi concluída, o PR aprovado e o status atualizado para `Done` no projeto; entre em `Plan Mode` para confirmar cada etapa e perguntar se deve seguir para a próxima issue/milestone.
@@ -48,6 +51,7 @@ Data de referência desta versão: 5 de março de 2026.
 - Projeto oficial (GitHub Projects): `MSX BarePI`
 - URL do projeto: `https://github.com/users/sandersouza/projects/3`
 - Branch de trabalho por issue ativa: preferencialmente `<numero>-<slug-curto>` (ex.: `77-p1-validar-vdp9938-e-modos-de-vídeo-msx2-prioritários`) criada via `gh issue develop`.
+- Em trilhas com umbrella branch ativa, a branch da sub-issue deve ser derivada da branch umbrella e o merge intermediario deve voltar para essa umbrella antes do PR final para `main`.
 - Branch de release: `release/<versao>` (obrigatório; não usar branch de release fora do prefixo `release/`)
 - Estrutura local:
   - `docs/milestones/m<numero-da-milestone>/`
@@ -66,6 +70,7 @@ Data de referência desta versão: 5 de março de 2026.
 gh issue develop <numero> -R sandersouza/msxbarepi --name <numero>-<slug> --base main --checkout
 git pull --ff-only
 ```
+4.0 Se a issue estiver sob uma umbrella branch ativa, trocar o `--base main` pela branch umbrella correspondente.
 4.1 Validar vínculo branch <-> issue:
 ```bash
 gh issue develop --list <numero> -R sandersouza/msxbarepi
@@ -97,9 +102,9 @@ for N in $(gh issue list -R sandersouza/msxbarepi --state open -L 200 --json num
   gh project item-edit --id "$ITEM_ID" --project-id "$PROJECT_ID" --field-id "$STATUS_FIELD_ID" --single-select-option-id "$READY_OPTION_ID"
 done
 ```
-8. Quando estabilizada em hardware, abrir PR para `main`:
+8. Quando estabilizada em hardware, abrir PR para o target correto:
 ```bash
-gh pr create -B main -H <branch-da-issue> --fill
+gh pr create -B <main-ou-branch-umbrella> -H <branch-da-issue> --fill
 ```
 8.1 Ao entrar em fase de teste/review, atualizar `Status` para `In review`:
 ```bash

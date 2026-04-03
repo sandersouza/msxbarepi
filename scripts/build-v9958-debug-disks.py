@@ -413,6 +413,201 @@ read_s9:
     ret
 """
 
+    cmd004_runner_asm = """DEVICE NONE
+ORG $D200
+
+RESULTS  EQU $D500
+PORTVDP  EQU $99
+PORTVRAM EQU $98
+CLRVALUE EQU $A5
+
+start:
+    di
+    push af
+    push bc
+    push de
+    push hl
+
+    xor a
+    ld hl,RESULTS
+    ld b,10
+.clear:
+    ld (hl),a
+    inc hl
+    djnz .clear
+
+    call wait_idle
+
+	    xor a
+	    ld b,25
+	    call write_reg
+	    call run_case_off
+
+    call wait_idle
+
+    ld a,$40
+    ld b,25
+    call write_reg
+    call run_case_on
+
+    xor a
+    ld b,25
+    call write_reg
+
+    ld a,$A6
+    ld (RESULTS),a
+
+    pop hl
+    pop de
+    pop bc
+    pop af
+    ei
+    ret
+
+run_case_off:
+	    call clear_vram0
+	    call read_vram0
+	    ld (RESULTS+5),a
+	    call setup_hmmv
+	    ld a,$C0
+	    out (PORTVDP),a
+	    ld a,$AE
+	    out (PORTVDP),a
+.poll_off:
+	    call read_s2
+	    ld (RESULTS+3),a
+	    bit 0,a
+	    jr z,.done_off
+	    ld a,(RESULTS+9)
+	    or $04
+	    ld (RESULTS+9),a
+	    jr .poll_off
+.done_off:
+	    call read_vram0
+	    ld (RESULTS+1),a
+	    or a
+	    ret z
+	    ld a,(RESULTS+9)
+	    or $01
+	    ld (RESULTS+9),a
+	    ret
+
+run_case_on:
+	    call clear_vram0
+	    call read_vram0
+	    ld (RESULTS+6),a
+	    call setup_hmmv
+	    ld a,$C0
+	    out (PORTVDP),a
+	    ld a,$AE
+	    out (PORTVDP),a
+.poll_on:
+	    call read_s2
+	    ld (RESULTS+4),a
+	    bit 0,a
+	    jr z,.done_on
+	    ld a,(RESULTS+9)
+	    or $08
+	    ld (RESULTS+9),a
+	    jr .poll_on
+.done_on:
+	    call read_vram0
+	    ld (RESULTS+2),a
+	    or a
+	    ret z
+	    ld a,(RESULTS+9)
+	    or $02
+	    ld (RESULTS+9),a
+	    ret
+
+wait_idle:
+	    call read_s2
+	    bit 0,a
+	    jr nz,wait_idle
+	    ret
+
+setup_hmmv:
+	    ld a,0
+    ld b,36
+    call write_reg
+    ld a,0
+    ld b,37
+    call write_reg
+    ld a,0
+    ld b,38
+    call write_reg
+    ld a,0
+    ld b,39
+	    call write_reg
+	    ld a,$FF
+	    ld b,40
+	    call write_reg
+	    ld a,$00
+	    ld b,41
+	    call write_reg
+	    ld a,$01
+	    ld b,42
+	    call write_reg
+	    ld a,$00
+	    ld b,43
+	    call write_reg
+	    ld a,CLRVALUE
+	    ld b,44
+	    call write_reg
+	    ld a,$00
+	    ld b,45
+	    call write_reg
+	    ret
+
+clear_vram0:
+	    call set_reg14_zero
+	    xor a
+	    call set_vram_write0
+	    out (PORTVRAM),a
+	    ret
+
+read_vram0:
+	    call set_reg14_zero
+	    call set_vram_read0
+	    in a,(PORTVRAM)
+	    ret
+
+set_reg14_zero:
+	    xor a
+	    ld b,14
+	    call write_reg
+	    ret
+
+set_vram_write0:
+	    xor a
+	    out (PORTVDP),a
+	    ld a,$40
+	    out (PORTVDP),a
+	    ret
+
+set_vram_read0:
+	    xor a
+	    out (PORTVDP),a
+	    xor a
+	    out (PORTVDP),a
+	    ret
+
+write_reg:
+	    out (PORTVDP),a
+	    ld a,b
+	    or $80
+    out (PORTVDP),a
+    ret
+
+read_s2:
+    ld a,2
+    out (PORTVDP),a
+    ld a,$8F
+    out (PORTVDP),a
+    in a,(PORTVDP)
+    ret
+"""
+
     return [
         DiskSpec(
             image_name="V9958_STS006_SRCH.DSK",
@@ -486,6 +681,97 @@ read_s9:
             ),
             extra_files={"STS006.BIN": build_msx_bin(sts006_runner_asm, 0xD000)},
             extra_source_texts={"STS006_RUNNER.asm": sts006_runner_asm},
+        ),
+        DiskSpec(
+            image_name="V9958_CMD004_R25.DSK",
+            volume_label="CMD004R25",
+            autoexec_target="CMD004.BAS",
+            program_name="CMD004.BAS",
+            program_text="""5 DEFINT A-Z
+10 KEY OFF:SCREEN 0:WIDTH 40:COLOR 15,4,4:CLS
+20 PRINT "V9958 CMD-004 / R25 BIT6"
+30 PRINT
+40 PRINT "PURE BASIC / VPOKE+VPEEK"
+50 PRINT "COMPARES VRAM EFFECT OF"
+60 PRINT "HMMV IN SCREEN 4."
+70 PRINT "R25 BIT6 OFF THEN ON."
+80 PRINT "USE F11 IF YOU WANT OVERLAY."
+90 PRINT
+100 PRINT "PRESS ANY KEY TO START."
+110 GOSUB 3000
+120 GOSUB 3100
+130 SCREEN 4:COLOR 15,1,1:CLS
+140 GOSUB 4000
+150 GOSUB 4100
+160 SCREEN 0:WIDTH 40:COLOR 15,4,4:CLS
+170 PRINT "V9958 CMD-004 / R25 BIT6"
+180 PRINT
+190 PRINT "OFF CLR=";C0;" BYTE=";B0;" S2=";S0
+200 PRINT " ON CLR=";C1;" BYTE=";B1;" S2=";S1
+210 PRINT "FLAGS=";FG
+220 PRINT "F0=OFF CHG F1=ON CHG"
+230 PRINT "F2=OFF SAW CE F3=ON SAW CE"
+240 PRINT "EXPECT CLR=0 OFF=0 ON=165."
+250 END
+3000 A$=INKEY$:IF A$<>"" THEN 3000
+3010 RETURN
+3100 A$=INKEY$:IF A$="" THEN 3100
+3110 GOSUB 3000
+3120 RETURN
+4000 FG=0
+4010 GOSUB 5000
+4020 VPOKE 0,0:C0=VPEEK(0)
+4030 GOSUB 6000
+4040 GOSUB 7000:S0=S
+4050 B0=VPEEK(0)
+4060 IF B0<>0 THEN FG=FG OR 1
+4070 IF (S0 AND 1)<>0 THEN FG=FG OR 4
+4080 RETURN
+4100 GOSUB 5100
+4110 VPOKE 0,0:C1=VPEEK(0)
+4120 GOSUB 6000
+4130 GOSUB 7000:S1=S
+4140 B1=VPEEK(0)
+4150 IF B1<>0 THEN FG=FG OR 2
+4160 IF (S1 AND 1)<>0 THEN FG=FG OR 8
+4170 RETURN
+5000 R=25:V=0:GOSUB 9000:RETURN
+5100 R=25:V=64:GOSUB 9000:RETURN
+6000 R=36:V=0:GOSUB 9000
+6010 R=37:V=0:GOSUB 9000
+6020 R=38:V=0:GOSUB 9000
+6030 R=39:V=0:GOSUB 9000
+6040 R=40:V=255:GOSUB 9000
+6050 R=41:V=0:GOSUB 9000
+6060 R=42:V=1:GOSUB 9000
+6070 R=43:V=0:GOSUB 9000
+6080 R=44:V=165:GOSUB 9000
+6090 R=45:V=0:GOSUB 9000
+6100 OUT &H99,&HC0:OUT &H99,&HAE
+6110 GOSUB 7000
+6120 IF (S AND 1)<>0 THEN 6110
+6130 RETURN
+7000 OUT &H99,2:OUT &H99,143:S=INP(&H99):RETURN
+9000 OUT &H99,V:OUT &H99,128+R:RETURN
+""",
+            readme_text=(
+                "V9958 CMD-004 / R25 BIT6\r\n"
+                "AUTOEXEC stays passive; launch manually with RUN\"CMD004.BAS\".\r\n"
+                "Current variant is pure BASIC and uses VPOKE/VPEEK to compare the VRAM side effect of the same HMMV command in SCREEN 4 with R25 bit6 off and then on.\r\n"
+                "Goal: avoid ambiguity from the previous asm helper, whose direct VRAM probe was itself returning a contaminated baseline.\r\n"
+                "The program clears VRAM byte 0, runs HMMV with R25 bit6 off, samples VPEEK(0), repeats with R25 bit6 on, and prints the two bytes plus final S2 values and flags.\r\n"
+                "Expected result for a passing core: OFF byte stays 0, ON byte becomes 165 (A5h).\r\n"
+            ),
+            autoexec_text=(
+                '10 KEY OFF:SCREEN 0:WIDTH 40:COLOR 15,4,4:CLS\n'
+                '20 PRINT "V9958 CMD-004 / R25 BIT6"\n'
+                '30 PRINT\n'
+                '40 PRINT "AUTOEXEC STAYS PASSIVE."\n'
+                '50 PRINT "RUN CMD004.BAS TO START."\n'
+                '60 END\n'
+            ),
+            extra_files={"CMD004.BIN": build_msx_bin(cmd004_runner_asm, 0xD200)},
+            extra_source_texts={"CMD004_RUNNER.asm": cmd004_runner_asm},
         ),
         DiskSpec(
             image_name="V9958_REG004_R17.DSK",
