@@ -743,4 +743,16 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 - A trilha filha `#238` voltou entao ao pacing do command engine em `src/fmsx_local/V9938.c`, mas sem reabrir o experimento absoluto descartado:
   - `BUILD_BID=202604031930-issue238-screen6-ce-uplift`
   - `BUILD_ID=2865`
+  - `BUILD_HASH=13c4905-e5047616bb1edd3052f3b0e3415715ff51ed12e1`
   - corte focado em elevar `VdpOpsQuantum()` apenas com `CE=1`, com uplift extra para `SCREEN 6/7/8`
+- O round seguinte em hardware da `2865` confirmou que esse corte nao conversava com o sintoma visivel do boot logo:
+  - quadro ruim no mesmo ponto
+  - cadencia sem mudanca perceptivel
+  - `MASK` sem mudanca
+  - frames uteis do overlay ainda com `CE=0`
+- A `#238` saiu entao do pacing do command engine e abriu um novo corte de scanout parcial em `SCREEN 6/7`, inspirado no renderer incremental `X..X2` do `blueMSX/Common.h`:
+  - `src/fmsx_local/MSX.c` deixa de curto-circuitar o sync antes de write fora da janela do `KMG`
+  - `src/fmsx_local/Wide.h` ganha `RefreshLine6WideRange()` e `RefreshLine7WideRange()`
+  - `BUILD_BID=202604031620-issue238-screen6-partial-scanout`
+  - `BUILD_ID=894F`
+  - `BUILD_HASH=8a4947c-00efee1ad301422d4ffa66201b3e2a3858304be4`

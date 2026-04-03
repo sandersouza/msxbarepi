@@ -210,8 +210,39 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
 - Build local validada:
   - `BUILD_BID=202604031930-issue238-screen6-ce-uplift`
   - `BUILD_ID=2865`
-  - `BUILD_HASH=<pendente de commit final da rodada>`
+  - `BUILD_HASH=13c4905-e5047616bb1edd3052f3b0e3415715ff51ed12e1`
   - artefato: `artifacts/kernel8-issue238.img`
 - Proximo gate:
   - retestar o boot logo `MSX2+` em hardware
   - verificar se a cadencia finalmente muda; se permanecer identica, o proximo corte sobe para sincronizacao de scanout/renderer com estado parcial do command engine, e nao mais para ajustes cosmeticos
+
+## Atualizacao incremental de 03/04/2026 - scanout parcial de `SCREEN 6/7`
+
+- O round seguinte em hardware da `2865` confirmou o diagnostico que faltava:
+  - o quadro ruim do boot logo continuou exatamente no mesmo ponto
+  - a cadencia nao mudou
+  - o `MASK` nao mudou
+  - os frames uteis do overlay seguiam mostrando `CE=0`
+- Leitura consolidada desta rodada:
+  - o uplift de `VdpOpsQuantum()` com `CE=1` estava atuando no lugar errado para este sintoma
+  - o problema visivel restante conversa mais com scanout/render de `SCREEN 6` durante writes de VRAM/registradores do que com throughput do command engine
+  - a referencia primaria volta a ser o fluxo incremental `X..X2` do `blueMSX/Common.h` para `RefreshLine6()/RefreshLine7()`
+- Novo corte aplicado:
+  - `src/fmsx_local/MSX.c`
+  - `src/fmsx_local/Wide.h`
+- O que mudou no core local:
+  - `fmsx_vdp_sync_before_cpu_write()` deixou de curto-circuitar todo o caminho fora da janela do `Knightmare Gold`
+  - `SCREEN 6/7` agora calculam o progresso da linha pelo tempo ja escaneado e congelam apenas o prefixo visivel antes da mutacao do VDP
+  - `Wide.h` ganhou `RefreshLine6WideRange()` e `RefreshLine7WideRange()` para compor o trecho ja exposto da linha, preservando o sufixo para o estado posterior ao write
+  - o flush completo da linha continua restrito ao caso especial de `KMG` em `SCREEN 4`
+- Restricao arquitetural desta rodada:
+  - o backend local ainda nao espelha literalmente o renderer streaming do `blueMSX`
+  - esta build porta so o contrato minimo necessario de scanout parcial para `SCREEN 6/7`, preservando o restante do pipeline atual
+- Build local validada:
+  - `BUILD_BID=202604031620-issue238-screen6-partial-scanout`
+  - `BUILD_ID=894F`
+  - `BUILD_HASH=8a4947c-00efee1ad301422d4ffa66201b3e2a3858304be4`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Proximo gate:
+  - retestar o boot logo `MSX2+` em hardware
+  - verificar se a pagina/tarja passa a reagir ao ponto real do problema; se ainda nao reagir, o proximo corte sobe para latch mais agressivo do estado de display por scanline (`odd/even`, page source e scroll)

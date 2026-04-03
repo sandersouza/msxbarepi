@@ -241,7 +241,25 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Build local validada:
   - `BUILD_BID=202604031930-issue238-screen6-ce-uplift`
   - `BUILD_ID=2865`
-  - `BUILD_HASH=<pendente de commit final da rodada>`
+  - `BUILD_HASH=13c4905-e5047616bb1edd3052f3b0e3415715ff51ed12e1`
 - Proximo teste:
   - retestar o boot logo `MSX2+` em hardware
   - se a cadencia continuar identica, promover o proximo corte para sincronizacao de scanout com progresso parcial do engine
+
+## Atualizacao incremental de 03/04/2026 - scanout parcial de `SCREEN 6/7`
+
+- O teste seguinte da `2865` confirmou que o corte de pacing estava no lugar errado: o quadro ruim do boot logo permaneceu igual e os frames uteis seguiam com `CE=0`.
+- Decisao tecnica desta rodada:
+  - abandonar novos uplifts de `VdpOpsQuantum()` para este sintoma especifico
+  - mover o foco para scanout parcial de `SCREEN 6/7`, alinhando o core local ao contrato incremental observado no `blueMSX`
+- Mudanca aplicada:
+  - `src/fmsx_local/MSX.c` deixa de curto-circuitar o sync antes de write fora da janela do `KMG`
+  - `src/fmsx_local/Wide.h` ganha `RefreshLine6WideRange()` e `RefreshLine7WideRange()`
+  - o sync de writes do VDP passa a congelar apenas o prefixo ja escaneado da linha em `SCREEN 6/7`
+- Build local validada:
+  - `BUILD_BID=202604031620-issue238-screen6-partial-scanout`
+  - `BUILD_ID=894F`
+  - `BUILD_HASH=8a4947c-00efee1ad301422d4ffa66201b3e2a3858304be4`
+- Proximo teste:
+  - retestar o boot logo `MSX2+` em hardware
+  - se a tarja/pagina errada ainda nao reagir, promover o proximo corte para latch por scanline de `odd/even`, page source e scroll
