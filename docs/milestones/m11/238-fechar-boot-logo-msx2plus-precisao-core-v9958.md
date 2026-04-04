@@ -258,6 +258,20 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Proximo gate:
   - repetir a captura UART
   - decidir se a lentidao real do logo casa com janelas de `CE/TR` ou se o gargalo esta fora do command engine
+
+## Atualizacao incremental de 04/04/2026 - veredito da captura `BL238` com tempo real
+
+- A captura da build `1796` mostrou que o host nao e o gargalo dominante do boot logo:
+  - `F` e `VF` ficaram `1:1`
+  - `LG` ficou em `0`
+  - `DT` ficou quase sempre em `14..18ms`, com poucos picos em `25..30ms`
+  - `CE` apareceu em apenas `3` dos `96` frames observados
+  - `TR` ficou `0` em toda a janela
+- O mesmo trace confirmou que o split horizontal continua coerente:
+  - `R26/R27` alternam entre `1D/07` e `24/01` apos a entrada da animacao
+- Leitura pratica:
+  - a lentidao residual do logo nao parece vir de backlog crescente de apresentacao nem de `CE` constantemente ativo
+  - o proximo corte deve voltar ao produtor do quadro em `SM:06`, nao ao presenter do host
   - `left-edge mask` fisico de `SCREEN 6` wide passa a cobrir `16` pixels, como no renderer line512 do `blueMSX`
 - Build local validada:
   - `BUILD_BID=202604031830-issue238-screen6-edge-mask`

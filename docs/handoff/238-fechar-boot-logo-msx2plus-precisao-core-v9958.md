@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 238-fechar-boot-logo-msx2plus-precisao-core-v9958
 
-Ultima atualizacao: 04/04/2026 (11:28 -03)
+Ultima atualizacao: 04/04/2026 (11:40 -03)
 
 ## Objetivo da branch
 
@@ -107,6 +107,24 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
 - Proximo gate:
   - repetir a captura UART
   - fechar se a cadencia real do logo cai por `DT` alto com `CE=1`, ou se o gargalo mora fora do command engine
+
+## Atualizacao incremental de 04/04/2026 - leitura consolidada do `BL238` com `DT/ET/CE/TR`
+
+- A captura UART da build `1796` fechou o recorte que faltava:
+  - `F` e `VF` andam `1:1` durante toda a janela do logo
+  - `LG=000` do primeiro ao ultimo frame
+  - `DT` fica majoritariamente entre `14ms` e `18ms`, com picos pontuais de `25..30ms`
+  - media observada em `96` frames: `15.99ms`
+  - `CE=1` aparece so em `3` frames da janela (`F:001`, `F:012`, `F:018`)
+  - `TR=0` em todos os `96` frames
+  - `R26/R27` alternam de forma estavel entre `1D/07` e `24/01` apos a entrada da animacao horizontal
+- Leitura tecnica consolidada:
+  - o host nao esta atrasando apresentacao; o logo ja e publicado em cadencia pratica de ~`60Hz`
+  - a lentidao residual nao casa com um `command engine` continuamente ocupado, porque `CE` so pulsa em poucos frames e `TR` nao entra
+  - `R9=00`, `HI=0` e `EO=0` em toda a janela reforcam que o logo observado nao esta dependendo de odd/even/interlace ativo no modo atual
+- Consequencia pratica para a branch:
+  - o proximo corte deixa de perseguir presenter/host ou `CE` como gargalo dominante
+  - a trilha volta ao produtor do quadro do logo em `SM:06`, com foco na programacao BIOS-side de `R26/R27`/page split e no caminho de renderizacao que ainda transforma esse estado em movimento visual mais lento do que a referencia
 
 ## Atualizacao incremental de 03/04/2026 - ativacao da branch
 

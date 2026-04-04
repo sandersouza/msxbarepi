@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 82-auditar-registradores-v9958
 
-Ultima atualizacao: 04/04/2026 (11:28 -03)
+Ultima atualizacao: 04/04/2026 (11:40 -03)
 
 ## Objetivo da branch
 
@@ -154,6 +154,19 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
   - `BUILD_HASH=dbcacb7-496d863c4acff33d8ed0b11df5f97387b6235619`
 - Consequencia pratica na umbrella:
   - o proximo round da `#238` deve dizer objetivamente se o gargalo restante ainda e `BL-002/BL-003` (command engine/status) ou se a trilha precisa voltar para o renderer/produtor do quadro por outro caminho
+
+## Atualizacao incremental de 04/04/2026 - veredito da telemetria temporal na `#238`
+
+- A captura UART da build `1796` fechou o recorte mais importante desta rodada:
+  - `F` e `VF` ficaram `1:1`
+  - `LG` permaneceu `0`
+  - `DT` ficou quase sempre em `14..18ms`
+  - `CE` so apareceu em `3/96` frames
+  - `TR` permaneceu `0`
+- Consequencia pratica na umbrella:
+  - o split horizontal corrigido na `C079` permanece sustentado
+  - o host/presenter deixa de ser suspeito principal da lentidao residual
+  - o proximo corte da `#238` volta ao produtor do quadro do logo em `SM:06`, nao ao presenter nem ao `command engine` como gargalo dominante continuo
 
 ## Atualizacao incremental de 31/03/2026 - decisao da subtrilha `#235`
 
