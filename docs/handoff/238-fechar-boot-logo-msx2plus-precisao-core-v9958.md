@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 238-fechar-boot-logo-msx2plus-precisao-core-v9958
 
-Ultima atualizacao: 04/04/2026 (11:40 -03)
+Ultima atualizacao: 04/04/2026 (12:50 -03)
 
 ## Objetivo da branch
 
@@ -13,6 +13,11 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
 - Branch base/umbrella: `82-auditar-registradores-v9958`
 - Target de PR desta branch: `82-auditar-registradores-v9958`
 - PR remoto desta branch: ainda nao aberto
+
+## Guardrail operacional desta rodada
+
+- A partir desta rodada, `git push` deixa de ser permitido em cada corte incremental da branch.
+- Commits locais intermediarios continuam permitidos, mas o remoto so deve ser atualizado quando o usuario declarar explicitamente que o estado atual ficou estavel.
 
 ## Estado herdado da umbrella
 
@@ -125,6 +130,28 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
 - Consequencia pratica para a branch:
   - o proximo corte deixa de perseguir presenter/host ou `CE` como gargalo dominante
   - a trilha volta ao produtor do quadro do logo em `SM:06`, com foco na programacao BIOS-side de `R26/R27`/page split e no caminho de renderizacao que ainda transforma esse estado em movimento visual mais lento do que a referencia
+
+## Atualizacao incremental de 04/04/2026 - `left-edge mask` wide volta a seguir o backdrop scrolado
+
+- O round de UART da build `1796` descartou backlog do host e `CE/TR` continuamente ativos como gargalo dominante do boot logo.
+- O proximo corte local da `#238` voltou entao ao renderer `SCREEN 6/7`, mas de forma focada no sintoma ainda visivel em campo:
+  - o `left-edge mask` permanecia exposto mesmo depois do split horizontal ter sido corrigido pela `C079`
+  - o path wide local ainda usava `BGColor` plano para preencher a mascara, enquanto o path narrow local ja usava o pixel efetivamente scrolado do backdrop
+- Implementacao aplicada em `src/fmsx_local/Wide.h`:
+  - `RefreshLine6()` e `RefreshLine6WideRange()` passam a usar `BgRaw[(Coarse-Fine)&mask]` como cor-base da mascara
+  - `RefreshLine7()` e `RefreshLine7WideRange()` recebem o mesmo ajuste
+  - isso mantem a mascara colada ao backdrop ja scrolado, em vez de expor uma faixa plana na borda esquerda do logo
+- Guardrail de fluxo aplicado nesta mesma rodada:
+  - as instrucoes do projeto e o guia local de gestao agora registram explicitamente que `git push` so pode acontecer quando o usuario declarar estabilidade
+  - este corte permanece apenas local, sem `push`
+- Build local validada:
+  - `BUILD_BID=202604041235-issue238-wide-mask-backdrop`
+  - `BUILD_ID=5870`
+  - `BUILD_HASH=5a7a82c-5dd8114883e78fd67d9a3864d8b60355d8348e7d`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Proximo gate:
+  - retestar o boot logo `MSX2+` em hardware com a `5870`
+  - responder se o `MASK` finalmente se mistura ao backdrop, e se houve qualquer efeito colateral sobre tarja/pagina errada, cadencia ou leitura pratica de interlace
 
 ## Atualizacao incremental de 03/04/2026 - ativacao da branch
 

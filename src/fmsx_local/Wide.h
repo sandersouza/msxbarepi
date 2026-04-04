@@ -302,7 +302,14 @@ void RefreshLine6(uint8_t Y)
       }
     }
 
-    MaskBg=BGColor&0x03u;
+    /*
+     * Keep the left-edge mask glued to the currently scrolled backdrop pixel.
+     * The wide path previously forced plain BGColor here, which keeps the mask
+     * visually exposed in the MSX2+ boot logo even after the horizontal split
+     * was corrected. The local narrow renderer already uses the scrolled
+     * backdrop sample; mirror that behavior in wide modes.
+     */
+    MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];
     for(PIdx=0;PIdx<512;PIdx++)
     {
       BgIndex=MaskBg;
@@ -378,7 +385,7 @@ void RefreshLine6WideRange(uint8_t Y,unsigned X0,unsigned X1)
     }
   }
 
-  MaskBg=BGColor&0x03u;
+  MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];
   for(PIdx=(int)Px0;PIdx<(int)Px1;PIdx++)
   {
     BgIndex=MaskBg;
@@ -446,7 +453,7 @@ void RefreshLine7(uint8_t Y)
       }
     }
 
-    MaskBg=BGColor;
+    MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];
     for(PIdx=0;PIdx<512;PIdx++)
     {
       BgIndex=MaskBg;
@@ -525,7 +532,7 @@ void RefreshLine7WideRange(uint8_t Y,unsigned X0,unsigned X1)
     }
   }
 
-  MaskBg=BGColor;
+  MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];
   for(PIdx=(int)Px0;PIdx<(int)Px1;PIdx++)
   {
     BgIndex=MaskBg;

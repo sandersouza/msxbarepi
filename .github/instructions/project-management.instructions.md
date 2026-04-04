@@ -32,6 +32,8 @@ applyTo:
 - Nessa topologia, a branch da sub-issue deve abrir PR para a branch umbrella; a branch umbrella so abre PR para `main` ao consolidar a trilha.
 - Branch de release deve seguir padrao `release/<versao>`.
 - Nunca reescrever historico da `main`.
+- Commits locais incrementais sao permitidos durante a investigacao, mas `git push` so deve acontecer quando o usuario declarar explicitamente que o estado atual esta estavel.
+- Nao publicar cortes intermediarios apenas para backup/sincronizacao; manter iteracoes experimentais somente no worktree/local branch ate confirmacao do usuario.
 - Antes de remover branch local, confirmar com o usuario.
 
 ## Ciclo de issue/board

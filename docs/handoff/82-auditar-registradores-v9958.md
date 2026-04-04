@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 82-auditar-registradores-v9958
 
-Ultima atualizacao: 04/04/2026 (11:40 -03)
+Ultima atualizacao: 04/04/2026 (12:50 -03)
 
 ## Objetivo da branch
 
@@ -17,6 +17,19 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 - Cada sub-issue que usar a `#82` como umbrella deve abrir uma branch derivada desta branch umbrella, e nao diretamente de `main`.
 - Cada sub-issue deve abrir PR para `82-auditar-registradores-v9958`.
 - O merge das sub-issues acontece primeiro na branch umbrella; so ao consolidar a trilha a `#82` abre PR proprio para `main`.
+- Commits locais incrementais continuam permitidos nas sub-branches da trilha, mas `git push` so deve acontecer quando o usuario declarar explicitamente que o estado atual ficou estavel.
+- Cortes experimentais deixam de subir para o remoto apenas para sincronizacao; devem permanecer locais ate esse gate de estabilidade.
+
+## Atualizacao incremental de 04/04/2026 - corte local na `#238` sem `push`
+
+- A trilha ativa continua na branch derivada `238-fechar-boot-logo-msx2plus-precisao-core-v9958`, mas passa a operar com guardrail explicito de `no push until stable`.
+- O proximo corte local da `#238` voltou ao renderer `SCREEN 6/7` depois do `BL238` descartar backlog do host:
+  - `src/fmsx_local/Wide.h` agora faz o `left-edge mask` wide seguir o backdrop ja scrolado, em vez de usar `BGColor` plano
+  - isso mira diretamente o `MASK` ainda visivel no boot logo `MSX2+`
+- Build local validada, ainda sem `push`:
+  - `BUILD_BID=202604041235-issue238-wide-mask-backdrop`
+  - `BUILD_ID=5870`
+  - `BUILD_HASH=5a7a82c-5dd8114883e78fd67d9a3864d8b60355d8348e7d`
 
 ## Atualizacao incremental de 02/04/2026 - transicao `#235 -> #236`
 

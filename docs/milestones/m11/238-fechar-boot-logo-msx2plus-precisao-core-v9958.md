@@ -455,3 +455,22 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Proximo teste:
   - repetir a captura de UART na `3271`
   - usar as linhas `BL238` como base do proximo patch
+
+## Atualizacao incremental de 04/04/2026 - `left-edge mask` wide alinhado ao backdrop
+
+- O veredito do `BL238` na build `1796` descartou backlog do host e `CE/TR` continuamente ativos como gargalo dominante do boot logo.
+- O proximo corte voltou ao renderer `SCREEN 6/7`, focando no sintoma que ainda permanecia visualmente exposto:
+  - o `left-edge mask` seguia aparecendo como faixa plana mesmo depois de o split horizontal do logo ter sido corrigido
+- Implementacao aplicada:
+  - `src/fmsx_local/Wide.h`
+  - `RefreshLine6()` / `RefreshLine6WideRange()` passam a usar o pixel do backdrop ja scrolado como base da mascara
+  - `RefreshLine7()` / `RefreshLine7WideRange()` recebem o mesmo ajuste
+- Efeito esperado:
+  - a mascara deve se misturar ao backdrop em movimento, em vez de permanecer como uma faixa chapada na borda esquerda
+- Build local validada:
+  - `BUILD_BID=202604041235-issue238-wide-mask-backdrop`
+  - `BUILD_ID=5870`
+  - `BUILD_HASH=5a7a82c-5dd8114883e78fd67d9a3864d8b60355d8348e7d`
+- Guardrail de fluxo consolidado no mesmo ciclo:
+  - pushes deixam de acontecer a cada corte incremental
+  - o remoto so deve ser atualizado quando o usuario declarar explicitamente que o estado atual ficou estavel
