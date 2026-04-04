@@ -49,7 +49,11 @@ static unsigned g_image_buffer_height = HEIGHT;
 static volatile unsigned g_video_seq = 0;
 static unsigned g_bootlogo_trace_frames = 0;
 static unsigned g_bootlogo_trace_seen = 0;
+static unsigned g_bootlogo_trace_vdp_base = 0u;
+static uint64_t g_bootlogo_trace_start_us = 0u;
+static uint64_t g_bootlogo_trace_prev_us = 0u;
 extern uint32_t FmsxVDPFrameCounter;
+extern unsigned long long msxbare_monotonic_time_us(void);
 
 static uint16_t XPal[80];
 static uint16_t BPal[256];
@@ -214,8 +218,22 @@ static void fmsx_uart_put_hex8(unsigned value)
 
 static void fmsx_uart_trace_bootlogo_frame(unsigned present_frame)
 {
-    const unsigned vdp_frame = (unsigned) FmsxVDPFrameCounter;
+    const unsigned vdp_frame_abs = (unsigned) FmsxVDPFrameCounter;
+    const unsigned vdp_frame = vdp_frame_abs >= g_bootlogo_trace_vdp_base
+        ? (vdp_frame_abs - g_bootlogo_trace_vdp_base + 1u)
+        : 0u;
     const unsigned lag = vdp_frame > present_frame ? (vdp_frame - present_frame) : 0u;
+    const uint64_t now_us = (uint64_t) msxbare_monotonic_time_us();
+    const unsigned delta_ms = g_bootlogo_trace_prev_us != 0u
+        ? (unsigned) ((now_us - g_bootlogo_trace_prev_us) / 1000u)
+        : 0u;
+    const unsigned elapsed_ms = g_bootlogo_trace_start_us != 0u
+        ? (unsigned) ((now_us - g_bootlogo_trace_start_us) / 1000u)
+        : 0u;
+    const unsigned ce = (VDPStatus[2] & 0x01u) ? 1u : 0u;
+    const unsigned tr = (VDPStatus[2] & 0x80u) ? 1u : 0u;
+
+    g_bootlogo_trace_prev_us = now_us;
 
     msxbare_uart_write("BL238 F:");
     fmsx_uart_put_uint3(present_frame);
@@ -223,6 +241,14 @@ static void fmsx_uart_trace_bootlogo_frame(unsigned present_frame)
     fmsx_uart_put_uint3(vdp_frame > 999u ? 999u : vdp_frame);
     msxbare_uart_write(" LG:");
     fmsx_uart_put_uint3(lag > 999u ? 999u : lag);
+    msxbare_uart_write(" DT:");
+    fmsx_uart_put_uint3(delta_ms > 999u ? 999u : delta_ms);
+    msxbare_uart_write(" ET:");
+    fmsx_uart_put_uint3(elapsed_ms > 999u ? 999u : elapsed_ms);
+    msxbare_uart_write(" CE:");
+    msxbare_uart_write(ce ? "1" : "0");
+    msxbare_uart_write(" TR:");
+    msxbare_uart_write(tr ? "1" : "0");
     msxbare_uart_write(" W:");
     fmsx_uart_put_uint(g_image_buffer_width > 999u ? 999u : g_image_buffer_width);
     msxbare_uart_write(" H:");
@@ -1000,6 +1026,12 @@ void PutImage(void)
 
     if (bootlogo_active)
     {
+        if (!g_bootlogo_trace_seen)
+        {
+            g_bootlogo_trace_vdp_base = (unsigned) FmsxVDPFrameCounter;
+            g_bootlogo_trace_start_us = (uint64_t) msxbare_monotonic_time_us();
+            g_bootlogo_trace_prev_us = 0u;
+        }
         g_bootlogo_trace_seen = 1u;
         if (g_bootlogo_trace_frames < 96u)
         {
@@ -1012,6 +1044,9 @@ void PutImage(void)
     {
         g_bootlogo_trace_seen = 0u;
         g_bootlogo_trace_frames = 0u;
+        g_bootlogo_trace_vdp_base = 0u;
+        g_bootlogo_trace_start_us = 0u;
+        g_bootlogo_trace_prev_us = 0u;
     }
 
     g_frame_number++;
