@@ -296,6 +296,13 @@ uint32_t FmsxVDPFrameCounter = 0;     /* Number of VDP frame starts observed */
 uint8_t FmsxVDPLinePhase = 0;         /* 0=active scan, 1=HBlank */
 uint8_t FmsxVDPScreenOnLatched = 0;   /* Display enable latched per scanline */
 int FmsxVDPRenderVScrollOverride = -1;/* Optional per-line VScroll override for renderer */
+uint8_t *FmsxVDPLineChrTabLatched = 0; /* ChrTab snapshot for current scanline */
+int FmsxVDPLineChrTabMLatched = 0;    /* ChrTabM snapshot for current scanline */
+uint8_t FmsxVDPLineR2Latched = 0;     /* R#2 snapshot for current scanline */
+uint8_t FmsxVDPLineR25Latched = 0;    /* R#25 snapshot for current scanline */
+uint8_t FmsxVDPLineR26Latched = 0;    /* R#26 snapshot for current scanline */
+uint8_t FmsxVDPLineR27Latched = 0;    /* R#27 snapshot for current scanline */
+uint8_t FmsxVDPLineOddPageLatched = 0;/* EO-derived display page for current scanline */
 static uint8_t FmsxVDPLineVScrollLatched = 0; /* VScroll captured at scanline start */
 static int FmsxVDPUCountLatched = 0;  /* Frame visibility accumulator for current scanline */
 static uint8_t FmsxVDPDrawingLatched = 0; /* Drawing state for current scanline */
@@ -1507,7 +1514,8 @@ static void fmsx_vdp_render_scanline(uint8_t scanline,uint8_t drawing,int ucount
 #else
   if(!ModeYJK||(ScrMode<7)||(ScrMode>8))
   {
-    if(fmsx_vdp_kmg_sync_window_active() && (ScrMode==4) && !fmsx_vdp_hscroll_active256_local())
+    if(((ScrMode==6)||(ScrMode==7))
+    || (fmsx_vdp_kmg_sync_window_active() && (ScrMode==4) && !fmsx_vdp_hscroll_active256_local()))
       FmsxVDPRenderVScrollOverride = (int)FmsxVDPLineVScrollLatched;
     (RefreshLine[ScrMode])(scanline);
     FmsxVDPRenderVScrollOverride = -1;
@@ -4896,6 +4904,13 @@ uint16_t LoopZ80(Z80 *R)
     if(ScanLine==(ScanLines212? 212:192)) Drawing=0;
 
     fmsx_vdp_commit_line_display_state();
+    FmsxVDPLineChrTabLatched=ChrTab;
+    FmsxVDPLineChrTabMLatched=ChrTabM;
+    FmsxVDPLineR2Latched=VDP[2];
+    FmsxVDPLineR25Latched=VDP[25];
+    FmsxVDPLineR26Latched=VDP[26];
+    FmsxVDPLineR27Latched=VDP[27];
+    FmsxVDPLineOddPageLatched=fmsx_vdp_effective_odd_page();
     FmsxVDPLineVScrollLatched=VDP[23];
     FmsxVDPDrawingLatched=Drawing;
     FmsxVDPUCountLatched=UCount;

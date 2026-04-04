@@ -84,6 +84,7 @@ OBJS += emulator_backend.o fmsx_backend_shim.o bluemsx_backend.o
 EXTRACLEAN += tools/*.o tools/*.d tools/*/*.o tools/*/*.d
 
 OBJS += fmsx_runtime.o fmsx_host_stubs.o fmsx_compat_stubs.o fmsx_libc_shim.o
+OBJS += fmsx_math_shim.o
 OBJS += bluemsx_savestate_stubs.o fmsx_upstream_bluemsx_openym2413_2.o fmsx_local_ym2413_bluemsx.o
 OBJS += gamemaster_catalog.o
 OBJS += fmsx_virtual_fs.o fmsx_initramfs.o
@@ -108,9 +109,9 @@ LIBS = $(CIRCLEHOME)/lib/sound/libsound.a \
 include $(CIRCLEHOME)/Rules.mk
 
 $(CIRCLEHOME)/addon/SDCard/libsdcard.a:
-	$(MAKE) -C $(CIRCLEHOME)/addon/SDCard
+	$(MAKE) -C $(CIRCLEHOME)/addon/SDCard PREFIX64=$(PREFIX64)
 
 $(CIRCLEHOME)/addon/fatfs/libfatfs.a:
-	$(MAKE) -C $(CIRCLEHOME)/addon/fatfs EXTRAINCLUDE=-I$(CURDIR)/fatfs_compat
+	$(MAKE) -C $(CIRCLEHOME)/addon/fatfs PREFIX64=$(PREFIX64) EXTRAINCLUDE=-I$(CURDIR)/fatfs_compat
 
 -include $(DEPS)
