@@ -147,6 +147,9 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
 {
   uint16_t *P;
   int H,L,A;
+  const int lineHiResMode = FmsxDisplayHiResModeLatched();
+  const int lineInterlacedMode = FmsxDisplayInterlacedModeLatched();
+  const int lineOddPage = FmsxDisplayOddPageLatched();
 
   /* First line number in the buffer */
   if(!Y) FirstLine=(ScanLines212?0:10)+BORDER+VAdjust;
@@ -160,7 +163,7 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
   /* Start of the buffer */
   P=(uint16_t *)WBuf;
 
-  if(HiResMode)
+  if(lineHiResMode)
   {
     if(!Y)
       /* Paint top of the screen */
@@ -168,9 +171,9 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
       {
         for(A=((WIDTH*L)<<2)-1,H=WIDTH<<1;H>0;H--,A--)
         {
-          if (InterlacedMode)
+          if (lineInterlacedMode)
           {
-            if (OddPage)
+            if (lineOddPage)
             { // even lines are black
               P[A]=0;
               P[A-(WIDTH<<1)]=C;
@@ -183,7 +186,7 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
           }
           else // progressive: only touch this frame's lines
           {
-            if (OddPage)
+            if (lineOddPage)
               P[A-(WIDTH<<1)]=C;
             else
               P[A]=C;
@@ -194,15 +197,15 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
     /* Start of the line */
     P+=(WIDTH*(FirstLine+Y))<<2;
 
-    if (OddPage)
+    if (lineOddPage)
     {
-      if (InterlacedMode)
+      if (lineInterlacedMode)
         // erase previous frame's line
         for(A=(WIDTH<<2)-1,H=WIDTH<<1;H>0;H--,A--) P[A]=0;
     }
     else
     {
-      if (InterlacedMode)
+      if (lineInterlacedMode)
         // erase previous frame's line
         for(H=(WIDTH<<2)-1;H>=0;H--) P[H]=0;
       P+=WIDTH<<1; // interlace offset
@@ -224,7 +227,7 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
   /* Paint bottom of the screen */
   H=ScanLines212? 212:192;
 
-  if(HiResMode)
+  if(lineHiResMode)
   {
     if(Y==H-1)
     {
@@ -232,7 +235,7 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
       {
         for(A=((WIDTH*L)<<2)-1,H=WIDTH<<1;H>0;H--,A--)
         {
-          if (InterlacedMode)
+          if (lineInterlacedMode)
             // erase previous frame's line
             P[A]=0;
           P[A+(WIDTH<<1)]=C;
