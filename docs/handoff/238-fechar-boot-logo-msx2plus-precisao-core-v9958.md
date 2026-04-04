@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 238-fechar-boot-logo-msx2plus-precisao-core-v9958
 
-Ultima atualizacao: 04/04/2026 (11:55 -03)
+Ultima atualizacao: 04/04/2026 (01:38 -03)
 
 ## Objetivo da branch
 
@@ -278,6 +278,46 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
   - artefato: `artifacts/kernel8-issue238.img`
 - Proximo gate:
   - retestar o boot logo `MSX2+` em hardware com a `4FB0`
+  - responder apenas estes quatro pontos:
+    - entra normal ou nao
+    - a cadencia mudou ou nao
+    - o `MASK` mudou ou nao
+    - a tarja/pagina errada mudou ou continua no mesmo ponto
+
+## Atualizacao incremental de 04/04/2026 - `4FB0` sem efeito visual e scroll fisico dobrado em `SCREEN 6/7`
+
+- O round seguinte em hardware da `4FB0` confirmou ausencia total de efeito visual:
+  - `MASK` continuou visivel
+  - tarja/pagina errada continuou no mesmo ponto
+  - a cadencia permaneceu lenta
+  - nao apareceu leitura pratica de interlace
+- A validacao do video local com `ffprobe`/frames reforcou o mesmo estado do overlay nos quadros uteis:
+  - `SM:06`
+  - `R2:3F`
+  - `R25:03`
+  - `R26/R27` variando, mas sem mudanca de sintoma
+  - `EP:1`
+  - `CE:0`
+  - `TR:0`
+- Leitura consolidada desta rodada:
+  - o latch por scanline passou a congelar o estado correto por linha, mas o renderer wide ainda aplicava `R#26/R#27` em unidade logica
+  - no `blueMSX`, o path `line512` de `SCREEN 6/7` opera no espaco fisico dobrado da linha, entao coarse scroll, fine scroll e left-edge mask precisam caminhar em dobro no scanout wide
+  - isso explica por que a pagina errada, o `MASK` visivel e a cadencia percebida permaneceram identicos mesmo depois do latch do estado de display
+- Novo corte aplicado:
+  - `src/fmsx_local/Wide.h`
+- O que mudou no renderer local:
+  - `SCREEN 6/7` wide passam a usar coarse scroll e fine scroll em unidade fisica dobrada (`<< 1`) no scanout
+  - o `left-edge mask` de `SCREEN 7` wide tambem passa a cobrir `16` pixels fisicos, como o `SCREEN 6`
+  - a implementacao continua usando o snapshot por linha introduzido na `4FB0`; o corte desta rodada corrige apenas a unidade horizontal usada no compositor wide
+- Referencia primaria usada no diff:
+  - `third_party/bluemsx/blueMSX/Src/VideoChips/Common.h`
+- Build local validada:
+  - `BUILD_BID=202604041620-issue238-screen67-physical-scroll`
+  - `BUILD_ID=C079`
+  - `BUILD_HASH=16da695-9edab52930a87d5a297e94ad32752c850250b185`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Proximo gate:
+  - retestar o boot logo `MSX2+` em hardware com a `C079`
   - responder apenas estes quatro pontos:
     - entra normal ou nao
     - a cadencia mudou ou nao

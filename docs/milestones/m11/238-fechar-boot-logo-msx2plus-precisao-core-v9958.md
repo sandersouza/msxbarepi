@@ -288,3 +288,34 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Proximo teste:
   - retestar o boot logo `MSX2+` em hardware com a `4FB0`
   - verificar se o `MASK`, a tarja/pagina errada ou a cadencia finalmente reagem ao latch por scanline
+
+## Atualizacao incremental de 04/04/2026 - `4FB0` sem efeito visual e ajuste do scroll fisico wide
+
+- O teste seguinte confirmou que a `4FB0` nao moveu o sintoma observado no boot logo:
+  - `MASK` visivel
+  - tarja/pagina errada no mesmo ponto
+  - cadencia igual
+  - sem leitura pratica de interlace
+- A analise local do video por frames confirmou o mesmo estado do overlay nos quadros uteis:
+  - `SM:06`
+  - `R2:3F`
+  - `R25:03`
+  - `EP:1`
+  - `CE:0`
+  - `TR:0`
+- Diagnostico consolidado:
+  - o latch por scanline do estado de display ja nao e o gargalo principal
+  - o renderer wide de `SCREEN 6/7` ainda aplicava coarse/fine scroll em unidade logica, enquanto o `blueMSX` line512 compoe a linha no espaco fisico dobrado
+  - isso deixa `R#26/R#27` subescalados no scanout, preservando pagina errada e `MASK` aparente
+- Mudanca aplicada:
+  - `src/fmsx_local/Wide.h` passa a usar coarse scroll e fine scroll dobrados (`<< 1`) no path wide de `SCREEN 6/7`
+  - o `left-edge mask` de `SCREEN 7` wide tambem passa a cobrir `16` pixels fisicos
+- Referencia primaria usada no diff:
+  - `third_party/bluemsx/blueMSX/Src/VideoChips/Common.h`
+- Build local validada:
+  - `BUILD_BID=202604041620-issue238-screen67-physical-scroll`
+  - `BUILD_ID=C079`
+  - `BUILD_HASH=16da695-9edab52930a87d5a297e94ad32752c850250b185`
+- Proximo teste:
+  - retestar o boot logo `MSX2+` em hardware com a `C079`
+  - verificar se o `MASK`, a tarja/pagina errada ou a cadencia finalmente reagem ao scroll fisico corrigido

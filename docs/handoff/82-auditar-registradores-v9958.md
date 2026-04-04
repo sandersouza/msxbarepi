@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 82-auditar-registradores-v9958
 
-Ultima atualizacao: 04/04/2026 (11:55 -03)
+Ultima atualizacao: 04/04/2026 (01:38 -03)
 
 ## Objetivo da branch
 
@@ -774,3 +774,28 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
   - `BUILD_BID=202604041430-issue238-screen6-line-latched-state`
   - `BUILD_ID=4FB0`
   - `BUILD_HASH=e298d4e-d03d3116b86dbc2bc49478da1ff60c3e769581b7`
+
+## Atualizacao incremental de 04/04/2026 - trilha filha `#238`
+
+- O round seguinte em hardware da `4FB0` confirmou ausencia total de efeito visual no boot logo do `MSX2+`:
+  - `MASK` sem mudanca
+  - tarja/pagina errada no mesmo ponto
+  - cadencia igual
+  - sem leitura pratica de interlace
+- A leitura local do video em frames confirmou o mesmo estado do overlay nos quadros uteis:
+  - `SM:06`
+  - `R2:3F`
+  - `R25:03`
+  - `EP:1`
+  - `CE:0`
+  - `TR:0`
+- Consequencia pratica na umbrella:
+  - o latch por scanline da `#238` deixou de ser o gargalo dominante
+  - o proximo corte da trilha filha passou a atacar o diff restante contra `blueMSX/Common.h` no path line512 de `SCREEN 6/7`
+- Novo corte preparado na branch derivada:
+  - `src/fmsx_local/Wide.h` agora dobra coarse scroll e fine scroll no scanout wide de `SCREEN 6/7`
+  - o `left-edge mask` de `SCREEN 7` wide tambem passa a cobrir `16` pixels fisicos
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604041620-issue238-screen67-physical-scroll`
+  - `BUILD_ID=C079`
+  - `BUILD_HASH=16da695-9edab52930a87d5a297e94ad32752c850250b185`
