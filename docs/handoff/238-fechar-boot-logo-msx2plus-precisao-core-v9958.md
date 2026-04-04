@@ -415,3 +415,24 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
   - capturar o UART com `scripts/logserial.sh`
   - filtrar as linhas `BL238`
   - responder com o trecho bruto do log; o proximo corte depende desses dados, nao de outro video
+
+## Atualizacao incremental de 04/04/2026 - correcao da janela do trace `BL238`
+
+- A primeira captura da `9A2C` nao trouxe nenhuma linha `BL238` no UART.
+- Causa raiz:
+  - o trace estava limitado aos primeiros `96` frames globais do host
+  - o boot logo entra bem depois dessa janela, entao o logger registrou apenas o startup do Pi
+- Correcao aplicada:
+  - `src/fmsx_host_stubs.c`
+- O que mudou:
+  - o trace `BL238` passou a contar os primeiros `96` frames do proprio boot logo (`SM:06` + `R25=03`)
+  - a janela reinicia quando o boot logo sai de foco, em vez de depender do contador global de `PutImage()`
+- Build local validada:
+  - `BUILD_BID=202604041010-issue238-bootlogo-uart-frame-window`
+  - `BUILD_ID=3271`
+  - `BUILD_HASH=115717d-7d05a4e7374301c55f179bac7d204db268ebac16`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Proximo gate:
+  - subir a `3271`
+  - repetir a captura de UART
+  - devolver as linhas `BL238`; desta vez elas devem aparecer mesmo sem video

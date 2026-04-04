@@ -385,3 +385,19 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
   - subir a `9A2C`
   - capturar UART
   - devolver as linhas `BL238` como base do proximo corte
+
+## Atualizacao incremental de 04/04/2026 - ajuste da janela do trace UART
+
+- A primeira coleta da `9A2C` trouxe apenas o startup do Pi e nenhum `BL238`.
+- Diagnostico consolidado:
+  - o trace estava preso aos primeiros `96` frames globais do host
+  - o boot logo do `MSX2+` so entra depois dessa janela, entao o corte de observabilidade estava errado
+- Mudanca aplicada:
+  - `src/fmsx_host_stubs.c` agora conta os primeiros `96` frames do proprio boot logo (`SM:06` + `R25=03`) e reinicia a janela quando ele sai de foco
+- Build local validada:
+  - `BUILD_BID=202604041010-issue238-bootlogo-uart-frame-window`
+  - `BUILD_ID=3271`
+  - `BUILD_HASH=115717d-7d05a4e7374301c55f179bac7d204db268ebac16`
+- Proximo teste:
+  - repetir a captura de UART na `3271`
+  - usar as linhas `BL238` como base do proximo patch

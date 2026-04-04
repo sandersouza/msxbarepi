@@ -46,6 +46,8 @@ static uint16_t g_image_buffer[(WIDTH << 1) * (HEIGHT << 1)];
 static unsigned g_image_buffer_width = WIDTH;
 static unsigned g_image_buffer_height = HEIGHT;
 static volatile unsigned g_video_seq = 0;
+static unsigned g_bootlogo_trace_frames = 0;
+static unsigned g_bootlogo_trace_seen = 0;
 extern uint32_t FmsxVDPFrameCounter;
 
 static uint16_t XPal[80];
@@ -910,29 +912,41 @@ void SetColor(uint8_t N, uint8_t R, uint8_t G, uint8_t B)
 
 void PutImage(void)
 {
+    const int bootlogo_active = (ScrMode == 6) && ((VDP[25] & 0x03u) == 0x03u);
+
     ensure_video_tables();
     set_image_buffer_size(ScrMode);
 
-    if (log_cb && (ScrMode == 6) && ((VDP[25] & 0x03u) == 0x03u) && (g_frame_number < 96u))
+    if (bootlogo_active)
     {
-        const unsigned present_frame = g_frame_number + 1u;
-        const unsigned vdp_frame = (unsigned) FmsxVDPFrameCounter;
-        const unsigned lag = vdp_frame > present_frame ? (vdp_frame - present_frame) : 0u;
-        log_cb(1,
-               "BL238 F:%03u VF:%03u LG:%03u W:%03u H:%03u R9:%02X S2:%02X HI:%u IL:%u EO:%u R25:%02X R26:%02X R27:%02X\n",
-               present_frame,
-               vdp_frame > 999u ? 999u : vdp_frame,
-               lag > 999u ? 999u : lag,
-               g_image_buffer_width > 999u ? 999u : g_image_buffer_width,
-               g_image_buffer_height > 999u ? 999u : g_image_buffer_height,
-               VDP[9] & 0xFFu,
-               VDPStatus[2] & 0xFFu,
-               HiResMode ? 1u : 0u,
-               InterlacedMode ? 1u : 0u,
-               OddPage ? 1u : 0u,
-               VDP[25] & 0xFFu,
-               VDP[26] & 0xFFu,
-               VDP[27] & 0xFFu);
+        g_bootlogo_trace_seen = 1u;
+        if (log_cb && (g_bootlogo_trace_frames < 96u))
+        {
+            const unsigned present_frame = g_bootlogo_trace_frames + 1u;
+            const unsigned vdp_frame = (unsigned) FmsxVDPFrameCounter;
+            const unsigned lag = vdp_frame > present_frame ? (vdp_frame - present_frame) : 0u;
+            log_cb(1,
+                   "BL238 F:%03u VF:%03u LG:%03u W:%03u H:%03u R9:%02X S2:%02X HI:%u IL:%u EO:%u R25:%02X R26:%02X R27:%02X\n",
+                   present_frame,
+                   vdp_frame > 999u ? 999u : vdp_frame,
+                   lag > 999u ? 999u : lag,
+                   g_image_buffer_width > 999u ? 999u : g_image_buffer_width,
+                   g_image_buffer_height > 999u ? 999u : g_image_buffer_height,
+                   VDP[9] & 0xFFu,
+                   VDPStatus[2] & 0xFFu,
+                   HiResMode ? 1u : 0u,
+                   InterlacedMode ? 1u : 0u,
+                   OddPage ? 1u : 0u,
+                   VDP[25] & 0xFFu,
+                   VDP[26] & 0xFFu,
+                   VDP[27] & 0xFFu);
+        }
+        g_bootlogo_trace_frames++;
+    }
+    else if (g_bootlogo_trace_seen)
+    {
+        g_bootlogo_trace_seen = 0u;
+        g_bootlogo_trace_frames = 0u;
     }
 
     g_frame_number++;

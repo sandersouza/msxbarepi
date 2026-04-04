@@ -849,3 +849,16 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
   - `BUILD_BID=202604041950-issue238-bootlogo-uart-frame-trace`
   - `BUILD_ID=9A2C`
   - `BUILD_HASH=115717d-18b3d09b5e160bb49b3cc8d4ac93a34052592e1c`
+
+## Atualizacao incremental de 04/04/2026 - trilha filha `#238`
+
+- A primeira coleta UART da `9A2C` trouxe so o startup do Pi e nenhum `BL238`.
+- Causa raiz consolidada na umbrella:
+  - o trace estava limitado aos primeiros `96` frames globais do host
+  - o boot logo entra fora dessa janela
+- Correcao aplicada na branch derivada:
+  - `src/fmsx_host_stubs.c` agora conta os primeiros `96` frames do proprio boot logo (`SM:06` + `R25=03`) e reinicia quando o logo sai de foco
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604041010-issue238-bootlogo-uart-frame-window`
+  - `BUILD_ID=3271`
+  - `BUILD_HASH=115717d-7d05a4e7374301c55f179bac7d204db268ebac16`
