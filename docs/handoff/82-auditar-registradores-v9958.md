@@ -925,3 +925,28 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
   - `BUILD_BID=202604041010-issue238-bootlogo-uart-frame-window`
   - `BUILD_ID=3271`
   - `BUILD_HASH=115717d-7d05a4e7374301c55f179bac7d204db268ebac16`
+
+## Atualizacao incremental de 04/04/2026 - trilha filha `#238`
+
+- O novo round de video + UART da trilha filha confirmou o quadro residual do boot logo sem abrir conflito de fluxo:
+  - `MASK` ainda visivel
+  - cadencia ainda lenta
+  - sem leitura pratica de odd/even
+  - `BL238` com `F/VF=1:1`, `LG=000`, `CE/TR` praticamente mortos, `R25=03`, `R9=00`
+  - `R26/R27` alternando de forma regular, sustentando o split horizontal ja fechado
+- Consequencia pratica na umbrella:
+  - a `#82` continua sendo a umbrella correta da `#238` e das proximas sub-issues que nascerem desta jornada do video
+  - o host/presenter continua descartado como gargalo dominante
+  - o proximo estado vivo relevante do renderer ficou reduzido a `R#18` (`HAdjust`/`VAdjust`)
+- Novo corte local aplicado na branch derivada:
+  - `src/fmsx_local/MSX.c`
+  - `src/fmsx_local/Common.h`
+  - `src/fmsx_local/Wide.h`
+  - `R#18` agora passa a ser latched por scanline e o path de borda/posicionamento deixa de consultar `VDP[18]` ao vivo
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604041530-issue238-r18-line-latched`
+  - `BUILD_ID=9F81`
+  - imagem `sha1 8c400743be364ac184c6f5ae7608b38451d3b2bc`
+- Guardrail de fluxo reafirmado:
+  - sem `push`
+  - o proximo round continua local ate declaracao explicita de estabilidade

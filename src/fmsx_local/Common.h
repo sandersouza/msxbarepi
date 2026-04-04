@@ -27,6 +27,7 @@ extern int FmsxVDPRenderVScrollOverride;
 extern uint8_t FmsxVDPLineOddPageLatched;
 extern uint8_t FmsxVDPLineFlipEvenOddLatched;
 extern uint8_t FmsxVDPLineInterlaceOnLatched;
+extern uint8_t FmsxVDPLineR18Latched;
 
 #define FMSX_SCREEN_ON (FmsxVDPScreenOnLatched)
 /*
@@ -50,6 +51,16 @@ INLINE int FmsxDisplayInterlacedModeLatched(void)
 INLINE int FmsxDisplayOddPageLatched(void)
 {
   return FmsxVDPLineFlipEvenOddLatched ? (int)(FmsxVDPLineOddPageLatched & 0x01u) : 0;
+}
+
+INLINE int FmsxDisplayVAdjustLatched(void)
+{
+  return -(((int8_t)FmsxVDPLineR18Latched) >> 4);
+}
+
+INLINE int FmsxDisplayHAdjustLatched(void)
+{
+  return -(((int8_t)(uint8_t)(FmsxVDPLineR18Latched << 4)) >> 4);
 }
 
 /* V9958 horizontal scroll helpers:
@@ -256,7 +267,7 @@ uint16_t *RefreshBorder(uint8_t Y,uint16_t C)
   const int lineOddPage = FmsxDisplayOddPageLatched();
 
   /* First line number in the buffer */
-  if(!Y) FirstLine=(ScanLines212?0:10)+BORDER+VAdjust;
+  if(!Y) FirstLine=(ScanLines212?0:10)+BORDER+FmsxDisplayVAdjustLatched();
 
   /* Return 0 if we've run out of the screen buffer due to overscan */
   if(Y>(OverscanMode?MAX_SCANLINE:211)) return(0);
@@ -325,8 +336,8 @@ uint16_t *RefreshBorder(uint8_t Y,uint16_t C)
   }
 
   /* Paint left/right borders */
-  for(H=(WIDTH-256)/2+HAdjust;H>0;H--) P[H-1]=C;
-  for(H=(WIDTH-256)/2-HAdjust;H>0;H--) P[WIDTH-H]=C;
+  for(H=(WIDTH-256)/2+FmsxDisplayHAdjustLatched();H>0;H--) P[H-1]=C;
+  for(H=(WIDTH-256)/2-FmsxDisplayHAdjustLatched();H>0;H--) P[WIDTH-H]=C;
 
   /* Paint bottom of the screen */
   H=ScanLines212? 212:192;
@@ -349,7 +360,7 @@ uint16_t *RefreshBorder(uint8_t Y,uint16_t C)
     if(Y==H-1) for(H=WIDTH*(HEIGHT-H-FirstLine+1)-1;H>=WIDTH;H--) P[H]=C;
 
   /* Return pointer to the scanline in XBuf */
-  return(P+(WIDTH-256)/2+HAdjust);
+  return(P+(WIDTH-256)/2+FmsxDisplayHAdjustLatched());
 }
 
 /** Sprites() ************************************************/

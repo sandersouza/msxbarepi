@@ -302,6 +302,7 @@ uint8_t FmsxVDPLineR2Latched = 0;     /* R#2 snapshot for current scanline */
 uint8_t FmsxVDPLineR25Latched = 0;    /* R#25 snapshot for current scanline */
 uint8_t FmsxVDPLineR26Latched = 0;    /* R#26 snapshot for current scanline */
 uint8_t FmsxVDPLineR27Latched = 0;    /* R#27 snapshot for current scanline */
+uint8_t FmsxVDPLineR18Latched = 0;    /* R#18 snapshot for current scanline */
 uint8_t FmsxVDPLineR9Latched = 0;     /* R#9 snapshot for current scanline */
 uint8_t FmsxVDPLineOddPageLatched = 0;/* EO-derived display page for current scanline */
 uint8_t FmsxVDPLineFlipEvenOddLatched = 0; /* R#9 bit2 snapshot for current scanline */
@@ -4913,6 +4914,7 @@ uint16_t LoopZ80(Z80 *R)
     FmsxVDPLineR25Latched=VDP[25];
     FmsxVDPLineR26Latched=VDP[26];
     FmsxVDPLineR27Latched=VDP[27];
+    FmsxVDPLineR18Latched=VDP[18];
     FmsxVDPLineR9Latched=VDP[9];
     FmsxVDPLineFlipEvenOddLatched=(VDP[9]&0x04u)? 1u:0u;
     FmsxVDPLineInterlaceOnLatched=(VDP[9]&0x08u)? 1u:0u;

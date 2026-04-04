@@ -530,3 +530,42 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
   - subir a `3271`
   - repetir a captura de UART
   - devolver as linhas `BL238`; desta vez elas devem aparecer mesmo sem video
+
+## Atualizacao incremental de 04/04/2026 - UART confirma host estavel e sobe `R#18` para latch por scanline
+
+- O novo round de video + UART confirmou o quadro residual sem ambiguidade:
+  - `MASK` segue visivel
+  - cadencia segue lenta
+  - nao ha leitura pratica de odd/even no boot logo
+  - `BL238` continua com `F/VF=1:1`, `LG=000`, `CE/TR` praticamente mortos, `R25=03`, `R9=00`
+  - `R26/R27` seguem alternando de forma regular, sustentando o split horizontal ja fechado
+- Leitura consolidada desta rodada:
+  - o host/presenter continua fora da lista curta de suspeitos
+  - a umbrella `#82` permanece correta como trilha-base da `#238` e das issues filhas que ainda sairem deste video
+  - o proximo estado vivo relevante do renderer em `SM:06` era `R#18` (`HAdjust`/`VAdjust`), que ainda era lido ao vivo no path de borda e posicionamento
+- Novo corte aplicado:
+  - `src/fmsx_local/MSX.c`
+  - `src/fmsx_local/Common.h`
+  - `src/fmsx_local/Wide.h`
+- O que mudou no core local:
+  - `LoopZ80()` agora congela por scanline tambem `R#18`
+  - `RefreshBorder()` e `RefreshBorder512()` passam a usar `HAdjust`/`VAdjust` latched por linha, em vez das macros live derivadas de `VDP[18]`
+  - o path wide de `SCREEN 6/7` deixa de consultar `R#18` ao vivo no posicionamento lateral/vertical da area visivel
+- Referencia primaria usada no diff:
+  - `third_party/fmsx/fMSX/MSX.h`
+  - `third_party/bluemsx/blueMSX/Src/VideoChips/VDP.c`
+- Build local validada:
+  - `BUILD_BID=202604041530-issue238-r18-line-latched`
+  - `BUILD_ID=9F81`
+  - imagem `sha1 8c400743be364ac184c6f5ae7608b38451d3b2bc`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado de fluxo consolidado:
+  - sem `push`
+  - a branch local segue trabalhando sob a umbrella `82-auditar-registradores-v9958`
+- Proximo gate:
+  - retestar o boot logo `MSX2+` em hardware com a `9F81`
+  - responder:
+    - entra normal ou nao
+    - o `MASK` mudou ou nao
+    - a cadencia mudou ou nao
+    - surgiu alguma leitura pratica de odd/even ou nao

@@ -25,6 +25,7 @@ extern uint8_t FmsxVDPLineR2Latched;
 extern uint8_t FmsxVDPLineR25Latched;
 extern uint8_t FmsxVDPLineR26Latched;
 extern uint8_t FmsxVDPLineR27Latched;
+extern uint8_t FmsxVDPLineR18Latched;
 extern uint8_t FmsxVDPLineOddPageLatched;
 
 /** ClearLine512() *******************************************/
@@ -125,8 +126,8 @@ static void V9958WideBitmapPages(uint8_t Y,unsigned VirtualWidth,uint8_t **Page0
 
 static void RefreshBorder6Wide(uint16_t *P)
 {
-  const int Left = (WIDTH-256)+2*HAdjust;
-  const int Right = (WIDTH-256)-2*HAdjust;
+  const int Left = (WIDTH-256)+2*FmsxDisplayHAdjustLatched();
+  const int Right = (WIDTH-256)-2*FmsxDisplayHAdjustLatched();
   const uint16_t C0 = XPal[(BGColor>>2)&0x03];
   const uint16_t C1 = XPal[BGColor&0x03];
   int I;
@@ -152,7 +153,7 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
   const int lineOddPage = FmsxDisplayOddPageLatched();
 
   /* First line number in the buffer */
-  if(!Y) FirstLine=(ScanLines212?0:10)+BORDER+VAdjust;
+  if(!Y) FirstLine=(ScanLines212?0:10)+BORDER+FmsxDisplayVAdjustLatched();
 
   /* Return 0 if we've run out of the screen buffer due to overscan */
   if(Y>(OverscanMode?MAX_SCANLINE:211)) return(0);
@@ -221,8 +222,8 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
   }
 
   /* Paint left/right borders */
-  for(H=(WIDTH-256)+2*HAdjust;H>0;H--) P[H-1]=C;
-  for(H=(WIDTH-256)-2*HAdjust;H>0;H--) P[2*WIDTH-H]=C;
+  for(H=(WIDTH-256)+2*FmsxDisplayHAdjustLatched();H>0;H--) P[H-1]=C;
+  for(H=(WIDTH-256)-2*FmsxDisplayHAdjustLatched();H>0;H--) P[2*WIDTH-H]=C;
 
   /* Paint bottom of the screen */
   H=ScanLines212? 212:192;
@@ -247,7 +248,7 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
     if(Y==H-1) for(H=2*WIDTH*(HEIGHT-H-FirstLine+1)-1;H>=2*WIDTH;H--) P[H]=C;
 
   /* Return pointer to the scanline in XBuf */
-  return(P+WIDTH-256+2*HAdjust);
+  return(P+WIDTH-256+2*FmsxDisplayHAdjustLatched());
 }
 
 /** RefreshScr6() ********************************************/

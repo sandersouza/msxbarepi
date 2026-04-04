@@ -474,3 +474,28 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Guardrail de fluxo consolidado no mesmo ciclo:
   - pushes deixam de acontecer a cada corte incremental
   - o remoto so deve ser atualizado quando o usuario declarar explicitamente que o estado atual ficou estavel
+
+## Atualizacao incremental de 04/04/2026 - `R#18` latched por scanline no boot logo
+
+- O round seguinte de video + UART nao mudou o veredito funcional do logo:
+  - `MASK` ainda visivel
+  - cadencia ainda lenta
+  - nenhuma leitura pratica de odd/even
+  - `BL238` segue com `F/VF=1:1`, `LG=000`, `CE/TR` praticamente inativos, `R25=03`, `R9=00` e `R26/R27` alternando de forma regular
+- Consequencia pratica:
+  - o host continua descartado como gargalo dominante
+  - o split horizontal fechado na `C079` continua valido
+  - o proximo estado vivo relevante do renderer em `SM:06` era `R#18` (`HAdjust`/`VAdjust`)
+- Implementacao aplicada:
+  - `src/fmsx_local/MSX.c` passa a congelar `R#18` por scanline
+  - `src/fmsx_local/Common.h` e `src/fmsx_local/Wide.h` passam a usar `HAdjust`/`VAdjust` latched por linha no path de borda e posicionamento
+- Referencia primaria usada:
+  - `third_party/fmsx/fMSX/MSX.h`
+  - `third_party/bluemsx/blueMSX/Src/VideoChips/VDP.c`
+- Build local validada:
+  - `BUILD_BID=202604041530-issue238-r18-line-latched`
+  - `BUILD_ID=9F81`
+  - imagem `sha1 8c400743be364ac184c6f5ae7608b38451d3b2bc`
+- Proximo teste:
+  - retestar o boot logo `MSX2+` em hardware com a `9F81`
+  - verificar se o `MASK`/borda finalmente reagem a esse ultimo estado vivo do renderer
