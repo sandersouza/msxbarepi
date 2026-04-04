@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 238-fechar-boot-logo-msx2plus-precisao-core-v9958
 
-Ultima atualizacao: 03/04/2026 (17:25 -03)
+Ultima atualizacao: 04/04/2026 (11:55 -03)
 
 ## Objetivo da branch
 
@@ -246,3 +246,40 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
 - Proximo gate:
   - retestar o boot logo `MSX2+` em hardware
   - verificar se a pagina/tarja passa a reagir ao ponto real do problema; se ainda nao reagir, o proximo corte sobe para latch mais agressivo do estado de display por scanline (`odd/even`, page source e scroll)
+
+## Atualizacao incremental de 04/04/2026 - latch por scanline em `SCREEN 6/7` + build `aarch64-elf`
+
+- O round seguinte em hardware da `894F` confirmou ausencia total de efeito visual:
+  - `MASK` continuou visivel
+  - pagina/tarja errada continuou no mesmo ponto
+  - cadencia permaneceu igual
+  - sem aparencia pratica de interlace
+- Leitura consolidada desta rodada:
+  - o scanout parcial por prefixo ainda era insuficiente porque o renderer wide continuava consultando `ChrTab`, `ChrTabM`, `R#2`, `R#25`, `R#26`, `R#27` e `odd-page` ao vivo durante a mesma linha
+  - o `blueMSX/Common.h` usa esses elementos como estado efetivamente latched no inicio da linha para `SCREEN 6`, e nao como fonte live a cada trecho recomposto
+- Novo corte aplicado:
+  - `src/fmsx_local/MSX.c`
+  - `src/fmsx_local/Wide.h`
+  - `Makefile`
+  - `src/Makefile`
+  - `src/math.h`
+  - `src/fmsx_math_shim.c`
+- O que mudou no core local:
+  - `LoopZ80()` agora congela por scanline o estado de display relevante para `SCREEN 6/7`: `ChrTab`, `ChrTabM`, `R#2`, `R#25`, `R#26`, `R#27`, `odd-page` efetivo e o `vscroll` ja latched
+  - o renderer wide passa a usar esse snapshot em todos os calculos de source/page/coarse scroll/fine scroll/mask/virtual width, em vez de recomputar esses sinais ao vivo no meio da linha
+  - o override de `vscroll` do render path tambem passou a cobrir `SCREEN 6/7`, nao apenas o caso especial legado de `SCREEN 4`
+- Ajuste de build incorporado nesta rodada:
+  - `Makefile` e `src/Makefile` passam a propagar `PREFIX64=$(CROSS)` para `src` e para os subbuilds do `Circle`, destravando o uso da toolchain autodetectada `aarch64-elf-`
+  - como a toolchain Homebrew `aarch64-elf` e `--without-headers`, o projeto ganhou um `math.h` freestanding local e um shim minimo de `sin/log/log10/pow` para manter a build full-feature sem depender de `newlib`
+- Build local validada:
+  - `BUILD_BID=202604041430-issue238-screen6-line-latched-state`
+  - `BUILD_ID=4FB0`
+  - `BUILD_HASH=e298d4e-d03d3116b86dbc2bc49478da1ff60c3e769581b7`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Proximo gate:
+  - retestar o boot logo `MSX2+` em hardware com a `4FB0`
+  - responder apenas estes quatro pontos:
+    - entra normal ou nao
+    - a cadencia mudou ou nao
+    - o `MASK` mudou ou nao
+    - a tarja/pagina errada mudou ou continua no mesmo ponto

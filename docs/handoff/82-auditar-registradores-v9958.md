@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 82-auditar-registradores-v9958
 
-Ultima atualizacao: 03/04/2026 (17:25 -03)
+Ultima atualizacao: 04/04/2026 (11:55 -03)
 
 ## Objetivo da branch
 
@@ -756,3 +756,21 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
   - `BUILD_BID=202604031620-issue238-screen6-partial-scanout`
   - `BUILD_ID=894F`
   - `BUILD_HASH=8a4947c-00efee1ad301422d4ffa66201b3e2a3858304be4`
+
+## Atualizacao incremental de 04/04/2026 - trilha filha `#238`
+
+- O round seguinte em hardware da `894F` confirmou que o scanout parcial ainda nao movia o sintoma do boot logo:
+  - `MASK` sem mudanca
+  - tarja/pagina errada no mesmo ponto
+  - cadencia igual
+  - sem leitura pratica de interlace
+- A trilha filha `#238` subiu entao para latch por scanline do estado de display em `SCREEN 6/7`, ainda guiada por `blueMSX/Common.h`:
+  - `src/fmsx_local/MSX.c` agora congela por linha `ChrTab`, `ChrTabM`, `R#2`, `R#25`, `R#26`, `R#27`, `odd-page` e `vscroll`
+  - `src/fmsx_local/Wide.h` passa a consumir esse snapshot em todos os calculos wide de source/page/scroll/mask
+- A mesma rodada tambem fechou um gargalo local de build:
+  - `Makefile` e `src/Makefile` passam a propagar `PREFIX64=$(CROSS)` para `src` e para os subbuilds do `Circle`
+  - a branch ganhou `src/math.h` + `src/fmsx_math_shim.c` para manter a build full-feature com a toolchain Homebrew `aarch64-elf`, que e `--without-headers`
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604041430-issue238-screen6-line-latched-state`
+  - `BUILD_ID=4FB0`
+  - `BUILD_HASH=e298d4e-d03d3116b86dbc2bc49478da1ff60c3e769581b7`

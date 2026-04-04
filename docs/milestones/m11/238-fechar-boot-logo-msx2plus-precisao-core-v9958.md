@@ -263,3 +263,28 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Proximo teste:
   - retestar o boot logo `MSX2+` em hardware
   - se a tarja/pagina errada ainda nao reagir, promover o proximo corte para latch por scanline de `odd/even`, page source e scroll
+
+## Atualizacao incremental de 04/04/2026 - latch por scanline em `SCREEN 6/7`
+
+- O round de hardware da `894F` confirmou que o corte de scanout parcial ainda nao alterava o quadro observavel do boot logo:
+  - `MASK` visivel
+  - tarja/pagina errada no mesmo ponto
+  - cadencia igual
+  - sem leitura pratica de interlace
+- Diagnostico consolidado:
+  - o problema residual nao era mais "quanto da linha congelar", mas "qual estado de pagina/scroll/source o renderer usa enquanto recompõe a linha"
+  - em `SCREEN 6/7`, o core local ainda consultava `ChrTab`, `ChrTabM`, `R#2`, `R#25`, `R#26`, `R#27` e `odd-page` ao vivo, enquanto o `blueMSX` trabalha com esses sinais como snapshot do inicio da linha
+- Mudanca aplicada:
+  - `src/fmsx_local/MSX.c` passa a congelar por scanline `ChrTab`, `ChrTabM`, `R#2`, `R#25`, `R#26`, `R#27`, `odd-page` e `vscroll`
+  - `src/fmsx_local/Wide.h` passa a usar esse snapshot em todos os calculos wide de `SCREEN 6/7`
+  - o override de `vscroll` do render path tambem passou a cobrir `SCREEN 6/7`
+- Ajuste colateral de build desta rodada:
+  - `Makefile` e `src/Makefile` agora propagam `PREFIX64=$(CROSS)` para `src` e para os subbuilds do `Circle`
+  - o projeto ganhou `src/math.h` e `src/fmsx_math_shim.c` para manter a build full-feature na toolchain `aarch64-elf` do Homebrew, que e `--without-headers`
+- Build local validada:
+  - `BUILD_BID=202604041430-issue238-screen6-line-latched-state`
+  - `BUILD_ID=4FB0`
+  - `BUILD_HASH=e298d4e-d03d3116b86dbc2bc49478da1ff60c3e769581b7`
+- Proximo teste:
+  - retestar o boot logo `MSX2+` em hardware com a `4FB0`
+  - verificar se o `MASK`, a tarja/pagina errada ou a cadencia finalmente reagem ao latch por scanline
