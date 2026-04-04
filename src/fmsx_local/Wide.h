@@ -59,6 +59,21 @@ static unsigned V9958WideFineScrollLatched(void)
   return MODEL(MSX_MSX2P) ? (FmsxVDPLineR27Latched & 0x07u) : 0u;
 }
 
+static unsigned V9958WidePhysicalCoarseScrollLatched(void)
+{
+  /*
+   * In blueMSX line512 paths, SCREEN 6/7 scroll operates in the doubled
+   * physical scanout space. A 9-bit logical scroll becomes a 10-bit walk
+   * across the concatenated 1024-pixel wide line.
+   */
+  return V9958WideCoarseScrollLatched() << 1;
+}
+
+static unsigned V9958WidePhysicalFineScrollLatched(void)
+{
+  return V9958WideFineScrollLatched() << 1;
+}
+
 static unsigned V9958WideMaskLeftLatched(void)
 {
   return (MODEL(MSX_MSX2P) && (FmsxVDPLineR25Latched & 0x02u)) ? 8u : 0u;
@@ -258,8 +273,8 @@ void RefreshLine6(uint8_t Y)
     LastScanline = Y + FirstLine;
     ColorSprites(Y,ZBuf);
     R=ZBuf+32;
-    Coarse = V9958WideCoarseScrollLatched();
-    Fine = V9958WideFineScrollLatched();
+    Coarse = V9958WidePhysicalCoarseScrollLatched();
+    Fine = V9958WidePhysicalFineScrollLatched();
     /* blueMSX masks 8 logical pixels, which are 16 physical pixels here */
     LeftMask = V9958WideMaskLeftLatched()<<1;
     VirtualWidth = V9958WideVirtualWidthLatched();
@@ -335,8 +350,8 @@ void RefreshLine6WideRange(uint8_t Y,unsigned X0,unsigned X1)
   LastScanline = Y + FirstLine;
   ColorSprites(Y,ZBuf);
   R=ZBuf+32;
-  Coarse = V9958WideCoarseScrollLatched();
-  Fine = V9958WideFineScrollLatched();
+  Coarse = V9958WidePhysicalCoarseScrollLatched();
+  Fine = V9958WidePhysicalFineScrollLatched();
   LeftMask = V9958WideMaskLeftLatched()<<1;
   VirtualWidth = V9958WideVirtualWidthLatched();
 
@@ -399,9 +414,9 @@ void RefreshLine7(uint8_t Y)
     LastScanline = Y + FirstLine;
     ColorSprites(Y,ZBuf);
     R=ZBuf+32;
-    Coarse = V9958WideCoarseScrollLatched();
-    Fine = V9958WideFineScrollLatched();
-    LeftMask = V9958WideMaskLeftLatched();
+    Coarse = V9958WidePhysicalCoarseScrollLatched();
+    Fine = V9958WidePhysicalFineScrollLatched();
+    LeftMask = V9958WideMaskLeftLatched()<<1;
     VirtualWidth = V9958WideVirtualWidthLatched();
 
     V9958WideBitmapPages(Y,VirtualWidth,&T0,&T1);
@@ -478,9 +493,9 @@ void RefreshLine7WideRange(uint8_t Y,unsigned X0,unsigned X1)
   LastScanline = Y + FirstLine;
   ColorSprites(Y,ZBuf);
   R=ZBuf+32;
-  Coarse = V9958WideCoarseScrollLatched();
-  Fine = V9958WideFineScrollLatched();
-  LeftMask = V9958WideMaskLeftLatched();
+  Coarse = V9958WidePhysicalCoarseScrollLatched();
+  Fine = V9958WidePhysicalFineScrollLatched();
+  LeftMask = V9958WideMaskLeftLatched()<<1;
   VirtualWidth = V9958WideVirtualWidthLatched();
 
   V9958WideBitmapPages(Y,VirtualWidth,&T0,&T1);
