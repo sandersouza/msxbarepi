@@ -236,6 +236,28 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Proximo gate:
   - repetir a captura UART
   - fechar se `R9/S2/EO` alternam de verdade no boot logo ou se o host segue apresentando so um estado estatico
+
+## Atualizacao incremental de 04/04/2026 - `BL238` agora mede `DT/ET/CE/TR`
+
+- A primeira coleta valida do `BL238` na build `1AD5` mostrou:
+  - `F` e `VF` andando `1:1`
+  - `LG` constante
+  - `R25=03`, `R9=00`, `EO=0`
+  - `R26/R27` alternando de forma coerente com o split horizontal ja corrigido
+- Leitura pratica:
+  - o host nao esta acumulando atraso crescente de apresentacao durante o logo
+  - o problema residual deixa de apontar para "drop de frame no presenter" e volta ao produtor do quadro
+  - o `LG` antigo era pouco util porque misturava frame relativo ao logo com frame absoluto do VDP
+- Correcao aplicada no trace:
+  - `VF` passa a ser relativo ao primeiro frame do proprio logo
+  - o `BL238` agora inclui `DT`, `ET`, `CE` e `TR`
+- Build local validada:
+  - `BUILD_BID=202604041125-issue238-bootlogo-uart-timing`
+  - `BUILD_ID=1796`
+  - `BUILD_HASH=dbcacb7-496d863c4acff33d8ed0b11df5f97387b6235619`
+- Proximo gate:
+  - repetir a captura UART
+  - decidir se a lentidao real do logo casa com janelas de `CE/TR` ou se o gargalo esta fora do command engine
   - `left-edge mask` fisico de `SCREEN 6` wide passa a cobrir `16` pixels, como no renderer line512 do `blueMSX`
 - Build local validada:
   - `BUILD_BID=202604031830-issue238-screen6-edge-mask`

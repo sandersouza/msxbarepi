@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 82-auditar-registradores-v9958
 
-Ultima atualizacao: 04/04/2026 (10:58 -03)
+Ultima atualizacao: 04/04/2026 (11:28 -03)
 
 ## Objetivo da branch
 
@@ -134,6 +134,26 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 - Consequencia pratica na umbrella:
   - o proximo round da `#238` deixa de depender de video cego para odd/even/interlace
   - a resposta tecnica passa a vir do UART real do kernel, usando a mesma captura ja adotada em `scripts/logserial.sh`
+
+## Atualizacao incremental de 04/04/2026 - telemetria temporal do logo na `#238`
+
+- A primeira coleta real da build `1AD5` na branch `#238` confirmou que o host nao esta acumulando backlog crescente de apresentacao:
+  - `F` e `VF` andaram `1:1`
+  - o `LG` antigo ficou constante
+  - `R26/R27` alternaram de forma coerente com a correcao horizontal ja fechada na `C079`
+- Leitura consolidada na umbrella:
+  - o split horizontal esta realmente fechado
+  - a lentidao residual do boot logo nao parece vir de "host dropando frame"
+  - para decidir o proximo corte ainda faltava ver tempo real e o estado `CE/TR` na mesma janela do logo
+- Correcao aplicada na branch derivada:
+  - `BL238` passa a medir `VF` relativo ao proprio logo
+  - entram no UART os campos `DT`, `ET`, `CE` e `TR`
+- Build local validada:
+  - `BUILD_BID=202604041125-issue238-bootlogo-uart-timing`
+  - `BUILD_ID=1796`
+  - `BUILD_HASH=dbcacb7-496d863c4acff33d8ed0b11df5f97387b6235619`
+- Consequencia pratica na umbrella:
+  - o proximo round da `#238` deve dizer objetivamente se o gargalo restante ainda e `BL-002/BL-003` (command engine/status) ou se a trilha precisa voltar para o renderer/produtor do quadro por outro caminho
 
 ## Atualizacao incremental de 31/03/2026 - decisao da subtrilha `#235`
 

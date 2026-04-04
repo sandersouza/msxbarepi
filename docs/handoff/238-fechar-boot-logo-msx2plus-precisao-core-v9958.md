@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 238-fechar-boot-logo-msx2plus-precisao-core-v9958
 
-Ultima atualizacao: 04/04/2026 (10:58 -03)
+Ultima atualizacao: 04/04/2026 (11:28 -03)
 
 ## Objetivo da branch
 
@@ -82,6 +82,31 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
   - repetir a captura UART com a mesma rotina `scripts/logserial.sh`
   - validar finalmente as linhas `BL238`
   - responder se `R9/S2/EO` alternam de verdade durante o logo e se o host fica atras de `VF`
+
+## Atualizacao incremental de 04/04/2026 - `BL238` passa a medir tempo real e `CE/TR`
+
+- A primeira coleta real do `BL238` na build `1AD5` finalmente apareceu no UART e fechou um recorte importante:
+  - `F` e `VF` andaram `1:1` durante toda a janela do logo
+  - `LG` ficou constante, o que mostrou que o host nao acumula backlog crescente de apresentacao durante o boot logo
+  - `R25` ficou em `03`, `R9` em `00`, `EO` em `0`, e `R26/R27` alternaram quadro a quadro assim que a animacao horizontal entrou
+- Diagnostico consolidado desta rodada:
+  - o campo `LG` antigo era pouco util porque comparava `F` relativo ao logo com `VF` absoluto do emulador
+  - o trace ainda nao mostrava `CE/TR`, que continuam sendo o corte mais util para decidir se a lentidao vem do command engine ou de outra parte do produtor do quadro
+- Implementacao aplicada:
+  - `src/fmsx_host_stubs.c` agora ancora `VF` ao primeiro frame do proprio logo
+  - o trace `BL238` passou a incluir:
+    - `DT`: delta real em ms entre frames publicados
+    - `ET`: tempo acumulado em ms desde o primeiro frame do logo
+    - `CE`
+    - `TR`
+- Build local validada:
+  - `BUILD_BID=202604041125-issue238-bootlogo-uart-timing`
+  - `BUILD_ID=1796`
+  - `BUILD_HASH=dbcacb7-496d863c4acff33d8ed0b11df5f97387b6235619`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Proximo gate:
+  - repetir a captura UART
+  - fechar se a cadencia real do logo cai por `DT` alto com `CE=1`, ou se o gargalo mora fora do command engine
 
 ## Atualizacao incremental de 03/04/2026 - ativacao da branch
 
