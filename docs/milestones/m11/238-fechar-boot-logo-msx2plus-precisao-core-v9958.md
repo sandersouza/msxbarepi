@@ -342,3 +342,24 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
     - cadencia global ainda lenta
 - Proximo corte:
   - atacar `R#25`, odd/even e `R#9 interlace` como um unico bloco
+
+## Atualizacao incremental de 04/04/2026 - latch por scanline do estado hi-res/interlaced
+
+- O corte seguinte subiu para o miolo remanescente de `BL-005`:
+  - o renderer local ja consumia snapshot por linha em `SCREEN 6/7` para source/page/scroll
+  - mas a apresentacao hi-res ainda vinha de macros live (`HiResMode`, `OddPage`, `InterlacedMode`) no path de borda
+  - o path narrow de bitmap ainda aplicava odd/even com o comportamento legado ao vivo do `fMSX`
+- Mudanca aplicada:
+  - `src/fmsx_local/MSX.c` passa a congelar por linha tambem `R#9 bit2` e `R#9 bit3`
+  - `src/fmsx_local/Common.h` e `src/fmsx_local/Wide.h` passam a usar esse snapshot por linha na composicao hi-res/interlaced da borda
+  - `V9958BitmapLinePtr()` narrow passa a consumir a pagina odd/even latched por linha
+- Referencia primaria usada no diff:
+  - `third_party/bluemsx/blueMSX/Src/VideoChips/VDP.c`
+  - `third_party/bluemsx/blueMSX/Src/VideoChips/Common.h`
+- Build local validada:
+  - `BUILD_BID=202604041840-issue238-line-latched-interlace`
+  - `BUILD_ID=3DE2`
+  - `BUILD_HASH=ccca9df-15dc573ed2165b0105f68bcf50530bf6d2140fcb`
+- Proximo teste:
+  - retestar o boot logo `MSX2+` em hardware com a `3DE2`
+  - verificar se `MASK`, odd/even/interlace ou a tarja residual finalmente reagem ao latch por linha do estado de apresentacao

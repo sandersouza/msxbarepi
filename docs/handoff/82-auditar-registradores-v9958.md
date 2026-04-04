@@ -819,3 +819,18 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
   - `EP:1`
   - `CE:0`
   - `TR:0`
+
+## Atualizacao incremental de 04/04/2026 - trilha filha `#238`
+
+- A `C079` fechou o split horizontal do logo, entao a trilha filha subiu para o bloco conjunto `R#25` + odd/even + `R#9 interlace`.
+- Diff novo aplicado contra a base local:
+  - `src/fmsx_local/MSX.c` agora congela por scanline tambem `R#9 bit2` (`FlipEvenOdd`) e `R#9 bit3` (`InterlaceON`)
+  - `src/fmsx_local/Common.h` e `src/fmsx_local/Wide.h` passam a compor a apresentacao hi-res/interlaced com esse snapshot por linha, em vez de usar `OddPage`/`InterlacedMode` ao vivo
+  - o path narrow `V9958BitmapLinePtr()` tambem passa a usar odd/even latched por linha
+- Leitura consolidada na umbrella:
+  - o renderer wide ja estava correto na unidade horizontal
+  - o residual agora foi reduzido ao contrato de apresentacao do frame/scanline, ainda mais proximo do modelo do `blueMSX`
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604041840-issue238-line-latched-interlace`
+  - `BUILD_ID=3DE2`
+  - `BUILD_HASH=ccca9df-15dc573ed2165b0105f68bcf50530bf6d2140fcb`

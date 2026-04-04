@@ -343,3 +343,40 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
 - Consequencia pratica:
   - o proximo corte tecnico deixa de insistir em `R#26/R#27`/page walk
   - passa a mirar explicitamente o bloco conjunto `R#25`, odd/even e `R#9 interlace`
+
+## Atualizacao incremental de 04/04/2026 - latch por scanline do estado de apresentacao hi-res
+
+- O diff do `blueMSX` para este bloco ficou mais claro depois da `C079`:
+  - o path wide local ja usava snapshot por linha para source/page/scroll
+  - mas `RefreshBorder()` e `RefreshBorder512()` ainda compunham a apresentacao hi-res com `HiResMode`, `OddPage` e `InterlacedMode` ao vivo
+  - o path narrow de bitmap ainda aplicava `odd-page` com o macro live legado do `fMSX`
+- Leitura consolidada desta rodada:
+  - o split horizontal de `BL-004` ja foi fechado pela `C079`
+  - o residual de `BL-005` ficou reduzido ao estado de apresentacao que ainda nao era latched por linha:
+    - `left-edge mask`
+    - odd/even
+    - `R#9 interlace`
+- Novo corte aplicado:
+  - `src/fmsx_local/MSX.c`
+  - `src/fmsx_local/Common.h`
+  - `src/fmsx_local/Wide.h`
+- O que mudou no core local:
+  - `LoopZ80()` agora congela por scanline tambem `R#9 bit2` (`FlipEvenOdd`) e `R#9 bit3` (`InterlaceON`)
+  - `RefreshBorder()` e `RefreshBorder512()` passam a compor a borda hi-res com esse snapshot por linha, em vez de consultar `OddPage`/`InterlacedMode` ao vivo
+  - `V9958BitmapLinePtr()` narrow passa a aplicar a pagina odd/even usando o mesmo snapshot por linha, alinhando o comportamento ao modelo do `blueMSX`
+- Referencia primaria usada no diff:
+  - `third_party/bluemsx/blueMSX/Src/VideoChips/VDP.c`
+  - `third_party/bluemsx/blueMSX/Src/VideoChips/Common.h`
+- Build local validada:
+  - `BUILD_BID=202604041840-issue238-line-latched-interlace`
+  - `BUILD_ID=3DE2`
+  - `BUILD_HASH=ccca9df-15dc573ed2165b0105f68bcf50530bf6d2140fcb`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Proximo gate:
+  - retestar o boot logo `MSX2+` em hardware com a `3DE2`
+  - responder apenas estes cinco pontos:
+    - entra normal ou nao
+    - a cadencia mudou ou nao
+    - o `MASK` mudou ou nao
+    - a tarja/pagina errada mudou ou nao
+    - apareceu alguma leitura pratica de odd/even/interlace ou nao
