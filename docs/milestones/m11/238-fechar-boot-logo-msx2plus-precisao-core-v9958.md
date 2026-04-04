@@ -319,3 +319,26 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Proximo teste:
   - retestar o boot logo `MSX2+` em hardware com a `C079`
   - verificar se o `MASK`, a tarja/pagina errada ou a cadencia finalmente reagem ao scroll fisico corrigido
+
+## Atualizacao incremental de 04/04/2026 - `C079` fecha o split horizontal do logo
+
+- O teste de hardware da `C079` finalmente moveu a composicao do boot logo:
+  - o logo passou a nascer dos dois lados
+  - as duas metades caminham em direcao ao centro da tela
+  - a pagina errada dominante do quadro anterior deixou de ser o sintoma principal
+- A analise local do video confirmou esse mesmo ganho nos quadros uteis:
+  - `SM:06`
+  - `R2:3F`
+  - `R25:03`
+  - `EP:1`
+  - `CE:0`
+  - `TR:0`
+- Diagnostico consolidado:
+  - o ajuste de coarse/fine scroll no espaco fisico dobrado fechou a parte horizontal do `BL-004`
+  - o renderer wide passou a caminhar na unidade correta para o boot logo
+  - o backlog residual desta issue ficou reduzido ao bloco `BL-005`:
+    - `left-edge mask` ainda visivel
+    - sem leitura pratica de odd/even/interlace
+    - cadencia global ainda lenta
+- Proximo corte:
+  - atacar `R#25`, odd/even e `R#9 interlace` como um unico bloco

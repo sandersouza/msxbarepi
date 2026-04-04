@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 238-fechar-boot-logo-msx2plus-precisao-core-v9958
 
-Ultima atualizacao: 04/04/2026 (01:38 -03)
+Ultima atualizacao: 04/04/2026 (01:58 -03)
 
 ## Objetivo da branch
 
@@ -323,3 +323,23 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
     - a cadencia mudou ou nao
     - o `MASK` mudou ou nao
     - a tarja/pagina errada mudou ou continua no mesmo ponto
+
+## Atualizacao incremental de 04/04/2026 - `C079` fecha o split horizontal do logo
+
+- O round seguinte em hardware da `C079` trouxe a primeira mudanca estrutural clara do bloco `SCREEN 6/7`:
+  - o logo agora nasce corretamente dos dois lados da tela
+  - os dois blocos passam a se mover em direcao ao centro, em vez de compor paginas evidentemente erradas
+- A analise local do video confirmou esse ganho operacional:
+  - o `MSX` deixou de surgir como pagina unica errada
+  - o fluxo passou a mostrar metades coerentes (`MS...` e `...SX`) convergindo para o centro
+  - os quadros uteis do overlay continuam em `SM:06`, `R2:3F`, `R25:03`, `EP:1`, `CE:0`, `TR:0`
+- Leitura consolidada desta rodada:
+  - o corte `C079` fecha operacionalmente a parte horizontal de `BL-004`
+  - o compositor wide agora esta caminhando na unidade correta de scroll para o boot logo
+  - o gargalo residual da branch saiu do page split horizontal e ficou reduzido ao bloco `BL-005`:
+    - `left-edge mask` ainda visivel
+    - sem leitura pratica de odd/even/interlace
+    - cadencia global ainda lenta
+- Consequencia pratica:
+  - o proximo corte tecnico deixa de insistir em `R#26/R#27`/page walk
+  - passa a mirar explicitamente o bloco conjunto `R#25`, odd/even e `R#9 interlace`

@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 82-auditar-registradores-v9958
 
-Ultima atualizacao: 04/04/2026 (01:38 -03)
+Ultima atualizacao: 04/04/2026 (01:58 -03)
 
 ## Objetivo da branch
 
@@ -799,3 +799,23 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
   - `BUILD_BID=202604041620-issue238-screen67-physical-scroll`
   - `BUILD_ID=C079`
   - `BUILD_HASH=16da695-9edab52930a87d5a297e94ad32752c850250b185`
+
+## Atualizacao incremental de 04/04/2026 - trilha filha `#238`
+
+- O round seguinte em hardware da `C079` trouxe a primeira mudanca estrutural clara no boot logo:
+  - o logo passou a surgir corretamente dos dois lados da tela
+  - as duas metades caminham em direcao ao centro, em vez de compor paginas horizontais evidentemente erradas
+- Leitura consolidada na umbrella:
+  - o diff de `SCREEN 6/7` contra o `blueMSX` ja fechou operacionalmente a parte horizontal do `page split`
+  - o gargalo residual da trilha filha deixou de ser `R#26/R#27` e ficou concentrado em:
+    - `left-edge mask`
+    - odd/even
+    - `R#9 interlace`
+    - cadencia global do logo
+- Estado observado no video/overlay:
+  - `SM:06`
+  - `R2:3F`
+  - `R25:03`
+  - `EP:1`
+  - `CE:0`
+  - `TR:0`
