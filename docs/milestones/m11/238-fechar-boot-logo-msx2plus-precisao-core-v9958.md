@@ -218,6 +218,24 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Mudanca aplicada em `src/fmsx_local/Wide.h`:
   - remocao da heuristica de reorder de paginas baseada em `ChrTab`, porque o core local ja neutraliza `R#2 bit5` em `fmsx_vdp_r2_base()` no caminho `multipage`
   - borda lateral de `SCREEN 6` wide passa a usar o padrao alternado `BGColor[hi/lo]` do `blueMSX`
+
+## Atualizacao incremental de 04/04/2026 - `BL238` sai de `log_cb` e entra no serial real
+
+- A build `3271` estava correta no gating do boot logo, mas continuou sem qualquer linha `BL238` no UART.
+- O diagnostico fechado nesta rodada foi outro:
+  - o baremetal local nunca conecta `log_cb` ao serial usado pelo kernel
+  - isso tambem explica por que os `log_cb(...)` antigos do `MSX.c` nunca apareciam em `/tmp/msx2p-boot-serial.log`
+- Correcao aplicada:
+  - `src/kernel.cpp` agora exporta um writer C minimo (`msxbare_uart_write`) que escreve no mesmo `CSerialDevice` usado no boot do kernel
+  - `src/fmsx_host_stubs.c` passa a emitir `BL238` por esse canal, sem depender de `log_cb`
+  - a janela da `3271` foi mantida: primeiros `96` frames do proprio boot logo (`SM:06` + `R25=03`)
+- Build local validada:
+  - `BUILD_BID=202604041055-issue238-bootlogo-uart-direct`
+  - `BUILD_ID=1AD5`
+  - `BUILD_HASH=f2485a7-123900306375666fd0ff2f4ff911edd8b910b64a`
+- Proximo gate:
+  - repetir a captura UART
+  - fechar se `R9/S2/EO` alternam de verdade no boot logo ou se o host segue apresentando so um estado estatico
   - `left-edge mask` fisico de `SCREEN 6` wide passa a cobrir `16` pixels, como no renderer line512 do `blueMSX`
 - Build local validada:
   - `BUILD_BID=202604031830-issue238-screen6-edge-mask`

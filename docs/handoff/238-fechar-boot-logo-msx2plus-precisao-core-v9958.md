@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 238-fechar-boot-logo-msx2plus-precisao-core-v9958
 
-Ultima atualizacao: 04/04/2026 (01:58 -03)
+Ultima atualizacao: 04/04/2026 (10:58 -03)
 
 ## Objetivo da branch
 
@@ -58,6 +58,30 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
   - `src/fmsx_local/V9938.c`
   - `src/fmsx_local/Common.h`
   - `src/fmsx_local/Wide.h`
+
+## Atualizacao incremental de 04/04/2026 - `BL238` direto no serial baremetal
+
+- O round de validacao da build `3271` fechou um diagnostico mais profundo do que a propria janela do trace:
+  - o arquivo `/tmp/msx2p-boot-serial.log` continuou sem qualquer linha `BL238`
+  - ao mesmo tempo, ele tambem nao mostrava os `log_cb(...)` antigos ja espalhados em `src/fmsx_local/MSX.c`
+  - isso confirmou que o problema residual nao era mais a janela do boot logo, e sim o canal de emissao
+- Causa raiz fechada nesta rodada:
+  - no baremetal local, `src/fmsx_host_stubs.c` declara `retro_log_printf_t log_cb = 0`
+  - o `log_cb` nunca e ligado ao mesmo serial usado pelo kernel no startup
+  - por isso, a `3271` tinha a janela correta do boot logo, mas continuava silenciosa no UART real
+- Implementacao aplicada:
+  - `src/kernel.cpp` agora exporta `msxbare_uart_write(const char *text)` usando o mesmo `CSerialDevice` ja inicializado no boot do kernel
+  - `src/fmsx_host_stubs.c` deixa de emitir `BL238` por `log_cb` e passa a escrever direto nesse canal serial do kernel
+  - a janela local do boot logo da `3271` foi preservada: o trace continua cobrindo os primeiros `96` frames em `SM:06` com `R25=03`
+- Build local validada:
+  - `BUILD_BID=202604041055-issue238-bootlogo-uart-direct`
+  - `BUILD_ID=1AD5`
+  - `BUILD_HASH=f2485a7-123900306375666fd0ff2f4ff911edd8b910b64a`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Proximo gate:
+  - repetir a captura UART com a mesma rotina `scripts/logserial.sh`
+  - validar finalmente as linhas `BL238`
+  - responder se `R9/S2/EO` alternam de verdade durante o logo e se o host fica atras de `VF`
 
 ## Atualizacao incremental de 03/04/2026 - ativacao da branch
 

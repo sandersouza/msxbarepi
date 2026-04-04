@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 82-auditar-registradores-v9958
 
-Ultima atualizacao: 04/04/2026 (01:58 -03)
+Ultima atualizacao: 04/04/2026 (10:58 -03)
 
 ## Objetivo da branch
 
@@ -117,6 +117,23 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 - Consequencia pratica na umbrella:
   - o proximo round da `#238` deixa de testar apenas `MASK`/pagina
   - passa primeiro a validar se o caminho odd/even/interlaced do host realmente reaparece em hardware
+
+## Atualizacao incremental de 04/04/2026 - observabilidade UART real na `#238`
+
+- A trilha da `#238` confirmou que a build `3271` ja tinha a janela correta do boot logo para o trace `BL238`, mas continuava muda no arquivo UART.
+- Causa raiz consolidada na umbrella:
+  - o backend baremetal local mantinha `log_cb = 0`
+  - portanto, os traces emitidos por `log_cb(...)` no lado C do `fMSX` nunca entravam no mesmo serial usado pelo kernel do projeto
+- Correcao aplicada na branch derivada `238-fechar-boot-logo-msx2plus-precisao-core-v9958`:
+  - `src/kernel.cpp` exporta `msxbare_uart_write(const char *text)` sobre o `CSerialDevice` real do boot
+  - `src/fmsx_host_stubs.c` passa a emitir `BL238` diretamente por esse canal, mantendo a janela de `96` frames do logo (`SM:06` + `R25=03`)
+- Build local validada:
+  - `BUILD_BID=202604041055-issue238-bootlogo-uart-direct`
+  - `BUILD_ID=1AD5`
+  - `BUILD_HASH=f2485a7-123900306375666fd0ff2f4ff911edd8b910b64a`
+- Consequencia pratica na umbrella:
+  - o proximo round da `#238` deixa de depender de video cego para odd/even/interlace
+  - a resposta tecnica passa a vir do UART real do kernel, usando a mesma captura ja adotada em `scripts/logserial.sh`
 
 ## Atualizacao incremental de 31/03/2026 - decisao da subtrilha `#235`
 
