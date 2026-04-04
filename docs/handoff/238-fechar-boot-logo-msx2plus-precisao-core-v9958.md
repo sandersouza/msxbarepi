@@ -380,3 +380,38 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
     - o `MASK` mudou ou nao
     - a tarja/pagina errada mudou ou nao
     - apareceu alguma leitura pratica de odd/even/interlace ou nao
+
+## Atualizacao incremental de 04/04/2026 - pivot para telemetria UART de frame
+
+- O round seguinte em hardware da `3DE2` confirmou ausencia de efeito visual adicional:
+  - entra normal
+  - cadencia sem mudanca pratica
+  - `MASK` sem mudanca pratica
+  - sem leitura pratica de odd/even/interlace
+- Leitura consolidada desta rodada:
+  - o bloco horizontal de `BL-004` continua fechado pela `C079`
+  - o corte de latch da apresentacao hi-res nao moveu o quadro observavel
+  - antes de seguir com mais patches cegos de renderer, a branch precisa responder duas perguntas objetivas em campo:
+    - `S#2 bit1`/`R#9` estao alternando como esperado durante o boot logo?
+    - o host esta publicando cada frame do VDP ou esta ficando para tras no `PutImage()`?
+- Novo corte aplicado:
+  - `src/fmsx_host_stubs.c`
+- O que mudou:
+  - `PutImage()` ganhou uma trilha UART limitada aos primeiros `96` frames do boot logo em `SM:06` com `R25=03`
+  - a linha `BL238` agora registra por frame:
+    - frame publicado (`F`)
+    - frame do VDP (`VF`)
+    - lag entre eles (`LG`)
+    - largura/altura do buffer apresentado (`W/H`)
+    - `R9`, `S2`, `HI`, `IL`, `EO`
+    - `R25/R26/R27`
+- Build local validada:
+  - `BUILD_BID=202604041950-issue238-bootlogo-uart-frame-trace`
+  - `BUILD_ID=9A2C`
+  - `BUILD_HASH=115717d-18b3d09b5e160bb49b3cc8d4ac93a34052592e1c`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Proximo gate:
+  - subir a `9A2C`
+  - capturar o UART com `scripts/logserial.sh`
+  - filtrar as linhas `BL238`
+  - responder com o trecho bruto do log; o proximo corte depende desses dados, nao de outro video

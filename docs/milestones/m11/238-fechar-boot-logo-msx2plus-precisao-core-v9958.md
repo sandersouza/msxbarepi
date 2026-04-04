@@ -363,3 +363,25 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Proximo teste:
   - retestar o boot logo `MSX2+` em hardware com a `3DE2`
   - verificar se `MASK`, odd/even/interlace ou a tarja residual finalmente reagem ao latch por linha do estado de apresentacao
+
+## Atualizacao incremental de 04/04/2026 - observabilidade UART do boot logo
+
+- O teste seguinte da `3DE2` nao mudou o quadro observavel:
+  - cadencia igual
+  - `MASK` igual
+  - sem leitura pratica de odd/even/interlace
+- Consequencia pratica:
+  - a issue deixa de promover patch visual cego como proximo passo imediato
+  - o foco passa a ser confirmar via UART:
+    - se `R#9/S#2` realmente alternam durante o boot logo
+    - se o host esta apresentando cada frame do VDP ou ficando atras do `PutImage()`
+- Mudanca aplicada:
+  - `src/fmsx_host_stubs.c` ganha trace UART `BL238` limitado aos primeiros `96` frames publicados em `SM:06` com `R25=03`
+- Build local validada:
+  - `BUILD_BID=202604041950-issue238-bootlogo-uart-frame-trace`
+  - `BUILD_ID=9A2C`
+  - `BUILD_HASH=115717d-18b3d09b5e160bb49b3cc8d4ac93a34052592e1c`
+- Proximo teste:
+  - subir a `9A2C`
+  - capturar UART
+  - devolver as linhas `BL238` como base do proximo corte

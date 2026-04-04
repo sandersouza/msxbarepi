@@ -834,3 +834,18 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
   - `BUILD_BID=202604041840-issue238-line-latched-interlace`
   - `BUILD_ID=3DE2`
   - `BUILD_HASH=ccca9df-15dc573ed2165b0105f68bcf50530bf6d2140fcb`
+
+## Atualizacao incremental de 04/04/2026 - trilha filha `#238`
+
+- O round seguinte em hardware da `3DE2` nao moveu o quadro observavel do boot logo.
+- Consequencia pratica na umbrella:
+  - o bloco horizontal continua fechado pela `C079`
+  - o corte de apresentacao hi-res da `3DE2` nao resolveu o residual
+  - a trilha filha deixou de insistir em patch visual cego e pivotou para telemetria UART de frame
+- Novo corte aplicado na branch derivada:
+  - `src/fmsx_host_stubs.c` agora loga `BL238` nos primeiros `96` frames publicados do boot logo em `SM:06`
+  - cada linha registra `F/VF/LG/W/H/R9/S2/HI/IL/EO/R25/R26/R27`
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604041950-issue238-bootlogo-uart-frame-trace`
+  - `BUILD_ID=9A2C`
+  - `BUILD_HASH=115717d-18b3d09b5e160bb49b3cc8d4ac93a34052592e1c`
