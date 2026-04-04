@@ -255,6 +255,12 @@ static void fmsx_uart_trace_bootlogo_frame(unsigned present_frame)
     fmsx_uart_put_uint(g_image_buffer_height > 999u ? 999u : g_image_buffer_height);
     msxbare_uart_write(" R9:");
     fmsx_uart_put_hex8(VDP[9] & 0xFFu);
+    msxbare_uart_write(" F9:");
+    msxbare_uart_write((VDP[9] & 0x04u) ? "1" : "0");
+    msxbare_uart_write(" I9:");
+    msxbare_uart_write((VDP[9] & 0x08u) ? "1" : "0");
+    msxbare_uart_write(" S2E:");
+    msxbare_uart_write((VDPStatus[2] & 0x02u) ? "1" : "0");
     msxbare_uart_write(" S2:");
     fmsx_uart_put_hex8(VDPStatus[2] & 0xFFu);
     msxbare_uart_write(" HI:");

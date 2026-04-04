@@ -18,6 +18,10 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
 
 - A partir desta rodada, `git push` deixa de ser permitido em cada corte incremental da branch.
 - Commits locais intermediarios continuam permitidos, mas o remoto so deve ser atualizado quando o usuario declarar explicitamente que o estado atual ficou estavel.
+- Prioridade operacional corrente:
+  1. odd/even + `R#9 interlace`
+  2. cadencia
+  3. `MASK`
 
 ## Estado herdado da umbrella
 
@@ -569,3 +573,33 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
     - o `MASK` mudou ou nao
     - a cadencia mudou ou nao
     - surgiu alguma leitura pratica de odd/even ou nao
+
+## Atualizacao incremental de 04/04/2026 - foco em writes BIOS-side do logo
+
+- O round seguinte de video + UART confirmou a necessidade de isolar um problema por vez:
+  - `MASK` continua visivel, mas deixa de ser o principal alvo
+  - odd/even + `R#9 interlace` passam a ser o foco imediato
+  - a cadencia fica subordinada a esse bloco
+- Leitura consolidada:
+  - o `BL238` de quadro inteiro continua mostrando so o estado ja resolvido no `PutImage()`
+  - isso nao responde se o BIOS muda `R#9/R#25/R#26/R#27` no meio do frame
+- Novo corte aplicado:
+  - `src/fmsx_host_stubs.c`
+  - `src/fmsx_local/MSX.c`
+- O que mudou:
+  - `BL238` agora expõe `F9`, `I9` e `S2E` explicitamente
+  - o core ganhou `BL238W`, um trace UART para writes de `R#2`, `R#9`, `R#18`, `R#25`, `R#26` e `R#27` durante a janela do boot logo
+  - cada linha `BL238W` traz `frame`, `PC`, `scanline`, registrador, valor escrito e o estado relevante do VDP no momento
+- Build local validada:
+  - `BUILD_BID=202604041705-issue238-bootlogo-regwrite-trace`
+  - `BUILD_ID=A1D1`
+  - imagem `sha1 cdb45bca50c1a8ce3d914da414d938c15b7fd6d4`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado de fluxo:
+  - sem `push`
+  - a `#82` continua sendo a umbrella desta branch
+- Proximo gate:
+  - subir a `A1D1`
+  - repetir o boot logo com UART
+  - coletar `BL238` + `BL238W`
+  - so depois decidir o proximo patch no bloco odd/even/interlace

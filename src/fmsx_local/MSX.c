@@ -41,6 +41,7 @@
 #include <streams/file_stream_transforms.h>
 
 extern retro_log_printf_t log_cb;
+extern void msxbare_uart_write(const char *text);
 extern void fmsx_runtime_notify_media_probe(void);
 extern int g_fmsx_fmpac_enabled;
 extern unsigned g_fmsx_megaram_kb;
@@ -318,6 +319,8 @@ uint32_t FmsxIE1ArmedCount = 0;       /* Number of times IE1 was armed on active
 uint32_t FmsxIE1FiredHBlankCount = 0; /* Number of armed IE1 events fired on HBlank */
 static uint8_t FmsxIE1PendingHBlank = 0;
 static uint8_t FmsxVDPDisplayStateDirty = 0;
+static unsigned g_bootlogo_regwrite_trace_count = 0u;
+static uint8_t g_bootlogo_regwrite_trace_active = 0u;
 static TFmsxVDPTraceEvent g_fmsx_vdp_trace[FMSX_VDP_TRACE_CAPACITY];
 static unsigned g_fmsx_vdp_trace_head = 0;
 static unsigned g_fmsx_vdp_trace_count = 0;
@@ -646,6 +649,7 @@ static uint8_t fmsx_vdp_status1_live(void);
 static uint8_t fmsx_vdp_ie1_target_line(void);
 static int fmsx_vdp_ie1_target_delta(void);
 static uint8_t fmsx_vdp_effective_odd_page(void);
+static void fmsx_vdp_trace_bootlogo_regwrite(uint8_t reg,uint8_t value);
 static int fmsx_vdp_hscroll_active256_local(void);
 void RefreshLine4PlainRange(uint8_t Y,unsigned X0,unsigned X1);
 void RefreshLine6WideRange(uint8_t Y,unsigned X0,unsigned X1);
@@ -1617,6 +1621,50 @@ static uint8_t fmsx_vdp_effective_odd_page(void)
    * Bit1=0 selects the alternate ("odd") page when EO is enabled.
    */
   return (VDPStatus[2]&0x02u)? 0u:1u;
+}
+
+static void fmsx_vdp_trace_bootlogo_regwrite(uint8_t reg,uint8_t value)
+{
+  char line[160];
+  const uint8_t next_r25 = (reg==25u)? value:VDP[25];
+  const uint8_t next_r9 = (reg==9u)? value:VDP[9];
+  const uint8_t active = (ScrMode==6u) && ((next_r25 & 0x03u) == 0x03u);
+  const uint8_t eo = (next_r9 & 0x04u) ? ((VDPStatus[2] & 0x02u) ? 0u : 1u) : 0u;
+
+  if(!active)
+  {
+    g_bootlogo_regwrite_trace_count = 0u;
+    g_bootlogo_regwrite_trace_active = 0u;
+    return;
+  }
+
+  if(!g_bootlogo_regwrite_trace_active)
+  {
+    g_bootlogo_regwrite_trace_count = 0u;
+    g_bootlogo_regwrite_trace_active = 1u;
+  }
+
+  if(g_bootlogo_regwrite_trace_count >= 192u) return;
+
+  ++g_bootlogo_regwrite_trace_count;
+  snprintf(
+    line,sizeof(line),
+    "BL238W N:%03u F:%03u PC:%04X SL:%03d R:%02X V:%02X S2:%02X F9:%u I9:%u EO:%u R25:%02X R26:%02X R27:%02X\n",
+    g_bootlogo_regwrite_trace_count > 999u ? 999u : g_bootlogo_regwrite_trace_count,
+    FmsxVDPFrameCounter > 999u ? 999u : FmsxVDPFrameCounter,
+    CPU.PC.W,
+    ScanLine < 0 ? 0 : (ScanLine > 999 ? 999 : ScanLine),
+    reg,
+    value,
+    VDPStatus[2] & 0xFFu,
+    (next_r9 & 0x04u) ? 1u : 0u,
+    (next_r9 & 0x08u) ? 1u : 0u,
+    eo,
+    next_r25,
+    (reg==26u)? value:VDP[26],
+    (reg==27u)? value:VDP[27]
+  );
+  msxbare_uart_write(line);
 }
 
 static int fmsx_vdp_hscroll_active256_local(void)
@@ -4657,6 +4705,7 @@ void SetMegaROM(int Slot,uint8_t P0,uint8_t P1,uint8_t P2,uint8_t P3)
 void VDPOut(uint8_t R,uint8_t V)
 {
   uint8_t J,R2Base;
+  const uint8_t old_v = VDP[R];
 
   if(R<64u) FmsxVDPRegWriteCount[R]++;
 
@@ -4735,6 +4784,8 @@ void VDPOut(uint8_t R,uint8_t V)
     fmsx_sync_bios_region_flag(PALVideo? 1:0);
     fmsx_sync_bios_vdp_r9_shadow();
   }
+  if((old_v!=V)&&((R==2u)||(R==9u)||(R==18u)||(R==25u)||(R==26u)||(R==27u)))
+    fmsx_vdp_trace_bootlogo_regwrite(R,V);
 }
 
 /** Printer() ************************************************/

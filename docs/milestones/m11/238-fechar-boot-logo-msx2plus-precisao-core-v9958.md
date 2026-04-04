@@ -499,3 +499,24 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Proximo teste:
   - retestar o boot logo `MSX2+` em hardware com a `9F81`
   - verificar se o `MASK`/borda finalmente reagem a esse ultimo estado vivo do renderer
+
+## Atualizacao incremental de 04/04/2026 - telemetria de writes do boot logo
+
+- O round seguinte confirmou a nova ordem do trabalho:
+  - primeiro odd/even + `R#9 interlace`
+  - depois cadencia
+  - `MASK` deixa de ser o principal alvo desta rodada
+- Diagnostico consolidado:
+  - o `BL238` de quadro inteiro nao mostra se o BIOS muda `R#9/R#25/R#26/R#27` no meio do frame
+  - isso passou a ser o proximo buraco de observabilidade da issue
+- Implementacao aplicada:
+  - `src/fmsx_host_stubs.c` agora expõe `F9`, `I9` e `S2E` no `BL238`
+  - `src/fmsx_local/MSX.c` agora gera `BL238W` para writes de `R#2`, `R#9`, `R#18`, `R#25`, `R#26` e `R#27` durante a janela do logo
+- Build local validada:
+  - `BUILD_BID=202604041705-issue238-bootlogo-regwrite-trace`
+  - `BUILD_ID=A1D1`
+  - imagem `sha1 cdb45bca50c1a8ce3d914da414d938c15b7fd6d4`
+- Proximo teste:
+  - repetir o boot logo `MSX2+` com a `A1D1`
+  - coletar `BL238` + `BL238W`
+  - so depois decidir o proximo patch do bloco odd/even/interlace/cadencia

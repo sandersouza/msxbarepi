@@ -950,3 +950,23 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 - Guardrail de fluxo reafirmado:
   - sem `push`
   - o proximo round continua local ate declaracao explicita de estabilidade
+
+## Atualizacao incremental de 04/04/2026 - trilha filha `#238`
+
+- O round seguinte da trilha filha ajustou a prioridade operacional desta jornada:
+  - primeiro odd/even + `R#9 interlace`
+  - depois cadencia
+  - `MASK` deixa de ser o principal alvo
+- Consequencia pratica na umbrella:
+  - a `#82` permanece como umbrella desta trilha do video
+  - a branch filha deixa de promover patch visual cego e passa a instrumentar writes BIOS-side do logo
+- Novo corte local aplicado na branch derivada:
+  - `src/fmsx_host_stubs.c` passa a expor `F9`, `I9` e `S2E` no `BL238`
+  - `src/fmsx_local/MSX.c` passa a emitir `BL238W` para writes de `R#2`, `R#9`, `R#18`, `R#25`, `R#26` e `R#27` durante a janela do boot logo
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604041705-issue238-bootlogo-regwrite-trace`
+  - `BUILD_ID=A1D1`
+  - imagem `sha1 cdb45bca50c1a8ce3d914da414d938c15b7fd6d4`
+- Proximo gate da umbrella:
+  - coletar `BL238` + `BL238W`
+  - so depois decidir o proximo patch no bloco odd/even/interlace/cadencia
