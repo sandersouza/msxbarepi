@@ -10,6 +10,7 @@
 #include "fmsx_compat/string.h"
 
 retro_log_printf_t log_cb = 0;
+extern void msxbare_uart_write(const char *text);
 
 #define BORDER 8
 #define WIDTH  (256 + (BORDER << 1))
@@ -163,6 +164,86 @@ static int fmsx_keyboard_change_has_release(const uint8_t desired_state[16], con
         }
     }
     return 0;
+}
+
+static void fmsx_uart_put_uint(unsigned value)
+{
+    char buffer[10];
+    unsigned i = 0u;
+
+    if (value == 0u)
+    {
+        msxbare_uart_write("0");
+        return;
+    }
+
+    while (value && i < sizeof(buffer))
+    {
+        buffer[i++] = (char) ('0' + (value % 10u));
+        value /= 10u;
+    }
+
+    while (i > 0u)
+    {
+        char out[2];
+        out[0] = buffer[--i];
+        out[1] = '\0';
+        msxbare_uart_write(out);
+    }
+}
+
+static void fmsx_uart_put_uint3(unsigned value)
+{
+    char out[4];
+    out[0] = (char) ('0' + ((value / 100u) % 10u));
+    out[1] = (char) ('0' + ((value / 10u) % 10u));
+    out[2] = (char) ('0' + (value % 10u));
+    out[3] = '\0';
+    msxbare_uart_write(out);
+}
+
+static void fmsx_uart_put_hex8(unsigned value)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    char out[3];
+    out[0] = hex[(value >> 4u) & 0x0Fu];
+    out[1] = hex[value & 0x0Fu];
+    out[2] = '\0';
+    msxbare_uart_write(out);
+}
+
+static void fmsx_uart_trace_bootlogo_frame(unsigned present_frame)
+{
+    const unsigned vdp_frame = (unsigned) FmsxVDPFrameCounter;
+    const unsigned lag = vdp_frame > present_frame ? (vdp_frame - present_frame) : 0u;
+
+    msxbare_uart_write("BL238 F:");
+    fmsx_uart_put_uint3(present_frame);
+    msxbare_uart_write(" VF:");
+    fmsx_uart_put_uint3(vdp_frame > 999u ? 999u : vdp_frame);
+    msxbare_uart_write(" LG:");
+    fmsx_uart_put_uint3(lag > 999u ? 999u : lag);
+    msxbare_uart_write(" W:");
+    fmsx_uart_put_uint(g_image_buffer_width > 999u ? 999u : g_image_buffer_width);
+    msxbare_uart_write(" H:");
+    fmsx_uart_put_uint(g_image_buffer_height > 999u ? 999u : g_image_buffer_height);
+    msxbare_uart_write(" R9:");
+    fmsx_uart_put_hex8(VDP[9] & 0xFFu);
+    msxbare_uart_write(" S2:");
+    fmsx_uart_put_hex8(VDPStatus[2] & 0xFFu);
+    msxbare_uart_write(" HI:");
+    msxbare_uart_write(HiResMode ? "1" : "0");
+    msxbare_uart_write(" IL:");
+    msxbare_uart_write(InterlacedMode ? "1" : "0");
+    msxbare_uart_write(" EO:");
+    msxbare_uart_write(OddPage ? "1" : "0");
+    msxbare_uart_write(" R25:");
+    fmsx_uart_put_hex8(VDP[25] & 0xFFu);
+    msxbare_uart_write(" R26:");
+    fmsx_uart_put_hex8(VDP[26] & 0xFFu);
+    msxbare_uart_write(" R27:");
+    fmsx_uart_put_hex8(VDP[27] & 0xFFu);
+    msxbare_uart_write("\n");
 }
 
 static unsigned fmsx_audio_ring_level_current(void)
@@ -920,26 +1001,10 @@ void PutImage(void)
     if (bootlogo_active)
     {
         g_bootlogo_trace_seen = 1u;
-        if (log_cb && (g_bootlogo_trace_frames < 96u))
+        if (g_bootlogo_trace_frames < 96u)
         {
             const unsigned present_frame = g_bootlogo_trace_frames + 1u;
-            const unsigned vdp_frame = (unsigned) FmsxVDPFrameCounter;
-            const unsigned lag = vdp_frame > present_frame ? (vdp_frame - present_frame) : 0u;
-            log_cb(1,
-                   "BL238 F:%03u VF:%03u LG:%03u W:%03u H:%03u R9:%02X S2:%02X HI:%u IL:%u EO:%u R25:%02X R26:%02X R27:%02X\n",
-                   present_frame,
-                   vdp_frame > 999u ? 999u : vdp_frame,
-                   lag > 999u ? 999u : lag,
-                   g_image_buffer_width > 999u ? 999u : g_image_buffer_width,
-                   g_image_buffer_height > 999u ? 999u : g_image_buffer_height,
-                   VDP[9] & 0xFFu,
-                   VDPStatus[2] & 0xFFu,
-                   HiResMode ? 1u : 0u,
-                   InterlacedMode ? 1u : 0u,
-                   OddPage ? 1u : 0u,
-                   VDP[25] & 0xFFu,
-                   VDP[26] & 0xFFu,
-                   VDP[27] & 0xFFu);
+            fmsx_uart_trace_bootlogo_frame(present_frame);
         }
         g_bootlogo_trace_frames++;
     }

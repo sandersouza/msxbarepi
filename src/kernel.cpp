@@ -24,6 +24,18 @@ extern "C" unsigned long long msxbare_monotonic_time_us(void)
 	return CTimer::GetClockTicks64();
 }
 
+static CSerialDevice *g_fmsx_uart_trace_serial = 0;
+
+extern "C" void msxbare_uart_write(const char *text)
+{
+	if (g_fmsx_uart_trace_serial == 0 || text == 0 || text[0] == '\0')
+	{
+		return;
+	}
+
+	g_fmsx_uart_trace_serial->Write(text, strlen(text));
+}
+
 static const char FromKernel[] = "combo";
 static const unsigned kSampleRate = 48000;
 static const unsigned kChunkSize = 384 * 10;
@@ -1169,6 +1181,7 @@ CComboKernel::~CComboKernel(void)
 		m_StateIoBuffer = 0;
 		m_StateIoBufferCapacity = 0u;
 	}
+	g_fmsx_uart_trace_serial = 0;
 	s_Instance = 0;
 }
 
@@ -1184,6 +1197,7 @@ boolean CComboKernel::Initialize(void)
 		if (ok)
 		{
 			BootTrace("I2");
+			g_fmsx_uart_trace_serial = &m_Serial;
 			target = &m_Serial;
 		}
 #endif
