@@ -310,8 +310,10 @@ uint8_t FmsxVDPLineR9Latched = 0;     /* R#9 snapshot for current scanline */
 uint8_t FmsxVDPLineOddPageLatched = 0;/* EO-derived display page for current scanline */
 uint8_t FmsxVDPLineFlipEvenOddLatched = 0; /* R#9 bit2 snapshot for current scanline */
 uint8_t FmsxVDPLineInterlaceOnLatched = 0; /* R#9 bit3 snapshot for current scanline */
-uint8_t FmsxVDPLineColorSpritesLatched[320]; /* SCREEN 6/7 sprite line captured mid-scanline */
-uint8_t FmsxVDPLineColorSpritesValid = 0; /* 1 once SCREEN 6/7 sprite line has crossed the blueMSX break */
+uint8_t FmsxVDPLineColorSpritesLatched[320]; /* SCREEN 6/7 sprite line prepared for the next scanline */
+uint8_t FmsxVDPLineColorSpritesRender[320];  /* SCREEN 6/7 sprite line consumed by the current scanline */
+uint8_t FmsxVDPLineColorSpritesValid = 0;    /* next-line sprite line ready */
+uint8_t FmsxVDPLineColorSpritesRenderValid = 0; /* current-line sprite line ready */
 static uint8_t FmsxVDPLineVScrollLatched = 0; /* VScroll captured at scanline start */
 static int FmsxVDPUCountLatched = 0;  /* Frame visibility accumulator for current scanline */
 static uint8_t FmsxVDPDrawingLatched = 0; /* Drawing state for current scanline */
@@ -2101,7 +2103,8 @@ static void fmsx_vdp_render_screen4_partial(uint8_t scanline,unsigned end_column
 
 static void fmsx_vdp_render_screen67_partial(uint8_t scanline,unsigned end_column)
 {
-  const unsigned sprite_break = 48u; /* blueMSX BRK_6/BRK_7 = 24 cells -> 384 physical pixels */
+  /* blueMSX BRK_6/BRK_7 = 24 wide cells = 384 physical pixels. */
+  const unsigned sprite_break = 48u;
 
   if(end_column>64u) end_column=64u;
   if(end_column<=FmsxVDPLineChunkEnd) return;
@@ -5765,6 +5768,24 @@ uint16_t LoopZ80(Z80 *R)
     FmsxVDPLineVScrollLatched=VDP[23];
     FmsxVDPDrawingLatched=Drawing;
     FmsxVDPUCountLatched=UCount;
+
+    /*
+     * blueMSX prepares the color-sprite line at a fixed breakpoint and the
+     * next scanline consumes that prepared buffer via getSpritesLine().
+     * Mirror that pipeline locally for SCREEN 6/7 instead of mixing a live
+     * same-line ColorSprites() buffer with a mid-scanline captured one.
+     */
+    if(FmsxVDPLineColorSpritesValid)
+    {
+      memcpy(FmsxVDPLineColorSpritesRender,
+             FmsxVDPLineColorSpritesLatched,
+             sizeof(FmsxVDPLineColorSpritesRender));
+      FmsxVDPLineColorSpritesRenderValid=1u;
+    }
+    else
+      FmsxVDPLineColorSpritesRenderValid=0u;
+
+    FmsxVDPLineColorSpritesValid=0u;
 
     /* Line coincidence is active at 0..255 */
     /* in PAL and 0..234/244 in NTSC        */

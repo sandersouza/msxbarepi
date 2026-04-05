@@ -406,6 +406,7 @@ void fmsx_runtime_keyboard_drain_step(void);
 void fmsx_runtime_keyboard_reset_pipeline(void);
 void fmsx_runtime_set_overscan(boolean enabled);
 void fmsx_runtime_set_refresh_hz(unsigned hz);
+void fmsx_runtime_debug_force_refresh_hz(unsigned hz);
 unsigned fmsx_runtime_get_refresh_hz(void);
 unsigned fmsx_runtime_get_z80_turbo_percent(void);
 uint64_t fmsx_runtime_get_frame_interval_us_exact(void);

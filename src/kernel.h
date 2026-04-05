@@ -69,6 +69,7 @@ private:
     void BlitFmsxFrame(boolean force_redraw);
     void HandleMenuAction(TComboMenuAction action);
     void ApplyRuntimeSettingsToFmsx(void);
+    void SyncRefreshRateStateFromRuntime(void);
     void SyncKanjiRomStateFromRuntime(void);
     void RefreshSettingsUiAfterAction(void);
     void ResetEmulationRuntimeState(void);

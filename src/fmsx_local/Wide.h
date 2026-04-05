@@ -28,7 +28,10 @@ extern uint8_t FmsxVDPLineR27Latched;
 extern uint8_t FmsxVDPLineR18Latched;
 extern uint8_t FmsxVDPLineOddPageLatched;
 extern uint8_t FmsxVDPLineColorSpritesLatched[320];
+extern uint8_t FmsxVDPLineColorSpritesRender[320];
 extern uint8_t FmsxVDPLineColorSpritesValid;
+extern uint8_t FmsxVDPLineColorSpritesRenderValid;
+extern void FmsxLatchColorSpritesLine(uint8_t Y,uint8_t *ZBuf);
 
 /** ClearLine512() *******************************************/
 /** Clear 512 pixels from P with color C.                   **/
@@ -259,6 +262,19 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
   return(P+WIDTH-256+2*FmsxDisplayHAdjustLatched());
 }
 
+static uint16_t V9958Screen6WideSpritePixel(uint8_t SpriteByte,unsigned Pixel)
+{
+  uint8_t Packed;
+
+  Packed=(Pixel&1u)? (uint8_t)(SpriteByte&0x07u): (uint8_t)(SpriteByte>>3);
+  return Packed? XPal[(Packed>>1)&0x03u]: 0u;
+}
+
+static uint16_t V9958Screen7WideSpritePixel(uint8_t SpriteByte)
+{
+  return SpriteByte? XPal[(SpriteByte>>1)&0x0Fu]: 0u;
+}
+
 /** RefreshScr6() ********************************************/
 /** Function to be called to update SCREEN 6.               **/
 /*************************************************************/
@@ -283,11 +299,16 @@ void RefreshLine6(uint8_t Y)
   else
   {
     LastScanline = Y + FirstLine;
-    if(FmsxVDPLineColorSpritesValid)
-      R=FmsxVDPLineColorSpritesLatched+32;
+    if(!FmsxVDPLineColorSpritesValid)
+    {
+      FmsxLatchColorSpritesLine(Y,FmsxVDPLineColorSpritesLatched);
+      FmsxVDPLineColorSpritesValid=1u;
+    }
+    if(FmsxVDPLineColorSpritesRenderValid)
+      R=FmsxVDPLineColorSpritesRender+32;
     else
     {
-      ColorSprites(Y,ZBuf);
+      memset(ZBuf,0,sizeof(ZBuf));
       R=ZBuf+32;
     }
     Coarse = V9958WidePhysicalCoarseScrollLatched();
@@ -325,8 +346,8 @@ void RefreshLine6(uint8_t Y)
         BgIndex=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
       }
 
-      C=R[PIdx>>1];
-      P[PIdx]=XPal[C? C:BgIndex];
+      const uint16_t SpritePixel = V9958Screen6WideSpritePixel(R[PIdx>>1],(unsigned)PIdx);
+      P[PIdx]=SpritePixel? SpritePixel:XPal[BgIndex];
     }
   }
 }
@@ -382,11 +403,11 @@ void RefreshLine6WideRange(uint8_t Y,unsigned X0,unsigned X1)
   }
 
   LastScanline = Y + FirstLine;
-  if(FmsxVDPLineColorSpritesValid)
-    R=FmsxVDPLineColorSpritesLatched+32;
+  if(FmsxVDPLineColorSpritesRenderValid)
+    R=FmsxVDPLineColorSpritesRender+32;
   else
   {
-    ColorSprites(Y,ZBuf);
+    memset(ZBuf,0,sizeof(ZBuf));
     R=ZBuf+32;
   }
   Coarse = V9958WidePhysicalCoarseScrollLatched();
@@ -402,8 +423,8 @@ void RefreshLine6WideRange(uint8_t Y,unsigned X0,unsigned X1)
     if(PIdx>=(int)LeftMask)
       BgIndex=V9958Screen6WideSampleLatched(T0,T1,VirtualWidth,(unsigned)((int)PIdx-(int)Fine+(int)Coarse));
 
-    C=R[PIdx>>1];
-    P[PIdx]=XPal[C? C:BgIndex];
+    const uint16_t SpritePixel = V9958Screen6WideSpritePixel(R[PIdx>>1],(unsigned)PIdx);
+    P[PIdx]=SpritePixel? SpritePixel:XPal[BgIndex];
   }
 }
   
@@ -429,11 +450,16 @@ void RefreshLine7(uint8_t Y)
   else
   {
     LastScanline = Y + FirstLine;
-    if(FmsxVDPLineColorSpritesValid)
-      R=FmsxVDPLineColorSpritesLatched+32;
+    if(!FmsxVDPLineColorSpritesValid)
+    {
+      FmsxLatchColorSpritesLine(Y,FmsxVDPLineColorSpritesLatched);
+      FmsxVDPLineColorSpritesValid=1u;
+    }
+    if(FmsxVDPLineColorSpritesRenderValid)
+      R=FmsxVDPLineColorSpritesRender+32;
     else
     {
-      ColorSprites(Y,ZBuf);
+      memset(ZBuf,0,sizeof(ZBuf));
       R=ZBuf+32;
     }
     Coarse = V9958WidePhysicalCoarseScrollLatched();
@@ -475,8 +501,8 @@ void RefreshLine7(uint8_t Y)
         BgIndex=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
       }
 
-      C=R[PIdx>>1];
-      P[PIdx]=XPal[C? C:BgIndex];
+      const uint16_t SpritePixel = V9958Screen7WideSpritePixel(R[PIdx>>1]);
+      P[PIdx]=SpritePixel? SpritePixel:XPal[BgIndex];
     }
   }
 }
@@ -513,11 +539,11 @@ void RefreshLine7WideRange(uint8_t Y,unsigned X0,unsigned X1)
   }
 
   LastScanline = Y + FirstLine;
-  if(FmsxVDPLineColorSpritesValid)
-    R=FmsxVDPLineColorSpritesLatched+32;
+  if(FmsxVDPLineColorSpritesRenderValid)
+    R=FmsxVDPLineColorSpritesRender+32;
   else
   {
-    ColorSprites(Y,ZBuf);
+    memset(ZBuf,0,sizeof(ZBuf));
     R=ZBuf+32;
   }
   Coarse = V9958WidePhysicalCoarseScrollLatched();
@@ -559,8 +585,8 @@ void RefreshLine7WideRange(uint8_t Y,unsigned X0,unsigned X1)
       BgIndex=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
     }
 
-    C=R[PIdx>>1];
-    P[PIdx]=XPal[C? C:BgIndex];
+    const uint16_t SpritePixel = V9958Screen7WideSpritePixel(R[PIdx>>1]);
+    P[PIdx]=SpritePixel? SpritePixel:XPal[BgIndex];
   }
 }
 

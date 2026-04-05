@@ -107,6 +107,7 @@ extern uint8_t SSL[4];
 extern uint8_t ScrMode;
 extern uint8_t VDP[64];
 extern uint8_t VDPStatus[16];
+extern void VDPOut(uint8_t R,uint8_t V);
 extern AY8910 PSG;
 extern YM2413 OPLL;
 extern uint8_t fmsx_vdp_get_status1_live(void);
@@ -1496,6 +1497,35 @@ void fmsx_runtime_set_refresh_hz(unsigned hz)
         return;
     }
     g_refresh_hz = clamped;
+    fmsx_audio_reanchor_stream_timing();
+}
+
+void fmsx_runtime_debug_force_refresh_hz(unsigned hz)
+{
+    const unsigned clamped = (hz == 50u) ? 50u : 60u;
+
+    g_refresh_hz = clamped;
+
+    if (!g_fmsx_status.running)
+    {
+        fmsx_audio_reanchor_stream_timing();
+        return;
+    }
+
+    if (MODEL(MSX_MSX1))
+    {
+        fmsx_audio_reanchor_stream_timing();
+        return;
+    }
+
+    {
+        const uint8_t next_r9 = (clamped == 50u) ? (uint8_t)(VDP[9] | 0x02u) : (uint8_t)(VDP[9] & ~0x02u);
+        if (VDP[9] != next_r9)
+        {
+            VDPOut(9u, next_r9);
+        }
+    }
+
     fmsx_audio_reanchor_stream_timing();
 }
 

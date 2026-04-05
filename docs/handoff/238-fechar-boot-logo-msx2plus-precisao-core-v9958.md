@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 238-fechar-boot-logo-msx2plus-precisao-core-v9958
 
-Ultima atualizacao: 05/04/2026 (18:40 -03)
+Ultima atualizacao: 05/04/2026 (17:57 -03)
 
 ## Objetivo da branch
 
@@ -23,6 +23,130 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
   2. cadencia residual do logo
   3. `odd/even` apenas se voltar a aparecer como gargalo real
   4. `MASK` fica explicitamente para depois
+
+## Atualizacao incremental de 05/04/2026 - `#238` corrige o decoder trocado entre `SCREEN 6` e `SCREEN 7` no path full-line
+
+- A retomada da linha da `BE3E` encontrou um desvio estrutural mais forte do que os ultimos ajustes de timing:
+  - em `src/fmsx_local/Wide.h`, os paths **full-line** de `SCREEN 6` e `SCREEN 7` estavam consumindo o buffer wide de sprites com os decoders invertidos
+  - `RefreshLine6()` estava usando `V9958Screen7WideSpritePixel()`
+  - `RefreshLine7()` estava usando `V9958Screen6WideSpritePixel()`
+  - os paths parciais (`RefreshLine6WideRange()` / `RefreshLine7WideRange()`) ja estavam corretos
+- Consequencia pratica:
+  - parte da composicao podia seguir o path parcial correto enquanto outra parte da mesma cena caia no path full-line com o decoder errado
+  - isso combina diretamente com o sintoma observado no boot logo: uma faixa visual composta de um jeito e outra de outro, sem afetar o split horizontal nem o tempo total de boot
+- Corte local desta rodada:
+  - `src/fmsx_local/Wide.h`
+    - `RefreshLine6()` passa a usar `V9958Screen6WideSpritePixel()`
+    - `RefreshLine7()` passa a usar `V9958Screen7WideSpritePixel()`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604052130-issue238-screen67-fullpath-decoder-fix` (OK)
+  - `BUILD_ID=984C`
+  - artefato `sha1 290494cc6a826372f9032d4e5efe925f17e219cb`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - `#238` corrige o packing de cor do helper wide de sprites
+
+- A rodada seguinte fechou um desvio ainda mais forte contra o `blueMSX/SpriteLine.h:colorSpritesLine()`:
+  - o helper wide local ja usava tabela de cor por linha e `early clock`, mas ainda desenhava o buffer com o `color_attr` bruto
+  - em `SCREEN 6`, o `blueMSX` nao usa esse nibble cru: ele empacota dois subpixels de 3 bits por byte
+  - em `SCREEN 7`, ele usa `(color << 1) | solidColor0`, consumido depois como `palette[col>>1]`
+- Consequencia pratica:
+  - o consumo wide do buffer estava correto no decoder, mas a producao do proprio byte de sprite ainda estava em contrato errado
+  - isso encaixa melhor com o defeito residual do logo do que os ultimos cortes especulativos
+- Corte local desta rodada:
+  - `src/fmsx_host_stubs.c`
+    - `fmsx_latch_color_sprites_line_wide()` passa a empacotar `color` como no `blueMSX`
+    - `SCREEN 6`: `((color & 0x0C) << 2) | ((color & 0x03) << 1) | solidColor0*9`
+    - `SCREEN 7`: `((color & 0x0F) << 1) | solidColor0`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604052205-issue238-wide-sprite-color-pack` (OK)
+  - `BUILD_ID=CC27`
+  - artefato `sha1 f63aeb58399c56fe15c206976038b3a574ec7991`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - `#238` corrige o formato packed do buffer de sprites wide
+
+- A rodada offline mais recente fechou uma divergencia objetiva entre o helper wide local e o `blueMSX`:
+  - em `SCREEN 6`, o `blueMSX` codifica cada byte de sprite como dois subpixels de 3 bits (`spr>>3` e `spr&7`)
+  - em `SCREEN 7`, cada byte vira `palette[col>>1]`
+  - o helper wide local ainda tratava esse byte como um indice plano unico
+- Corte local desta rodada:
+  - `src/fmsx_host_stubs.c`
+    - `fmsx_latch_color_sprites_line_wide()` passa a alinhar `horizontalPos` ao `blueMSX` (`+24 - EC`, com `+8` extra para `16x16`)
+  - `src/fmsx_local/Wide.h`
+    - novos decoders `V9958Screen6WideSpritePixel()` e `V9958Screen7WideSpritePixel()`
+    - `RefreshLine6/7()` e `RefreshLine6/7WideRange()` passam a consumir o buffer wide no mesmo formato packed do `blueMSX`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604052115-issue238-wide-sprite-packed-decode` (OK)
+  - `BUILD_ID=BE3E`
+  - artefato `sha1 36f71b1f83a94c9d584081cd3287183a0bfcb1c7`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - `#238` corrige a unidade do `BRK_6/BRK_7` no `SCREEN 6/7` wide
+
+- A comparacao offline entre o defeito visual remanescente do logo e o `blueMSX` fechou um candidato bem mais forte do que `R#9 interlace`:
+  - no `blueMSX`, `BRK_6/BRK_7 = 24` e usa a mesma unidade de coluna `X/X2` da rotina de refresh
+  - no core local, `fmsx_vdp_render_screen67_partial()` estava convertendo esse breakpoint para `48`, como se o range parcial estivesse em pixels fisicos dobrados
+  - mas `RefreshLine6WideRange()/RefreshLine7WideRange()` tambem operam em colunas de `8` pixels, nao em pixels fisicos unitarios
+- Consequencia pratica:
+  - a captura da linha de sprites em `SCREEN 6/7` acontecia meia linha tarde demais
+  - isso combina diretamente com o defeito observado em hardware: uma faixa do logo ja composta/parada e outra ainda scrollando para se unir a ela
+- Corte local desta rodada:
+  - `src/fmsx_local/MSX.c`
+    - `sprite_break` em `fmsx_vdp_render_screen67_partial()` passa de `48` para `24`
+    - comentario expandido explicando a equivalencia direta com `BRK_6/BRK_7` do `blueMSX`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604052245-issue238-screen67-brk24` (OK)
+  - `BUILD_BID=202604052245-issue238-screen67-brk24`
+  - `BUILD_ID=628F`
+  - artefato `sha1 54540838842898b8ec1489601fdd8bb3f0e9152b`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - `#238` alinha `SCREEN 6/7` ao pipeline de linha de sprites do `blueMSX`
+
+- A rodada seguinte fechou um erro na propria hipotese anterior:
+  - em `SCREEN 6` wide do `blueMSX`, cada passo de `X` desenha `16` pixels fisicos
+  - portanto `BRK_6 = 24` realmente equivale a `384 px`, isto e, `48` no nosso range parcial de colunas de `8 px`
+  - o `48` original estava correto; o desvio mais forte ficou em outro lugar
+- Leitura tecnica nova:
+  - o `blueMSX` nao mistura "sprites da propria linha" com "captura no meio da linha"
+  - ele prepara a linha de sprites no breakpoint e a scanline seguinte consome esse buffer via `getSpritesLine()/colorSpritesLine()`
+  - o core local ainda misturava `ColorSprites(Y)` live com a captura mid-scanline, o que combina melhor com o defeito observado em hardware: uma faixa do logo ja composta/parada e outra ainda scrollando
+- Corte local desta rodada:
+  - `src/fmsx_local/MSX.c`
+    - `sprite_break` volta para `48`
+    - novos buffers:
+      - `FmsxVDPLineColorSpritesRender[320]`
+      - `FmsxVDPLineColorSpritesLatched[320]`
+    - no inicio de cada scanline, o buffer preparado na linha anterior passa a ser o buffer consumido pela linha corrente
+  - `src/fmsx_local/Wide.h`
+    - `RefreshLine6/7()` e `RefreshLine6/7WideRange()` passam a consumir apenas `FmsxVDPLineColorSpritesRender`
+    - a linha corrente prepara apenas o buffer da linha seguinte
+    - quando o buffer da linha seguinte ainda nao foi preparado no full-line path, ele passa a ser montado sem contaminar a linha atual
+- Alvo semantico:
+  - alinhar o `SCREEN 6/7` wide ao pipeline de sprites do `blueMSX`
+  - atacar o defeito visual remanescente sem voltar para `R#9 interlace`, que a UART ja descartou na janela visivel do logo
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604052330-issue238-screen67-sprite-pipeline` (OK)
+  - `BUILD_BID=202604052330-issue238-screen67-sprite-pipeline`
+  - `BUILD_ID=AA66`
+  - artefato `sha1 ee274513ccd500f7da5abd9945d610ed2665eadf`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
 
 ## Atualizacao incremental de 05/04/2026 - `#238` passa a gerar `status0 bit5` de sprites coloridos pelo caminho da tabela de cor
 
@@ -1351,6 +1475,33 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
   - sem `commit`
   - sem `push`
 
+## Atualizacao incremental de 05/04/2026 - helper de sprites wide aproxima `colorSpritesLine()` do `blueMSX`
+
+- O tempo total do boot ja ficou perto do alvo, mas o defeito visual remanescente mudou de foco:
+  - `R9` segue em `00`
+  - `R25` segue em `03`
+  - o problema restante do logo ficou concentrado na composicao da camada de sprites wide, nao em `interlace`
+- Corte local desta rodada:
+  - `src/fmsx_host_stubs.c`
+    - `FmsxLatchColorSpritesLine()` ganhou um helper wide proprio, inspirado em `blueMSX/SpriteLine.h:colorSpritesLine()`
+    - o helper novo usa tabela de cor por linha, `early clock` e composicao `CC/OR`
+    - o buffer visual wide deixa de depender do `ColorSprites()` generico do `fMSX`
+    - sem side effects em `VDPStatus[0]`
+  - `src/fmsx_local/Wide.h`
+    - `RefreshLine6/7()` full-line passam a usar esse mesmo helper, unificando full-line e partial path wide
+- Alvo semantico:
+  - aproximar a camada de sprites wide do contrato de `blueMSX/Common.h + SpriteLine.h`
+  - atacar o desfasamento visual restante do logo sem voltar para `MASK` nem para `R#9 interlace`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604052015-issue238-wide-sprite-helper-unified` (OK)
+  - `BUILD_ID=FEA0`
+  - `BUILD_HASH=cc918b4-c7605f0e2b1c088a19bf757ce6e66eaf0e16ce73`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
 ## Atualizacao incremental de 05/04/2026 - callers de `S#2` deixam de colapsar pagina e a UART passa a medir bits/bordas
 
 - O round seguinte de UART finalmente mostrou um problema da propria telemetria:
@@ -1767,3 +1918,33 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
 - Estado de fluxo:
   - sem `commit`
   - sem `push`
+# Atualizacao incremental de 05/04/2026 - Debug `Refresh [NTSC/PAL]` passa a forcar `R#9`
+
+- Antes de seguir com a rodada visual da `BE3E`, foi corrigido um desvio do proprio menu de diagnostico: o item `Settings -> Refresh [NTSC/PAL]` so trocava `m_RefreshRateHz/g_refresh_hz`, sem mexer no estado efetivo do VDP.
+- O overlay de debug sempre leu o estado real (`PALVideo`), entao o efeito em campo era enganoso: o pacing base mudava, mas `NTSC/PAL` no overlay nao.
+- Corte local aplicado:
+  - `src/fmsx_runtime.c/.h`: novo `fmsx_runtime_debug_force_refresh_hz()`
+  - `src/kernel.cpp`: o menu de debug passou a usar esse caminho em vez de `fmsx_runtime_set_refresh_hz()`
+  - em `MSX2/MSX2+`, o toggle agora escreve `R#9 bit1` via `VDPOut(9, ...)`, deixando `PALVideo`, `VPeriod` e o shadow BIOS coerentes imediatamente
+- Build local validada:
+  - `BUILD_BID=202604051930-issue238-debug-refresh-r9`
+  - `BUILD_ID=1042`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Sem `commit`. Sem `push`.
+
+# Atualizacao incremental de 05/04/2026 - menu de debug passa a refletir `R#9` real em tempo real
+
+- O ajuste anterior corrigiu o forcing do item `Refresh [NTSC/PAL]`, mas o menu ainda dependia de `m_RefreshRateHz`, que so era sincronizado no loop normal do backend.
+- Corte local desta rodada:
+  - `src/kernel.h/.cpp`
+    - novo `SyncRefreshRateStateFromRuntime()`
+    - o kernel agora consulta `fmsx_runtime_get_refresh_hz()` e `fmsx_runtime_get_frame_interval_us_exact()` tambem com o emulador pausado, antes do render do menu
+- Efeito esperado:
+  - o item `Standard` passa a espelhar `R#9 bit1` real mesmo com o menu aberto
+  - se o software tiver alterado `PAL/NTSC` antes da pausa (ex.: `OUT` no BASIC), o menu ja abre mostrando esse estado efetivo
+- Build local validada:
+  - `BUILD_BID=202604052005-issue238-debug-refresh-live-menu`
+  - `BUILD_ID=EA99`
+  - artefato: `artifacts/kernel8-issue238.img`
+  - `sha1 3f64b4be1e32f777e603190631d7d763644bdd7d`
+- Sem `commit`. Sem `push`.

@@ -1650,6 +1650,7 @@ TComboShutdownMode CComboKernel::Run(void)
 			m_PendingMenuAction = (unsigned) ComboMenuActionNone;
 			HandleMenuAction(deferred_action);
 		}
+		SyncRefreshRateStateFromRuntime();
 		if (MSXBARE_ENABLE_DEBUG_OVERLAY && !m_DebugOverlayUnlocked && m_FmsxReady)
 		{
 			const unsigned load_diag = fmsx_runtime_get_load_diag();
@@ -1769,23 +1770,9 @@ TComboShutdownMode CComboKernel::Run(void)
 					}
 					stepped_fmsx = TRUE;
 					const EmulatorBackendRuntimeStatus runtime_status = emulator_backend_get_status();
-					const unsigned runtime_refresh_hz = ClampRefreshRateHz(fmsx_runtime_get_refresh_hz());
-					const u64 runtime_frame_interval_us = fmsx_runtime_get_frame_interval_us_exact();
 					m_FmsxFrames = runtime_status.frames;
 					m_FmsxLastError = runtime_status.last_error;
-
-					if (runtime_refresh_hz != m_RefreshRateHz)
-					{
-						m_RefreshRateHz = runtime_refresh_hz;
-						m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
-						m_FramePacingResetPending = TRUE;
-						m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
-					}
-					if (runtime_frame_interval_us != 0u && runtime_frame_interval_us != m_FrameIntervalUs)
-					{
-						m_FrameIntervalUs = runtime_frame_interval_us;
-						m_FramePacingResetPending = TRUE;
-					}
+					SyncRefreshRateStateFromRuntime();
 
 					if (m_FmsxFpsWindowStartUs == 0u)
 					{
@@ -3451,6 +3438,34 @@ void CComboKernel::ApplyRuntimeSettingsToFmsx(void)
 		m_SccDualCartEnabled = FALSE;
 	}
 	SyncKanjiRomStateFromRuntime();
+	SyncRefreshRateStateFromRuntime();
+#endif
+}
+
+void CComboKernel::SyncRefreshRateStateFromRuntime(void)
+{
+#if MSXBARE_ENABLE_FMSX
+	if (!m_FmsxReady || emulator_backend_selected_kind() != EMULATOR_BACKEND_KIND_FMSX)
+	{
+		return;
+	}
+
+	const unsigned runtime_refresh_hz = ClampRefreshRateHz(fmsx_runtime_get_refresh_hz());
+	const u64 runtime_frame_interval_us = fmsx_runtime_get_frame_interval_us_exact();
+
+	if (runtime_refresh_hz != m_RefreshRateHz)
+	{
+		m_RefreshRateHz = runtime_refresh_hz;
+		m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
+		m_FramePacingResetPending = TRUE;
+		m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
+	}
+
+	if (runtime_frame_interval_us != 0u && runtime_frame_interval_us != m_FrameIntervalUs)
+	{
+		m_FrameIntervalUs = runtime_frame_interval_us;
+		m_FramePacingResetPending = TRUE;
+	}
 #endif
 }
 
@@ -4902,13 +4917,14 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		break;
 #else
 		m_RefreshRateHz = (m_RefreshRateHz == 50u) ? 60u : 50u;
+	#if MSXBARE_ENABLE_FMSX
+		fmsx_runtime_debug_force_refresh_hz(m_RefreshRateHz);
+		m_RefreshRateHz = ClampRefreshRateHz(fmsx_runtime_get_refresh_hz());
+	#endif
 		m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 		m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
 		m_FramePacingResetPending = TRUE;
 		RefreshSettingsUiAfterAction();
-	#if MSXBARE_ENABLE_FMSX
-		fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
-	#endif
 		m_Logger.Write(FromKernel, LogNotice, m_RefreshRateHz == 50u ? "Settings: Refresh PAL" : "Settings: Refresh NTSC");
 		break;
 #endif
@@ -4919,13 +4935,14 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		break;
 #else
 		m_RefreshRateHz = (m_RefreshRateHz == 50u) ? 60u : 50u;
+	#if MSXBARE_ENABLE_FMSX
+		fmsx_runtime_debug_force_refresh_hz(m_RefreshRateHz);
+		m_RefreshRateHz = ClampRefreshRateHz(fmsx_runtime_get_refresh_hz());
+	#endif
 		m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 		m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
 		m_FramePacingResetPending = TRUE;
 		RefreshSettingsUiAfterAction();
-	#if MSXBARE_ENABLE_FMSX
-		fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
-	#endif
 		m_Logger.Write(FromKernel, LogNotice, m_RefreshRateHz == 50u ? "Settings: Refresh PAL" : "Settings: Refresh NTSC");
 		break;
 #endif

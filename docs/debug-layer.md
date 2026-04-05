@@ -106,6 +106,12 @@ Diretriz visual (overlay e menu):
 ## Menu relacionado
 - `Settings -> Debugger`: sempre aparece em builds `DEBUG=1` e opera diretamente como `ON/OFF`.
 - Em builds com `DEBUG=1`, `Settings` volta a mostrar `Refresh [NTSC/PAL]` logo abaixo de `Disk ROM` para diagnostico.
+- Nesse caminho de diagnostico, o toggle agora atua no estado efetivo do VDP em runtime:
+  - em `MSX2/MSX2+`, ele força `R#9 bit1` (`PAL/NTSC`) no core local;
+  - o overlay passa a refletir imediatamente o modo efetivo (`PALVideo`), e nao apenas o pacing base do host.
+- O item do menu deve espelhar o estado efetivo em tempo real:
+  - mesmo com o emulador pausado/menu aberto, `Standard` precisa refletir o `R#9 bit1` atual do runtime;
+  - se o software tiver mudado `PAL/NTSC` antes da pausa (ex.: `OUT` no BASIC), o menu deve abrir ja mostrando esse estado real.
 - Em builds com `DEBUG=1`, `Debug` tambem mostra `Kanji ROM [ON/OFF]`:
   - o toggle atua no runtime real do `fMSX`, ligando/desligando a `KANJI.ROM` quando ela existir no set carregado;
   - em perfil `MSX2+`, o mesmo toggle tambem corta ou restaura o mapeamento de `KANJIBASIC/MSX-JE`, para o A/B do boot screen ser perceptivel;
