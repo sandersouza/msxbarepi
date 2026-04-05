@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 238-fechar-boot-logo-msx2plus-precisao-core-v9958
 
-Ultima atualizacao: 04/04/2026 (12:50 -03)
+Ultima atualizacao: 05/04/2026 (18:40 -03)
 
 ## Objetivo da branch
 
@@ -16,12 +16,551 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
 
 ## Guardrail operacional desta rodada
 
-- A partir desta rodada, `git push` deixa de ser permitido em cada corte incremental da branch.
-- Commits locais intermediarios continuam permitidos, mas o remoto so deve ser atualizado quando o usuario declarar explicitamente que o estado atual ficou estavel.
+- Nem `git commit` local nem `git push` devem acontecer durante os cortes experimentais desta branch.
+- Commit/push so voltam a ser permitidos quando o usuario declarar explicitamente que a `#238` ficou estavel.
 - Prioridade operacional corrente:
-  1. odd/even + `R#9 interlace`
-  2. cadencia
-  3. `MASK`
+  1. tempo total ate o BASIC via hot path `S#2/0x99` do `KANJIBASIC`
+  2. cadencia residual do logo
+  3. `odd/even` apenas se voltar a aparecer como gargalo real
+  4. `MASK` fica explicitamente para depois
+
+## Atualizacao incremental de 05/04/2026 - `#238` passa a gerar `status0 bit5` de sprites coloridos pelo caminho da tabela de cor
+
+- A comparacao offline contra o `blueMSX` fechou um desvio objetivo no `status0 bit5` que ainda sobrava no `SCREEN 6` do logo:
+  - o path live local de `status0` em modos coloridos ainda tratava os sprites como se viessem do formato antigo (`AT[3]`)
+  - o `blueMSX` usa a tabela de cor por linha do sprite (`colorSpritesLine()`), e eh dali que saem:
+    - `early clock`
+    - transparencia de `color 0`
+    - exclusao de sprites `CC/OR` do collision path
+- Consequencia pratica:
+  - o worker `7A66/7A68` podia continuar cego para colisao live mesmo depois do re-read fix, porque a colisao em `SCREEN 6` ainda nascia de um modelo de sprite errado
+- Corte local desta rodada:
+  - `src/fmsx_local/MSX.c`
+    - novo helper `fmsx_vdp_status0_color_line_state()`
+    - `status0 bit5` em modos coloridos passa a usar a tabela de cor por linha (`SprTab[-0x0200 + sprite*16 + row]`)
+    - `early clock` passa a sair do byte de cor por linha
+    - `color 0` transparente deixa de colidir quando `SolidColor0 == 0`
+    - sprites `CC/OR` deixam de participar do collision path de `status0 bit5`
+    - o caminho antigo permanece so para sprites de `SCREEN 1..3`
+- Alvo semantico:
+  - aproximar o latch/live de `status0 bit5` ao `blueMSX/SpriteLine.h:colorSpritesLine()`
+  - atacar o hot path real do logo (`7A66/7A68`) sem voltar para patch visual cego
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604051835-issue238-color-status0-line` (OK)
+  - `BUILD_BID=202604051835-issue238-color-status0-line`
+  - `BUILD_ID=841A`
+  - artefato `sha1 5e3752f02a0f5eafe2ad7dae5a46e0600b13ade5`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - `#238` reapresenta `status0 bit5` no segundo `IN (99h)` da mesma scanline
+
+- A leitura offline consolidou um desvio forte do core local contra o `blueMSX` exatamente no worker quente do logo:
+  - o `KANJIBASIC` em `7A48` testa o **segundo** `IN A,(99h)` (`7A68`) para decidir quando liberar cada par de writes indiretas em `R26/R27`
+  - no core local, `status0 bit5` ainda nascia live so uma vez por linha e era limpo no primeiro read de `status0`
+  - na pratica, isso deixava o segundo read da mesma scanline cego para a colisao live, alongando artificialmente o passo horizontal do logo
+- Leitura tecnica consolidada:
+  - o gargalo imediato continua em tempo total ate o BASIC
+  - `R#9 interlace` e `MASK` seguem fora do foco desta rodada
+  - o proximo corte do `blueMSX` relevante aqui nao e o renderer, mas a reapresentacao live de `status0 bit5` apos clear-on-read
+- Corte local desta rodada:
+  - `src/fmsx_local/MSX.c`
+    - `fmsx_vdp_status0_live()` deixa de depender apenas do latch cru de `bit5`
+    - o byte retornado por `status0` agora sintetiza `bit5` a partir de `VDPStatus[0].5` **ou** da colisao live da scanline corrente
+    - `S#3..S#6` continuam sendo latched apenas uma vez por linha, mas o segundo `IN (99h)` pode voltar a ver `bit5` se a colisao live ainda estiver presente
+    - o clear de `status0` em `readStatus` permanece alinhado ao `blueMSX` com `&= 0x1F`
+  - Objetivo:
+    - alinhar o worker `7A66/7A68` ao padrao observado no `blueMSX`
+    - remover a cegueira do segundo read da mesma scanline antes de abrir mais qualquer corte em `S#2`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604052145-issue238-status0-reread-live` (OK)
+  - `BUILD_BID=202604052145-issue238-status0-reread-live`
+  - `BUILD_ID=9805`
+  - artefato `sha1 8c1440ceeddcd90345447bbdf120cba5d72de886`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - `#238` passa a medir separadamente `7A66` e `7A68`
+
+- O corte funcional de `status0 bit5` abriu o proximo checkpoint real da issue:
+  - nao vale mais seguir com patch cego sem saber se o worker `7A48` esta vendo `bit5` no **segundo** read (`7A68`)
+  - a proxima validacao de hardware precisa responder isso de forma objetiva
+- Corte local desta rodada:
+  - `src/fmsx_local/MSX.c`
+    - novos contadores para leituras de `status0` em `7A66` e `7A68`
+    - contadores separados para quantas dessas leituras viram `bit5=1`
+  - `src/fmsx_host_stubs.c`
+    - `BL238S/BL238P/BL238E` agora incluem:
+      - `S66:<reads>/<bit5>`
+      - `S68:<reads>/<bit5>`
+- Objetivo:
+  - validar se a correcao de `status0 bit5` realmente atingiu o ponto quente do worker do logo
+  - evitar novo round de patch visual/temporal antes de medir esse contrato
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604052220-issue238-status0-reread-trace` (OK)
+  - `BUILD_BID=202604052220-issue238-status0-reread-trace`
+  - `BUILD_ID=9227`
+  - artefato `sha1 40c7ae78ac45a79b350c133f3b57d9731de5eb68`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - `#238` sobe o wait dos loops quentes do `KANJIBASIC` para escala de scanline
+
+- A UART mais recente consolidou um padrao forte demais para ser tratado como ruido:
+  - as writes visiveis de `R26/R27` continuam corretas, mas chegam em saltos de ~`85` frames
+  - o hot path dominante segue em `S#2/0x99`, sobretudo nos sites `7A8B`, `7A91` e `7BC6`
+- Leitura tecnica consolidada:
+  - o ajuste anterior de `+64/+96` ciclos era pequeno demais para um logo que continua queimando dezenas de frames entre um passo horizontal e o seguinte
+  - nesta rodada, a `#238` continua focada em tempo total e abandona qualquer tentativa de corrigir `MASK` ou `interlace` antes de fechar esse gargalo
+- Corte local desta rodada:
+  - `src/fmsx_local/MSX.c`
+    - `fmsx_vdp_status_wait_cycles()` deixa de usar o nudge fixo anterior para os loops quentes do `KANJIBASIC`
+    - `7A8B/7A91` passam a receber wait adicional de `4 * HPeriod`
+    - `7BC6` passa a receber wait adicional de `8 * HPeriod`
+  - Objetivo:
+    - aproximar o custo temporal desses loops ao modelo time-driven do `blueMSX` sem reintroduzir penalidade global em `0x99`
+    - atacar diretamente o sintoma mais impactante relatado pelo usuario: o tempo total ate o BASIC
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604051640-issue238-kanjibasic-scanline-wait` (OK)
+  - `BUILD_BID=202604051640-issue238-kanjibasic-scanline-wait`
+  - `BUILD_ID=7258`
+  - artefato `sha1 9af4622d4c5bdfe53bdbd059ef78ed6a45bc7963`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - `#238` remove a projecao precoce de `S#2 bit6` para o frame anterior
+
+- A comparacao offline mais recente contra o `blueMSX` encontrou um desvio semantico mais forte que os nudges de custo:
+  - no `blueMSX`, `S#2 bit6` permanece alto ate `onVStart()`
+  - o core local ainda projetava um low sintetico para a cauda do frame anterior
+- Consequencia pratica:
+  - o helper quente do `KANJIBASIC` em `7A83/7A8B/7A91`, que espera `bit6 high -> low`, podia perder a transicao pretendida e cair num frame extra inteiro
+  - isso e mais proximo do sintoma observado na UART do que qualquer tentativa nova em `R#9 interlace`
+- Corte local desta rodada:
+  - `src/fmsx_local/MSX.c`
+    - `fmsx_vdp_previsible_lines()` passa a `0`
+    - `fmsx_vdp_previsible_window_active()` deixa de projetar `bit6 low` no fim do frame anterior
+    - `fmsx_vdp_projected_next_frame_parity_active()` deixa de projetar a paridade nova no frame anterior junto com essa janela sintetica
+  - Objetivo:
+    - alinhar o contrato live de `S#2` ao `blueMSX` no ponto mais critico para o tempo total do logo
+    - manter `MASK` e `odd/even` fora do foco desta rodada
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604051720-issue238-status2-vstart-no-preproject` (OK)
+  - `BUILD_BID=202604051720-issue238-status2-vstart-no-preproject`
+  - `BUILD_ID=7EF7`
+  - artefato `sha1 af413fbdae102a1c55d458548533dcbda710bd09`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - `#238` passa a cobrar tambem o corpo `OUT/IN/OUT` dos helpers quentes do `KANJIBASIC`
+
+- A rodada offline seguinte abriu os helpers reais do logo no `KANJIBASIC`:
+  - `7A83`: seleciona `S#2`, espera `bit6 high -> low`, depois restaura `R15`
+  - `7BB4/7BBE`: seleciona `S#2`, le `CE`, restaura `R15` e repete
+- Leitura tecnica:
+  - o corte anterior pesava so o `IN (99)` quente
+  - mas esses helpers fazem varias writes em `0x99` por iteracao, e o core local ainda cobrava `0` nelas
+  - isso continua subpagando o custo total do polling, mesmo com o read mais caro
+- Corte local desta rodada:
+  - `src/fmsx_local/MSX.c`
+    - novo helper `fmsx_vdp_port99_hotloop_write_extra_cycles()`
+    - aplica wait adicional focal apenas nas writes `0x99` dos loops do logo:
+      - `7A85/7A89/7A98/7A9C`: `1 * HPeriod`
+      - `7BBE/7BC2/7BCA/7BCE`: `2 * HPeriod`
+    - o case `0x99` agora soma esse custo focal ao wait base de write
+  - Objetivo:
+    - aproximar o custo do corpo completo `OUT/IN/OUT` desses helpers ao modelo time-driven do `blueMSX`
+    - continuar atacando o sintoma mais impactante da issue: o tempo total ate o BASIC
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604051755-issue238-kanjibasic-port99-body-wait` (OK)
+  - `BUILD_BID=202604051755-issue238-kanjibasic-port99-body-wait`
+  - `BUILD_ID=F8B6`
+  - artefato `sha1 b16cb51f58ae36cd078423ddc67f903309fd7ad7`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - normalizacao do bloco relocado `7Axx -> 2Axx`
+
+- A UART recente fechou um bug da propria telemetria do logo:
+  - os hot PCs de `S#2` e das writes de `R26/R27` aparecem como `7A8B/7A91/7BB0/7BC6`
+  - mas o `MSX2PEXT` reloca o worker do logo de `0x2A00` para `0x7A00`
+  - portanto, tratar `7Axx/7Bxx` como banco generico `-0x4000` contamina `HOTH/C0..C2` e mascara os callers reais em `2Axx/2Bxx`
+- Correcao local desta rodada:
+  - `src/fmsx_local/MSX.c`
+    - `fmsx_vdp_normalize_s2_caller_pc()` agora trata `0x7A00..0x83FF` como alias `+0x5000` do bloco relocado do logo
+  - `src/fmsx_host_stubs.c`
+    - `BL238I/BL238R/BL238S/BL238E` passam a imprimir esses PCs ja normalizados em `2Axx/2Bxx`
+- Objetivo:
+  - limpar a telemetria antes do proximo corte funcional de cadencia
+  - deixar o histograma de `S#2` apontar para os callers reais do prelude do logo
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604051845-issue238-logo-pc-alias` (OK)
+  - `BUILD_BID=202604051845-issue238-logo-pc-alias`
+  - `BUILD_ID=F38C`
+  - artefato `sha1 f6717168a12bc80da17b3f11601087f97774bf6c`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - telemetria do logo passa a separar helpers BIOS de `S#2`
+
+- A UART da build `6BDA` fechou um corte objetivo da `#238`:
+  - `R9=00` do comeco ao fim da janela observada
+  - `R25=03` fixo
+  - `R26/R27` entram primeiro por `0x99 @ PC 7BB2` e depois seguem no loop `0x9B @ 7A71/7A73`
+  - `S7/TR` permanecem irrelevantes no logo (`S7:0`, `TR:0`)
+- Leitura tecnica consolidada:
+  - o gargalo dominante desta trilha nao esta mais em `R#9 interlace`
+  - o hot path do boot logo ficou reduzido a `S#2` + leituras da `0x99`, cercando o prelude e os waits BIOS do logo
+- Correcao local desta rodada:
+  - `src/fmsx_local/MSX.c`
+    - passou a contar leituras de `S#2` por helper BIOS:
+      - `10D6/10D8`
+      - `10DF/10E1`
+      - `363B/363D`
+      - `3644/3646`
+      - `2BE4/2BE6`
+      - `other`
+  - `src/fmsx_host_stubs.c`
+    - `BL238S` e `BL238E` agora incluem os deltas:
+      - `H10L`
+      - `H10H`
+      - `H36H`
+      - `H36L`
+      - `H2BE`
+      - `HOTH`
+- Objetivo do corte:
+  - fechar qual helper BIOS de `S#2` realmente domina o tempo do logo antes de abrir outro patch em `status2` ou no command engine
+  - manter `MASK` explicitamente fora do foco desta rodada
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1` (OK)
+  - `BUILD_BID=202604051148-cc918b4`
+  - `BUILD_ID=D41F`
+  - artefato `sha1 3b2cd3a4002f9a1e0e5da572db409954df7794a3`
+- Estado operacional:
+  - sem `git commit`
+- sem `git push`
+- sem novo pedido de hardware nesta rodada
+
+## Atualizacao incremental de 05/04/2026 - boost do logo passa a usar as tabelas exatas do `blueMSX`
+
+- A leitura offline do prelude do logo confirmou que o helper dominante nas janelas quentes continua sendo `0x2BE4`, isto e, polling de `S#2 bit0` (`CE`) em torno dos comandos do VDP.
+- Comparacao direta das tabelas de timing fechou outro gap objetivo:
+  - no core local, as tabelas herdadas do `fMSX` continuam nos valores historicos altos (`818`, `1063`, `439`, ...)
+  - o `blueMSX` usa deltas muito menores (`92`, `120`, `49`, ...)
+  - o `/8` local aproximava a referencia, mas ainda deixava erro residual no pacing do logo
+- Correcao local desta rodada:
+  - `src/fmsx_local/V9938.c`
+  - o boost stateful do boot logo continua sendo armado so quando o comando nasce dentro da janela BIOS do logo
+  - mas, enquanto esse boost estiver ativo, `GetVdpTimingValue()` deixa de usar o `/8` aproximado e passa a usar as tabelas exatas do `blueMSX` para:
+    - `SRCH`
+    - `LINE`
+    - `HMMV`
+    - `LMMV`
+    - `YMMM`
+    - `HMMM`
+    - `LMMM`
+  - fora dessa janela, o core continua no baseline local atual
+- Objetivo do corte:
+  - atacar diretamente o helper dominante `2BE4` pelo lado certo: custo real de comando visto pelo polling de `CE`
+  - manter `R#9 interlace` e `MASK` fora do foco desta rodada
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604051205-cc918b4` (OK)
+  - `BUILD_BID=202604051205-cc918b4`
+  - `BUILD_ID=7BE9`
+  - artefato `sha1 c8c722f904f40f4dcbb04e93d5998f1ae8060dd4`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+  - sem novo pedido de hardware nesta rodada
+
+## Atualizacao incremental de 05/04/2026 - `0x99` passa a sincronizar no primeiro byte do latch
+
+- A comparacao offline entre o helper BIOS `MSX2PEXT:2BEF` e o `blueMSX` fechou uma divergencia concreta:
+  - no `blueMSX`, toda write em `0x99` passa por `sync(vdp, now)`, inclusive a primeira metade do latch
+  - no core local, o primeiro byte (`VKey==1`) ainda pulava o sync do VDP e so a segunda write fazia flush do command engine
+- Leitura tecnica:
+  - num loop BIOS apertado de polling como `2BEF`, isso podia apagar um `OUT (99h)` inteiro de progresso do engine por iteracao
+  - o problema continua coerente com a leitura atual da UART:
+    - `R9=00`
+    - `R25=03`
+    - `R26/R27` como driver da animacao horizontal
+  - entao o corte segue focado em cadencia de comando/polling, nao em `MASK`
+- Correcao local aplicada:
+  - `src/fmsx_local/MSX.c`
+  - o case `0x99` agora chama `fmsx_vdp_sync_before_cpu_write()` tambem quando `VKey==1`, antes de apenas latchear `ALatch`
+  - o sync extra do segundo byte foi removido, deixando um sync por write e aproximando o fluxo ao `blueMSX`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1` (OK)
+  - `BUILD_BID=202604051018-cc918b4`
+  - artefato `sha1 7b8bbce640bd7601cac331c803f3035577d7a8c0`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+  - sem novo pedido de hardware nesta rodada
+
+## Atualizacao incremental de 05/04/2026 - janela pseudo-`VStart` limitada a cauda real da ultima scanline
+
+- A leitura combinada da UART (`BL238I/R/S/E`), do `blueMSX` e do disassembly fechou um desvio mais fino no contrato de `S#2`:
+  - o `blueMSX` expõe o low de `S#2 bit6` no prelude do frame por tempo continuo;
+  - na modelagem local, a documentacao ja tratava isso como "cauda da ultima scanline";
+  - mas a implementacao ainda projetava essa janela sobre a **linha inteira**.
+- Isso deixava os helpers BIOS `10D6` e `363B` verem o edge de `VStart` cedo demais:
+  - `10D6`: espera `bit6` fazer `low -> high`
+  - `363B`: espera `bit6` fazer `high -> low` e so sai quando `bit1` ja representa o novo frame
+- Correcao local aplicada:
+  - `src/fmsx_local/MSX.c`
+  - `fmsx_vdp_previsible_window_active()` agora so ativa na faixa de HBlank da ultima scanline do frame anterior
+  - `fmsx_vdp_status2_vr()` e a inversao live de `bit1` continuam usando essa mesma janela, mas sem alargar o `VStart` para a linha inteira
+- Impacto esperado:
+  - aproximar o contrato `S#2 bit6/bit1` ao `blueMSX` sem tocar no renderer nem em `MASK`
+  - reduzir waits artificiais dos helpers BIOS que usam `0x2BEF` fora da janela visivel do logo
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1` (OK)
+  - `BUILD_BID=202604051116-cc918b4`
+  - `BUILD_ID=AA06`
+  - `BUILD_HASH=cc918b4-31589d42ff0c10522c2f73c7059498e9382f4260`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado de fluxo:
+  - sem `git commit`
+  - sem `git push`
+  - sem novo pedido de hardware nesta rodada
+
+## Atualizacao incremental de 05/04/2026 - boost do logo passa a ser stateful por comando
+
+- O corte anterior reintroduziu o `/8` so nos wrappers/polls do BIOS do logo, mas ainda dependia do `CPU.PC.W` instantaneo a cada slice do command engine.
+- Isso ainda ficava mais fraco que o `blueMSX`: no modelo de referencia, uma vez que o comando do logo arma `CE`, o progresso dele continua por tempo, mesmo quando a CPU sai do wrapper BIOS naquele meio-tempo.
+- Refinamento local aplicado:
+  - `src/fmsx_local/V9938.c`
+  - o boost do logo agora e latched por comando:
+    - arma em `VDPDraw()` quando o start do comando acontece dentro da janela BIOS do logo
+    - permanece ativo enquanto `CE=1`
+    - cai automaticamente quando `CE` limpa em `VdpTraceSyncCE()`
+- Consequencia tecnica:
+  - o `/8` deixa de depender do `PC` da CPU durante a execucao do comando
+  - o corte continua restrito ao boot logo `MSX2+`, mas fica semanticamente mais proximo do `blueMSX`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1` (OK)
+  - `BUILD_BID=202604051010-cc918b4`
+  - `BUILD_ID=8504`
+  - `BUILD_HASH=cc918b4-dbea3990879f647f24d05a06015f29880a2d46e8`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado operacional desta rodada:
+  - sem `git commit`
+  - sem `git push`
+  - sem novo pedido de hardware nesta rodada
+
+## Atualizacao incremental de 05/04/2026 - cadencia do logo volta ao fluxo BIOS de `S#2 bit0`
+
+- A leitura consolidada da UART e da trilha antiga `#176` fechou um ponto importante:
+  - na janela visivel do logo, `R#9` continua `00` e `R#25` continua `03`
+  - o movimento observado vem de writes tardias de `R#26/R#27`
+  - o `blueMSX` continua sendo a referencia semantica primaria, mas o renderer ja deixou de ser o melhor proximo alvo desta rodada
+- Cruzamento direto com o backlog antigo:
+  - a `#176` ja tinha sustentado que o gargalo remanescente do boot/logo `MSX2+` estava mais perto da cadencia do polling BIOS de `S#2 bit0` do que de reescritas amplas de `SCREEN 6/7`
+  - o corte que mais fazia sentido reaproveitar era justamente o de reduzir custo de comando so no fluxo BIOS do logo
+- Correcao local aplicada:
+  - `src/fmsx_local/V9938.c`
+  - `GetVdpTimingValue()` voltou a reduzir o custo dos comandos (`/8`, minimo `1`) apenas dentro dos wrappers/polls do boot logo
+  - a janela aceita agora:
+    - os ranges lineares ja documentados na `#176`:
+      - `0x2BE4..0x2C27`
+      - `0x2E3E..0x2F97`
+      - `0x3040..0x3147`
+      - `0x3299..0x3325`
+    - e o alias `+0x5000` observado na UART atual da `#238`, para cobrir o mesmo fluxo quando ele aparece mapeado em `0x7Bxx/0x7Exx/0x80xx/0x82xx`
+- Justificativa tecnica:
+  - o alvo desta rodada nao e mais `MASK`
+  - tambem nao ha evidencia pratica de que `R#9 interlace` dirija a janela visivel atual do logo
+  - o ajuste tenta aproximar o producer BIOS-side do ritmo observado no `blueMSX` sem alargar a heuristica para gameplay nem para softwares fora do boot logo
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1` (OK)
+  - `BUILD_BID=202604051005-cc918b4`
+  - `BUILD_ID=828F`
+  - `BUILD_HASH=cc918b4-4529f3540680781486b58b2948ef41b86cff4688`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado operacional desta rodada:
+  - sem `git commit`
+  - sem `git push`
+  - sem novo pedido de hardware nesta rodada
+
+## Atualizacao incremental de 05/04/2026 - `IE0/VBlank` alinhado ao inicio da borda inferior
+
+- A UART leve da `85F2` fechou um ponto importante sem ambiguidade:
+  - `BL238I`: `R9=00`, `R25=03`, `R26/R27=00`
+  - `BL238R`: primeira write de `R26/R27` em `0x99 @ 7BB2`, depois loop regular em `0x9B @ 7A71/7A73`
+  - `BL238S`: `AVG:016`, `MAX:028`, `CE:3`, `TR:0`, `W26/W27=77`
+- Leitura tecnica consolidada:
+  - a janela visivel do logo nao depende de `R#9 interlace`
+  - o host/presenter tambem nao e o gargalo dominante
+  - o proximo suspeito forte passou a ser o ritmo BIOS-side que alimenta `R26/R27`
+- Comparacao direta contra `blueMSX`:
+  - `onVint()` no `blueMSX` sobe `IE0/VBlank` logo no inicio da borda inferior, isto e, imediatamente apos a ultima linha visivel
+  - o core local ainda estava disparando `IE0/VBlank` no fim da borda inferior (`192+28`/`212+18`), atrasando semanticamente o pacing de qualquer rotina BIOS que use essa janela para dirigir o logo
+- Correcao local aplicada:
+  - `src/fmsx_local/MSX.c`
+  - `fmsx_vdp_vblank_start()` agora devolve `192/212`
+  - o gate que sobe `VDPStatus[0].7`, `VDPStatus[2].6` e `INT_IE0` passou a usar esse mesmo ponto
+- Build local validada:
+  - `BUILD_BID=202604042230-issue238-vblank-drawarea-start`
+  - `BUILD_ID=FCD5`
+  - `BUILD_HASH=cc918b4-024ff5eb8ba7a2500f9df7b210693737afdfb42c`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Guardrail mantido:
+  - sem `git commit`
+  - sem `git push`
+- Proximo gate:
+  - repetir o boot logo do `MSX2+`
+  - verificar se a cadencia finalmente reage sem perder o split horizontal correto
+  - `MASK` continua explicitamente fora do foco desta rodada
+
+## Atualizacao incremental de 05/04/2026 - `AEAA` descartada; proximo corte vai para o path parcial real
+
+- O round de video + UART da build `AEAA` fechou um descarte objetivo:
+  - o split horizontal continuou correto
+  - a cadencia nao reagiu
+  - nao apareceu leitura pratica de odd/even
+  - o logo ficou visualmente distorcido
+- A UART confirmou que o contrato funcional do logo nao mudou:
+  - `R9=00`
+  - `R25=03`
+  - primeira write de `R26/R27` segue em `0x99 @ PC 7BB2`
+  - depois o loop continua em `0x9B @ PC 7A71/7A73`
+- Leitura tecnica consolidada:
+  - o rewrite de `RefreshLine6()` full-line atacou o lugar errado
+  - o path realmente ativo durante o scanout parcial continua sendo `RefreshLine6WideRange()` via `fmsx_vdp_render_screen67_partial()`
+  - portanto, a `AEAA` foi descartada localmente como regressao visual sem ganho de contrato
+- Correcao local aplicada nesta rodada:
+  - `src/fmsx_local/Wide.h` voltou `RefreshLine6()` ao path estavel anterior
+  - o alinhamento de `odd page` da `2039` foi preservado
+  - `RefreshLine6WideRange()` deixou de reconstruir `BgRaw[1024]` inteiro a cada chunk e passou a fazer sampling sob demanda apenas da faixa pedida
+- Build local validada:
+  - `BUILD_BID=202604042152-cc918b4`
+  - `BUILD_ID=C724`
+  - `BUILD_HASH=cc918b4-d1d3b856f205e2924cdeb77c5af38b54b78ff141`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Guardrail mantido:
+  - sem `git commit`
+  - sem `git push`
+- Proximo gate:
+  - repetir o boot logo do `MSX2+`
+  - verificar se a cadencia melhora sem reabrir a distorcao da `AEAA`
+  - manter `MASK` explicitamente em segundo plano ate fechar cadencia
+
+## Atualizacao incremental de 05/04/2026 - UART leve para medir cadencia real
+
+- O round da `C724` confirmou o esperado:
+  - a distorcao da `AEAA` sumiu
+  - o split horizontal continuou correto
+  - a cadencia visual ainda nao reagiu
+- A UART da `C724` manteve o mesmo contrato funcional:
+  - `R9=00`
+  - `R25=03`
+  - primeira write de `R26/R27` por `0x99 @ 7BB2`
+  - loop regular depois por `0x9B @ 7A71/7A73`
+- Leitura tecnica consolidada:
+  - o VDP continua semanticamente no mesmo estado
+  - o gargalo seguinte passou a ser a propria telemetria: `BL238` em todo frame e `BL238R` em toda alternancia estavam pesados o bastante para contaminar a leitura visual de cadencia
+- Correcao local aplicada:
+  - `src/fmsx_host_stubs.c`
+  - o trace do boot logo foi reduzido para:
+    - `BL238I` no primeiro frame
+    - `BL238R` apenas quando a origem das writes de `R26/R27` muda
+    - `BL238S` como resumo no frame `96`
+  - os contadores internos continuam sendo acumulados, mas sem poluir o serial a cada frame
+- Build local validada:
+  - `BUILD_BID=202604042201-cc918b4`
+  - `BUILD_ID=85F2`
+  - `BUILD_HASH=cc918b4-e75d968baca8623b4a7f67a7ac93009e34c25606`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Proximo gate:
+  - repetir o boot logo do `MSX2+` com a UART leve
+  - medir primeiro a cadencia visual real, antes de abrir um novo patch no core do VDP
+
+## Atualizacao incremental de 04/04/2026 - `7E29` descartada por regressao real de cadencia
+
+- A UART do round mais recente fechou que o corte `SCREEN 6 streaming scroll` da build `7E29` piorou a cadencia em vez de melhora-la:
+  - `BL238` continuou com `F/VF=1:1`, `LG=000`, `R9=00`, `R25=03` e a mesma sequencia de writes tardias em `R26/R27`
+  - mas o `DT` medio em `96` frames subiu para `30.06ms`, com pico de `43ms`
+- Leitura tecnica consolidada:
+  - a reescrita local de `RefreshLine6()` / `RefreshLine6WideRange()` preservou a semantica de `R26/R27`, mas introduziu regressao de throughput no renderer wide
+  - isso elimina esse path como candidato para a correção imediata da `#238`
+  - o foco vivo da issue continua sendo a cadencia/consumo das writes tardias de `R26/R27`, mas sem manter esse rewrite no worktree
+- Estado local apos o descarte:
+  - `src/fmsx_local/Wide.h` voltou ao renderer anterior
+  - a telemetria util foi preservada em `src/fmsx_host_stubs.c` e `src/fmsx_local/MSX.c`
+- Build local validada apos o rollback do renderer regressivo:
+  - `BUILD_BID=202604042215-issue238-drop-screen6-streaming-regression`
+  - `BUILD_ID=C7EC`
+  - `BUILD_HASH=cc918b4-b19e9b444adbbc29baf22793a2664e6029718d5c`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Proximo gate:
+  - repetir o boot logo do `MSX2+` sobre a base `C7EC`
+  - confirmar que a cadencia volta ao baseline anterior, com a telemetria `BL238/BL238I/BL238R` preservada
+
+## Atualizacao incremental de 05/04/2026 - `odd page` wide alinhado ao `blueMSX`
+
+- A UART da base `C7EC` continuou mostrando o mesmo contrato funcional do logo:
+  - `BL238I`: `R9=00`, `R25=03`, `R26/R27=00` no primeiro frame
+  - `BL238R`: primeira write em `R26/R27` por `0x99 @ PC 7BB2`, depois loop regular por `0x9B @ PC 7A71/7A73`
+  - `BL238W`: segue inutil para este recorte
+- Leitura tecnica consolidada desta rodada:
+  - o foco vivo da `#238` permanece no consumo visual de `R26/R27`
+  - o desvio estrutural mais forte contra o `blueMSX` estava no addressing wide: `src/fmsx_local/Wide.h` so aplicava `FmsxVDPLineOddPageLatched` quando `FlipEvenOdd` estava ativo
+  - no `blueMSX`, `vdpIsOddPage()` participa sempre do addressing de `SCREEN 6/7`, independentemente de `R#9 bit2`
+- Correcao aplicada:
+  - `V9958BitmapLinePtrWideLatched()` agora honra `FmsxVDPLineOddPageLatched` incondicionalmente, espelhando o contrato do `blueMSX` para `SCREEN 6/7`
+  - nenhum ajuste novo foi feito em `MASK`
+  - a telemetria `BL238/BL238I/BL238R` foi preservada
+- Build local validada:
+  - `BUILD_BID=202604042345-issue238-screen67-oddpage-address`
+  - `BUILD_ID=2039`
+  - `BUILD_HASH=cc918b4-272f08af53d9bb87cb3b543c6db1d0c381896340`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Proximo gate:
+  - repetir o boot logo do `MSX2+`
+  - verificar se a apresentacao odd/even finalmente aparece de forma util e se a cadencia percebida melhora sem reabrir regressao horizontal
+
+## Atualizacao incremental de 05/04/2026 - `2039` sem efeito de contrato, proximo corte no `RefreshLine6()` full-line
+
+- A UART da build `2039` nao mudou o contrato observado do logo:
+  - `R9=00`, `R25=03`
+  - `BL238R` segue com a primeira write por `0x99 @ 7BB2` e o loop regular por `0x9B @ 7A71/7A73`
+  - `BL238I/BL238R` continuam coerentes com a mesma janela visivel
+- Leitura tecnica:
+  - o alinhamento do addressing `odd page` por si so nao alterou o estado exposto no presenter
+  - o proximo alvo volta a ser o consumo do `SCREEN 6` full-line em si
+- Correcao aplicada nesta rodada:
+  - `src/fmsx_local/Wide.h` trocou apenas `RefreshLine6()` full-line por um loop muito mais proximo do `blueMSX`
+  - o novo path abandona a expansao da linha inteira em `BgRaw[1024]` para `SCREEN 6` full-line e passa a consumir `charTable` em fluxo, com `scroll/page` e `jump` no mesmo modelo do `blueMSX`
+  - `RefreshLine6WideRange()` foi mantido intacto nesta rodada para limitar o risco
+- Build local validada:
+  - `BUILD_BID=202604050015-issue238-screen6-bluemsx-fullscan`
+  - `BUILD_ID=AEAA`
+  - `BUILD_HASH=cc918b4-af940a058b8c0deea90e743290071157a0be0e25`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Proximo gate:
+  - repetir o boot logo do `MSX2+`
+  - verificar se a cadencia finalmente reage com o `RefreshLine6()` full-line mais proximo do `blueMSX`, mantendo o split horizontal correto
 
 ## Estado herdado da umbrella
 
@@ -135,6 +674,86 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
   - o proximo corte deixa de perseguir presenter/host ou `CE` como gargalo dominante
   - a trilha volta ao produtor do quadro do logo em `SM:06`, com foco na programacao BIOS-side de `R26/R27`/page split e no caminho de renderizacao que ainda transforma esse estado em movimento visual mais lento do que a referencia
 
+## Atualizacao incremental de 04/04/2026 - build `7A75` continua sem efeito visual util
+
+- O round mais recente de video + UART com a build `7A75` confirmou exatamente o mesmo quadro observado na rodada anterior:
+  - o logo continua entrando
+  - a cadencia observada em tela permanece "lerda", mas a UART segue mostrando publicacao pratica em ~`60Hz`
+  - o `MASK` continua visivel
+  - nao apareceu leitura pratica de odd/even/interlace no quadro apresentado
+- O `BL238` desta rodada consolidou:
+  - `F` e `VF` continuam `1:1`
+  - `LG=000` em toda a janela
+  - `R9=00`, `F9=0`, `I9=0`
+  - `R25=03`
+  - `R26/R27` seguem alternando de forma regular entre `1D/07` e `24/01`
+  - `CE` aparece so em poucos frames; `TR` fica `0`
+- O ponto novo e importante desta rodada foi negativo:
+  - nao apareceu nenhuma linha `BL238W` no UART
+  - isso mostrou que o gating anterior do trace de writes BIOS-side ainda estava tarde demais e perdia a preparacao do logo antes da janela visivel
+- Leitura tecnica consolidada:
+  - o numero aproximado `F:004500` ate chegar ao BASIC nao representa backlog do host; ele continua coerente com execucao em torno de `60Hz`
+  - a lentidao residual continua sendo semantica do produtor do quadro do logo, nao perda acumulada de apresentacao
+  - como `R9/F9/I9` ficam zerados na janela visivel, ainda falta capturar as writes de preparacao do BIOS para fechar se odd/even/interlace realmente sao armados antes do logo ou se o problema esta em outro ponto do pipeline
+
+## Atualizacao incremental de 04/04/2026 - `BL238W` sem gate da janela visivel
+
+- O corte local seguinte para a `#238` nao mexe no renderer nem no pacing; ele ataca apenas a observabilidade do prelude do boot logo.
+- Implementacao aplicada em `src/fmsx_local/MSX.c`:
+  - `BL238W` deixa de esperar `ScrMode==6` / logo visivel
+  - o trace passa a registrar os primeiros `256` writes dos registradores rastreados (`R#2`, `R#9`, `R#18`, `R#25`, `R#26`, `R#27`) desde o prelude do BIOS
+  - a janela continua bounded para nao explodir o volume do UART
+- Objetivo desta rodada:
+  - capturar finalmente se a `MSX2PEXT` arma `R#9`/odd-even/interlace antes de o logo entrar na tela
+  - decidir o proximo patch com base em evidencia BIOS-side, em vez de seguir com renderer cego
+- Build local validada:
+  - `BUILD_BID=202604041620-issue238-prelude-regwrite-ungated`
+  - `BUILD_ID=89F2`
+  - artefato local `artifacts/kernel8-issue238.img`
+  - `sha1` do artefato: `03d3b641eeefde71323afe12676f88a61b300670`
+- Guardrail desta rodada:
+  - este corte permanece apenas no worktree local, sem commit e sem push
+- Proximo gate:
+  - repetir o boot logo com a build `89F2`
+  - reler no UART tanto `BL238` quanto `BL238W`
+  - fechar se o BIOS realmente escreve `R#9`/odd-even/interlace no prelude, ou se a proxima rodada deve atacar outro ponto do produtor do quadro
+
+## Atualizacao incremental de 04/04/2026 - `89F2` valida o binario, mas `BL238W` continua mudo
+
+- A rodada seguinte finalmente confirmou que a UART capturada ja e da mesma imagem local da branch:
+  - o artefato `artifacts/kernel8-issue238.img` e a UART carregada em campo batem no mesmo binario
+  - a ausencia de `BL238W` deixou de ser suspeita de SD/imagem velha
+- Mesmo assim, o log da `89F2` continuou mostrando:
+  - `F/VF=1:1`
+  - `LG=000`
+  - `R9=00`, `F9=0`, `I9=0`
+  - `R25=03`
+  - `R26/R27` alternando regularmente
+  - `CE` so em poucos frames
+  - `TR=0`
+  - nenhuma linha `BL238W`
+- Leitura tecnica desta rodada:
+  - o problema deixou de ser "build errada no SD"
+  - a instrumentacao anterior de `BL238W` continua falhando em pegar o ponto real das writes, apesar de o binario certo estar em campo
+  - o proximo corte precisa sair do `VDPOut()` e ir para a borda do decode das portas `0x99/0x9B`, antes de qualquer shadow/atalho do core
+
+## Atualizacao incremental de 04/04/2026 - `BL238W` sobe para o decode de `0x99/0x9B`
+
+- O novo corte local da `#238` nao muda renderer nem pacing; ele troca apenas o ponto da telemetria:
+  - `src/fmsx_local/MSX.c` passa a emitir `BL238W` ja no decode das portas `0x99` e `0x9B` para os registradores rastreados (`R#2`, `R#9`, `R#18`, `R#25`, `R#26`, `R#27`)
+  - o trace anterior em `VDPOut()` foi mantido como fallback, mas o ponto principal agora e a borda da escrita de porta
+  - o payload do log ganhou `P` (porta origem) e `O` (valor antigo) para diferenciar `0x99`, `0x9B` e writes efetivamente mutantes
+- Objetivo tecnico:
+  - fechar definitivamente se a `MSX2PEXT` escreve `R#9/25/26/27` no prelude do logo e por qual porta
+  - destravar o proximo patch de odd/even/interlace em cima de evidencia BIOS-side real
+- Build local validada:
+  - `BUILD_BID=202604041935-issue238-port99-port9b-regwrite`
+  - `BUILD_ID=4749`
+  - artefato `artifacts/kernel8-issue238.img`
+  - `sha1` do artefato: `1954ba4dc9e0b12e2c0d30fb7ff7dfb0ae5455f2`
+- Guardrail desta rodada:
+  - corte apenas local, sem commit e sem push
+
 ## Atualizacao incremental de 04/04/2026 - `left-edge mask` wide volta a seguir o backdrop scrolado
 
 - O round de UART da build `1796` descartou backlog do host e `CE/TR` continuamente ativos como gargalo dominante do boot logo.
@@ -156,6 +775,66 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
 - Proximo gate:
   - retestar o boot logo `MSX2+` em hardware com a `5870`
   - responder se o `MASK` finalmente se mistura ao backdrop, e se houve qualquer efeito colateral sobre tarja/pagina errada, cadencia ou leitura pratica de interlace
+
+## Atualizacao incremental de 04/04/2026 - `BL238I` expõe o ultimo write absoluto de `R#9/25/26/27`
+
+- A UART da build `6ED6` fechou que o logo visivel nao reprograma `R#9` nem `R#25`, mas escreve `R#26/R#27` de forma regular:
+  - primeira mudanca visivel por `0x99` em `PC=7BB2`
+  - depois loop estavel por `0x9B` em `PC=7A71/7A73`
+  - `R#26/R#27` alternando no fim da area visivel (`SL 192/193`)
+- Leitura tecnica consolidada:
+  - raw e latched continuam batendo na janela visivel
+  - o proximo ponto cego da issue nao e mais o frame mostrado, e sim o estado herdado do prelude do logo
+  - antes de insistir em `odd/even + R#9 interlace`, e preciso fechar se `R#9/25` chegam a ser armados antes do primeiro frame rastreado
+- Implementacao aplicada nesta rodada:
+  - `src/fmsx_host_stubs.c` ganhou a linha UART `BL238I`
+  - no primeiro frame do logo, ela imprime o ultimo write absoluto de `R#9`, `R#25`, `R#26` e `R#27`:
+    - valor atual
+    - contador absoluto de writes
+    - porta origem
+    - `PC`
+    - scanline
+    - valor antigo/novo
+- Build local validada:
+  - `BUILD_BID=202604042245-issue238-bootlogo-init-reg-origin`
+  - `BUILD_ID=47D9`
+  - `BUILD_HASH=cc918b4-fed1fa2d8f5ec428052b42c1304322c65e2ff704`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Guardrail desta rodada:
+  - sem commit local
+  - sem push
+- Proximo gate:
+  - repetir o boot logo com a `47D9`
+  - reler `BL238` e, principalmente, `BL238I`
+  - decidir se `R#9 interlace` ainda faz sentido como gargalo primario ou se a issue precisa migrar o foco de vez para a cadencia/consumo das writes de `R#26/R#27`
+
+## Atualizacao incremental de 04/04/2026 - `R#9 interlace` perde forca e `SCREEN 6` wide vira path streaming
+
+- A UART da `47D9` respondeu a pergunta que faltava do prelude do logo:
+  - `BL238I` mostrou `R#9=00` com write formal por `0x99` em `PC=7BB2`
+  - `R#25=03` e `R#26/R#27` ainda zerados no primeiro frame do logo
+  - na janela visivel, `R#26/R#27` continuam sendo escritos regularmente, enquanto `R#9` e `R#25` permanecem estaveis
+- Leitura tecnica consolidada:
+  - o boot logo observado nesta issue nao esta sendo guiado por `R#9 interlace`
+  - o gargalo vivo migra de vez para a cadencia/consumo das writes tardias de `R#26/R#27`
+  - a proxima mudanca util deixa de ser novo patch de `MASK` ou odd/even e passa a ser o renderer `SCREEN 6` wide em si
+- Implementacao aplicada nesta rodada:
+  - `src/fmsx_local/Wide.h`
+  - `RefreshLine6()` e `RefreshLine6WideRange()` deixam o modelo de expandir toda a linha em `BgRaw[1024]`
+  - o path wide passa a consumir `R#26/R#27` em unidades logicas de pares de pixels, com fetch streaming por pagina, mais proximo do `blueMSX`
+  - o objetivo direto e reduzir custo por linha e alinhar melhor a semantica das writes tardias de `R#26/R#27`
+- Build local validada:
+  - `BUILD_BID=202604042325-issue238-screen6-streaming-scroll`
+  - `BUILD_ID=7E29`
+  - `BUILD_HASH=cc918b4-054a2bbbf95a7fccd89ea9cc199c2bc5a23f40d2`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Guardrail desta rodada:
+  - sem commit local
+  - sem push
+- Proximo gate:
+  - repetir o boot logo com a `7E29`
+  - observar se a cadencia muda
+  - reler a UART para verificar se o comportamento de `R#26/R#27` continua coerente com o novo path de `SCREEN 6`
 
 ## Atualizacao incremental de 03/04/2026 - ativacao da branch
 
@@ -603,3 +1282,488 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
   - repetir o boot logo com UART
   - coletar `BL238` + `BL238W`
   - so depois decidir o proximo patch no bloco odd/even/interlace
+
+## Atualizacao incremental de 04/04/2026 - ROM confirma `R#26/R#27` e a telemetria pivota para contadores
+
+- A UART mais recente da trilha filha trouxe um corte importante:
+  - a build testada e nova (`Compile time: Apr  4 2026 19:14:22`)
+  - o `BL238` segue estavel com `F/VF=1:1`, `LG=000`, `R9=00`, `F9=0`, `I9=0`, `R25=03`
+  - `R26/R27` continuam alternando durante a janela visivel do logo
+  - ainda assim, continuam aparecendo zero linhas `BL238W`
+- A leitura consolidada desta rodada ficou mais precisa:
+  - o problema nao e mais "build antiga no SD"
+  - o `BL238W` continua instrumentado no lugar errado para responder a mudanca de estado que o presenter ve
+  - o problema prioritario da `#238` continua sendo fechar se o bloco odd/even/interlace realmente entra no fluxo do logo, sem reabrir heuristicas sobre `MASK`
+- Evidencia ROM-side confirmada localmente com `z80dasm`:
+  - a rotina `l0688h` escreve registradores VDP pelo caminho formal `out (99h),a` seguido de `reg|80h`
+  - o prelude do `MSX2PEXT.ROM` passa por `c=1Ah` e `c=1Bh`, confirmando que `R#26` e `R#27` realmente entram no fluxo da ROM
+  - a ausencia de `BL238W` deixou de ser interpretavel como "a ROM nao mexe nesses registradores"
+- Novo corte local aplicado:
+  - `src/fmsx_host_stubs.c`
+  - o `BL238` agora passa a carregar tambem:
+    - `L9/L25/L26/L27`: estado latched por scanline visto pelo renderer
+    - `W9/W25/W26/W27`: contadores acumulados de writes nesses registradores desde o inicio da janela do logo
+  - a intencao e fechar se:
+    - os writes de `R#26/R#27` realmente sobem durante a janela do logo
+    - o estado raw do presenter diverge do estado latched por scanline
+- Build local validada:
+  - `BUILD_BID=202604042040-issue238-bootlogo-write-counters`
+  - `BUILD_ID=DC25`
+  - imagem `sha1 1a0df1ea9732334bcc1678139b671250edf0d619`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado de fluxo consolidado:
+  - sem `commit`
+  - sem `push`
+  - a `#238` continua sendo a issue ativa; a `#82` permanece apenas como umbrella
+- Proximo gate:
+  - subir a `DC25`
+  - repetir o boot logo com UART
+  - reler `BL238` para fechar se `R#9/25/26/27` sobem por write real durante a janela do logo, antes de qualquer novo patch visual
+
+## Atualizacao incremental de 04/04/2026 - origem real das writes de `R#26/R#27`
+
+- A UART da `DC25` finalmente fechou o corte que faltava:
+  - `W9=0` e `W25=0` durante toda a janela do logo
+  - `W26/W27` sobem juntos de `0` ate `77`
+  - `R26/R27` alternam exatamente junto desses contadores
+  - `L26/L27` batem com `R26/R27`, entao o latched por scanline nao diverge do raw no quadro apresentado
+- Leitura consolidada:
+  - a janela visivel do logo nao esta sendo dirigida por reprogramacao de `R#9` nem de `R#25`
+  - odd/even/interlace continuam sem evidencia pratica nessa janela
+  - o problema vivo da `#238` fica mais estreito: origem e cadencia das writes de `R#26/R#27`
+- Novo corte local aplicado:
+  - `src/fmsx_local/MSX.c`
+  - `src/fmsx_host_stubs.c`
+  - o core agora guarda, por registrador, o ultimo:
+    - `PC`
+    - porta de origem (`99h`, `9Bh` ou fallback)
+    - valor antigo/novo
+    - frame
+    - scanline
+  - o `BL238` continua emitindo os contadores acumulados
+  - quando `W26` ou `W27` avancam, a UART agora emite uma linha `BL238R` com a origem real dessas writes
+- Build local validada:
+  - `BUILD_BID=202604042120-issue238-r26r27-write-origin`
+  - `BUILD_ID=6ED6`
+  - imagem `sha1 7c002d49a8acfb3e64a192addcea0d50914ab429`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+
+## Atualizacao incremental de 05/04/2026 - callers de `S#2` deixam de colapsar pagina e a UART passa a medir bits/bordas
+
+- O round seguinte de UART finalmente mostrou um problema da propria telemetria:
+  - os `C0..C3` quentes apareciam como `3A93/3A8D/3BC8`
+  - mas `3BC8` cai em tabela/string do `MSX2PEXT`, o que nao pode ser site real de `IN A,(99h)`
+- Leitura pratica:
+  - o histograma anterior ainda estava achatando callers diferentes por `& 0x3FFF`
+  - isso podia misturar paginas/aliases e transformar PCs validos em offsets sem valor funcional para a trilha
+- Correcao local aplicada:
+  - `src/fmsx_local/MSX.c`
+    - o core preserva o PC completo dos callers de `S#2`
+    - a normalizacao para offsets de ROM agora e usada apenas para classificar os helpers conhecidos (`2BE9`, `10DB`, `10E4`, `3640`, `3649`)
+  - `src/fmsx_host_stubs.c`
+    - o `BL238` ganhou contadores agregados do contrato de `S#2` durante o logo:
+      - `B0/B1/B6`: quantas leituras vieram com `bit0`, `bit1` e `bit6` em `1`
+      - `E0/E1/E6`: bordas `rise/fall` observadas nesses mesmos bits
+- Consequencia pratica:
+  - a proxima UART deixa de depender apenas de "quem leu `S#2`"
+  - ela passa a dizer tambem se o logo esta queimando tempo em `CE` (`bit0`), em `parity` (`bit1`) ou em `VStart` (`bit6`)
+- Build local validada:
+  - `BUILD_BID=202604051525-issue238-s2-full-pc`
+  - `BUILD_ID=40B5`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Build local mais nova desta rodada:
+  - `BUILD_BID=202604051610-issue238-s2-bit-edge-counters`
+  - `BUILD_ID=78AE`
+  - artefato: `artifacts/kernel8-issue238.img`
+  - imagem `sha1 b1cd6286ec85af28988de713a89d5a4dbdb46e4e`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+  - a `#238` continua ativa; a `#82` permanece apenas como umbrella
+- Proximo gate:
+  - subir a `6ED6`
+  - repetir o boot logo com UART
+  - reler `BL238` + `BL238R`
+  - so depois decidir se o proximo patch entra no produtor das writes de `R26/R27` ou volta a algum ponto do renderer
+
+## Atualizacao incremental de 05/04/2026 - `S#2 bit6` promovido ao proximo alvo offline
+
+- A releitura da UART da `85F2`/`C724` manteve o mesmo contrato funcional do logo:
+  - `R9=00`
+  - `R25=03`
+  - `R26/R27` entram por `0x99 @ 7BB2` e depois seguem no loop `0x9B @ 7A71/7A73`
+  - `BL238S`: `AVG:016`, `MAX:028`, `CE:3`, `TR:0`, `W26/W27=77`
+- O cruzamento com a `MSX2PEXT.ROM` refinou a leitura da issue:
+  - no bloco principal do logo (`0x2A00..0x3300`), a ROM usa pesado `S#2 bit0` (`CE`) e wrappers de comando VDP
+  - os waits por `S#2 bit6` aparecem em helpers BIOS fora dessa janela (`0x10D6` e `0x363B`)
+  - isso desloca o gargalo mais provavel do "interlace visivel" para a sincronizacao vertical que cerca o boot ate o BASIC
+- Correcao local aplicada:
+  - `src/fmsx_local/MSX.c`
+  - `IE0/VBlank` agora sobem no **inicio** da primeira linha da borda inferior, alinhando o loop local ao `blueMSX`
+  - o caminho antigo no ramo de HBlank ficou apenas como fallback defensivo
+- Leitura tecnica:
+  - antes deste corte, o core local ainda atrasava o edge de `VBlank`/`S#2 bit6` para o fim da primeira linha da borda inferior
+  - isso podia alongar os waits BIOS-side por `S#2 bit6` mesmo com o logo visivel ja dirigido por `R26/R27`
+- Build local validada:
+  - `BUILD_BID=202604042320-issue238-vblank-line-start`
+  - `BUILD_ID=59C0`
+  - `BUILD_HASH=cc918b4-382ad7d1628e55605b3dac4dc32359c78b179015`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+  - sem novo pedido de teste em hardware nesta rodada
+
+## Atualizacao incremental de 05/04/2026 - separar `S#2 bit6` de `drawArea` no prelude do frame
+
+- A investigacao offline desta rodada refinou o corte anterior do `timingMode`: no `blueMSX`, `S#2 bit6` e `drawArea` nao sao equivalentes no inicio do frame.
+  - `bit6` cai em `onVStart()`, antes da area visivel
+  - o `timingMode` do command engine so muda em `onDrawAreaStart()`
+- Isso deixa o proxy coarse `S#2 bit6 => drawArea` forte demais para a `#238`, porque ele ajuda no borde inferior, mas tambem empurra o bucket de timing para a janela pseudo-top-border em que o BIOS ainda enxerga `bit6=0` e o command engine deveria continuar off-screen.
+- Ajustes locais aplicados:
+  - `src/fmsx_local/MSX.c`
+    - `fmsx_vdp_status2_vr()` agora representa uma pseudo-top-border low na cauda do frame anterior, aproximando o `VStart` do `blueMSX` mesmo sem scanlines explicitas de borda superior no scheduler local
+  - `src/fmsx_local/V9938.c`
+    - `GetVdpTimingValue()` deixou de usar `S#2 bit6` como proxy de `drawArea`
+    - o gate de timing voltou a seguir apenas a faixa visivel local (`ScanLine < 192/212`)
+- Build local validada:
+  - `BUILD_BID=202604050035-issue238-status2-vstart-drawarea`
+  - `BUILD_ID=F5E4`
+  - `BUILD_HASH=cc918b4-a87d0873ee713b999432fc518fc578ba3776f754`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+  - sem novo pedido de hardware nesta rodada
+
+## Atualizacao incremental de 05/04/2026 - pseudo-`VStart` reduzido aos ultimos 40 ticks
+
+- A comparacao offline seguinte apertou mais o mesmo bloco de `S#2`, agora mirando diretamente o threshold usado pelo `blueMSX`.
+- Referencia concreta:
+  - `third_party/bluemsx/blueMSX/Src/VideoChips/VDP.c`
+  - em `readStatus()`, o `bit6` de `S#2` entra na janela pre-visivel quando `frameTime - ((firstLine - 1) * HPERIOD + leftBorder - 10) < 4 * HPERIOD`
+  - isso equivale a abrir o `VStart` cerca de `40` ticks antes do inicio da area visivel
+- O corte `AA06` ainda tratava a HBlank inteira da ultima linha como proxy dessa janela, o que continuava largo demais para os waits BIOS `10D6` / `363B`.
+- Correcao local aplicada:
+  - `src/fmsx_local/MSX.c`
+  - `fmsx_vdp_previsible_window_active()` agora so vale nos **ultimos 40 ticks VDP** da ultima scanline do frame anterior
+  - `fmsx_vdp_status2_vr()` e a inversao live de `bit1` continuam ancoradas nessa janela curta
+- Intencao tecnica:
+  - aproximar o `S#2` visto pelos helpers BIOS do threshold real do `blueMSX`
+  - reduzir a antecipacao artificial de `VStart`
+  - seguir no eixo `cadencia/precisao do prelude`, sem voltar a mexer em `MASK`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1` (OK)
+  - `BUILD_BID=202604051124-cc918b4`
+  - `BUILD_HASH=cc918b4-63e76c3640998f4f26cbeeb883f77321caa9cfb1`
+  - artefato: `artifacts/kernel8-issue238.img`
+  - `sha1 artifacts/kernel8-issue238.img = 63e76c3640998f4f26cbeeb883f77321caa9cfb1`
+
+## Atualizacao incremental de 05/04/2026 - telemetria expandida para o logo inteiro
+
+- A UART da `899C` manteve o mesmo contrato da janela inicial do logo:
+  - `R9=00`
+  - `R25=03`
+  - `R26/R27` entram primeiro via `0x99 @ PC 7BB2`
+  - depois seguem no loop regular `0x9B @ PC 7A71/7A73`
+- O recorte de `96` frames deixou de ser suficiente para uma trilha cujo boot ainda vai ate `F:004500`.
+- Ajuste local aplicado:
+  - `src/fmsx_host_stubs.c`
+  - `BL238S` permanece no frame `96`
+  - a UART agora tambem emite:
+    - `BL238P` a cada `256` frames do logo
+    - `BL238E` ao sair do logo
+  - os novos resumos acumulam:
+    - `S#2`
+    - `S#7`
+    - leituras totais da `0x99`
+    - alem de `W26/W27`, `CE/TR` e `R9/R25/R26/R27`
+- Build local validada:
+  - `BUILD_BID=202604051059-cc918b4`
+  - `BUILD_ID=6BDA`
+  - `BUILD_HASH=cc918b4-adc26143e8312c896d9059b7200f36af044ccfb1`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+  - sem novo pedido de hardware nesta rodada
+
+## Atualizacao incremental de 05/04/2026 - alinhar `S#2 bit1` ao `VStart` visto pelo BIOS
+
+- O passo seguinte da comparacao offline com `blueMSX` e `MSX2PEXT` refinou o helper BIOS `363B`:
+  - ele espera `S#2 bit6` fazer `high -> low`
+  - e so sai quando `S#2 bit1` ja representa a paridade do novo frame
+- No `blueMSX`, `vdpStatus[2] ^= 0x02` acontece em `onDisplay()`, antes da janela de `VStart` do frame seguinte. No core local, o toggle cru de `bit1` ainda ocorria apenas em `ScanLine == 0`.
+- Como a rodada anterior passou a expor um pseudo-top-border low no fim do frame anterior, isso deixava o helper BIOS vendo `bit6=0` com a paridade ainda velha, exatamente o tipo de desfasagem que pode alongar a cadencia do boot sem mudar o renderer visivel.
+- Ajuste local aplicado:
+  - `src/fmsx_local/MSX.c`
+  - `fmsx_vdp_status2_live()` agora inverte `bit1` apenas dentro dessa janela pseudo-top-border
+  - o renderer e a logica de pagina visivel continuam ancorados no latch cru (`VDPStatus[2]`), evitando regressao no split horizontal ja corrigido
+- Build local validada:
+  - `BUILD_BID=202604050115-issue238-status2-bit1-vstart`
+  - `BUILD_ID=390D`
+  - `BUILD_HASH=cc918b4-0c702f3c57bfd15b8fe4fce6582ddeb8dd4f11a0`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+  - sem novo pedido de hardware nesta rodada
+
+## Atualizacao incremental de 05/04/2026 - estreitar `VStart` para a janela real de 4 scanlines
+
+- O refinamento seguinte no `blueMSX` apertou ainda mais a semantica de `S#2 bit6`: o `readStatus()` nao mantem `bit6=0` por toda a borda superior, mas apenas durante as primeiras `4` scanlines apos `VStart`.
+- O corte anterior, ao mapear toda a pseudo-top-border para `bit6=0`, ainda era largo demais e podia mascarar o contrato real dos helpers BIOS no prelude do frame.
+- Ajuste local aplicado:
+  - `src/fmsx_local/MSX.c`
+  - `fmsx_vdp_previsible_lines()` passou a modelar exatamente `4` scanlines
+  - a janela pseudo-top-border usada por `fmsx_vdp_status2_vr()` e pela inversao live de `bit1` agora segue esse mesmo recorte
+- Build local validada:
+  - `BUILD_BID=202604050145-issue238-status2-vstart-4lines`
+  - `BUILD_ID=2155`
+  - `BUILD_HASH=cc918b4-753852f58a16c9ad346647f0c8b09f5593346817`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+  - sem novo pedido de hardware nesta rodada
+
+## Atualizacao incremental de 05/04/2026 - `timingMode` do command engine alinhado a `drawArea`
+
+- A comparacao offline com o `blueMSX` fechou um gap mais forte que `R#9 interlace`:
+  - referencia: `timingMode = ((R#1 >> 6) & drawArea) | (R#8 & 2)`
+  - core local: `GetVdpTimingValue()` ainda indexava as tabelas so por `R#1 bit6`
+- Isso passou a ser candidato direto para a cadencia da `#238` porque:
+  - a UART ja mostrou que `R#26/R#27` dirigem o movimento visivel
+  - essas writes entram em `SL 192/193`, quando a area de desenho ja terminou
+  - mesmo assim o command engine local ainda cobrava o bucket de timing de "screen on"
+- Correcao local aplicada:
+  - `src/fmsx_local/V9938.c`
+  - `GetVdpTimingValue()` agora usa `S#2 bit6` (`VDPStatus[2] & 0x40`) como gate coarse de `drawArea`
+  - linhas visiveis continuam no bucket lento de display ativo; borda/VBlank passam a usar o bucket off-screen como na referencia
+- Build local validada:
+  - `BUILD_BID=202604042355-issue238-command-timing-drawarea`
+  - `BUILD_ID=66B1`
+  - `BUILD_HASH=cc918b4-3483cb935ae92659fad3b1af41e85a21653dda4f`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+  - sem novo pedido de teste em hardware nesta rodada
+
+## Atualizacao incremental de 05/04/2026 - `VStart` pseudo-local reduzido a 1 linha e janela BIOS do logo ampliada para o prelude real
+
+- A rodada offline seguinte fechou dois ajustes mais fiéis ao `blueMSX`, ambos no eixo `BIOS/status/timing`, sem voltar a mexer em `MASK` ou em renderer cego.
+- Primeiro ajuste: `S#2 bit6/bit1` no prelude do frame.
+  - O `blueMSX` limpa `bit6` em `VStart`, mas a parte **pre-visível** dessa janela cabe apenas no fim da scanline imediatamente anterior à área visível; o restante dos `4 * HPERIOD` já cai no começo da própria área visível, que o core local já cobre via `drawArea`.
+  - O recorte anterior projetava as `4` linhas inteiras para o fim do frame anterior, o que alongava artificialmente os waits BIOS `10D6` / `363B`.
+  - Correção local aplicada:
+    - `src/fmsx_local/MSX.c`
+    - `fmsx_vdp_previsible_lines()` passou de `4` para `1`
+    - `fmsx_vdp_status2_vr()` e a inversão live de `bit1` continuam usando essa janela curta, agora muito mais próxima do `VStart` real do `blueMSX`
+- Segundo ajuste: janela BIOS do boost local do boot logo.
+  - O disassembly e a UART atuais já mostravam que o logo não nasce nos wrappers `2BE4/2E3E/3040/3299` apenas; há um prelude anterior em `0x2A0F..0x2C59` que prepara parâmetros e inicia comandos, com alias de banco em `0x7A0F..0x7C59`.
+  - O corte anterior do boost ainda ignorava exatamente esse prelude real, embora a própria UART já mostrasse PCs em `7A71/7BB2`.
+  - Correção local aplicada:
+    - `src/fmsx_local/V9938.c`
+    - `fmsx_msx2p_bootlogo_bios_timing_window()` agora cobre `0x2A0F..0x2C59` e o alias `0x7A0F..0x7C59`, preservando os demais ranges já usados na issue
+- Build local validada:
+  - `BUILD_BID=202604051028-cc918b4`
+  - `BUILD_ID=899C`
+  - `BUILD_HASH=cc918b4-098aa1e47b954d15e1eb0a07dd85d989ad5def45`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+  - sem novo pedido de hardware nesta rodada
+
+## Atualizacao incremental de 05/04/2026 - classificacao de `S#2` corrigida pelo retorno de `2BEF`
+
+- A UART atual da `#238` fechou um problema da propria telemetria:
+  - `S2:999`, `P99:999` e `HOTH:999`
+  - `H2BE/H10L/H10H/H36H/H36L` todos em `0`
+- Esse quadro nao significava que o boot logo deixou de passar por `2BE4/10D6/363B`; significava que a classificacao estava olhando o `PC` vivo do `IN A,(99h)`, ja dentro do helper comum `2BEF`.
+- O disassembly local fecha a pilha correta:
+  - `2BE4 -> call 2BEF` retorna em `2BE9`
+  - `10D6 -> call 2BEF` retorna em `10DB`
+  - `10DF -> call 2BEF` retorna em `10E4`
+  - `363B -> call 2BEF` retorna em `3640`
+  - `3644 -> call 2BEF` retorna em `3649`
+- Correcao local aplicada:
+  - `src/fmsx_local/MSX.c`
+  - `fmsx_vdp_s2_helper_slot()` deixou de classificar por `CPU.PC` puro
+  - quando a leitura de `S#2` ocorre dentro do range `2BEF..2C02`, o core agora le o endereco de retorno em `CPU.SP` e classifica o helper pelo chamador real
+- Consequencia pratica:
+  - a proxima UART da `#238` deve finalmente separar `2BE4` dos waits `10D6/363B`
+  - isso destrava a decisao seguinte entre continuar no timing do `CE` ou voltar aos waits BIOS-side de `S#2`
+- Build local validada:
+  - `BUILD_BID=202604051330-cc918b4`
+  - `BUILD_HASH=cc918b4-84d015d9b31a90232469eb291a02cbea25e0f208`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+
+## Atualizacao incremental de 05/04/2026 - callers reais de `S#2` expostos na UART do logo
+
+- O round seguinte da UART confirmou que a classificacao stack-based saiu do zero:
+  - `H2BE=2`
+  - `HOTH=999`
+- Isso fecha duas coisas:
+  - o ajuste pelo retorno em `CPU.SP` funcionou
+  - `2BE4` nao e o helper dominante do logo inteiro; o grosso das leituras de `S#2` ainda vem de outros callers diretos de `2BEF`
+- O video continua coerente com a leitura anterior:
+  - split horizontal correto
+  - sem leitura pratica de `R#9 interlace`
+  - cadencia ainda sem melhora visivel
+- Correcao local aplicada:
+  - `src/fmsx_local/MSX.c`
+  - `src/fmsx_host_stubs.c`
+  - o core agora mantem tambem um histograma de callers reais de `S#2`
+  - a UART do boot logo passa a imprimir os `4` PCs mais frequentes (`C0..C3`) em `BL238S/BL238P/BL238E`
+- Consequencia pratica:
+  - a proxima UART deve dizer exatamente quais PCs dominam o polling de `S#2`
+  - isso permite atacar o helper/quadro quente real sem inferencia cega por bucket `OTHER`
+- Build local validada:
+  - `BUILD_BID=202604051405-cc918b4`
+  - `BUILD_HASH=cc918b4-f5f681f2f373d96007cb9902ed4febfd5cd0ac69`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+
+## Atualizacao incremental de 05/04/2026 - wait-state focal nos loops quentes de `S#2` do KANJIBASIC
+
+- A leitura mais recente da UART fechou o quadro dominante do tempo total do boot logo:
+  - `C0:7A91/999`
+  - `C1:7A8B/999`
+  - `C2:7BC6/982`
+  - `R9=00`, `R25=03`, `R26/R27` continuam dirigindo apenas a animacao horizontal
+- A disassembly offline do `KANJIBASIC.ROM` confirmou o papel desses sites:
+  - `7A8B/7A91`: loop `S#2 bit6 high -> low`
+  - `7BC6`: wait de `CE` apos os comandos do logo (`R46=70h/50h`)
+- Leitura pratica:
+  - o gargalo dominante desta issue continua no polling de `S#2/0x99`
+  - `odd/even` e `R#9 interlace` saem do caminho critico da janela visivel do logo
+  - continuar mexendo em `MASK` ou renderer sem atacar esse hot path nao deve mover o tempo total ate o BASIC
+- Corte local aplicado:
+  - `src/fmsx_local/MSX.c`
+    - `fmsx_vdp_status_wait_cycles()` agora injeta wait-state adicional **apenas** nos loops quentes do `KANJIBASIC`:
+      - `7A8B/7A91` (`S#2 bit6`) recebem `+64` ciclos
+      - `7BC6` (`CE`) recebe `+96` ciclos
+    - o objetivo e aproximar a cadencia desses polls do modelo temporal que o `blueMSX` ja resolve via scheduler de tempo continuo, sem reintroduzir penalidade global em `0x99`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604051505-issue238-kanjibasic-s2-wait` (OK)
+  - `BUILD_ID=7B8D`
+  - `BUILD_HASH=cc918b4-9560082c89264ea622ee6610d564d3fb0668bab4`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+
+## Atualizacao incremental de 05/04/2026 - telemetria de callers de `S#2` tornada monotônica
+
+- A investigacao offline seguinte fechou um bug da propria UART da `#238`: os campos `C0..C3` ainda podiam fabricar callers quentes falsos porque os buckets de `FmsxVDPS2CallerCount[]` eram decadentes, enquanto o `BL238` consumia esses valores por delta contra um baseline capturado no inicio do logo.
+- Evidencia objetiva:
+  - a UART vinha mostrando `C0:3A8D/999`, `C1:3A93/999` e `C2:3BC8/982`
+  - `3BC8` cai em tabela/string do `MSX2PEXT`, nao em codigo executavel
+  - portanto o histograma estava contaminado e nao podia mais orientar cortes funcionais
+- Correcao local aplicada:
+  - `src/fmsx_local/MSX.c`
+    - `fmsx_vdp_note_s2_caller()` deixou de decrementar/reciclar buckets quando a tabela enche
+    - callers de `S#2` agora ficam monotônicos, e o excesso vai para `FmsxVDPS2CallerOverflowCount`
+    - leituras diretas de `0x99` passam a recuperar o endereco real da instrucao quando os bytes anteriores sao `DB 99`
+    - o caller dinamico `2276 -> 2279` foi separado do bucket `OTHER`
+  - `src/fmsx_host_stubs.c`
+    - o `BL238` agora imprime `CO` (overflow dos callers)
+    - `H227` passou a aparecer separado de `HOTH`
+- Consequencia pratica:
+  - a proxima UART da `#238` finalmente deve dizer se o hot path real de `S#2` esta em `2BE4`, `2279`, `10D6/10DF`, `363B/3644` ou no overflow residual
+  - isso destrava a proxima comparacao offline contra o `blueMSX` sem voltar a patch visual cego
+- Build local validada:
+  - `BUILD_BID=202604051720-issue238-s2-monotonic-callers`
+  - `BUILD_ID=2449`
+  - `BUILD_HASH=cc918b4-3f66e91a1b1130856a1aa657931aca8e486a3182`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+
+## Atualizacao incremental de 05/04/2026 - `PC` de `0x99/0x9B` normalizado para o opcode real
+
+- A rodada offline seguinte apertou mais um problema de observabilidade da `#238`:
+  - o trace do logo ainda mostrava `PC=7A71/7A73/7BB2` como se fossem enderecos de instrucao
+  - mas esses valores ainda eram `PC` pos-instrucao em `OUT/IN`, o que contaminava a leitura do prelude e empurrava a analise para offsets errados da ROM
+- Correcao local aplicada:
+  - `src/fmsx_local/MSX.c`
+    - `fmsx_vdp_set_write_context()` agora recupera o opcode real de writes em `0x99/0x9B` quando os bytes anteriores sao `D3 99` / `D3 9B`
+    - `FmsxVDPLastPort99PC` passa a usar o opcode real de `DB 99` / `D3 99`
+  - `src/fmsx_host_stubs.c`
+    - o `BL238` continua imprimindo os mesmos campos, mas a proxima UART deve sair com `PC26/27` e `LastPort99PC` alinhados ao endereco da instrucao, nao ao endereco seguinte
+- Efeito esperado:
+  - eliminar de vez a ambiguidade entre `PC` real e `PC` pos-instrucao nos writes/reads que cercam o logo
+  - permitir que a proxima comparacao offline com `blueMSX` seja feita sobre sites de opcode reais
+- Build local validada:
+  - `BUILD_BID=202604051805-issue238-s2-pc-normalized`
+  - `BUILD_ID=161D`
+  - `BUILD_HASH=cc918b4-24313ed7260ecb1f1ee345c41bca4bc8bdc96c42`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+
+## Atualizacao incremental de 05/04/2026 - retratacao do alias `7Axx -> 2Axx` e caller bruto na UART
+
+- A rodada offline seguinte fechou um problema da propria leitura da `#238`:
+  - o alias especial `7Axx/7Bxx -> 2Axx/2Bxx` ficou especulativo demais para continuar guiando os cortes funcionais
+  - a UART continua fechando o caminho quente do logo em `R9=00`, `R25=03`, `R26/R27` e `S#2/0x99`, mas o alias `+0x5000` estava misturando caller bruto com interpretacao offline
+- Correcao local aplicada:
+  - `src/fmsx_local/MSX.c`
+    - `fmsx_vdp_normalize_s2_caller_pc()` voltou ao modelo conservador
+    - a normalizacao fica restrita ao caso linear `0x4000..0x7FFF -> -0x4000`, usado apenas para buckets conhecidos
+  - `src/fmsx_host_stubs.c`
+    - `BL238I/R/S/E` passam a preservar `PC` bruto como fonte de verdade
+    - `PC` de registradores VDP agora sai tambem com `L:` (offset linear simples)
+    - a nova linha `BL238C` imprime os `3` callers quentes de `S#2` com:
+      - caller bruto
+      - caller linear simples
+      - os `4` bytes reais lidos no endereco do caller
+- Consequencia pratica:
+  - o proximo round de UART passa a responder se `7Axx/7Bxx` vem de ROM linear, worker copiado ou outro bloco de runtime
+  - isso evita abrir mais um corte funcional de `S#2` em cima de um alias nao provado
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604051930-issue238-raw-pc-caller-bytes` (OK)
+  - `BUILD_ID=FB98`
+  - `BUILD_HASH=cc918b4-94e63358c8cf618cd7cf1905079b8d04eedcc577`
+  - artefato: `artifacts/kernel8-issue238.img`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+
+## Atualizacao incremental de 05/04/2026 - `status0 bit5` passa a ser materializado por scanline
+
+- A leitura offline mais forte desta rodada fechou um ponto que explica melhor o logo em passos de ~1 frame do que qualquer hipotese em `R#9 interlace`:
+  - o worker `7A48` do `KANJIBASIC` escreve `R#17=1Ah` (indireto para `R26/R27`), le `status0` em `7A66/7A68` e espera `bit5=1` antes de cada par de writes em `0x9B`
+  - no core local, `VDPStatus[0] bit5` ainda nascia quase todo no `CheckSprites()` de `ScanLine==192`
+  - no `blueMSX`, a colisao de sprite que alimenta `status0 bit5` e atualizada por scanline em `SpriteLine.h`
+- Correcao local aplicada:
+  - `src/fmsx_local/MSX.c`
+    - novo cache por `frame + scanline` para colisao live de `status0`
+    - `status0 bit5` agora pode ser materializado no proprio read path (`0x99`, `R15=0`) quando ha colisao na scanline corrente
+    - a materializacao fica limitada a uma vez por linha, preservando o comportamento sticky ate a leitura limpar o latch
+    - a leitura de `status0` passa a limpar `bit7/6/5` (`&= 0x1F`), alinhando esse ponto ao `blueMSX`
+- Consequencia pratica esperada:
+  - o loop `7A66/7A68` deixa de depender de uma colisao que surgia essencialmente uma vez por frame
+  - a proxima validacao em hardware deve dizer se a cadencia do logo finalmente sai do regime de ~1 passo por frame
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604051935-issue238-status0-live-readclear` (OK)
+  - artefato: `artifacts/kernel8-issue238.img`
+  - `BUILD_ID=7A50`
+  - `BUILD_HASH=cc918b4-4beab8fa3ba4f8d9227da7aef57147335020167d`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`

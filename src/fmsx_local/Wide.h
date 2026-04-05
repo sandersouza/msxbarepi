@@ -27,6 +27,8 @@ extern uint8_t FmsxVDPLineR26Latched;
 extern uint8_t FmsxVDPLineR27Latched;
 extern uint8_t FmsxVDPLineR18Latched;
 extern uint8_t FmsxVDPLineOddPageLatched;
+extern uint8_t FmsxVDPLineColorSpritesLatched[320];
+extern uint8_t FmsxVDPLineColorSpritesValid;
 
 /** ClearLine512() *******************************************/
 /** Clear 512 pixels from P with color C.                   **/
@@ -100,7 +102,13 @@ static uint8_t *V9958BitmapLinePtrWideLatched(uint8_t Y)
   LinePos=(((int)(Y+FMSX_RENDER_VSCROLL)<<7)&Mask&0x7FFF);
   Pos=(BasePos&~0x7FFF)|LinePos;
 
-  if(FlipEvenOdd && FmsxVDPLineOddPageLatched && (Pos&0x8000)) Pos-=0x8000;
+  /*
+   * blueMSX applies vdpIsOddPage() directly in SCREEN 6/7 bitmap addressing,
+   * independent of R#9 bit2. The visible MSX2+ boot logo keeps R#9=00 while
+   * still toggling the display page through S#2-derived odd/even state, so
+   * the wide path must honor the latched odd page unconditionally.
+   */
+  if(FmsxVDPLineOddPageLatched && (Pos&0x8000)) Pos-=0x8000;
 
   Size=VRAMPages<<14;
   if(Size>0)
@@ -275,11 +283,15 @@ void RefreshLine6(uint8_t Y)
   else
   {
     LastScanline = Y + FirstLine;
-    ColorSprites(Y,ZBuf);
-    R=ZBuf+32;
+    if(FmsxVDPLineColorSpritesValid)
+      R=FmsxVDPLineColorSpritesLatched+32;
+    else
+    {
+      ColorSprites(Y,ZBuf);
+      R=ZBuf+32;
+    }
     Coarse = V9958WidePhysicalCoarseScrollLatched();
     Fine = V9958WidePhysicalFineScrollLatched();
-    /* blueMSX masks 8 logical pixels, which are 16 physical pixels here */
     LeftMask = V9958WideMaskLeftLatched()<<1;
     VirtualWidth = V9958WideVirtualWidthLatched();
 
@@ -303,13 +315,6 @@ void RefreshLine6(uint8_t Y)
       }
     }
 
-    /*
-     * Keep the left-edge mask glued to the currently scrolled backdrop pixel.
-     * The wide path previously forced plain BGColor here, which keeps the mask
-     * visually exposed in the MSX2+ boot logo even after the horizontal split
-     * was corrected. The local narrow renderer already uses the scrolled
-     * backdrop sample; mirror that behavior in wide modes.
-     */
     MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];
     for(PIdx=0;PIdx<512;PIdx++)
     {
@@ -326,17 +331,35 @@ void RefreshLine6(uint8_t Y)
   }
 }
 
+static uint8_t V9958Screen6WideSampleLatched(uint8_t *Page0,uint8_t *Page1,unsigned VirtualWidth,unsigned Pos)
+{
+  uint8_t *Page;
+  uint8_t Value;
+
+  Pos&=VirtualWidth-1u;
+  Page=(VirtualWidth>512u) && (Pos&0x200u) ? Page1:Page0;
+  Pos&=0x1FFu;
+  Value=Page[Pos>>2];
+
+  switch(Pos&0x03u)
+  {
+    case 0: return Value>>6;
+    case 1: return (Value>>4)&0x03u;
+    case 2: return (Value>>2)&0x03u;
+    default:return Value&0x03u;
+  }
+}
+
 void RefreshLine6WideRange(uint8_t Y,unsigned X0,unsigned X1)
 {
   uint8_t C,*R,*T0,*T1;
-  int PIdx,Src;
+  int PIdx;
   unsigned Coarse;
   unsigned Fine;
   unsigned LeftMask;
   unsigned VirtualWidth;
   unsigned Px0;
   unsigned Px1;
-  uint8_t BgRaw[1024];
   uint8_t BgIndex;
   uint8_t MaskBg;
   uint8_t ZBuf[304];
@@ -359,42 +382,25 @@ void RefreshLine6WideRange(uint8_t Y,unsigned X0,unsigned X1)
   }
 
   LastScanline = Y + FirstLine;
-  ColorSprites(Y,ZBuf);
-  R=ZBuf+32;
+  if(FmsxVDPLineColorSpritesValid)
+    R=FmsxVDPLineColorSpritesLatched+32;
+  else
+  {
+    ColorSprites(Y,ZBuf);
+    R=ZBuf+32;
+  }
   Coarse = V9958WidePhysicalCoarseScrollLatched();
   Fine = V9958WidePhysicalFineScrollLatched();
   LeftMask = V9958WideMaskLeftLatched()<<1;
   VirtualWidth = V9958WideVirtualWidthLatched();
 
   V9958WideBitmapPages(Y,VirtualWidth,&T0,&T1);
-  for(PIdx=0;PIdx<128;PIdx++)
-  {
-    BgRaw[(PIdx<<2)+0]=T0[PIdx]>>6;
-    BgRaw[(PIdx<<2)+1]=(T0[PIdx]>>4)&0x03;
-    BgRaw[(PIdx<<2)+2]=(T0[PIdx]>>2)&0x03;
-    BgRaw[(PIdx<<2)+3]=T0[PIdx]&0x03;
-  }
-
-  if(VirtualWidth>512u)
-  {
-    for(PIdx=0;PIdx<128;PIdx++)
-    {
-      BgRaw[512+(PIdx<<2)+0]=T1[PIdx]>>6;
-      BgRaw[512+(PIdx<<2)+1]=(T1[PIdx]>>4)&0x03;
-      BgRaw[512+(PIdx<<2)+2]=(T1[PIdx]>>2)&0x03;
-      BgRaw[512+(PIdx<<2)+3]=T1[PIdx]&0x03;
-    }
-  }
-
-  MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];
+  MaskBg=V9958Screen6WideSampleLatched(T0,T1,VirtualWidth,(unsigned)((int)Coarse-(int)Fine));
   for(PIdx=(int)Px0;PIdx<(int)Px1;PIdx++)
   {
     BgIndex=MaskBg;
     if(PIdx>=(int)LeftMask)
-    {
-      Src=PIdx-(int)Fine+(int)Coarse;
-      BgIndex=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
-    }
+      BgIndex=V9958Screen6WideSampleLatched(T0,T1,VirtualWidth,(unsigned)((int)PIdx-(int)Fine+(int)Coarse));
 
     C=R[PIdx>>1];
     P[PIdx]=XPal[C? C:BgIndex];
@@ -423,8 +429,13 @@ void RefreshLine7(uint8_t Y)
   else
   {
     LastScanline = Y + FirstLine;
-    ColorSprites(Y,ZBuf);
-    R=ZBuf+32;
+    if(FmsxVDPLineColorSpritesValid)
+      R=FmsxVDPLineColorSpritesLatched+32;
+    else
+    {
+      ColorSprites(Y,ZBuf);
+      R=ZBuf+32;
+    }
     Coarse = V9958WidePhysicalCoarseScrollLatched();
     Fine = V9958WidePhysicalFineScrollLatched();
     LeftMask = V9958WideMaskLeftLatched()<<1;
@@ -502,8 +513,13 @@ void RefreshLine7WideRange(uint8_t Y,unsigned X0,unsigned X1)
   }
 
   LastScanline = Y + FirstLine;
-  ColorSprites(Y,ZBuf);
-  R=ZBuf+32;
+  if(FmsxVDPLineColorSpritesValid)
+    R=FmsxVDPLineColorSpritesLatched+32;
+  else
+  {
+    ColorSprites(Y,ZBuf);
+    R=ZBuf+32;
+  }
   Coarse = V9958WidePhysicalCoarseScrollLatched();
   Fine = V9958WidePhysicalFineScrollLatched();
   LeftMask = V9958WideMaskLeftLatched()<<1;

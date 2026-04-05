@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 82-auditar-registradores-v9958
 
-Ultima atualizacao: 04/04/2026 (12:50 -03)
+Ultima atualizacao: 05/04/2026 (18:40 -03)
 
 ## Objetivo da branch
 
@@ -17,8 +17,224 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 - Cada sub-issue que usar a `#82` como umbrella deve abrir uma branch derivada desta branch umbrella, e nao diretamente de `main`.
 - Cada sub-issue deve abrir PR para `82-auditar-registradores-v9958`.
 - O merge das sub-issues acontece primeiro na branch umbrella; so ao consolidar a trilha a `#82` abre PR proprio para `main`.
-- Commits locais incrementais continuam permitidos nas sub-branches da trilha, mas `git push` so deve acontecer quando o usuario declarar explicitamente que o estado atual ficou estavel.
-- Cortes experimentais deixam de subir para o remoto apenas para sincronizacao; devem permanecer locais ate esse gate de estabilidade.
+- Nem `git commit` local nem `git push` devem acontecer nas sub-branches experimentais da trilha.
+- Ambos so voltam a ser permitidos quando o usuario declarar explicitamente que a issue ativa ficou estavel.
+
+## Atualizacao incremental de 05/04/2026 - `#238` corrige a normalizacao do bloco relocado do logo
+
+## Atualizacao incremental de 05/04/2026 - `#238` alinha `status0 bit5` de sprites coloridos ao `blueMSX`
+
+- A subtrilha `#238` continua focada em tempo total ate o BASIC e na cadencia residual do boot logo; `MASK` segue explicitamente fora do foco.
+- O corte offline mais recente fechou um desvio objetivo no `status0 bit5` de `SCREEN 6`:
+  - o path live local ainda tratava sprites coloridos como se o byte de atributo viesse de `AT[3]`
+  - o `blueMSX` usa a tabela de cor por linha (`colorSpritesLine()`), e eh dela que saem `early clock`, `color 0` transparente e a exclusao de `CC/OR` do collision path
+- Correcao local aplicada:
+  - `src/fmsx_local/MSX.c`
+    - novo helper `fmsx_vdp_status0_color_line_state()`
+    - `status0 bit5` em modos coloridos passa a ler a tabela de cor por linha (`SprTab[-0x0200 + sprite*16 + row]`)
+    - `early clock` passa a sair do byte de cor real da linha
+    - `color 0` transparente deixa de colidir quando `SolidColor0 == 0`
+    - sprites `CC/OR` deixam de participar do collision path
+- Objetivo:
+  - aproximar o worker `7A66/7A68` ao comportamento observado no `blueMSX`
+  - continuar atacando o hot path real do logo antes de voltar a qualquer ajuste visual
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604051835-issue238-color-status0-line` (OK)
+  - `BUILD_ID=841A`
+  - artefato `sha1 5e3752f02a0f5eafe2ad7dae5a46e0600b13ade5`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - `#238` reapresenta `status0 bit5` no segundo read do worker do logo
+
+- A subtrilha `#238` fechou um desvio mais forte do que `interlace` para o tempo total do boot logo:
+  - o worker `KANJIBASIC:7A48` testa o **segundo** `IN A,(99h)` (`7A68`) para liberar cada par de writes indiretas em `R26/R27`
+  - no core local, `status0 bit5` ainda nascia live so uma vez por linha e era apagado no primeiro read de `status0`
+  - isso deixava o segundo read da mesma scanline cego para a colisao, alongando artificialmente cada passo horizontal do logo
+- Consequencia pratica para a umbrella:
+  - o foco vivo da `#238` continua em tempo total ate o BASIC
+  - `R#9 interlace`, `odd/even` e `MASK` seguem fora do primeiro plano
+- Corte local aplicado na subtrilha:
+  - `src/fmsx_local/MSX.c`
+    - `fmsx_vdp_status0_live()` passa a sintetizar `bit5` a partir do latch cru **ou** da colisao live da scanline corrente
+    - `S#3..S#6` continuam sendo latched so uma vez por linha
+    - o clear-on-read de `status0` continua alinhado ao `blueMSX` com `&= 0x1F`
+- Build local validada:
+  - `BUILD_BID=202604052145-issue238-status0-reread-live`
+  - `BUILD_ID=9805`
+  - artefato `sha1 8c1440ceeddcd90345447bbdf120cba5d72de886`
+- Guardrail mantido:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - `#238` passa a medir `7A66` vs `7A68`
+
+- A subtrilha `#238` fechou o proximo checkpoint decisivo do worker do logo:
+  - a correcao principal ja passou a reapresentar `status0 bit5`
+  - o que falta medir agora e se o **segundo** read (`7A68`) realmente esta vendo esse `bit5`, porque e ele quem libera as writes indiretas em `R26/R27`
+- Consequencia pratica para a umbrella:
+  - nao vale abrir outro patch cego de timing/renderer antes dessa medicao
+  - a proxima rodada de hardware da `#238` tende a ser bem mais conclusiva
+- Corte local aplicado na subtrilha:
+  - `src/fmsx_local/MSX.c`
+    - novos contadores separados para `status0` em `7A66` e `7A68`
+    - contadores adicionais para quantas dessas leituras viram `bit5=1`
+  - `src/fmsx_host_stubs.c`
+    - `BL238S/BL238P/BL238E` passam a emitir `S66:<reads>/<bit5>` e `S68:<reads>/<bit5>`
+- Build local validada:
+  - `BUILD_BID=202604052220-issue238-status0-reread-trace`
+  - `BUILD_ID=9227`
+  - artefato `sha1 40c7ae78ac45a79b350c133f3b57d9731de5eb68`
+- Guardrail mantido:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - `#238` passa a tratar o hot path do `KANJIBASIC` em escala de scanline
+
+- A subtrilha `#238` consolidou que o ponto mais impactante ainda e o tempo total ate o BASIC:
+  - as writes de `R26/R27` seguem corretas, mas continuam aparecendo em saltos de ~`85` frames
+  - o hot path dominante continua em `S#2/0x99` pelos sites `7A8B`, `7A91` e `7BC6`
+- Consequencia pratica para a umbrella:
+  - o foco vivo da `#238` deixa `odd/even` e `MASK` explicitamente fora do primeiro plano
+  - o proximo corte util da trilha continua sendo custo temporal de polling BIOS, nao novo patch visual
+- Corte local aplicado na subtrilha:
+  - `src/fmsx_local/MSX.c`
+    - `fmsx_vdp_status_wait_cycles()` substitui o nudge fixo anterior por wait em escala de scanline apenas nos loops quentes do `KANJIBASIC`
+    - `7A8B/7A91` recebem `4 * HPeriod`
+    - `7BC6` recebe `8 * HPeriod`
+- Build local validada:
+  - `BUILD_BID=202604051640-issue238-kanjibasic-scanline-wait`
+  - `BUILD_ID=7258`
+  - artefato `sha1 9af4622d4c5bdfe53bdbd059ef78ed6a45bc7963`
+- Guardrail mantido:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - `#238` passa a cobrar tambem o corpo `OUT/IN/OUT` dos helpers quentes do `KANJIBASIC`
+
+- A leitura offline mais recente da subtrilha `#238` fechou um gap remanescente com o `blueMSX`:
+  - os waits focados anteriores ja cobriam o `IN (99h)` dos helpers quentes
+  - mas o corpo inteiro desses loops ainda inclui multiplos `OUT (99h)` de selecao/restauracao de `S#2`
+  - esse corpo continuava subpagando tempo no core local
+- Consequencia pratica para a umbrella:
+  - o foco vivo da `#238` continua em tempo total ate o BASIC
+  - `odd/even`, `R#9 interlace` e `MASK` seguem explicitamente fora do primeiro plano
+- Corte local aplicado na subtrilha:
+  - `src/fmsx_local/MSX.c`
+    - `fmsx_vdp_port99_hotloop_write_extra_cycles()` passa a cobrar tambem os writes dos loops quentes do `KANJIBASIC`
+    - `7A85/7A89/7A98/7A9C`: `+1 * HPeriod`
+    - `7BBE/7BC2/7BCA/7BCE`: `+2 * HPeriod`
+    - o `case 0x99` soma esse custo extra focado aos waits base de write
+- Build local validada:
+  - `BUILD_BID=202604051755-issue238-kanjibasic-port99-body-wait`
+  - `BUILD_ID=F8B6`
+  - artefato `sha1 b16cb51f58ae36cd078423ddc67f903309fd7ad7`
+- Guardrail mantido:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - `#238` remove a projecao precoce de `S#2 bit6`
+
+- A subtrilha `#238` encontrou um desvio semantico mais forte que os nudges de custo:
+  - no `blueMSX`, `S#2 bit6` so cai em `onVStart()`
+  - o core local ainda projetava esse low para a cauda do frame anterior
+- Consequencia pratica para a umbrella:
+  - o helper quente `7A83/7A8B/7A91` podia perder a transicao `high -> low` pretendida e cair num frame extra inteiro
+  - a prioridade viva continua em tempo total ate o BASIC, nao em `odd/even` nem em `MASK`
+- Corte local aplicado na subtrilha:
+  - `src/fmsx_local/MSX.c`
+    - `fmsx_vdp_previsible_lines()` passa a `0`
+    - `fmsx_vdp_previsible_window_active()` deixa de projetar `bit6 low` no frame anterior
+    - `fmsx_vdp_projected_next_frame_parity_active()` tambem deixa de projetar a nova paridade nesse trecho sintetico
+- Build local validada:
+  - `BUILD_BID=202604051720-issue238-status2-vstart-no-preproject`
+  - `BUILD_ID=7EF7`
+  - artefato `sha1 af413fbdae102a1c55d458548533dcbda710bd09`
+- Guardrail mantido:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - `#238` corrige a normalizacao do bloco relocado do logo
+
+- A subtrilha `#238` fechou um bug da propria telemetria:
+  - os hot PCs do logo apareciam como `7A8B/7A91/7BB0/7BC6`
+  - mas o `MSX2PEXT` reloca o worker do logo de `0x2A00` para `0x7A00`
+- Consequencia pratica para a umbrella:
+  - a leitura anterior de `HOTH/C0..C2` estava contaminada por alias mal normalizado
+  - o proximo corte funcional de cadencia passa a partir de `2Axx/2Bxx`, nao mais de `7Axx/7Bxx`
+- Corte local aplicado na subtrilha:
+  - `src/fmsx_local/MSX.c`
+    - `fmsx_vdp_normalize_s2_caller_pc()` passa a tratar `0x7A00..0x83FF` como alias `+0x5000`
+  - `src/fmsx_host_stubs.c`
+    - `BL238I/BL238R/BL238S/BL238E` imprimem os PCs do logo ja normalizados
+- Build local validada:
+  - `BUILD_BID=202604051845-issue238-logo-pc-alias`
+  - `BUILD_ID=F38C`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - `#238` passa a medir helpers BIOS de `S#2`
+
+- A UART da subtrilha `#238` consolidou que o boot logo segue com:
+  - `R9=00`
+  - `R25=03`
+  - `R26/R27` dirigindo a animacao horizontal por `0x99 @ 7BB2` e depois `0x9B @ 7A71/7A73`
+  - `S7/TR` fora do caminho quente
+- Consequencia pratica para a umbrella:
+  - o foco vivo da `#238` deixou de ser `R#9 interlace`
+  - o hot path passou a ser `S#2/0x99` nos helpers BIOS do prelude
+- Corte local aplicado na subtrilha:
+  - `src/fmsx_local/MSX.c`
+    - adiciona contadores de leitura de `S#2` por helper BIOS (`10D6`, `363B`, `2BE4`, outros)
+  - `src/fmsx_host_stubs.c`
+    - `BL238S` e `BL238E` passam a publicar esses deltas como `H10L/H10H/H36H/H36L/H2BE/HOTH`
+- Build local validada:
+  - `BUILD_BID=202604051148-cc918b4`
+  - `BUILD_ID=D41F`
+  - artefato `sha1 3b2cd3a4002f9a1e0e5da572db409954df7794a3`
+- Guardrail mantido:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - `#238` alinha o boost do logo as tabelas exatas do `blueMSX`
+
+- A leitura offline do prelude da `#238` confirmou que o helper dominante nas janelas quentes do logo continua sendo `0x2BE4`, isto e, polling de `S#2 bit0` em torno dos comandos do VDP.
+- Consequencia pratica para a umbrella:
+  - o proximo corte util deixou de ser um novo ajuste visual
+  - o foco passou a ser o custo real de comando visto por `CE`
+- Correcao local aplicada na subtrilha:
+  - `src/fmsx_local/V9938.c`
+  - o boost stateful do boot logo continua restrito a janela BIOS da `#238`
+  - mas `GetVdpTimingValue()` passa a usar as tabelas exatas do `blueMSX` enquanto esse boost estiver ativo, em vez do `/8` aproximado sobre as tabelas herdadas do `fMSX`
+- Build local validada:
+  - `BUILD_BID=202604051205-cc918b4`
+  - `BUILD_ID=7BE9`
+  - artefato `sha1 c8c722f904f40f4dcbb04e93d5998f1ae8060dd4`
+- Guardrail mantido:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 05/04/2026 - `0x99` passa a sincronizar tambem no primeiro byte na subtrilha `#238`
+
+- A investigacao offline da `#238` cruzou o helper BIOS `MSX2PEXT:2BEF` com o `blueMSX` e encontrou um gap pequeno, mas relevante:
+  - no `blueMSX`, toda write em `0x99` passa por `sync(vdp, now)`, inclusive o primeiro byte do latch
+  - no core local, a primeira metade da write (`VKey==1`) ainda pulava `fmsx_vdp_sync_before_cpu_write()`
+- Consequencia pratica para a umbrella:
+  - em loops BIOS apertados de `S#2` como `2BEF`, o core local podia "perder" um `OUT (99h)` de progresso do command engine por iteracao
+  - isso reforca a linha atual da `#238`: o foco vivo continua em cadencia/polling de comando, nao em `MASK`
+- Correcao local aplicada:
+  - `src/fmsx_local/MSX.c`
+  - o case `0x99` agora sincroniza o VDP tambem quando `VKey==1`, antes de apenas latchear `ALatch`
+  - o sync duplicado do segundo byte foi removido, ficando um sync por write, mais proximo do `blueMSX`
+- Build local validada:
+  - `BUILD_BID=202604051018-cc918b4`
+  - artefato `sha1 7b8bbce640bd7601cac331c803f3035577d7a8c0`
+- Guardrail mantido:
+  - sem `git commit`
+  - sem `git push`
 
 ## Atualizacao incremental de 04/04/2026 - corte local na `#238` sem `push`
 
@@ -30,6 +246,117 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
   - `BUILD_BID=202604041235-issue238-wide-mask-backdrop`
   - `BUILD_ID=5870`
   - `BUILD_HASH=5a7a82c-5dd8114883e78fd67d9a3864d8b60355d8348e7d`
+
+## Atualizacao incremental de 05/04/2026 - `IE0/VBlank` antecipado na subtrilha `#238`
+
+- A branch derivada `238-fechar-boot-logo-msx2plus-precisao-core-v9958` fechou pela UART leve da `85F2` que:
+  - a janela visivel do logo continua em `R9=00` e `R25=03`
+  - `R26/R27` seguem dirigindo a animacao horizontal
+- Consequencia pratica na umbrella:
+  - o foco da `#238` saiu de `R#9 interlace` como suspeito imediato
+  - o proximo corte mirou o ritmo BIOS-side, nao o renderer
+- Correcao local aplicada:
+  - `src/fmsx_local/MSX.c`
+  - `fmsx_vdp_vblank_start()` passou a usar `192/212`
+  - o gate que sobe `VDPStatus[0].7`, `VDPStatus[2].6` e `INT_IE0` agora dispara no inicio da borda inferior, alinhado ao `blueMSX`
+- Build local validada:
+  - `BUILD_BID=202604042230-issue238-vblank-drawarea-start`
+  - `BUILD_ID=FCD5`
+  - `BUILD_HASH=cc918b4-024ff5eb8ba7a2500f9df7b210693737afdfb42c`
+- Guardrail mantido:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualizacao incremental de 04/04/2026 - `7E29` descartada na subtrilha `#238`
+
+- A branch derivada `238-fechar-boot-logo-msx2plus-precisao-core-v9958` validou por UART que o experimento local `SCREEN 6 streaming scroll` piorou a cadencia do boot logo:
+  - `BL238` seguiu coerente em semantica (`F/VF=1:1`, `LG=000`, `R9=00`, `R25=03`, `R26/R27` alternando)
+  - mas o `DT` medio subiu para `30.06ms` em `96` frames, com pico de `43ms`
+- Consequencia pratica na umbrella:
+  - o corte `7E29` foi descartado localmente
+  - a trilha `#238` volta ao renderer anterior e preserva apenas a telemetria `BL238/BL238I/BL238R`
+  - o foco continua em cadencia/consumo das writes tardias de `R26/R27`, nao em `R#9 interlace`
+- Build local apos o descarte:
+  - `BUILD_BID=202604042215-issue238-drop-screen6-streaming-regression`
+  - `BUILD_ID=C7EC`
+  - `BUILD_HASH=cc918b4-b19e9b444adbbc29baf22793a2664e6029718d5c`
+
+## Atualizacao incremental de 05/04/2026 - `odd page` wide alinhado ao `blueMSX` na subtrilha `#238`
+
+- A branch derivada `238-fechar-boot-logo-msx2plus-precisao-core-v9958` voltou a ler a UART na base `C7EC` e confirmou de novo que:
+  - `R9` permanece `00`
+  - `R25` permanece `03`
+  - o logo visivel continua sendo dirigido por writes tardias de `R26/R27`
+- Consequencia pratica na umbrella:
+  - a trilha da `#238` parou de perseguir `R#9 interlace` como gargalo principal desta janela
+  - o proximo corte entrou no addressing wide de `SCREEN 6/7`
+- Correcao local aplicada:
+  - `src/fmsx_local/Wide.h` agora aplica `FmsxVDPLineOddPageLatched` de forma incondicional em `V9958BitmapLinePtrWideLatched()`
+  - isso alinha o path wide ao `blueMSX`, que usa `vdpIsOddPage()` no `charTable` de `SCREEN 6/7` mesmo sem `FlipEvenOdd`
+- Build local validada:
+  - `BUILD_BID=202604042345-issue238-screen67-oddpage-address`
+  - `BUILD_ID=2039`
+  - `BUILD_HASH=cc918b4-272f08af53d9bb87cb3b543c6db1d0c381896340`
+
+## Atualizacao incremental de 05/04/2026 - `RefreshLine6()` full-line aproximado ao `blueMSX` na subtrilha `#238`
+
+- A branch derivada `238-fechar-boot-logo-msx2plus-precisao-core-v9958` releu a UART da `2039` e confirmou que o contrato visivel do logo nao mudou.
+- Consequencia pratica na umbrella:
+  - o proximo corte saiu do addressing puro e foi para o consumo do `SCREEN 6` full-line
+- Correcao local aplicada:
+  - `src/fmsx_local/Wide.h` agora troca apenas `RefreshLine6()` full-line por um loop de `charTable`/`scroll`/`jump` mais proximo do `blueMSX`
+  - `RefreshLine6WideRange()` permaneceu no path anterior para limitar o risco
+- Build local validada:
+  - `BUILD_BID=202604050015-issue238-screen6-bluemsx-fullscan`
+  - `BUILD_ID=AEAA`
+  - `BUILD_HASH=cc918b4-af940a058b8c0deea90e743290071157a0be0e25`
+
+## Atualizacao incremental de 05/04/2026 - `AEAA` descartada; custo do path parcial vira foco da `#238`
+
+- A subtrilha `238-fechar-boot-logo-msx2plus-precisao-core-v9958` validou por video + UART que a build `AEAA`:
+  - manteve o split horizontal correto
+  - nao melhorou a cadencia
+  - nao trouxe leitura pratica de odd/even
+  - introduziu distorcao visual no logo
+- A UART continuou com o mesmo contrato:
+  - `R9=00`
+  - `R25=03`
+  - primeira write de `R26/R27` por `0x99 @ 7BB2`
+  - loop regular posterior por `0x9B @ 7A71/7A73`
+- Consequencia pratica na umbrella:
+  - o rewrite de `RefreshLine6()` full-line foi descartado localmente como regressao
+  - a trilha preserva o alinhamento de `odd page` da `2039`
+  - o proximo corte passa a atacar o hot path real da renderizacao parcial em `SCREEN 6`
+- Correcao local aplicada na subtrilha:
+  - `RefreshLine6()` voltou ao caminho estavel
+  - `RefreshLine6WideRange()` deixou de reconstruir `BgRaw[1024]` inteiro a cada chunk e passou a amostrar apenas a faixa pedida
+- Build local validada:
+  - `BUILD_BID=202604042152-cc918b4`
+  - `BUILD_ID=C724`
+  - `BUILD_HASH=cc918b4-d1d3b856f205e2924cdeb77c5af38b54b78ff141`
+
+## Atualizacao incremental de 05/04/2026 - UART leve na subtrilha `#238`
+
+- A subtrilha `238-fechar-boot-logo-msx2plus-precisao-core-v9958` confirmou na `C724`:
+  - split horizontal correto
+  - distorcao removida
+  - sem ganho visual de cadencia
+- O contrato funcional do logo continuou identico na UART:
+  - `R9=00`
+  - `R25=03`
+  - `R26/R27` por `0x99 @ 7BB2` e depois `0x9B @ 7A71/7A73`
+- Consequencia pratica na umbrella:
+  - o proximo gargalo de leitura passou a ser o proprio custo do trace UART
+  - a trilha para de emitir `BL238` a cada frame nesta rodada e passa a usar um modo leve para medir o pacing real do logo
+- Correcao local aplicada:
+  - `src/fmsx_host_stubs.c`
+  - `BL238I` permanece no primeiro frame
+  - `BL238R` passa a sair apenas quando muda a origem de `R26/R27`
+  - `BL238S` entra como resumo no frame `96`
+- Build local validada:
+  - `BUILD_BID=202604042201-cc918b4`
+  - `BUILD_ID=85F2`
+  - `BUILD_HASH=cc918b4-e75d968baca8623b4a7f67a7ac93009e34c25606`
 
 ## Atualizacao incremental de 02/04/2026 - transicao `#235 -> #236`
 
@@ -970,3 +1297,357 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 - Proximo gate da umbrella:
   - coletar `BL238` + `BL238W`
   - so depois decidir o proximo patch no bloco odd/even/interlace/cadencia
+
+## Atualizacao incremental de 04/04/2026 - trilha filha `#238`
+
+- O round UART seguinte da trilha filha continuou sem `BL238W`, mas a investigacao local da ROM fechou um dado novo importante para a umbrella:
+  - o `MSX2PEXT.ROM` (`sha1 fe0254cbfc11405b79e7c86c7769bd6322b04995`) realmente passa por `R#26` e `R#27` no helper formal de escrita de registradores VDP (`l0688h`, com `c=1Ah/1Bh`)
+  - portanto, a ausencia de `BL238W` nao pode mais ser lida como "o BIOS nao escreve esses registradores"
+- Consequencia pratica na umbrella:
+  - a `#82` continua sustentando a mesma ordem da trilha filha: primeiro odd/even + `R#9 interlace`, depois cadencia, e so depois `MASK`
+  - o proximo buraco de observabilidade da `#238` passa a ser medir os contadores reais de write durante a janela do logo, no `BL238` que ja funciona
+- Novo corte local aplicado na branch derivada:
+  - `src/fmsx_host_stubs.c`
+  - o `BL238` agora emite tambem:
+    - `L9/L25/L26/L27`
+    - `W9/W25/W26/W27`
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604042040-issue238-bootlogo-write-counters`
+  - `BUILD_ID=DC25`
+  - imagem `sha1 1a0df1ea9732334bcc1678139b671250edf0d619`
+- Guardrail de fluxo reafirmado:
+  - sem `commit`
+  - sem `push`
+  - a `#238` continua ativa; a `#82` segue apenas como umbrella
+
+## Atualizacao incremental de 05/04/2026 - `#238` agora focada no hot path `S#2` do `KANJIBASIC`
+
+- A trilha filha `#238` deixou `odd/even` e `MASK` fora do primeiro plano operacional.
+- A UART mais recente do boot logo consolidou os callers quentes:
+  - `7A8B/7A91`: wait `S#2 bit6 high -> low`
+  - `7BC6`: wait de `CE` apos os comandos do logo
+- Consequencia pratica para a umbrella:
+  - o problema de maior impacto passou a ser o tempo total ate o BASIC, nao mais a apresentacao do split horizontal
+  - o corte local mais novo em `src/fmsx_local/MSX.c` aplica wait-state focal apenas nesses loops do `KANJIBASIC`, para aproximar o custo temporal do polling de `S#2/0x99` ao comportamento-alvo do `blueMSX`
+- Validacao local da trilha filha:
+  - `BUILD_BID=202604051505-issue238-kanjibasic-s2-wait`
+  - `BUILD_ID=7B8D`
+  - artefato `sha1 9560082c89264ea622ee6610d564d3fb0668bab4`
+  - sem `commit`
+  - sem `push`
+
+## Atualizacao incremental de 05/04/2026 - trilha filha `#238`
+
+- A rodada offline mais recente da `#238` retirou do caminho ativo uma hipotese que estava contaminando a leitura da umbrella:
+  - o alias especial `7Axx/7Bxx -> 2Axx/2Bxx` deixou de ser tratado como fato
+  - a trilha filha voltou a preservar `PC` bruto como fonte de verdade, usando apenas um `linear -0x4000` conservador como dica offline
+- Consequencia pratica na umbrella:
+  - a `#82` deixa de propagar a leitura "o hot path do logo e `2Axx/2Bxx`" como conclusao
+  - o proximo corte da `#238` passa a depender dos bytes reais dos callers quentes de `S#2`, emitidos em `BL238C`
+  - `MASK` continua fora do foco principal; a prioridade segue sendo cadencia/tempo do boot logo
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604051930-issue238-raw-pc-caller-bytes`
+  - `BUILD_ID=FB98`
+  - imagem `sha1 94e63358c8cf618cd7cf1905079b8d04eedcc577`
+
+## Atualizacao incremental de 05/04/2026 - trilha filha `#238`
+
+- A investigacao offline seguinte na `#238` fechou um bug da propria telemetria do boot logo:
+  - os campos `C0..C3` ainda podiam apontar callers impossiveis (`3A8D`, `3A93`, `3BC8`)
+  - isso vinha de buckets decadentes em `FmsxVDPS2CallerCount[]` sendo consumidos por delta no `BL238`
+- Consequencia pratica na umbrella:
+  - a trilha da `#82` nao deve mais confiar no histograma antigo de callers de `S#2`
+  - o hot path da `#238` continua no eixo `S#2/0x99`, mas agora com telemetria monotônica e separando tambem o caller dinamico `2276 -> 2279`
+- Novo corte local aplicado na branch derivada:
+  - `src/fmsx_local/MSX.c`
+  - `src/fmsx_host_stubs.c`
+  - callers de `S#2` passaram a ser monotônicos
+  - overflow separado em `CO`
+  - `H227` passou a sair separado de `HOTH`
+  - reads diretos de `0x99` recuperam o endereco real da instrucao quando os bytes anteriores sao `DB 99`
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604051720-issue238-s2-monotonic-callers`
+  - `BUILD_ID=2449`
+  - imagem `sha1 3f66e91a1b1130856a1aa657931aca8e486a3182`
+
+## Atualizacao incremental de 05/04/2026 - trilha filha `#238`
+
+- A rodada offline seguinte refinou a observabilidade do prelude do logo:
+  - o trace da trilha filha ainda mostrava `PC=7A71/7A73/7BB2`, mas esses valores continuavam sendo `PC` pos-instrucao em `OUT/IN`
+  - isso contaminava a leitura offline da origem real de `R26/R27` e dos polls de `0x99`
+- Novo corte local aplicado na branch derivada:
+  - `src/fmsx_local/MSX.c`
+  - writes em `0x99/0x9B` agora recuperam o endereco real do opcode quando os bytes anteriores sao `D3 99` / `D3 9B`
+  - reads em `0x99` agora recuperam o endereco real de `DB 99`
+- Consequencia pratica na umbrella:
+  - a `#82` continua sem abrir novo patch visual cego na `#238`
+  - o proximo round de UART da trilha filha deve finalmente apontar o site real dos `OUT/IN` que dirigem o logo
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604051805-issue238-s2-pc-normalized`
+  - `BUILD_ID=161D`
+  - imagem `sha1 24313ed7260ecb1f1ee345c41bca4bc8bdc96c42`
+
+## Atualizacao incremental de 05/04/2026 - trilha filha `#238`
+
+- A telemetria `C0..C3` da trilha filha mostrou um problema do proprio classificador:
+  - `3BC8` apareceu como caller quente de `S#2`, mas cai em tabela/string do `MSX2PEXT`
+  - isso indica colapso de paginas/aliases, nao caller funcional confiavel
+- Consequencia pratica na umbrella:
+  - a `#82` continua priorizando cadencia/`S#2` para a `#238`
+  - o proximo corte deixou de confiar apenas no histograma por `PC` e passou a medir diretamente os bits/bordas de `S#2`
+- Novo corte local aplicado na branch derivada:
+  - `src/fmsx_local/MSX.c`
+    - callers de `S#2` agora preservam o PC completo
+    - a normalizacao para offsets de ROM ficou restrita à classificacao dos helpers conhecidos
+  - `src/fmsx_host_stubs.c`
+    - `BL238` agora publica:
+      - `B0/B1/B6` para leituras com `bit0/bit1/bit6 = 1`
+      - `E0/E1/E6` para bordas `rise/fall` desses mesmos bits
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604051610-issue238-s2-bit-edge-counters`
+  - `BUILD_ID=78AE`
+  - imagem `sha1 b1cd6286ec85af28988de713a89d5a4dbdb46e4e`
+- Guardrail de fluxo reafirmado:
+  - sem `commit`
+  - sem `push`
+  - a `#238` continua ativa; a `#82` segue apenas como umbrella
+
+## Atualizacao incremental de 05/04/2026 - trilha filha `#238`
+
+- A UART mais recente da trilha filha fechou um problema do proprio trace:
+  - `S2:999`, `P99:999`, `HOTH:999`
+  - `H2BE/H10L/H10H/H36H/H36L` zerados
+- Isso nao significava ausencia de `2BE4`; significava que a contagem ainda estava olhando o `PC` vivo dentro do helper comum `2BEF`.
+- Consequencia pratica para a umbrella:
+  - o foco da `#238` continua correto em `S#2/0x99`, sem voltar para `MASK`
+  - o proximo corte da trilha filha precisava corrigir a telemetria antes de qualquer outro patch funcional
+- Novo corte local aplicado na branch derivada:
+  - `src/fmsx_local/MSX.c`
+  - a classificacao de reads de `S#2` agora usa o endereco de retorno em `CPU.SP` quando a leitura acontece dentro de `2BEF..2C02`
+  - isso separa corretamente os chamadores `2BE4`, `10D6/10DF` e `363B/3644`
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604051330-cc918b4`
+  - imagem `sha1 84d015d9b31a90232469eb291a02cbea25e0f208`
+- Guardrail de fluxo reafirmado:
+  - sem `commit`
+  - sem `push`
+  - a `#238` continua ativa; a `#82` segue apenas como umbrella
+
+## Atualizacao incremental de 05/04/2026 - trilha filha `#238`
+
+- O round seguinte da UART na trilha filha mostrou:
+  - `H2BE=2`
+  - `HOTH=999`
+- Consequencia pratica na umbrella:
+  - a correção stack-based funcionou, mas o helper quente do logo inteiro continua escondido dentro de `OTHER`
+  - a prioridade da trilha filha segue em `S#2/0x99`, sem voltar para `MASK`
+- Novo corte local aplicado na branch derivada:
+  - `src/fmsx_local/MSX.c`
+  - `src/fmsx_host_stubs.c`
+  - a telemetria do logo agora carrega um histograma dos callers reais de `S#2`
+  - os resumos `BL238S/BL238P/BL238E` passam a emitir `C0..C3` com os `PCs` mais frequentes
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604051405-cc918b4`
+  - imagem `sha1 f5f681f2f373d96007cb9902ed4febfd5cd0ac69`
+- Guardrail de fluxo reafirmado:
+  - sem `commit`
+  - sem `push`
+  - a `#238` continua ativa; a `#82` segue apenas como umbrella
+
+## Atualizacao incremental de 05/04/2026 - umbrella `#82` acompanha o ajuste fino do `S#2` na `#238`
+
+- A trilha filha `#238` continuou no eixo pedido em campo: cadencia/precisao do boot logo, sem abrir nova frente em `MASK`.
+- Ajuste aplicado na trilha filha:
+  - `src/fmsx_local/MSX.c`
+  - a janela pseudo-`VStart` do `S#2` deixou de usar a HBlank inteira da ultima linha
+  - o threshold agora vale apenas nos ultimos `40` ticks VDP dessa linha, refletindo o `leftBorder - 10` do `blueMSX`
+- Leitura operacional para a umbrella:
+  - `R#9 interlace` continua fora do gargalo dominante da janela visivel
+  - o foco segue nos waits BIOS de `S#2` e na cadencia do prelude do logo
+  - `MASK` permanece fora do caminho critico nesta fase
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604051124-cc918b4`
+  - imagem `sha1 63e76c3640998f4f26cbeeb883f77321caa9cfb1`
+  - sem `commit`
+  - sem `push`
+
+## Atualizacao incremental de 05/04/2026 - trilha filha `#238`
+
+- O refinamento offline seguinte da `#238` fechou um gap mais fino do contrato de `S#2`:
+  - a documentacao local ja tratava o pseudo-`VStart` como "cauda da ultima scanline";
+  - a implementacao ainda projetava `bit6 low` e a inversao live de `bit1` sobre a linha inteira.
+- Consequencia pratica para a umbrella:
+  - a trilha filha continua descartando `R#9 interlace` como causa principal da janela visivel do logo;
+  - o foco vivo segue em `S#2/0x99`, agora mais especificamente nos waits BIOS `10D6/363B` ate o BASIC.
+- Correcao local aplicada na branch derivada:
+  - `src/fmsx_local/MSX.c`
+  - `fmsx_vdp_previsible_window_active()` agora so ativa na faixa de HBlank da ultima scanline do frame anterior
+  - `fmsx_vdp_status2_vr()` e a exposicao live de `bit1` continuam ancoradas nessa mesma janela curta
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604051116-cc918b4`
+  - `BUILD_ID=AA06`
+  - imagem `sha1 31589d42ff0c10522c2f73c7059498e9382f4260`
+- Guardrail mantido:
+  - sem `commit`
+  - sem `push`
+
+## Atualizacao incremental de 05/04/2026 - trilha filha `#238`
+
+- A `#238` parou de olhar so para os primeiros `96` frames do logo.
+- A UART da `899C` manteve o mesmo contrato inicial (`R9=00`, `R25=03`, `R26/R27` via `0x99 @ 7BB2` e depois `0x9B @ 7A71/7A73`), mas isso ja nao basta para explicar um boot que segue ate `F:004500`.
+- Novo corte local na trilha filha:
+  - `src/fmsx_host_stubs.c`
+  - o trace do logo inteiro agora emite:
+    - `BL238P` a cada `256` frames
+    - `BL238E` ao sair do logo
+  - os resumos incluem `S#2`, `S#7`, leituras totais de `0x99`, `W26/W27`, `CE/TR` e estado final de `R9/R25/R26/R27`
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604051059-cc918b4`
+  - `BUILD_ID=6BDA`
+  - imagem `sha1 adc26143e8312c896d9059b7200f36af044ccfb1`
+
+## Atualizacao incremental de 05/04/2026 - trilha filha `#238`
+
+- A rodada offline mais recente da `#238` continuou sem atacar `MASK` e ficou focada em contrato BIOS/`blueMSX`.
+- Dois ajustes locais relevantes foram aplicados na branch filha:
+  - `src/fmsx_local/MSX.c`
+    - a janela pseudo-`VStart` usada pelo `status2` live foi reduzida de `4` para `1` linha pre-visível
+    - isso corrige o excesso introduzido nas leituras BIOS `10D6` / `363B`, porque no `blueMSX` a maior parte dos `4 * HPERIOD` após `VStart` já cai dentro da área visível
+  - `src/fmsx_local/V9938.c`
+    - o recorte BIOS do boost local do boot logo foi ampliado de forma consistente com o disassembly/UART
+    - além dos wrappers `2BE4/2E3E/3040/3299`, a janela agora inclui o prelude real `0x2A0F..0x2C59` e o alias `0x7A0F..0x7C59`
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604051028-cc918b4`
+  - `BUILD_ID=899C`
+  - imagem `sha1 098aa1e47b954d15e1eb0a07dd85d989ad5def45`
+- Guardrail de fluxo reafirmado:
+  - sem `commit`
+  - sem `push`
+  - a `#238` continua ativa; a `#82` segue apenas como umbrella
+
+- Atualizacao incremental da `#238`: o refinamento offline mais recente mostrou que o corte de `drawArea` ainda estava coarse demais. No `blueMSX`, `S#2 bit6` cai em `onVStart()` antes da area visivel, mas o `timingMode` do command engine so muda em `onDrawAreaStart()`. A trilha filha foi ajustada para separar essas duas semanticas:
+  - `src/fmsx_local/MSX.c`: `fmsx_vdp_status2_vr()` agora representa uma pseudo-top-border low na cauda do frame anterior
+  - `src/fmsx_local/V9938.c`: `GetVdpTimingValue()` deixou de usar `S#2 bit6` como proxy e voltou a seguir apenas a faixa visivel local para o bucket de `drawArea`
+  - build local validada: `BUILD_BID=202604050035-issue238-status2-vstart-drawarea`, `BUILD_ID=F5E4`, imagem `sha1 a87d0873ee713b999432fc518fc578ba3776f754`
+- A `#82` segue apenas como umbrella nesta rodada; nao houve `commit` nem `push`.
+- Atualizacao incremental da `#238`: o refinamento final desta rodada apertou a pseudo-top-border ao contrato real do `blueMSX`. O `readStatus()` de referencia nao mantem `S#2 bit6=0` por toda a borda superior; a janela e de apenas `4` scanlines apos `VStart`. A trilha filha foi ajustada para esse recorte:
+  - `src/fmsx_local/MSX.c`: `fmsx_vdp_previsible_lines()` agora retorna `4`
+  - `fmsx_vdp_status2_vr()` e a inversao live de `bit1` passaram a usar essa mesma janela curta
+  - build local validada: `BUILD_BID=202604050145-issue238-status2-vstart-4lines`, `BUILD_ID=2155`, imagem `sha1 753852f58a16c9ad346647f0c8b09f5593346817`
+- A `#82` segue apenas como umbrella nesta rodada; nao houve `commit` nem `push`.
+- Atualizacao incremental da `#238`: o refinamento offline seguinte fechou o helper BIOS `363B` como contrato `S#2 bit6 high->low + bit1 do novo frame`. No `blueMSX`, `bit1` ja troca em `onDisplay()` antes da janela de `VStart`; no core local, ele ainda trocava so em `ScanLine == 0`. A trilha filha foi ajustada para expor essa paridade nova apenas na janela pseudo-top-border do `status2` live, sem mexer no latch cru usado pelo renderer:
+  - `src/fmsx_local/MSX.c`: `fmsx_vdp_status2_live()` agora inverte `bit1` so nessa janela
+  - build local validada: `BUILD_BID=202604050115-issue238-status2-bit1-vstart`, `BUILD_ID=390D`, imagem `sha1 0c702f3c57bfd15b8fe4fce6582ddeb8dd4f11a0`
+- A `#82` segue apenas como umbrella nesta rodada; nao houve `commit` nem `push`.
+
+## Atualizacao incremental de 05/04/2026 - trilha filha `#238`
+
+- A comparacao offline seguinte contra o `blueMSX` isolou uma divergencia mais forte que `R#9 interlace` para a umbrella:
+  - referencia: `timingMode = ((R#1 >> 6) & drawArea) | (R#8 & 2)`
+  - core local: `src/fmsx_local/V9938.c:GetVdpTimingValue()` ainda indexava as tabelas so por `R#1 bit6`
+- Consequencia pratica na umbrella:
+  - como a UART do logo ja mostrou writes de `R#26/R#27` em `SL 192/193`, a trilha filha pode estar cobrando timing de display ativo justamente quando o BIOS atualiza scroll na borda inferior
+  - isso recoloca a cadencia do producer acima de qualquer nova tentativa visual em `MASK`
+- Novo corte local aplicado na branch derivada:
+  - `src/fmsx_local/V9938.c`
+  - `GetVdpTimingValue()` agora usa `S#2 bit6` como gate coarse de `drawArea`
+  - borda/VBlank passam a cair no bucket off-screen como na referencia `blueMSX`
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604042355-issue238-command-timing-drawarea`
+  - `BUILD_ID=66B1`
+  - imagem `sha1 3483cb935ae92659fad3b1af41e85a21653dda4f`
+- Guardrail de fluxo reafirmado:
+  - sem `commit`
+  - sem `push`
+  - a `#238` continua ativa; a `#82` segue apenas como umbrella
+
+- Atualizacao incremental da `#238`: a rodada offline mais recente deixou de insistir em `R#9 interlace` como causa primaria da janela visivel do logo e voltou ao ponto que a antiga `#176` ja sustentava melhor: a cadencia do fluxo BIOS de `S#2 bit0`. O corte local seguinte entrou em `src/fmsx_local/V9938.c` e reaplicou, com guardrails mais estreitos, a reducao de custo de comando (`/8`, minimo `1`) apenas nos wrappers/polls do boot logo `MSX2+`. A janela aceita:
+  - os ranges lineares documentados na `#176`:
+    - `0x2BE4..0x2C27`
+    - `0x2E3E..0x2F97`
+    - `0x3040..0x3147`
+    - `0x3299..0x3325`
+  - e o alias `+0x5000` coerente com a UART atual da `#238`, para cobrir o mesmo fluxo quando o `MSX2PEXT` aparece mapeado em `0x7Bxx/0x7Exx/0x80xx/0x82xx`.
+  - build local validada: `BUILD_BID=202604051005-cc918b4`, `BUILD_ID=828F`, imagem `sha1 4529f3540680781486b58b2948ef41b86cff4688`
+- A `#82` segue apenas como umbrella nesta rodada; nao houve `commit` nem `push`.
+- Atualizacao incremental da `#238`: o refinamento local seguinte tornou esse `/8` mais proximo do comportamento temporal do `blueMSX`. Em vez de depender do `CPU.PC.W` em cada slice, o boost do logo agora arma em `VDPDraw()` quando o comando nasce dentro da janela BIOS do boot logo e permanece ativo ate `CE` cair. O corte segue restrito ao boot logo `MSX2+`, mas deixa de depender do `PC` da CPU no miolo da execucao do comando. Build local validada: `BUILD_BID=202604051010-cc918b4`, `BUILD_ID=8504`, imagem `sha1 dbea3990879f647f24d05a06015f29880a2d46e8`.
+- A `#82` segue apenas como umbrella nesta rodada; nao houve `commit` nem `push`.
+
+## Atualizacao incremental de 05/04/2026 - `#238` sai de interlace visivel e entra em `S#2 bit6`
+
+- A subtrilha `#238` fechou um refinamento importante sem novo teste em hardware:
+  - a UART da `85F2` manteve `R9=00` e `R25=03`
+  - o logo visivel continua dirigido por `R26/R27`
+  - o `z80dasm` da `MSX2PEXT.ROM` mostrou que os waits por `S#2 bit6` relevantes para o boot ate o BASIC ficam em helpers BIOS fora da janela visivel (`0x10D6` e `0x363B`)
+- Consequencia pratica:
+  - a hipotese primaria deixa de ser "odd/even/interlace nao armado no logo"
+  - o proximo gargalo provavel passa a ser a borda vertical/VBlank do VDP
+- Correcao local aplicada na `#238`:
+  - `src/fmsx_local/MSX.c`
+  - `IE0/VBlank` agora sobem no inicio da primeira linha da borda inferior, alinhando o core local ao `blueMSX`
+- Build local validada na filha:
+  - `BUILD_BID=202604042320-issue238-vblank-line-start`
+  - `BUILD_ID=59C0`
+  - `BUILD_HASH=cc918b4-382ad7d1628e55605b3dac4dc32359c78b179015`
+
+## Atualizacao incremental de 04/04/2026 - trilha filha `#238`
+
+- A UART da `47D9` fechou para a umbrella que, nesta janela do boot logo:
+  - o prelude escreve `R#9=00`
+  - `R#25=03`
+  - `R#26/R#27` entram depois, dirigindo a animacao horizontal
+- Consequencia pratica na umbrella:
+  - a hipotese primaria de `odd/even + R#9 interlace` perde forca nesta sub-issue
+  - o foco vivo da `#238` migra para a cadencia/consumo das writes de `R#26/R#27`
+  - `MASK` continua explicitamente fora do alvo principal
+- Novo corte local aplicado na branch derivada:
+  - `src/fmsx_local/Wide.h`
+  - o `SCREEN 6` wide deixa o modelo de expandir toda a linha em `BgRaw[1024]`
+  - o path passa a fazer fetch streaming por pagina, consumindo `R#26/R#27` em unidades logicas de pares de pixels, mais proximo do `blueMSX`
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604042325-issue238-screen6-streaming-scroll`
+  - `BUILD_ID=7E29`
+  - imagem `sha1 054a2bbbf95a7fccd89ea9cc199c2bc5a23f40d2`
+
+## Atualizacao incremental de 04/04/2026 - trilha filha `#238`
+
+- A UART da `DC25` fechou o proximo corte util da trilha filha:
+  - `W9=0` e `W25=0` durante toda a janela visivel do logo
+  - `W26/W27` sobem juntos ate `77`
+  - `L26/L27` batem com `R26/R27`
+- Consequencia pratica na umbrella:
+  - a prioridade da `#238` continua coerente com a ordem definida em campo, mas o dado novo mostrou que a janela visivel do logo nao esta sendo guiada por writes de `R#9` nem `R#25`
+  - o problema vivo da trilha filha ficou mais estreito: origem e cadencia das writes de `R#26/R#27`
+- Novo corte local aplicado na branch derivada:
+  - `src/fmsx_local/MSX.c`
+  - `src/fmsx_host_stubs.c`
+  - o core agora guarda o ultimo `PC`, porta, valor antigo/novo, frame e scanline por registrador VDP
+  - a UART da trilha filha ganhou `BL238R`, emitido quando `R26/R27` realmente avancam
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604042120-issue238-r26r27-write-origin`
+  - `BUILD_ID=6ED6`
+  - imagem `sha1 7c002d49a8acfb3e64a192addcea0d50914ab429`
+
+## Atualizacao incremental de 04/04/2026 - trilha filha `#238`
+
+- A UART da `6ED6` fechou que a janela visivel do logo nao reprograma `R#9` nem `R#25`, mas escreve `R#26/R#27` de forma regular:
+  - primeira mudanca visivel por `0x99` em `PC=7BB2`
+  - depois loop estavel por `0x9B` em `PC=7A71/7A73`
+  - `R#26/R#27` alternando perto do fim da area visivel
+- Consequencia pratica na umbrella:
+  - a `#82` continua guardando a ordem pedida em campo, mas a trilha filha agora precisa responder antes de tudo se o prelude do logo arma `R#9`/`R#25` fora da janela visivel
+  - enquanto isso nao estiver fechado, a umbrella nao deve abrir novo patch visual cego em `MASK`
+- Novo corte local aplicado na branch derivada:
+  - `src/fmsx_host_stubs.c`
+  - a UART ganhou `BL238I`, emitido no primeiro frame do logo
+  - essa linha mostra o ultimo write absoluto de `R#9`, `R#25`, `R#26` e `R#27`, com porta, `PC`, scanline e valor antigo/novo
+- Build local preparada na trilha filha:
+  - `BUILD_BID=202604042245-issue238-bootlogo-init-reg-origin`
+  - `BUILD_ID=47D9`
+  - imagem `sha1 fed1fa2d8f5ec428052b42c1304322c65e2ff704`
+- Guardrail de fluxo reafirmado:
+  - sem `commit`
+  - sem `push`
+  - a `#238` continua ativa; a `#82` segue apenas como umbrella
+
+- Atualizacao incremental da `#238`: a leitura offline mais recente deslocou o foco da umbrella do eixo `R#9 interlace` para o eixo `status0 bit5`. A disassembly do `KANJIBASIC` mostrou que o worker `7A48` espera `status0 bit5` em `7A66/7A68` antes de cada par de writes indiretas em `R26/R27`; no core local, esse `bit5` ainda nascia quase todo via `CheckSprites()` em `ScanLine==192`, enquanto o `blueMSX` o atualiza por scanline em `SpriteLine.h`. O corte local da filha `#238` passou a materializar `status0 bit5` live no read path de `0x99` (`R15=0`) com cache por `frame + scanline`, latch de uma vez por linha e limpeza de `status0` em `bit7/6/5` como no `blueMSX`. Build local validada: `BUILD_BID=202604051935-issue238-status0-live-readclear`, `BUILD_ID=7A50`, `BUILD_HASH=cc918b4-4beab8fa3ba4f8d9227da7aef57147335020167d`. Sem `commit`. Sem `push`.

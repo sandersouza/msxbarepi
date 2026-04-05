@@ -21,8 +21,9 @@ Data de referência desta versão: 5 de março de 2026.
 - Todo PR deve ser criado somente a partir de uma branch vinculada a uma issue ativa.
 - Quando houver umbrella branch ativa, o PR da sub-issue deve mirar a branch umbrella; somente a branch umbrella abre PR para `main` ao consolidar a trilha.
 - Todo PR deve ser vinculado a milestone e ao projeto origem da issue, além ter as mesmas labels da issue de origem.
-- Commits locais incrementais sao permitidos durante investigacao, mas `git push` so deve acontecer quando o usuario declarar explicitamente que o estado atual esta estavel.
-- Nao publicar cortes intermediarios apenas para backup/sincronizacao; manter iteracoes experimentais no worktree/branch local ate confirmacao do usuario.
+- Nem `git commit` local nem `git push` devem acontecer durante investigacao experimental; ambos so sao permitidos quando o usuario declarar explicitamente que o estado atual da issue esta estavel.
+- Nao publicar nem consolidar cortes intermediarios apenas para backup/sincronizacao; manter iteracoes experimentais somente no worktree ate confirmacao do usuario.
+- Se um commit local for feito por engano antes da estabilidade da issue, desfaze-lo imediatamente de volta ao worktree antes de continuar.
 - Sempre atualizar as tasks concluídas diretamente na issue remota.
 - Para cada milestone, manter `docs/milestones/m<numero>/CHALLENGES.md` atualizado com uma entrada por issue contendo: desafio, solução final (ou mitigação), status (`Resolvido`/`Parcial`/`Futuro`) e referência de continuidade quando houver.
 - Em cada build entregue para teste de hardware (incluindo iterações A/B/debug), publicar no comentário/status um identificador curto de rastreio no formato `BTID:<timestamp>-<git>-<sha8>` para permitir referência exata de qual artefato foi testado.

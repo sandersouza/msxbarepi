@@ -11,6 +11,36 @@
 
 retro_log_printf_t log_cb = 0;
 extern void msxbare_uart_write(const char *text);
+extern uint32_t FmsxVDPRegWriteCount[64];
+extern uint32_t FmsxVDPStatusReadCount[16];
+extern uint32_t FmsxVDPS2HelperReadCount[7];
+extern uint16_t FmsxVDPS2CallerPC[16];
+extern uint32_t FmsxVDPS2CallerCount[16];
+extern uint32_t FmsxVDPS2CallerOverflowCount;
+extern uint32_t FmsxVDPS2Bit0SetCount;
+extern uint32_t FmsxVDPS2Bit1SetCount;
+extern uint32_t FmsxVDPS2Bit6SetCount;
+extern uint32_t FmsxVDPS2Bit0RiseCount;
+extern uint32_t FmsxVDPS2Bit0FallCount;
+extern uint32_t FmsxVDPS2Bit1RiseCount;
+extern uint32_t FmsxVDPS2Bit1FallCount;
+extern uint32_t FmsxVDPS2Bit6RiseCount;
+extern uint32_t FmsxVDPS2Bit6FallCount;
+extern uint32_t FmsxVDPStatus0Read7A66Count;
+extern uint32_t FmsxVDPStatus0Read7A66Bit5Count;
+extern uint32_t FmsxVDPStatus0Read7A68Count;
+extern uint32_t FmsxVDPStatus0Read7A68Bit5Count;
+extern uint32_t FmsxVDPPort99ReadCount;
+extern uint16_t FmsxVDPRegLastWritePC[64];
+extern uint16_t FmsxVDPRegLastWriteLine[64];
+extern uint32_t FmsxVDPRegLastWriteFrame[64];
+extern uint8_t FmsxVDPRegLastWritePort[64];
+extern uint8_t FmsxVDPRegLastWriteOld[64];
+extern uint8_t FmsxVDPRegLastWriteNew[64];
+extern uint8_t FmsxVDPLineR9Latched;
+extern uint8_t FmsxVDPLineR25Latched;
+extern uint8_t FmsxVDPLineR26Latched;
+extern uint8_t FmsxVDPLineR27Latched;
 
 #define BORDER 8
 #define WIDTH  (256 + (BORDER << 1))
@@ -50,8 +80,42 @@ static volatile unsigned g_video_seq = 0;
 static unsigned g_bootlogo_trace_frames = 0;
 static unsigned g_bootlogo_trace_seen = 0;
 static unsigned g_bootlogo_trace_vdp_base = 0u;
+static uint32_t g_bootlogo_trace_w9_base = 0u;
+static uint32_t g_bootlogo_trace_w25_base = 0u;
+static uint32_t g_bootlogo_trace_w26_base = 0u;
+static uint32_t g_bootlogo_trace_w27_base = 0u;
+static uint32_t g_bootlogo_trace_s2_base = 0u;
+static uint32_t g_bootlogo_trace_s7_base = 0u;
+static uint32_t g_bootlogo_trace_s2h_base[7];
+static uint32_t g_bootlogo_trace_s2caller_base[16];
+static uint32_t g_bootlogo_trace_s2caller_overflow_base = 0u;
+static uint32_t g_bootlogo_trace_s2b0_base = 0u;
+static uint32_t g_bootlogo_trace_s2b1_base = 0u;
+static uint32_t g_bootlogo_trace_s2b6_base = 0u;
+static uint32_t g_bootlogo_trace_s2e0u_base = 0u;
+static uint32_t g_bootlogo_trace_s2e0d_base = 0u;
+static uint32_t g_bootlogo_trace_s2e1u_base = 0u;
+static uint32_t g_bootlogo_trace_s2e1d_base = 0u;
+static uint32_t g_bootlogo_trace_s2e6u_base = 0u;
+static uint32_t g_bootlogo_trace_s2e6d_base = 0u;
+static uint32_t g_bootlogo_trace_s066_base = 0u;
+static uint32_t g_bootlogo_trace_s066b5_base = 0u;
+static uint32_t g_bootlogo_trace_s068_base = 0u;
+static uint32_t g_bootlogo_trace_s068b5_base = 0u;
+static uint32_t g_bootlogo_trace_p99_base = 0u;
 static uint64_t g_bootlogo_trace_start_us = 0u;
 static uint64_t g_bootlogo_trace_prev_us = 0u;
+static uint32_t g_bootlogo_trace_prev_w26 = 0u;
+static uint32_t g_bootlogo_trace_prev_w27 = 0u;
+static uint64_t g_bootlogo_trace_dt_sum_ms = 0u;
+static unsigned g_bootlogo_trace_dt_count = 0u;
+static unsigned g_bootlogo_trace_dt_max_ms = 0u;
+static unsigned g_bootlogo_trace_ce_hits = 0u;
+static unsigned g_bootlogo_trace_tr_hits = 0u;
+static uint16_t g_bootlogo_trace_last_log_pc26 = 0u;
+static uint16_t g_bootlogo_trace_last_log_pc27 = 0u;
+static uint8_t g_bootlogo_trace_last_log_port26 = 0u;
+static uint8_t g_bootlogo_trace_last_log_port27 = 0u;
 extern uint32_t FmsxVDPFrameCounter;
 extern unsigned long long msxbare_monotonic_time_us(void);
 
@@ -66,6 +130,13 @@ static int g_video_tables_ready = 0;
 int LastScanline;
 
 #include "fmsx_local/CommonMux.h"
+
+#undef ColorSprites
+
+void FmsxLatchColorSpritesLine(uint8_t Y,uint8_t *ZBuf)
+{
+    ColorSprites(Y,ZBuf);
+}
 
 static volatile u8 g_bridge_bits = 0;
 static uint8_t g_sram_disk_blob[(64 * 1024) + 1];
@@ -216,66 +287,384 @@ static void fmsx_uart_put_hex8(unsigned value)
     msxbare_uart_write(out);
 }
 
+static void fmsx_uart_put_hex16(unsigned value)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    char out[5];
+    out[0] = hex[(value >> 12u) & 0x0Fu];
+    out[1] = hex[(value >> 8u) & 0x0Fu];
+    out[2] = hex[(value >> 4u) & 0x0Fu];
+    out[3] = hex[value & 0x0Fu];
+    out[4] = '\0';
+    msxbare_uart_write(out);
+}
+
+static uint16_t fmsx_uart_linear_bootlogo_pc(uint16_t pc)
+{
+    /*
+     * Keep the UART interpretation conservative: only project the standard
+     * 0x4000..0x7FFF slot window back into a linear 16KB ROM offset. Raw PCs
+     * remain the source of truth; the linear form is only an offline hint when
+     * the bytes still map directly to a ROM image.
+     */
+    if ((pc >= 0x4000u) && (pc < 0x8000u))
+    {
+        return (uint16_t)(pc - 0x4000u);
+    }
+    return pc;
+}
+
+static void fmsx_uart_put_bootlogo_pc_bytes(uint16_t pc)
+{
+    for (unsigned i = 0u; i < 4u; ++i)
+    {
+        if (i != 0u)
+        {
+            msxbare_uart_write(".");
+        }
+        fmsx_uart_put_hex8(RdZ80((uint16_t) (pc + i)) & 0xFFu);
+    }
+}
+
+static void fmsx_uart_trace_bootlogo_s2_callers(void)
+{
+    unsigned top_idx[4] = { 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu };
+    unsigned top_count[4] = { 0u, 0u, 0u, 0u };
+    unsigned i, j;
+
+    for (i = 0u; i < 16u; ++i)
+    {
+        const unsigned delta = (unsigned) (FmsxVDPS2CallerCount[i] - g_bootlogo_trace_s2caller_base[i]);
+        if (delta == 0u)
+        {
+            continue;
+        }
+
+        for (j = 0u; j < 4u; ++j)
+        {
+            if (delta > top_count[j])
+            {
+                unsigned k;
+                for (k = 3u; k > j; --k)
+                {
+                    top_count[k] = top_count[k - 1u];
+                    top_idx[k] = top_idx[k - 1u];
+                }
+                top_count[j] = delta;
+                top_idx[j] = i;
+                break;
+            }
+        }
+    }
+
+    for (i = 0u; i < 4u; ++i)
+    {
+        msxbare_uart_write(" C");
+        fmsx_uart_put_uint(i);
+        msxbare_uart_write(":");
+        if (top_idx[i] == 0xFFFFFFFFu)
+        {
+            fmsx_uart_put_hex16(0u);
+            msxbare_uart_write("/");
+            fmsx_uart_put_uint(0u);
+        }
+        else
+        {
+            fmsx_uart_put_hex16(FmsxVDPS2CallerPC[top_idx[i]] & 0xFFFFu);
+            msxbare_uart_write("/");
+            fmsx_uart_put_uint(top_count[i] > 999u ? 999u : top_count[i]);
+        }
+    }
+
+    msxbare_uart_write(" CO:");
+    {
+        const unsigned overflow = (unsigned) (FmsxVDPS2CallerOverflowCount - g_bootlogo_trace_s2caller_overflow_base);
+        fmsx_uart_put_uint(overflow > 999u ? 999u : overflow);
+    }
+}
+
+static void fmsx_uart_trace_bootlogo_s2_caller_bytes(void)
+{
+    unsigned top_idx[3] = { 0xFFFFFFFFu, 0xFFFFFFFFu, 0xFFFFFFFFu };
+    unsigned top_count[3] = { 0u, 0u, 0u };
+    unsigned i, j;
+
+    for (i = 0u; i < 16u; ++i)
+    {
+        const unsigned delta = (unsigned) (FmsxVDPS2CallerCount[i] - g_bootlogo_trace_s2caller_base[i]);
+        if (delta == 0u)
+        {
+            continue;
+        }
+
+        for (j = 0u; j < 3u; ++j)
+        {
+            if (delta > top_count[j])
+            {
+                unsigned k;
+                for (k = 2u; k > j; --k)
+                {
+                    top_count[k] = top_count[k - 1u];
+                    top_idx[k] = top_idx[k - 1u];
+                }
+                top_count[j] = delta;
+                top_idx[j] = i;
+                break;
+            }
+        }
+    }
+
+    msxbare_uart_write("BL238C");
+    for (i = 0u; i < 3u; ++i)
+    {
+        msxbare_uart_write(" C");
+        fmsx_uart_put_uint(i);
+        msxbare_uart_write("R:");
+        if (top_idx[i] == 0xFFFFFFFFu)
+        {
+            fmsx_uart_put_hex16(0u);
+            msxbare_uart_write(" L:");
+            fmsx_uart_put_hex16(0u);
+            msxbare_uart_write(" B:");
+            fmsx_uart_put_bootlogo_pc_bytes(0u);
+        }
+        else
+        {
+            const uint16_t raw_pc = FmsxVDPS2CallerPC[top_idx[i]] & 0xFFFFu;
+            fmsx_uart_put_hex16(raw_pc);
+            msxbare_uart_write(" L:");
+            fmsx_uart_put_hex16(fmsx_uart_linear_bootlogo_pc(raw_pc));
+            msxbare_uart_write(" B:");
+            fmsx_uart_put_bootlogo_pc_bytes(raw_pc);
+        }
+    }
+    msxbare_uart_write("\n");
+}
+
+static void fmsx_uart_trace_bootlogo_reg_init(unsigned reg)
+{
+    msxbare_uart_write(" R");
+    fmsx_uart_put_uint(reg > 99u ? 99u : reg);
+    msxbare_uart_write(":");
+    fmsx_uart_put_hex8(VDP[reg] & 0xFFu);
+    msxbare_uart_write(" A:");
+    fmsx_uart_put_uint(FmsxVDPRegWriteCount[reg] > 999u ? 999u : (unsigned) FmsxVDPRegWriteCount[reg]);
+    msxbare_uart_write(" P:");
+    fmsx_uart_put_hex8(FmsxVDPRegLastWritePort[reg] & 0xFFu);
+    msxbare_uart_write(" PC:");
+    fmsx_uart_put_hex16(FmsxVDPRegLastWritePC[reg] & 0xFFFFu);
+    msxbare_uart_write(" L:");
+    fmsx_uart_put_hex16(fmsx_uart_linear_bootlogo_pc(FmsxVDPRegLastWritePC[reg] & 0xFFFFu));
+    msxbare_uart_write(" SL:");
+    fmsx_uart_put_uint(FmsxVDPRegLastWriteLine[reg] > 999u ? 999u : FmsxVDPRegLastWriteLine[reg]);
+    msxbare_uart_write(" O:");
+    fmsx_uart_put_hex8(FmsxVDPRegLastWriteOld[reg] & 0xFFu);
+    msxbare_uart_write(" V:");
+    fmsx_uart_put_hex8(FmsxVDPRegLastWriteNew[reg] & 0xFFu);
+}
+
 static void fmsx_uart_trace_bootlogo_frame(unsigned present_frame)
 {
-    const unsigned vdp_frame_abs = (unsigned) FmsxVDPFrameCounter;
-    const unsigned vdp_frame = vdp_frame_abs >= g_bootlogo_trace_vdp_base
-        ? (vdp_frame_abs - g_bootlogo_trace_vdp_base + 1u)
-        : 0u;
-    const unsigned lag = vdp_frame > present_frame ? (vdp_frame - present_frame) : 0u;
     const uint64_t now_us = (uint64_t) msxbare_monotonic_time_us();
     const unsigned delta_ms = g_bootlogo_trace_prev_us != 0u
         ? (unsigned) ((now_us - g_bootlogo_trace_prev_us) / 1000u)
         : 0u;
-    const unsigned elapsed_ms = g_bootlogo_trace_start_us != 0u
-        ? (unsigned) ((now_us - g_bootlogo_trace_start_us) / 1000u)
-        : 0u;
     const unsigned ce = (VDPStatus[2] & 0x01u) ? 1u : 0u;
     const unsigned tr = (VDPStatus[2] & 0x80u) ? 1u : 0u;
+    const unsigned w9 = (unsigned) (FmsxVDPRegWriteCount[9] - g_bootlogo_trace_w9_base);
+    const unsigned w25 = (unsigned) (FmsxVDPRegWriteCount[25] - g_bootlogo_trace_w25_base);
+    const unsigned w26 = (unsigned) (FmsxVDPRegWriteCount[26] - g_bootlogo_trace_w26_base);
+    const unsigned w27 = (unsigned) (FmsxVDPRegWriteCount[27] - g_bootlogo_trace_w27_base);
+    const unsigned s2 = (unsigned) (FmsxVDPStatusReadCount[2] - g_bootlogo_trace_s2_base);
+    const unsigned s7 = (unsigned) (FmsxVDPStatusReadCount[7] - g_bootlogo_trace_s7_base);
+    const unsigned p99 = (unsigned) (FmsxVDPPort99ReadCount - g_bootlogo_trace_p99_base);
+    const unsigned w26_step = w26 >= g_bootlogo_trace_prev_w26 ? (w26 - g_bootlogo_trace_prev_w26) : 0u;
+    const unsigned w27_step = w27 >= g_bootlogo_trace_prev_w27 ? (w27 - g_bootlogo_trace_prev_w27) : 0u;
 
     g_bootlogo_trace_prev_us = now_us;
+    if (present_frame > 1u)
+    {
+        g_bootlogo_trace_dt_sum_ms += delta_ms;
+        g_bootlogo_trace_dt_count++;
+        if (delta_ms > g_bootlogo_trace_dt_max_ms)
+        {
+            g_bootlogo_trace_dt_max_ms = delta_ms;
+        }
+    }
+    if (ce) g_bootlogo_trace_ce_hits++;
+    if (tr) g_bootlogo_trace_tr_hits++;
 
-    msxbare_uart_write("BL238 F:");
-    fmsx_uart_put_uint3(present_frame);
-    msxbare_uart_write(" VF:");
-    fmsx_uart_put_uint3(vdp_frame > 999u ? 999u : vdp_frame);
-    msxbare_uart_write(" LG:");
-    fmsx_uart_put_uint3(lag > 999u ? 999u : lag);
-    msxbare_uart_write(" DT:");
-    fmsx_uart_put_uint3(delta_ms > 999u ? 999u : delta_ms);
-    msxbare_uart_write(" ET:");
-    fmsx_uart_put_uint3(elapsed_ms > 999u ? 999u : elapsed_ms);
-    msxbare_uart_write(" CE:");
-    msxbare_uart_write(ce ? "1" : "0");
-    msxbare_uart_write(" TR:");
-    msxbare_uart_write(tr ? "1" : "0");
-    msxbare_uart_write(" W:");
-    fmsx_uart_put_uint(g_image_buffer_width > 999u ? 999u : g_image_buffer_width);
-    msxbare_uart_write(" H:");
-    fmsx_uart_put_uint(g_image_buffer_height > 999u ? 999u : g_image_buffer_height);
-    msxbare_uart_write(" R9:");
-    fmsx_uart_put_hex8(VDP[9] & 0xFFu);
-    msxbare_uart_write(" F9:");
-    msxbare_uart_write((VDP[9] & 0x04u) ? "1" : "0");
-    msxbare_uart_write(" I9:");
-    msxbare_uart_write((VDP[9] & 0x08u) ? "1" : "0");
-    msxbare_uart_write(" S2E:");
-    msxbare_uart_write((VDPStatus[2] & 0x02u) ? "1" : "0");
-    msxbare_uart_write(" S2:");
-    fmsx_uart_put_hex8(VDPStatus[2] & 0xFFu);
-    msxbare_uart_write(" HI:");
-    msxbare_uart_write(HiResMode ? "1" : "0");
-    msxbare_uart_write(" IL:");
-    msxbare_uart_write(InterlacedMode ? "1" : "0");
-    msxbare_uart_write(" EO:");
-    msxbare_uart_write(OddPage ? "1" : "0");
-    msxbare_uart_write(" R25:");
-    fmsx_uart_put_hex8(VDP[25] & 0xFFu);
-    msxbare_uart_write(" R26:");
-    fmsx_uart_put_hex8(VDP[26] & 0xFFu);
-    msxbare_uart_write(" R27:");
-    fmsx_uart_put_hex8(VDP[27] & 0xFFu);
-    msxbare_uart_write("\n");
+    if (present_frame == 1u)
+    {
+        msxbare_uart_write("BL238I");
+        fmsx_uart_trace_bootlogo_reg_init(9u);
+        fmsx_uart_trace_bootlogo_reg_init(25u);
+        fmsx_uart_trace_bootlogo_reg_init(26u);
+        fmsx_uart_trace_bootlogo_reg_init(27u);
+        msxbare_uart_write("\n");
+    }
+
+    if (w26_step != 0u || w27_step != 0u)
+    {
+        const unsigned wr26_frame = (unsigned) FmsxVDPRegLastWriteFrame[26];
+        const unsigned wr27_frame = (unsigned) FmsxVDPRegLastWriteFrame[27];
+        const unsigned wr26_vf = wr26_frame >= g_bootlogo_trace_vdp_base
+            ? (wr26_frame - g_bootlogo_trace_vdp_base + 1u)
+            : 0u;
+        const unsigned wr27_vf = wr27_frame >= g_bootlogo_trace_vdp_base
+            ? (wr27_frame - g_bootlogo_trace_vdp_base + 1u)
+            : 0u;
+        const int origin_changed =
+            (FmsxVDPRegLastWritePort[26] != g_bootlogo_trace_last_log_port26) ||
+            (FmsxVDPRegLastWritePort[27] != g_bootlogo_trace_last_log_port27) ||
+            (FmsxVDPRegLastWritePC[26] != g_bootlogo_trace_last_log_pc26) ||
+            (FmsxVDPRegLastWritePC[27] != g_bootlogo_trace_last_log_pc27);
+
+        if (origin_changed)
+        {
+            msxbare_uart_write("BL238R F:");
+            fmsx_uart_put_uint3(present_frame);
+            msxbare_uart_write(" D26:");
+            fmsx_uart_put_uint(w26_step > 999u ? 999u : w26_step);
+            msxbare_uart_write(" P26:");
+            fmsx_uart_put_hex8(FmsxVDPRegLastWritePort[26] & 0xFFu);
+            msxbare_uart_write(" PC26:");
+            fmsx_uart_put_hex16(FmsxVDPRegLastWritePC[26] & 0xFFFFu);
+            msxbare_uart_write(" L26:");
+            fmsx_uart_put_hex16(fmsx_uart_linear_bootlogo_pc(FmsxVDPRegLastWritePC[26] & 0xFFFFu));
+            msxbare_uart_write(" SL26:");
+            fmsx_uart_put_uint(FmsxVDPRegLastWriteLine[26] > 999u ? 999u : FmsxVDPRegLastWriteLine[26]);
+            msxbare_uart_write(" VF26:");
+            fmsx_uart_put_uint3(wr26_vf > 999u ? 999u : wr26_vf);
+            msxbare_uart_write(" O26:");
+            fmsx_uart_put_hex8(FmsxVDPRegLastWriteOld[26] & 0xFFu);
+            msxbare_uart_write(" V26:");
+            fmsx_uart_put_hex8(FmsxVDPRegLastWriteNew[26] & 0xFFu);
+            msxbare_uart_write(" D27:");
+            fmsx_uart_put_uint(w27_step > 999u ? 999u : w27_step);
+            msxbare_uart_write(" P27:");
+            fmsx_uart_put_hex8(FmsxVDPRegLastWritePort[27] & 0xFFu);
+            msxbare_uart_write(" PC27:");
+            fmsx_uart_put_hex16(FmsxVDPRegLastWritePC[27] & 0xFFFFu);
+            msxbare_uart_write(" L27:");
+            fmsx_uart_put_hex16(fmsx_uart_linear_bootlogo_pc(FmsxVDPRegLastWritePC[27] & 0xFFFFu));
+            msxbare_uart_write(" SL27:");
+            fmsx_uart_put_uint(FmsxVDPRegLastWriteLine[27] > 999u ? 999u : FmsxVDPRegLastWriteLine[27]);
+            msxbare_uart_write(" VF27:");
+            fmsx_uart_put_uint3(wr27_vf > 999u ? 999u : wr27_vf);
+            msxbare_uart_write(" O27:");
+            fmsx_uart_put_hex8(FmsxVDPRegLastWriteOld[27] & 0xFFu);
+            msxbare_uart_write(" V27:");
+            fmsx_uart_put_hex8(FmsxVDPRegLastWriteNew[27] & 0xFFu);
+            msxbare_uart_write("\n");
+
+            g_bootlogo_trace_last_log_port26 = FmsxVDPRegLastWritePort[26];
+            g_bootlogo_trace_last_log_port27 = FmsxVDPRegLastWritePort[27];
+            g_bootlogo_trace_last_log_pc26 = FmsxVDPRegLastWritePC[26];
+            g_bootlogo_trace_last_log_pc27 = FmsxVDPRegLastWritePC[27];
+        }
+    }
+
+    g_bootlogo_trace_prev_w26 = w26;
+    g_bootlogo_trace_prev_w27 = w27;
+
+    if (present_frame == 96u || (present_frame > 96u && (present_frame % 256u) == 0u))
+    {
+        const unsigned avg_dt = g_bootlogo_trace_dt_count != 0u
+            ? (unsigned) (g_bootlogo_trace_dt_sum_ms / g_bootlogo_trace_dt_count)
+            : 0u;
+        const unsigned s2_10d8 = (unsigned) (FmsxVDPS2HelperReadCount[0] - g_bootlogo_trace_s2h_base[0]);
+        const unsigned s2_10e1 = (unsigned) (FmsxVDPS2HelperReadCount[1] - g_bootlogo_trace_s2h_base[1]);
+        const unsigned s2_363d = (unsigned) (FmsxVDPS2HelperReadCount[2] - g_bootlogo_trace_s2h_base[2]);
+        const unsigned s2_3646 = (unsigned) (FmsxVDPS2HelperReadCount[3] - g_bootlogo_trace_s2h_base[3]);
+        const unsigned s2_2be6 = (unsigned) (FmsxVDPS2HelperReadCount[4] - g_bootlogo_trace_s2h_base[4]);
+        const unsigned s2_2279 = (unsigned) (FmsxVDPS2HelperReadCount[5] - g_bootlogo_trace_s2h_base[5]);
+        const unsigned s2_other = (unsigned) (FmsxVDPS2HelperReadCount[6] - g_bootlogo_trace_s2h_base[6]);
+        const unsigned s2_b0 = (unsigned) (FmsxVDPS2Bit0SetCount - g_bootlogo_trace_s2b0_base);
+        const unsigned s2_b1 = (unsigned) (FmsxVDPS2Bit1SetCount - g_bootlogo_trace_s2b1_base);
+        const unsigned s2_b6 = (unsigned) (FmsxVDPS2Bit6SetCount - g_bootlogo_trace_s2b6_base);
+        const unsigned s2_e0u = (unsigned) (FmsxVDPS2Bit0RiseCount - g_bootlogo_trace_s2e0u_base);
+        const unsigned s2_e0d = (unsigned) (FmsxVDPS2Bit0FallCount - g_bootlogo_trace_s2e0d_base);
+        const unsigned s2_e1u = (unsigned) (FmsxVDPS2Bit1RiseCount - g_bootlogo_trace_s2e1u_base);
+        const unsigned s2_e1d = (unsigned) (FmsxVDPS2Bit1FallCount - g_bootlogo_trace_s2e1d_base);
+        const unsigned s2_e6u = (unsigned) (FmsxVDPS2Bit6RiseCount - g_bootlogo_trace_s2e6u_base);
+        const unsigned s2_e6d = (unsigned) (FmsxVDPS2Bit6FallCount - g_bootlogo_trace_s2e6d_base);
+        const unsigned s066 = (unsigned) (FmsxVDPStatus0Read7A66Count - g_bootlogo_trace_s066_base);
+        const unsigned s066b5 = (unsigned) (FmsxVDPStatus0Read7A66Bit5Count - g_bootlogo_trace_s066b5_base);
+        const unsigned s068 = (unsigned) (FmsxVDPStatus0Read7A68Count - g_bootlogo_trace_s068_base);
+        const unsigned s068b5 = (unsigned) (FmsxVDPStatus0Read7A68Bit5Count - g_bootlogo_trace_s068b5_base);
+        msxbare_uart_write((present_frame == 96u) ? "BL238S F:" : "BL238P F:");
+        fmsx_uart_put_uint3(present_frame);
+        msxbare_uart_write(" AVG:");
+        fmsx_uart_put_uint3(avg_dt > 999u ? 999u : avg_dt);
+        msxbare_uart_write(" MAX:");
+        fmsx_uart_put_uint3(g_bootlogo_trace_dt_max_ms > 999u ? 999u : g_bootlogo_trace_dt_max_ms);
+        msxbare_uart_write(" CE:");
+        fmsx_uart_put_uint(g_bootlogo_trace_ce_hits > 999u ? 999u : g_bootlogo_trace_ce_hits);
+        msxbare_uart_write(" TR:");
+        fmsx_uart_put_uint(g_bootlogo_trace_tr_hits > 999u ? 999u : g_bootlogo_trace_tr_hits);
+        msxbare_uart_write(" R9:");
+        fmsx_uart_put_hex8(VDP[9] & 0xFFu);
+        msxbare_uart_write(" R25:");
+        fmsx_uart_put_hex8(VDP[25] & 0xFFu);
+        msxbare_uart_write(" R26:");
+        fmsx_uart_put_hex8(VDP[26] & 0xFFu);
+        msxbare_uart_write(" R27:");
+        fmsx_uart_put_hex8(VDP[27] & 0xFFu);
+        msxbare_uart_write(" W26:");
+        fmsx_uart_put_uint(w26 > 999u ? 999u : w26);
+        msxbare_uart_write(" W27:");
+        fmsx_uart_put_uint(w27 > 999u ? 999u : w27);
+        msxbare_uart_write(" S2:");
+        fmsx_uart_put_uint(s2 > 999u ? 999u : s2);
+        msxbare_uart_write(" S7:");
+        fmsx_uart_put_uint(s7 > 999u ? 999u : s7);
+        msxbare_uart_write(" P99:");
+        fmsx_uart_put_uint(p99 > 999u ? 999u : p99);
+        msxbare_uart_write(" H10L:");
+        fmsx_uart_put_uint(s2_10d8 > 999u ? 999u : s2_10d8);
+        msxbare_uart_write(" H10H:");
+        fmsx_uart_put_uint(s2_10e1 > 999u ? 999u : s2_10e1);
+        msxbare_uart_write(" H36H:");
+        fmsx_uart_put_uint(s2_363d > 999u ? 999u : s2_363d);
+        msxbare_uart_write(" H36L:");
+        fmsx_uart_put_uint(s2_3646 > 999u ? 999u : s2_3646);
+        msxbare_uart_write(" H2BE:");
+        fmsx_uart_put_uint(s2_2be6 > 999u ? 999u : s2_2be6);
+        msxbare_uart_write(" H227:");
+        fmsx_uart_put_uint(s2_2279 > 999u ? 999u : s2_2279);
+        msxbare_uart_write(" HOTH:");
+        fmsx_uart_put_uint(s2_other > 999u ? 999u : s2_other);
+        msxbare_uart_write(" B0:");
+        fmsx_uart_put_uint(s2_b0 > 999u ? 999u : s2_b0);
+        msxbare_uart_write(" B1:");
+        fmsx_uart_put_uint(s2_b1 > 999u ? 999u : s2_b1);
+        msxbare_uart_write(" B6:");
+        fmsx_uart_put_uint(s2_b6 > 999u ? 999u : s2_b6);
+        msxbare_uart_write(" E0:");
+        fmsx_uart_put_uint(s2_e0u > 999u ? 999u : s2_e0u);
+        msxbare_uart_write("/");
+        fmsx_uart_put_uint(s2_e0d > 999u ? 999u : s2_e0d);
+        msxbare_uart_write(" E1:");
+        fmsx_uart_put_uint(s2_e1u > 999u ? 999u : s2_e1u);
+        msxbare_uart_write("/");
+        fmsx_uart_put_uint(s2_e1d > 999u ? 999u : s2_e1d);
+        msxbare_uart_write(" E6:");
+        fmsx_uart_put_uint(s2_e6u > 999u ? 999u : s2_e6u);
+        msxbare_uart_write("/");
+        fmsx_uart_put_uint(s2_e6d > 999u ? 999u : s2_e6d);
+        msxbare_uart_write(" S66:");
+        fmsx_uart_put_uint(s066 > 999u ? 999u : s066);
+        msxbare_uart_write("/");
+        fmsx_uart_put_uint(s066b5 > 999u ? 999u : s066b5);
+        msxbare_uart_write(" S68:");
+        fmsx_uart_put_uint(s068 > 999u ? 999u : s068);
+        msxbare_uart_write("/");
+        fmsx_uart_put_uint(s068b5 > 999u ? 999u : s068b5);
+        fmsx_uart_trace_bootlogo_s2_callers();
+        msxbare_uart_write("\n");
+        fmsx_uart_trace_bootlogo_s2_caller_bytes();
+    }
 }
 
 static unsigned fmsx_audio_ring_level_current(void)
@@ -1035,11 +1424,53 @@ void PutImage(void)
         if (!g_bootlogo_trace_seen)
         {
             g_bootlogo_trace_vdp_base = (unsigned) FmsxVDPFrameCounter;
+            g_bootlogo_trace_w9_base = FmsxVDPRegWriteCount[9];
+            g_bootlogo_trace_w25_base = FmsxVDPRegWriteCount[25];
+            g_bootlogo_trace_w26_base = FmsxVDPRegWriteCount[26];
+            g_bootlogo_trace_w27_base = FmsxVDPRegWriteCount[27];
+            g_bootlogo_trace_s2_base = FmsxVDPStatusReadCount[2];
+            g_bootlogo_trace_s7_base = FmsxVDPStatusReadCount[7];
+            g_bootlogo_trace_s2h_base[0] = FmsxVDPS2HelperReadCount[0];
+            g_bootlogo_trace_s2h_base[1] = FmsxVDPS2HelperReadCount[1];
+            g_bootlogo_trace_s2h_base[2] = FmsxVDPS2HelperReadCount[2];
+            g_bootlogo_trace_s2h_base[3] = FmsxVDPS2HelperReadCount[3];
+            g_bootlogo_trace_s2h_base[4] = FmsxVDPS2HelperReadCount[4];
+            g_bootlogo_trace_s2h_base[5] = FmsxVDPS2HelperReadCount[5];
+            g_bootlogo_trace_s2h_base[6] = FmsxVDPS2HelperReadCount[6];
+            g_bootlogo_trace_s2b0_base = FmsxVDPS2Bit0SetCount;
+            g_bootlogo_trace_s2b1_base = FmsxVDPS2Bit1SetCount;
+            g_bootlogo_trace_s2b6_base = FmsxVDPS2Bit6SetCount;
+            g_bootlogo_trace_s2e0u_base = FmsxVDPS2Bit0RiseCount;
+            g_bootlogo_trace_s2e0d_base = FmsxVDPS2Bit0FallCount;
+            g_bootlogo_trace_s2e1u_base = FmsxVDPS2Bit1RiseCount;
+            g_bootlogo_trace_s2e1d_base = FmsxVDPS2Bit1FallCount;
+            g_bootlogo_trace_s2e6u_base = FmsxVDPS2Bit6RiseCount;
+            g_bootlogo_trace_s2e6d_base = FmsxVDPS2Bit6FallCount;
+            g_bootlogo_trace_s066_base = FmsxVDPStatus0Read7A66Count;
+            g_bootlogo_trace_s066b5_base = FmsxVDPStatus0Read7A66Bit5Count;
+            g_bootlogo_trace_s068_base = FmsxVDPStatus0Read7A68Count;
+            g_bootlogo_trace_s068b5_base = FmsxVDPStatus0Read7A68Bit5Count;
+            for (unsigned i = 0u; i < 16u; ++i)
+            {
+                g_bootlogo_trace_s2caller_base[i] = FmsxVDPS2CallerCount[i];
+            }
+            g_bootlogo_trace_s2caller_overflow_base = FmsxVDPS2CallerOverflowCount;
+            g_bootlogo_trace_p99_base = FmsxVDPPort99ReadCount;
+            g_bootlogo_trace_prev_w26 = 0u;
+            g_bootlogo_trace_prev_w27 = 0u;
+            g_bootlogo_trace_dt_sum_ms = 0u;
+            g_bootlogo_trace_dt_count = 0u;
+            g_bootlogo_trace_dt_max_ms = 0u;
+            g_bootlogo_trace_ce_hits = 0u;
+            g_bootlogo_trace_tr_hits = 0u;
+            g_bootlogo_trace_last_log_pc26 = 0u;
+            g_bootlogo_trace_last_log_pc27 = 0u;
+            g_bootlogo_trace_last_log_port26 = 0u;
+            g_bootlogo_trace_last_log_port27 = 0u;
             g_bootlogo_trace_start_us = (uint64_t) msxbare_monotonic_time_us();
             g_bootlogo_trace_prev_us = 0u;
         }
         g_bootlogo_trace_seen = 1u;
-        if (g_bootlogo_trace_frames < 96u)
         {
             const unsigned present_frame = g_bootlogo_trace_frames + 1u;
             fmsx_uart_trace_bootlogo_frame(present_frame);
@@ -1048,9 +1479,153 @@ void PutImage(void)
     }
     else if (g_bootlogo_trace_seen)
     {
+        const unsigned avg_dt = g_bootlogo_trace_dt_count != 0u
+            ? (unsigned) (g_bootlogo_trace_dt_sum_ms / g_bootlogo_trace_dt_count)
+            : 0u;
+        const unsigned w26 = (unsigned) (FmsxVDPRegWriteCount[26] - g_bootlogo_trace_w26_base);
+        const unsigned w27 = (unsigned) (FmsxVDPRegWriteCount[27] - g_bootlogo_trace_w27_base);
+        const unsigned s2 = (unsigned) (FmsxVDPStatusReadCount[2] - g_bootlogo_trace_s2_base);
+        const unsigned s7 = (unsigned) (FmsxVDPStatusReadCount[7] - g_bootlogo_trace_s7_base);
+        const unsigned s2_10d8 = (unsigned) (FmsxVDPS2HelperReadCount[0] - g_bootlogo_trace_s2h_base[0]);
+        const unsigned s2_10e1 = (unsigned) (FmsxVDPS2HelperReadCount[1] - g_bootlogo_trace_s2h_base[1]);
+        const unsigned s2_363d = (unsigned) (FmsxVDPS2HelperReadCount[2] - g_bootlogo_trace_s2h_base[2]);
+        const unsigned s2_3646 = (unsigned) (FmsxVDPS2HelperReadCount[3] - g_bootlogo_trace_s2h_base[3]);
+        const unsigned s2_2be6 = (unsigned) (FmsxVDPS2HelperReadCount[4] - g_bootlogo_trace_s2h_base[4]);
+        const unsigned s2_2279 = (unsigned) (FmsxVDPS2HelperReadCount[5] - g_bootlogo_trace_s2h_base[5]);
+        const unsigned s2_other = (unsigned) (FmsxVDPS2HelperReadCount[6] - g_bootlogo_trace_s2h_base[6]);
+        const unsigned s2_b0 = (unsigned) (FmsxVDPS2Bit0SetCount - g_bootlogo_trace_s2b0_base);
+        const unsigned s2_b1 = (unsigned) (FmsxVDPS2Bit1SetCount - g_bootlogo_trace_s2b1_base);
+        const unsigned s2_b6 = (unsigned) (FmsxVDPS2Bit6SetCount - g_bootlogo_trace_s2b6_base);
+        const unsigned s2_e0u = (unsigned) (FmsxVDPS2Bit0RiseCount - g_bootlogo_trace_s2e0u_base);
+        const unsigned s2_e0d = (unsigned) (FmsxVDPS2Bit0FallCount - g_bootlogo_trace_s2e0d_base);
+        const unsigned s2_e1u = (unsigned) (FmsxVDPS2Bit1RiseCount - g_bootlogo_trace_s2e1u_base);
+        const unsigned s2_e1d = (unsigned) (FmsxVDPS2Bit1FallCount - g_bootlogo_trace_s2e1d_base);
+        const unsigned s2_e6u = (unsigned) (FmsxVDPS2Bit6RiseCount - g_bootlogo_trace_s2e6u_base);
+        const unsigned s2_e6d = (unsigned) (FmsxVDPS2Bit6FallCount - g_bootlogo_trace_s2e6d_base);
+        const unsigned s066 = (unsigned) (FmsxVDPStatus0Read7A66Count - g_bootlogo_trace_s066_base);
+        const unsigned s066b5 = (unsigned) (FmsxVDPStatus0Read7A66Bit5Count - g_bootlogo_trace_s066b5_base);
+        const unsigned s068 = (unsigned) (FmsxVDPStatus0Read7A68Count - g_bootlogo_trace_s068_base);
+        const unsigned s068b5 = (unsigned) (FmsxVDPStatus0Read7A68Bit5Count - g_bootlogo_trace_s068b5_base);
+        const unsigned p99 = (unsigned) (FmsxVDPPort99ReadCount - g_bootlogo_trace_p99_base);
+
+        msxbare_uart_write("BL238E F:");
+        fmsx_uart_put_uint(g_bootlogo_trace_frames > 999u ? 999u : g_bootlogo_trace_frames);
+        msxbare_uart_write(" AVG:");
+        fmsx_uart_put_uint3(avg_dt > 999u ? 999u : avg_dt);
+        msxbare_uart_write(" MAX:");
+        fmsx_uart_put_uint3(g_bootlogo_trace_dt_max_ms > 999u ? 999u : g_bootlogo_trace_dt_max_ms);
+        msxbare_uart_write(" CE:");
+        fmsx_uart_put_uint(g_bootlogo_trace_ce_hits > 999u ? 999u : g_bootlogo_trace_ce_hits);
+        msxbare_uart_write(" TR:");
+        fmsx_uart_put_uint(g_bootlogo_trace_tr_hits > 999u ? 999u : g_bootlogo_trace_tr_hits);
+        msxbare_uart_write(" R9:");
+        fmsx_uart_put_hex8(VDP[9] & 0xFFu);
+        msxbare_uart_write(" R25:");
+        fmsx_uart_put_hex8(VDP[25] & 0xFFu);
+        msxbare_uart_write(" R26:");
+        fmsx_uart_put_hex8(VDP[26] & 0xFFu);
+        msxbare_uart_write(" R27:");
+        fmsx_uart_put_hex8(VDP[27] & 0xFFu);
+        msxbare_uart_write(" W26:");
+        fmsx_uart_put_uint(w26 > 999u ? 999u : w26);
+        msxbare_uart_write(" W27:");
+        fmsx_uart_put_uint(w27 > 999u ? 999u : w27);
+        msxbare_uart_write(" S2:");
+        fmsx_uart_put_uint(s2 > 999u ? 999u : s2);
+        msxbare_uart_write(" S7:");
+        fmsx_uart_put_uint(s7 > 999u ? 999u : s7);
+        msxbare_uart_write(" P99:");
+        fmsx_uart_put_uint(p99 > 999u ? 999u : p99);
+        msxbare_uart_write(" H10L:");
+        fmsx_uart_put_uint(s2_10d8 > 999u ? 999u : s2_10d8);
+        msxbare_uart_write(" H10H:");
+        fmsx_uart_put_uint(s2_10e1 > 999u ? 999u : s2_10e1);
+        msxbare_uart_write(" H36H:");
+        fmsx_uart_put_uint(s2_363d > 999u ? 999u : s2_363d);
+        msxbare_uart_write(" H36L:");
+        fmsx_uart_put_uint(s2_3646 > 999u ? 999u : s2_3646);
+        msxbare_uart_write(" H2BE:");
+        fmsx_uart_put_uint(s2_2be6 > 999u ? 999u : s2_2be6);
+        msxbare_uart_write(" H227:");
+        fmsx_uart_put_uint(s2_2279 > 999u ? 999u : s2_2279);
+        msxbare_uart_write(" HOTH:");
+        fmsx_uart_put_uint(s2_other > 999u ? 999u : s2_other);
+        msxbare_uart_write(" B0:");
+        fmsx_uart_put_uint(s2_b0 > 999u ? 999u : s2_b0);
+        msxbare_uart_write(" B1:");
+        fmsx_uart_put_uint(s2_b1 > 999u ? 999u : s2_b1);
+        msxbare_uart_write(" B6:");
+        fmsx_uart_put_uint(s2_b6 > 999u ? 999u : s2_b6);
+        msxbare_uart_write(" E0:");
+        fmsx_uart_put_uint(s2_e0u > 999u ? 999u : s2_e0u);
+        msxbare_uart_write("/");
+        fmsx_uart_put_uint(s2_e0d > 999u ? 999u : s2_e0d);
+        msxbare_uart_write(" E1:");
+        fmsx_uart_put_uint(s2_e1u > 999u ? 999u : s2_e1u);
+        msxbare_uart_write("/");
+        fmsx_uart_put_uint(s2_e1d > 999u ? 999u : s2_e1d);
+        msxbare_uart_write(" E6:");
+        fmsx_uart_put_uint(s2_e6u > 999u ? 999u : s2_e6u);
+        msxbare_uart_write("/");
+        fmsx_uart_put_uint(s2_e6d > 999u ? 999u : s2_e6d);
+        msxbare_uart_write(" S66:");
+        fmsx_uart_put_uint(s066 > 999u ? 999u : s066);
+        msxbare_uart_write("/");
+        fmsx_uart_put_uint(s066b5 > 999u ? 999u : s066b5);
+        msxbare_uart_write(" S68:");
+        fmsx_uart_put_uint(s068 > 999u ? 999u : s068);
+        msxbare_uart_write("/");
+        fmsx_uart_put_uint(s068b5 > 999u ? 999u : s068b5);
+        fmsx_uart_trace_bootlogo_s2_callers();
+        msxbare_uart_write("\n");
+        fmsx_uart_trace_bootlogo_s2_caller_bytes();
+
         g_bootlogo_trace_seen = 0u;
         g_bootlogo_trace_frames = 0u;
         g_bootlogo_trace_vdp_base = 0u;
+        g_bootlogo_trace_w9_base = 0u;
+        g_bootlogo_trace_w25_base = 0u;
+        g_bootlogo_trace_w26_base = 0u;
+        g_bootlogo_trace_w27_base = 0u;
+        g_bootlogo_trace_s2_base = 0u;
+        g_bootlogo_trace_s7_base = 0u;
+        g_bootlogo_trace_s2h_base[0] = 0u;
+        g_bootlogo_trace_s2h_base[1] = 0u;
+        g_bootlogo_trace_s2h_base[2] = 0u;
+        g_bootlogo_trace_s2h_base[3] = 0u;
+        g_bootlogo_trace_s2h_base[4] = 0u;
+        g_bootlogo_trace_s2h_base[5] = 0u;
+        g_bootlogo_trace_s2h_base[6] = 0u;
+        g_bootlogo_trace_s2b0_base = 0u;
+        g_bootlogo_trace_s2b1_base = 0u;
+        g_bootlogo_trace_s2b6_base = 0u;
+        g_bootlogo_trace_s2e0u_base = 0u;
+        g_bootlogo_trace_s2e0d_base = 0u;
+        g_bootlogo_trace_s2e1u_base = 0u;
+        g_bootlogo_trace_s2e1d_base = 0u;
+        g_bootlogo_trace_s2e6u_base = 0u;
+        g_bootlogo_trace_s2e6d_base = 0u;
+        g_bootlogo_trace_s066_base = 0u;
+        g_bootlogo_trace_s066b5_base = 0u;
+        g_bootlogo_trace_s068_base = 0u;
+        g_bootlogo_trace_s068b5_base = 0u;
+        for (unsigned i = 0u; i < 16u; ++i)
+        {
+            g_bootlogo_trace_s2caller_base[i] = 0u;
+        }
+        g_bootlogo_trace_s2caller_overflow_base = 0u;
+        g_bootlogo_trace_p99_base = 0u;
+        g_bootlogo_trace_prev_w26 = 0u;
+        g_bootlogo_trace_prev_w27 = 0u;
+        g_bootlogo_trace_dt_sum_ms = 0u;
+        g_bootlogo_trace_dt_count = 0u;
+        g_bootlogo_trace_dt_max_ms = 0u;
+        g_bootlogo_trace_ce_hits = 0u;
+        g_bootlogo_trace_tr_hits = 0u;
+        g_bootlogo_trace_last_log_pc26 = 0u;
+        g_bootlogo_trace_last_log_pc27 = 0u;
+        g_bootlogo_trace_last_log_port26 = 0u;
+        g_bootlogo_trace_last_log_port27 = 0u;
         g_bootlogo_trace_start_us = 0u;
         g_bootlogo_trace_prev_us = 0u;
     }

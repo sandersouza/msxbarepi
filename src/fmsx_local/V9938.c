@@ -160,6 +160,7 @@ static void HmmvEngine(void);
 static void HmmmEngine(void);
 static void YmmmEngine(void);
 static void HmmcEngine(void);
+static int fmsx_msx2p_bootlogo_bios_timing_window(void);
 
 /*************************************************************/
 /** Variables visible only in this module                   **/
@@ -170,6 +171,7 @@ static int  PPL[4]  = { 256,512,512,256 };
 static int  VdpOpsCnt=0;
 static void (*VdpEngine)(void)=0;
 static uint8_t VdpTraceCE = 0;
+static uint8_t VdpBootLogoTimingBoost = 0u;
 static uint64_t VdpLastCpuCycles = 0u;
 static uint32_t VdpCycleRemainder = 0u;
 static uint8_t VdpCycleValid = 0u;
@@ -177,6 +179,7 @@ static uint8_t VdpCycleValid = 0u;
 INLINE void VdpTraceSyncCE(void)
 {
   const uint8_t ce = (VDPStatus[2]&0x01u)? 1u:0u;
+  if(!ce) VdpBootLogoTimingBoost = 0u;
   if(ce!=VdpTraceCE)
   {
     VdpTraceCE = ce;
@@ -287,6 +290,66 @@ static int hmmm_timing[8]={ 818,  1111, 818,  854,
                             684,  879,  684,  708 };
 static int lmmm_timing[8]={ 1160, 1599, 1160, 1172, 
                             964,  1257, 964,  977 };
+
+/*
+ * BlueMSX command timing tables are the semantic reference for stock V9958.
+ * The local tables above are scaled fMSX values with NTSC/PAL variants; the
+ * logo-only "/8" workaround got close, but UART and disassembly already
+ * narrowed the hot path to BIOS polling around CE. Use the exact blueMSX
+ * deltas while the boot-logo command boost is armed, keeping the fallback
+ * local tables everywhere else.
+ */
+static const int srch_timing_bluemsx[4] = { 92,  125, 92,  92  };
+static const int line_timing_bluemsx[4] = { 120, 147, 120, 120 };
+static const int hmmv_timing_bluemsx[4] = { 49,  65,  49,  62  };
+static const int lmmv_timing_bluemsx[4] = { 98,  137, 98,  124 };
+static const int ymmm_timing_bluemsx[4] = { 65,  125, 65,  68  };
+static const int hmmm_timing_bluemsx[4] = { 92,  136, 92,  97  };
+static const int lmmm_timing_bluemsx[4] = { 129, 197, 129, 132 };
+
+static const int *fmsx_bootlogo_bluemsx_timing_table(const int *timing_values)
+{
+  if(timing_values == srch_timing) return srch_timing_bluemsx;
+  if(timing_values == line_timing) return line_timing_bluemsx;
+  if(timing_values == hmmv_timing) return hmmv_timing_bluemsx;
+  if(timing_values == lmmv_timing) return lmmv_timing_bluemsx;
+  if(timing_values == ymmm_timing) return ymmm_timing_bluemsx;
+  if(timing_values == hmmm_timing) return hmmm_timing_bluemsx;
+  if(timing_values == lmmm_timing) return lmmm_timing_bluemsx;
+  return 0;
+}
+
+static int fmsx_msx2p_bootlogo_bios_timing_window(void)
+{
+  const uint16_t pc = CPU.PC.W;
+
+  if(!MODEL(MSX_MSX2P)) return 0;
+
+  /*
+   * The MSX2+ boot logo BIOS does not start in the S#2 polling helpers
+   * themselves. UART and disassembly show an earlier prelude around 0x2A0F
+   * that prepares parameters, writes R#44/R#45/R#46, and later feeds R#26/R#27
+   * from the 0x7A71/0x7BB2 banked aliases. The old window only covered the
+   * polling wrappers rooted at 0x2BE4/0x2E3E/0x3040/0x3299, leaving the actual
+   * command start of the first logo stages outside the issue-176 timing boost.
+   *
+   * Keep the scope BIOS-local, but widen it enough to include that prelude and
+   * its +0x5000 banked alias, matching the actual PCs observed in field UART.
+   */
+  if(((pc>=0x2A0Fu)&&(pc<=0x2C59u)) ||
+     ((pc>=0x2E3Eu)&&(pc<=0x2F97u)) ||
+     ((pc>=0x3040u)&&(pc<=0x3147u)) ||
+     ((pc>=0x3299u)&&(pc<=0x3325u)))
+    return 1;
+
+  if(((pc>=0x7A0Fu)&&(pc<=0x7C59u)) ||
+     ((pc>=0x7E3Eu)&&(pc<=0x7F97u)) ||
+     ((pc>=0x8040u)&&(pc<=0x8147u)) ||
+     ((pc>=0x8299u)&&(pc<=0x8325u)))
+    return 1;
+
+  return 0;
+}
 
 
 /** VDPVRMP() **********************************************/
@@ -440,7 +503,34 @@ INLINE void VDPpset(uint8_t SM, int DX, int DY, uint8_t CL, uint8_t OP)
 /*************************************************************/
 static int GetVdpTimingValue(int *timing_values)
 {
-  return(timing_values[((VDP[1]>>6)&1)|(VDP[8]&2)|((VDP[9]<<1)&4)]);
+  /*
+   * blueMSX derives timingMode from "screen on while drawArea is active",
+   * not from R#1 bit6 alone. The local issue #238 work also showed that S#2
+   * bit6 is not a perfect proxy for drawArea: blueMSX clears bit6 slightly
+   * before the visible region starts, while command timing should stay on the
+   * off-screen bucket until the actual draw area is entered.
+   *
+   * Keep the local timing gate tied to the visible scanline range only.
+   * That preserves the intended fast bucket in bottom border/VBlank and in
+   * the pseudo top-border window that the BIOS sees through S#2 bit6.
+   */
+  const int draw_area = (ScanLine >= 0) && (ScanLine < (ScanLines212 ? 212 : 192)) ? 1 : 0;
+  const int timing_mode_4 = (((VDP[1]>>6)&1) & draw_area)|(VDP[8]&2);
+  int value = timing_values[timing_mode_4|((VDP[9]<<1)&4)];
+
+  if(VdpBootLogoTimingBoost)
+  {
+    const int *blue_values = fmsx_bootlogo_bluemsx_timing_table(timing_values);
+    if(blue_values)
+      value = blue_values[timing_mode_4];
+    else
+    {
+      value = (value + 7) / 8;
+      if(value < 1) value = 1;
+    }
+  }
+
+  return value;
 }
 
 /** SrchEgine()** ********************************************/
@@ -995,11 +1085,13 @@ uint8_t VDPDraw(uint8_t Op)
 
   switch(Op>>4) {
     case CM_ABRT:
+      VdpBootLogoTimingBoost=0u;
       VDPStatus[2]&=0xFE;
       VdpEngine=0;  
       VdpTraceSyncCE();
       return 1;
     case CM_POINT:
+      VdpBootLogoTimingBoost=0u;
       VDPStatus[2]&=0xFE;
       VdpEngine=0;  
       VDPStatus[7]=VDP[44]=
@@ -1008,6 +1100,7 @@ uint8_t VDPDraw(uint8_t Op)
       VdpTraceSyncCE();
       return 1;
     case CM_PSET:
+      VdpBootLogoTimingBoost=0u;
       VDPStatus[2]&=0xFE;
       VdpEngine=0;  
       VDP_PSET(SM, 
@@ -1048,6 +1141,7 @@ uint8_t VDPDraw(uint8_t Op)
       VdpEngine=HmmcEngine;  
       break;
     default:
+        VdpBootLogoTimingBoost=0u;
         return(0);
   }
 
@@ -1089,6 +1183,7 @@ uint8_t VDPDraw(uint8_t Op)
     MMC.ANX = MMC.NX;
 
   /* Command execution started */
+  VdpBootLogoTimingBoost = fmsx_msx2p_bootlogo_bios_timing_window() ? 1u : 0u;
   VDPStatus[2]|=0x01;
   VdpPrimeCommandClock(fmsx_vdp_cpu_cycles_now());
 
