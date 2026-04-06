@@ -1256,7 +1256,7 @@ unsigned CComboPauseMenu::GetMegaRamKb(void) const
 
 void CComboPauseMenu::SetZ80TurboMode(unsigned mode)
 {
-    if (mode > 2u)
+    if (mode > 3u)
     {
         mode = 0u;
     }

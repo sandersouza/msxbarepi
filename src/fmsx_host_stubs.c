@@ -142,61 +142,25 @@ typedef struct
     uint8_t scale;
 } TFmsxWideSpriteAttr;
 
+static uint8_t g_fmsx_wide_cc_mask = 0u;
+static uint8_t g_fmsx_wide_cc_check_mask = 0u;
+static uint32_t g_fmsx_wide_cc_frame = ~0u;
+
 static void fmsx_wide_sprite_line_clear(uint8_t *zbuf)
 {
-    memset(zbuf,0,320u);
+    memset(zbuf,0,384u);
 }
 
-static void fmsx_wide_sprite_draw(uint8_t *dst,const TFmsxWideSpriteAttr *attr,uint8_t color,int or_mode)
+static uint8_t fmsx_wide_sprite_collision_gate(int pos)
 {
-    unsigned bit_count;
-
-    if(!color) return;
-
-    bit_count = attr->pixels;
-    if(bit_count>16u) bit_count=16u;
-
-    if(attr->scale>1u)
-    {
-        unsigned bit;
-        for(bit=0u;bit<bit_count;++bit)
-        {
-            if(attr->pattern & (uint16_t)(0x8000u>>bit))
-            {
-                unsigned pos = bit<<1;
-                if(or_mode)
-                {
-                    dst[pos+0] |= color;
-                    dst[pos+1] |= color;
-                }
-                else
-                {
-                    dst[pos+0] = color;
-                    dst[pos+1] = color;
-                }
-            }
-        }
-    }
-    else
-    {
-        unsigned bit;
-        for(bit=0u;bit<bit_count;++bit)
-        {
-            if(attr->pattern & (uint16_t)(0x8000u>>bit))
-            {
-                if(or_mode) dst[bit] |= color;
-                else        dst[bit] = color;
-            }
-        }
-    }
+    return (uint8_t)((pos >= 32) && (pos < 288));
 }
 
 static void fmsx_latch_color_sprites_line_wide(uint8_t Y,uint8_t *ZBuf)
 {
     static const uint8_t SprHeights[4] = { 8u,16u,16u,32u };
     TFmsxWideSpriteAttr visible[32];
-    uint8_t cc_mask = 0x0Fu;
-    uint8_t cc_check_mask = 0x0Fu;
+    uint8_t collision_buf[384];
     uint8_t *AT;
     unsigned visible_count = 0u;
     const uint8_t OH = SprHeights[VDP[1]&0x03u];
@@ -207,10 +171,19 @@ static void fmsx_latch_color_sprites_line_wide(uint8_t Y,uint8_t *ZBuf)
     const uint8_t scr6 = (ScrMode==6) ? 1u:0u;
     const uint8_t logical_y = (uint8_t)(Y + FMSX_RENDER_VSCROLL);
     unsigned sprite;
+    int collision = 0;
 
     fmsx_wide_sprite_line_clear(ZBuf);
+    memset(collision_buf,0,sizeof(collision_buf));
 
     if(SpritesOFF || !FMSX_SCREEN_ON || (VDPStatus[2]&0x40u)) return;
+
+    if(g_fmsx_wide_cc_frame != FmsxVDPFrameCounter)
+    {
+        g_fmsx_wide_cc_frame = FmsxVDPFrameCounter;
+        g_fmsx_wide_cc_mask = g_fmsx_wide_cc_check_mask;
+        g_fmsx_wide_cc_check_mask = 0xF0u;
+    }
 
     AT = SprTab;
     for(sprite=0u;sprite<32u;++sprite,AT+=4)
@@ -232,11 +205,11 @@ static void fmsx_latch_color_sprites_line_wide(uint8_t Y,uint8_t *ZBuf)
         if(color_attr&0x40u)
         {
             if(visible_count==0u) continue;
-            color_attr &= (uint8_t)(cc_mask | 0xC0u);
+            color_attr &= (uint8_t)g_fmsx_wide_cc_mask;
         }
         else if((color_attr&0x0Fu) || solid_color0)
         {
-            cc_check_mask = 0xFFu;
+            g_fmsx_wide_cc_check_mask = 0xFFu;
         }
 
         pattern_index = (IH>8u)? (AT[2]&0xFCu):AT[2];
@@ -254,38 +227,113 @@ static void fmsx_latch_color_sprites_line_wide(uint8_t Y,uint8_t *ZBuf)
             dst->pattern = (uint16_t)((uint16_t)pattern_ptr[0] << 8);
     }
 
-    cc_mask = cc_check_mask;
-    cc_check_mask = 0x0Fu;
-
     while(visible_count>0u)
     {
         unsigned idx = visible_count - 1u;
         TFmsxWideSpriteAttr *attr = &visible[idx];
         uint8_t color;
-        uint8_t *line_ptr = ZBuf + attr->horizontal_pos;
+        uint16_t pattern;
+        int offset;
 
         if(scr6)
             color = (uint8_t)(((attr->color_attr & 0x0Cu) << 2) | ((attr->color_attr & 0x03u) << 1) | (solid_color0 ? 0x09u : 0x00u));
         else
             color = (uint8_t)(((attr->color_attr & 0x0Fu) << 1) | (solid_color0 ? 0x01u : 0x00u));
 
-        if(color || solid_color0)
-            fmsx_wide_sprite_draw(line_ptr,attr,color,(attr->color_attr&0x60u)? 1:0);
+        if(color)
+        {
+            pattern = attr->pattern;
+            offset = (int)(attr->scale * 15u);
+
+            if(attr->color_attr & 0x60u)
+            {
+                while(pattern)
+                {
+                    if(pattern & 1u)
+                    {
+                        const int pos = attr->horizontal_pos + offset;
+                        if((pos >= 0) && (pos < 384)) ZBuf[pos] = color;
+                        if((attr->scale > 1u) && (pos + 1 < 384) && (pos + 1 >= 0)) ZBuf[pos + 1] = color;
+                    }
+                    offset -= (attr->scale > 1u) ? 2 : 1;
+                    pattern >>= 1;
+                }
+            }
+            else
+            {
+                while(pattern)
+                {
+                    if(pattern & 1u)
+                    {
+                        const int pos = attr->horizontal_pos + offset;
+                        if((pos >= 0) && (pos < 384))
+                        {
+                            ZBuf[pos] = color;
+                            collision |= collision_buf[pos];
+                            collision_buf[pos] = fmsx_wide_sprite_collision_gate(pos);
+                        }
+                        if(attr->scale > 1u)
+                        {
+                            const int pos2 = pos + 1;
+                            if((pos2 >= 0) && (pos2 < 384))
+                            {
+                                ZBuf[pos2] = color;
+                                collision |= collision_buf[pos2];
+                                collision_buf[pos2] = fmsx_wide_sprite_collision_gate(pos2);
+                            }
+                        }
+                    }
+                    offset -= (attr->scale > 1u) ? 2 : 1;
+                    pattern >>= 1;
+                }
+            }
+        }
 
         while(idx+1u<visible_count && (visible[idx+1u].color_attr&0x40u))
         {
             TFmsxWideSpriteAttr *cc = &visible[idx+1u];
             uint8_t cc_color;
+            uint16_t cc_pattern;
+            int cc_offset;
             if(scr6)
                 cc_color = (uint8_t)(((cc->color_attr & 0x0Cu) << 2) | ((cc->color_attr & 0x03u) << 1) | (solid_color0 ? 0x09u : 0x00u));
             else
                 cc_color = (uint8_t)(((cc->color_attr & 0x0Fu) << 1) | (solid_color0 ? 0x01u : 0x00u));
-            if(cc_color || solid_color0)
-                fmsx_wide_sprite_draw(ZBuf + cc->horizontal_pos,cc,cc_color,1);
+            if(cc_color)
+            {
+                cc_pattern = cc->pattern;
+                cc_offset = (int)(cc->scale * 15u);
+                while(cc_pattern)
+                {
+                    if(cc_pattern & 1u)
+                    {
+                        const int pos = cc->horizontal_pos + cc_offset;
+                        if((pos >= 0) && (pos < 384)) ZBuf[pos] |= cc_color;
+                        if((cc->scale > 1u) && (pos + 1 >= 0) && (pos + 1 < 384)) ZBuf[pos + 1] |= cc_color;
+                    }
+                    cc_offset -= (cc->scale > 1u) ? 2 : 1;
+                    cc_pattern >>= 1;
+                }
+            }
             ++idx;
         }
 
         visible_count = idx;
+    }
+
+    if(collision && !(VDPStatus[0] & 0x20u))
+    {
+        unsigned x_col;
+        const uint16_t y_col = (uint16_t)(logical_y + 8u);
+
+        for(x_col = 0u; x_col < 256u && !collision_buf[x_col + 32u]; ++x_col) {}
+
+        x_col += 12u;
+        VDPStatus[0] |= 0x20u;
+        VDPStatus[3] = (uint8_t)(x_col & 0xFFu);
+        VDPStatus[4] = (uint8_t)(x_col >> 8);
+        VDPStatus[5] = (uint8_t)(y_col & 0xFFu);
+        VDPStatus[6] = (uint8_t)(y_col >> 8);
     }
 }
 

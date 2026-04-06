@@ -10,6 +10,96 @@
 ## Objetivo
 Implementar a precisão mínima necessária no nosso core do `V9958 stock` para fazer o boot logo do `MSX2+` funcionar com cadência, paginação e composição corretas, usando `blueMSX` como referência semântica principal e `V9958-Super` como validação cruzada de HDL.
 
+## Atualização incremental de 06/04/2026 - `rightBorder` também precisa reapresentar a linha futura de sprites
+- O tempo total do boot já ficou no alvo, mas o defeito visual residual continuou reagindo ao turbo `7MHz`, o que reforça fase intra-frame e não `PAL/NTSC` ou `R#9 interlace`.
+- O diff direto contra o `blueMSX` fechou um desvio estrutural em `SCREEN 6/7`:
+  - `colorSpritesLine(vdp,Y,...)` roda ao cruzar `BRK_6/BRK_7`
+  - e roda **de novo** no `rightBorder`
+  - isso permite que a linha futura de sprites incorpore writes tardias de VRAM/registradores que acontecem no restante da scanline
+- O core local ainda congelava `FmsxVDPLineColorSpritesLatched` apenas no primeiro cruzamento do breakpoint.
+- Correção local:
+  - `src/fmsx_local/MSX.c`
+    - `fmsx_vdp_render_screen67_partial()` continua preparando a linha futura ao cruzar `BRK_6/BRK_7`
+    - mas agora reapresenta `FmsxLatchColorSpritesLine(scanline,...)` no fechamento da linha (`end_offset >= 33`), espelhando o `rightBorder` do `blueMSX`
+- Validação local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604060020-issue238-screen67-rightborder-sprites` (OK)
+  - `BUILD_ID=829C`
+  - artefato `sha1 81343e7d63566873d0333c02016971656e2b4b08`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualização incremental de 05/04/2026 - fechamento de `SCREEN 6/7` passa a usar sempre o partial renderer de 32 células
+- O teste de hardware da `7AA1` mostrou que alinhar apenas a granularidade interna do partial renderer para `32` células ainda não movia o defeito visual residual do logo.
+- A auditoria local do `HBlank` fechou o desvio estrutural seguinte:
+  - `fmsx_vdp_render_screen67_partial()` já trabalhava em `0..32`
+  - mas o fechamento da scanline em `src/fmsx_local/MSX.c` ainda podia cair em:
+    - `fmsx_vdp_render_screen67_partial(...,64u)` quando havia chunk parcial
+    - `fmsx_vdp_render_scanline()` full-line quando não havia chunk
+- Consequência prática:
+  - `SCREEN 6/7` ainda misturavam dois contratos de fechamento de linha
+  - isso preserva o tempo total do boot, mas pode manter a fase visual quebrada, exatamente como observado em hardware
+- Corte local desta rodada:
+  - `src/fmsx_local/MSX.c`
+    - o fechamento de `SCREEN 6/7` em HBlank passa a forçar sempre `fmsx_vdp_render_screen67_partial((uint8_t)ScanLine,32u)`
+    - o path deixa de depender de `FmsxVDPLineChunkEnd` para cair no partial ou no full-line nesses modos
+- Validação local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604052300-issue238-screen67-force-partial-tail` (OK)
+  - `BUILD_ID=7C38`
+  - artefato `sha1 a6d5a57e9f7bbcca35afca84c23cb1dff320bba8`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualização incremental de 05/04/2026 - `SCREEN 6/7` passam a congelar o estado wide no primeiro refresh da linha
+- A varredura mais profunda da hipótese `32 vs 64` mostrou o desvio seguinte:
+  - no `blueMSX`, `SCREEN 6/7` inicializam `scroll/chrTab/page` no primeiro refresh da linha (`X == -1`)
+  - se o BIOS atualiza `R#2/R#25/R#26/R#27` antes desse primeiro refresh, a linha corrente já nasce com o novo estado
+  - no core local, o partial wide ainda consumia o snapshot capturado no início bruto da scanline
+- Consequência prática:
+  - o renderer podia continuar congelando uma versão cedo demais da linha, mesmo com `32` células e tail unificado
+  - isso combina diretamente com o relato de campo de que o turbo `7MHz` melhora apenas o primeiro terço do logo
+- Corte local desta rodada:
+  - `src/fmsx_local/MSX.c`
+    - novo `FmsxVDPLineScreen67StateValid`
+    - novo helper `fmsx_vdp_capture_screen67_render_state_now()`
+    - `fmsx_vdp_render_screen67_partial()` passa a capturar `ChrTab`, `ChrTabM`, `R#2`, `R#18`, `R#25`, `R#26`, `R#27`, `odd page` e `VScroll` no primeiro render da linha
+    - o flag eh resetado no inicio de cada scanline
+- Validação local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604052315-issue238-screen67-lazy-line-snapshot` (OK)
+  - `BUILD_ID=ECD0`
+  - artefato `sha1 f04af999e87184c22ace3047a1580c03b4e7fde9`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualização incremental de 05/04/2026 - partial `SCREEN 6/7` passa a seguir o `lineOffset -1..33` do `blueMSX`
+- A hipótese `32 vs 64` foi aprofundada e mostrou um desvio ainda mais específico:
+  - no `blueMSX`, o refresh parcial de `SCREEN 6/7` usa offset discreto `-1..33`
+  - o primeiro passo `-1 -> 0` serve para inicializar a linha (`X == -1`)
+  - a linha só fecha de fato em `33`, depois da última célula ativa
+  - o core local ainda fazia esse caminho por proporção contínua de tempo para `0..32`
+- Consequência prática:
+  - mesmo já alinhado para `32` células, o partial podia continuar um step cedo em relação ao `blueMSX`
+  - isso explica melhor o sintoma remanescente de fase visual errada com tempo total já correto
+- Corte local desta rodada:
+  - `src/fmsx_local/MSX.c`
+    - novo `FmsxVDPLineOffset67`
+    - novo helper `fmsx_vdp_screen67_line_offset_now()`
+    - `fmsx_vdp_render_screen67_partial()` passa a operar em `-1..33`
+    - o fechamento em HBlank de `SCREEN 6/7` passa a usar `33` como sentinel
+- Validação local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604052345-issue238-screen67-lineoffset-33` (OK)
+  - `BUILD_ID=E2CF`
+  - artefato `sha1 5c3d21a70f0d79d4cf0d8b018f18de27e3667be6`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
 ## Atualização incremental de 05/04/2026 - debug `Refresh [NTSC/PAL]` passa a forçar `R#9`
 - Antes de seguir com a rodada visual da `BE3E`, foi corrigido um desvio do próprio menu de diagnóstico:
   - `Settings -> Refresh [NTSC/PAL]` só alterava `m_RefreshRateHz/g_refresh_hz`
@@ -1591,3 +1681,131 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
   - `make -j4 DEBUG=1 BUILD_BID=202604052205-issue238-wide-sprite-color-pack` (OK)
   - `BUILD_ID=CC27`
   - artefato `sha1 f63aeb58399c56fe15c206976038b3a574ec7991`
+
+# Atualizacao incremental de 05/04/2026 - partial renderer wide volta a 32 celulas como no `blueMSX`
+
+- A rodada seguinte fechou um desvio de granularidade no `SCREEN 6/7` parcial:
+  - o `blueMSX` trabalha o partial renderer wide em `32` celulas ativas por linha
+  - o core local ainda projetava esse caminho em `64` steps
+- Correcao local:
+  - `src/fmsx_local/MSX.c`
+    - `end_column` de `SCREEN 6/7` passa para `0..32`
+    - `sprite_break` volta para `24`
+  - `src/fmsx_local/Wide.h`
+    - `RefreshLine6WideRange()` / `RefreshLine7WideRange()` passam a consumir `X0/X1` em `0..32`
+    - cada step equivale a `16` pixels fisicos (`<<4`)
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604052245-issue238-screen67-partial-32cells` (OK)
+  - `BUILD_ID=7AA1`
+  - artefato `sha1 c3325891d72049092b100562e0522e161e0b9bbc`
+
+# Atualizacao incremental de 05/04/2026 - `readStatus()` tambem avanca o partial wide
+
+- A comparacao mais recente contra o `blueMSX` encontrou um desvio mais forte que as hipoteses anteriores de `32/64` e snapshot:
+  - em `blueMSX`, `readStatus()` executa `sync(vdp, now)`
+  - esse `sync()` nao avanca apenas `CE/TR`; ele tambem move o partial refresh da linha atual
+  - no core local, `SCREEN 6/7` ainda so avancavam o partial em writes de VDP e no HBlank
+  - como o boot logo passa a maior parte do tempo em polling de `0x99`, o consumo visual podia ficar atrasado mesmo com `R26/R27` corretos
+- Corte local desta rodada:
+  - `src/fmsx_local/MSX.c`
+    - novo helper `fmsx_vdp_sync_status_read_visual()`
+    - o case `0x99` agora o chama imediatamente apos `fmsx_vdp_sync_before_status_read()`
+    - em `SCREEN 6/7`, o helper avanca `fmsx_vdp_render_screen67_partial()` pelo `line_offset` atual tambem nos reads de status
+- Alvo semantico:
+  - aproximar o contrato de `readStatus() + sync()` ao `blueMSX`
+  - tirar o partial wide da dependencia exclusiva de writes `0x99/0x9B` e do fechamento de HBlank
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604052230-issue238-statusread-partial-sync` (OK)
+  - `BUILD_ID=120A`
+  - artefato `sha1 34714836c9db9a5a439d4dbf7adf77d8e4254c24`
+
+# Atualizacao incremental de 05/04/2026 - helper wide passa a seguir o envelope de `384` bytes do `blueMSX`
+
+- A rodada mais profunda de diff contra `blueMSX/SpriteLine.h:colorSpritesLine()` mostrou que o helper wide local ainda divergira em dois pontos estruturais:
+  - margem/buffer de linha simplificados para `320` bytes, em vez do envelope real de `384`
+  - estado de `CC` (`ccColorMask / ccColorCheckMask`) sem persistencia por frame
+- Corte local:
+  - `src/fmsx_host_stubs.c`
+    - helper wide refeito para usar:
+      - buffer de linha e colisao em `384`
+      - gate de colisao equivalente ao `colChckBuf` do `blueMSX`
+      - `CC` persistente por frame
+      - composicao `CC/OR` e colisao mais literais
+  - `src/fmsx_local/MSX.c`
+    - `FmsxVDPLineColorSpritesLatched/Render` ampliados para `384`
+  - `src/fmsx_local/Wide.h`
+    - `ZBuf` temporario wide ampliado para `384`
+- Motivacao tecnica:
+  - o defeito residual do logo deixou de apontar para `R#9 interlace` ou `PAL/NTSC`
+  - a maior divergencia contra o `blueMSX` passou a ser o proprio envelope da linha de sprites wide e a persistencia de `CC`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604052330-issue238-wide-sprite-384cc` (OK)
+  - artefato `sha1 de34715a3a517b1edbb496bb27d16fed951f1f8a`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 06/04/2026 - a hipotese dominante passa a ser tearing do presenter do host
+
+- A rodada de video mais recente deixou de apontar para novos gaps em `R#9`/`PAL`/`NTSC` e passou a sustentar uma hipotese estrutural diferente:
+  - em pares consecutivos de frames do logo, a diferenca visual se concentra acima de uma linha horizontal e praticamente zera abaixo dela
+  - isso e mais compativel com tearing do presenter do host do que com erro novo no producer do VDP
+- A auditoria do stack local confirmou o desvio:
+  - `src/kernel.cpp:BlitFmsxFrame()` ainda escrevia o viewport diretamente no framebuffer visivel (`GetBuffer()`) linha a linha
+  - `third_party/circle/lib/screen.cpp` inicializa `CScreenDevice` sem double buffering
+  - o Circle ja oferece o caminho sincronizado de apresentacao por `WaitForVerticalSync()+SetArea()`
+- Corte local aplicado:
+  - `src/kernel.h/.cpp`
+    - novo staging buffer `m_FmsxPresentBuffer`
+    - novo helper `EnsureFmsxPresentBuffer()`
+    - `BlitFmsxFrame()` passa a escalar para esse staging buffer e apresentar o viewport por `WaitForVerticalSync()+SetArea()` no path `RGB565`
+    - o caminho antigo de escrita direta no framebuffer visivel fica apenas como fallback se a alocacao do staging buffer falhar
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604060130-issue238-vsync-presenter-staging` (OK)
+  - `BUILD_ID=46FB`
+  - artefato `sha1 9e1d3c4058f9797f7e03579181852de82fa7e381`
+
+# Atualizacao incremental de 06/04/2026 - `status0` e handoff da linha de sprites wide voltam ao contrato do `blueMSX`
+
+- A varredura mais funda contra o `blueMSX` abriu um desvio semantico mais forte do que os ultimos ajustes de renderer:
+  - o core local ainda reintroduzia `status0 bit5` de forma live durante `IN (99h)`, enquanto o `blueMSX` retorna apenas o latch cru de `status0` e limpa esse latch em seguida
+  - o pipeline local de sprites wide em `SCREEN 6/7` quebrava o handoff preparado-em-`Y` / consumido-em-`Y+1`, porque limpava `FmsxVDPLineColorSpritesValid` antes da copia para o buffer de render da scanline seguinte
+- Corte local aplicado:
+  - `src/fmsx_local/MSX.c`
+    - `fmsx_vdp_status0_live()` volta a devolver apenas `VDPStatus[0]`
+    - o partial wide deixa de recapturar a linha futura de sprites no `rightBorder`
+    - o inicio da scanline restaura a copia `Latched -> Render` antes do clear do flag de validade, repondo o handoff correto da linha preparada
+- Motivacao tecnica:
+  - alinhar o read/clear de `status0` ao `blueMSX`
+  - restaurar o pipeline `Y -> Y+1` que o `line512` do `blueMSX` usa para sprites, em vez de misturar recaptura e consumo no mesmo momento
+  - reduzir um dos ultimos desvios estruturais plausiveis para o defeito visual residual do logo, agora que o tempo total do boot ja esta praticamente correto
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604052355-issue238-status0-latched-sprite-handoff` (OK)
+  - `BUILD_ID=B2B2`
+  - artefato `sha1 a16530f4c81e5a7007aaaadaffc058aa138817b6`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 05/04/2026 - experimento `Z80 Turbo [SLO]`
+
+- A linha da `#238` ganhou um quarto perfil de turbo para teste controlado do boot logo:
+  - `NORM=100`
+  - `PAN=150`
+  - `MAX=200`
+  - `SLO=50`
+- O runtime e o menu agora aceitam `z80_turbo=3`, e o core local deixou de clamp-ar turbo em `>=100%`.
+- Isso permite A/B do boot logo abaixo da base sem depender do turbo Panasonic virtual.
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604052245-issue238-turbo-slo-profile` (OK)
+  - `BUILD_ID=93BC`
+  - artefato `sha1 eda31e56a0a17a3b58295b3f7932291f96c1ae6a`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`

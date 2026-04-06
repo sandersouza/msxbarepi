@@ -137,12 +137,10 @@ static uint16_t fmsx_vdp_port99_write_pc(uint16_t pc);
 static int fmsx_scale_cycles(int cycles)
 {
   long long scaled;
+  const unsigned percent = FmsxTurboPercent < 50u ? 50u : (FmsxTurboPercent > 300u ? 300u : FmsxTurboPercent);
 
   if(cycles <= 0) return 1;
-  if(FmsxTurboPercent < 100u) FmsxTurboPercent = 100u;
-  if(FmsxTurboPercent > 300u) FmsxTurboPercent = 300u;
-
-  scaled = ((long long)cycles * (long long)FmsxTurboPercent) / 100ll;
+  scaled = ((long long)cycles * (long long)percent) / 100ll;
   if(scaled < 1ll) scaled = 1ll;
   if(scaled > 0x7FFFFFFFll) scaled = 0x7FFFFFFFll;
   return (int)scaled;
@@ -151,7 +149,7 @@ static int fmsx_scale_cycles(int cycles)
 static int fmsx_hrefresh_cpu_cycles_exact(int active_vdp_ticks)
 {
   const unsigned denom = 600u; /* 6 VDP clocks per CPU clock, scaled by percent */
-  const unsigned percent = FmsxTurboPercent < 100u ? 100u : (FmsxTurboPercent > 300u ? 300u : FmsxTurboPercent);
+  const unsigned percent = FmsxTurboPercent < 50u ? 50u : (FmsxTurboPercent > 300u ? 300u : FmsxTurboPercent);
   const unsigned numer = (unsigned)active_vdp_ticks * percent;
   unsigned *acc;
   unsigned whole;
@@ -176,7 +174,7 @@ void fmsx_cpu_set_turbo_percent(unsigned percent)
 {
   int base_vperiod;
 
-  if(percent < 100u) percent = 100u;
+  if(percent < 50u) percent = 50u;
   if(percent > 300u) percent = 300u;
   FmsxTurboPercent = percent;
   g_fmsx_hrefresh_frac_acc_240 = 0u;
@@ -310,15 +308,17 @@ uint8_t FmsxVDPLineR9Latched = 0;     /* R#9 snapshot for current scanline */
 uint8_t FmsxVDPLineOddPageLatched = 0;/* EO-derived display page for current scanline */
 uint8_t FmsxVDPLineFlipEvenOddLatched = 0; /* R#9 bit2 snapshot for current scanline */
 uint8_t FmsxVDPLineInterlaceOnLatched = 0; /* R#9 bit3 snapshot for current scanline */
-uint8_t FmsxVDPLineColorSpritesLatched[320]; /* SCREEN 6/7 sprite line prepared for the next scanline */
-uint8_t FmsxVDPLineColorSpritesRender[320];  /* SCREEN 6/7 sprite line consumed by the current scanline */
+uint8_t FmsxVDPLineColorSpritesLatched[384]; /* SCREEN 6/7 sprite line prepared for the next scanline, with 32px margins */
+uint8_t FmsxVDPLineColorSpritesRender[384];  /* SCREEN 6/7 sprite line consumed by the current scanline, with 32px margins */
 uint8_t FmsxVDPLineColorSpritesValid = 0;    /* next-line sprite line ready */
 uint8_t FmsxVDPLineColorSpritesRenderValid = 0; /* current-line sprite line ready */
 static uint8_t FmsxVDPLineVScrollLatched = 0; /* VScroll captured at scanline start */
 static int FmsxVDPUCountLatched = 0;  /* Frame visibility accumulator for current scanline */
-static uint8_t FmsxVDPDrawingLatched = 0; /* Drawing state for current scanline */
+uint8_t FmsxVDPDrawingLatched = 0; /* Drawing state for current scanline */
 static uint8_t FmsxVDPLineRendered = 0;   /* Current scanline already composed before HBlank */
 static uint8_t FmsxVDPLineChunkEnd = 0;   /* Partial render end column for current scanline */
+static int FmsxVDPLineOffset67 = -1;      /* SCREEN 6/7 partial line offset in blueMSX-style -1..33 units */
+static uint8_t FmsxVDPLineScreen67StateValid = 0; /* SCREEN 6/7 state captured at first render of the line */
 uint32_t FmsxIE1EventCount = 0;       /* Number of VDP line-coincidence events */
 uint32_t FmsxIE1AckCount = 0;         /* Number of S#1 reads that clear IE1 flag */
 uint32_t FmsxIE1ArmedCount = 0;       /* Number of times IE1 was armed on active line */
@@ -782,7 +782,8 @@ void FmsxLatchColorSpritesLine(uint8_t Y,uint8_t *ZBuf);
 static uint8_t fmsx_vdp_render_page(void);
 static void fmsx_vdp_render_scanline(uint8_t scanline,uint8_t drawing,int ucount);
 static void fmsx_vdp_render_screen4_partial(uint8_t scanline,unsigned end_column);
-static void fmsx_vdp_render_screen67_partial(uint8_t scanline,unsigned end_column);
+static void fmsx_vdp_render_screen67_partial(uint8_t scanline,int end_offset);
+static void fmsx_vdp_sync_status_read_visual(void);
 static void fmsx_vdp_trace_log(uint8_t event_type);
 static void fmsx_vdp_trace_log_io(uint8_t event_type,uint32_t aux_addr,uint8_t aux_value,uint8_t aux_reg,uint8_t aux_ctrl);
 static void fmsx_vdp_sync_before_cpu_write(void);
@@ -1650,6 +1651,15 @@ static unsigned fmsx_vdp_line_ticks_now(void)
   return ticks;
 }
 
+static int fmsx_vdp_screen67_line_offset_now(void)
+{
+  const unsigned line_ticks = fmsx_vdp_line_ticks_now();
+  int cur_offset = (int)((line_ticks + 32u) >> 5) - 1;
+
+  if(cur_offset > 33) cur_offset = 33;
+  return cur_offset;
+}
+
 static uint8_t fmsx_vdp_status2_hr(void)
 {
   /*
@@ -1954,38 +1964,18 @@ static void fmsx_vdp_update_status0_live_cache(void)
 
 static uint8_t fmsx_vdp_status0_live(void)
 {
-  uint8_t status;
-
-  fmsx_vdp_update_status0_live_cache();
   /*
-   * blueMSX re-exposes status0 bit5 on a second consecutive read when the
-   * current scanline still has a live sprite collision. KANJIBASIC's logo
-   * worker at 7A66/7A68 depends on exactly that pattern: the first IN clears
-   * any stale latch and the second IN sees the collision again.
+   * blueMSX returns the latched status0 byte and clears it on read. It does
+   * not re-synthesize sprite-collision bit5 from the current line during the
+   * read itself. KANJIBASIC's 7A66/7A68 loop relies on that latch timing,
+   * because a fresh collision only becomes visible after the sprite pipeline
+   * materializes it, not merely because the current scanline still collides.
    *
-   * Keep the raw latch for bit7, but synthesize bit5 from either the stored
-   * latch or the current live scanline state. Status3..6 remain latched only
-   * once per line when the collision is first materialized.
+   * Keep the live cache around for telemetry/debug, but return the raw latch
+   * here so the two consecutive IN(99h) reads observe the same contract as the
+   * blueMSX/V9958 status path.
    */
-  status = (VDPStatus[0]&0x80u) | FmsxVDPStatus0LiveSprite;
-  if((VDPStatus[0]&0x20u) || FmsxVDPStatus0LiveCollision) status |= 0x20u;
-
-  if(FmsxVDPStatus0LiveCollision
-  && !(VDPStatus[0]&0x20u)
-  && !((FmsxVDPStatus0LatchedFrame==FmsxVDPFrameCounter)
-    && (FmsxVDPStatus0LatchedLine==ScanLine)))
-  {
-    VDPStatus[0] |= 0x20u;
-    VDPStatus[3] = (uint8_t)(FmsxVDPStatus0LiveX&0xFFu);
-    VDPStatus[4] = (uint8_t)(FmsxVDPStatus0LiveX>>8);
-    VDPStatus[5] = (uint8_t)(FmsxVDPStatus0LiveY&0xFFu);
-    VDPStatus[6] = (uint8_t)(FmsxVDPStatus0LiveY>>8);
-    FmsxVDPStatus0LatchedFrame = FmsxVDPFrameCounter;
-    FmsxVDPStatus0LatchedLine = ScanLine;
-    status |= 0x20u;
-  }
-
-  return status;
+  return VDPStatus[0];
 }
 
 static void fmsx_vdp_clear_ie1_status(void)
@@ -2064,15 +2054,10 @@ static void fmsx_vdp_sync_before_cpu_write(void)
    */
   if((ScrMode==6)||(ScrMode==7))
   {
-    const unsigned display_ticks = (unsigned)fmsx_vdp_active_vdp_ticks();
-    const unsigned line_ticks = fmsx_vdp_line_ticks_now();
-    const unsigned end_column =
-      (line_ticks >= display_ticks)
-        ? 64u
-        : (unsigned)(((unsigned long long)line_ticks * 64u + display_ticks - 1u) / display_ticks);
+    const int end_offset = fmsx_vdp_screen67_line_offset_now();
 
-    if(end_column>FmsxVDPLineChunkEnd)
-      fmsx_vdp_render_screen67_partial((uint8_t)ScanLine,end_column);
+    if(end_offset > FmsxVDPLineOffset67)
+      fmsx_vdp_render_screen67_partial((uint8_t)ScanLine,end_offset);
     goto sync_command;
   }
 
@@ -2090,6 +2075,32 @@ sync_command:
   fmsx_vdp_sync_before_cpu_mutation();
 }
 
+static void fmsx_vdp_sync_status_read_visual(void)
+{
+  /*
+   * blueMSX runs sync(vdp, now) before every status-port read. That sync does
+   * not only advance CE/TR; it also moves the current line's partial refresh
+   * window forward. The local core only did the command-side flush here, while
+   * SCREEN 6/7 partial rendering advanced only on VDP writes and at HBlank.
+   *
+   * The MSX2+ boot logo spends most of its time polling 0x99, so that gap let
+   * the visible bitmap/sprite composition lag behind the producer even when the
+   * timing telemetry already matched. Mirror the visual side of blueMSX here by
+   * advancing the current SCREEN 6/7 partial line on status reads too.
+   */
+  if((ScrMode!=6)&&(ScrMode!=7)) return;
+  if((ScanLine<0)||(ScanLine>=256)) return;
+  if(FmsxVDPLineRendered) return;
+  if(!FmsxVDPDrawingLatched) return;
+  if(FmsxVDPUCountLatched<100) return;
+
+  {
+    const int end_offset = fmsx_vdp_screen67_line_offset_now();
+    if(end_offset > FmsxVDPLineOffset67)
+      fmsx_vdp_render_screen67_partial((uint8_t)ScanLine,end_offset);
+  }
+}
+
 static void fmsx_vdp_render_screen4_partial(uint8_t scanline,unsigned end_column)
 {
   if(end_column>32u) end_column=32u;
@@ -2101,27 +2112,63 @@ static void fmsx_vdp_render_screen4_partial(uint8_t scanline,unsigned end_column
   if(FmsxVDPLineChunkEnd>=32u) FmsxVDPLineRendered=1;
 }
 
-static void fmsx_vdp_render_screen67_partial(uint8_t scanline,unsigned end_column)
+static void fmsx_vdp_capture_screen67_render_state_now(void)
 {
-  /* blueMSX BRK_6/BRK_7 = 24 wide cells = 384 physical pixels. */
-  const unsigned sprite_break = 48u;
+  if(FmsxVDPLineScreen67StateValid) return;
 
-  if(end_column>64u) end_column=64u;
-  if(end_column<=FmsxVDPLineChunkEnd) return;
+  /*
+   * blueMSX SCREEN 6/7 captures scroll/page state on the first refresh call
+   * of the line (X == -1), not at the raw scanline boundary. If the BIOS
+   * updates R#2/R#25/R#26/R#27 before that first refresh, the current line
+   * already uses the new state. Mirror that lazily here.
+   */
+  FmsxVDPLineChrTabLatched=ChrTab;
+  FmsxVDPLineChrTabMLatched=ChrTabM;
+  FmsxVDPLineR2Latched=VDP[2];
+  FmsxVDPLineR25Latched=VDP[25];
+  FmsxVDPLineR26Latched=VDP[26];
+  FmsxVDPLineR27Latched=VDP[27];
+  FmsxVDPLineR18Latched=VDP[18];
+  FmsxVDPLineOddPageLatched=fmsx_vdp_effective_odd_page();
+  FmsxVDPLineVScrollLatched=VDP[23];
+  FmsxVDPLineScreen67StateValid=1u;
+}
 
-  if(!FmsxVDPLineColorSpritesValid && (end_column >= sprite_break))
+static void fmsx_vdp_render_screen67_partial(uint8_t scanline,int end_offset)
+{
+  /*
+   * blueMSX SCREEN 6/7 wide paths use BRK_6/BRK_7 = 24 inside a 32-cell line
+   * and prepare the next scanline's sprite buffer at that breakpoint. In the
+   * line512 path, the reference code also refreshes that buffer again at the
+   * right border (`X2 == 33`), which is where CC/collision side effects for
+   * the next line are finalized.
+   */
+  const unsigned sprite_break = 24u;
+  const unsigned render_from = FmsxVDPLineOffset67 < 0 ? 0u : (unsigned)FmsxVDPLineOffset67;
+  const unsigned render_to = end_offset > 32 ? 32u : (unsigned)end_offset;
+
+  if(end_offset > 33) end_offset = 33;
+  if(end_offset <= FmsxVDPLineOffset67) return;
+
+  fmsx_vdp_capture_screen67_render_state_now();
+
+  if(!FmsxVDPLineColorSpritesValid && (end_offset >= (int)sprite_break))
   {
     FmsxLatchColorSpritesLine(scanline,FmsxVDPLineColorSpritesLatched);
     FmsxVDPLineColorSpritesValid = 1u;
   }
 
   FmsxVDPRenderVScrollOverride = (int)FmsxVDPLineVScrollLatched;
-  if(ScrMode==6) RefreshLine6WideRange(scanline,(unsigned)FmsxVDPLineChunkEnd,end_column);
-  else           RefreshLine7WideRange(scanline,(unsigned)FmsxVDPLineChunkEnd,end_column);
+  if(render_to > render_from)
+  {
+    if(ScrMode==6) RefreshLine6WideRange(scanline,render_from,render_to);
+    else           RefreshLine7WideRange(scanline,render_from,render_to);
+  }
   FmsxVDPRenderVScrollOverride = -1;
 
-  FmsxVDPLineChunkEnd=(uint8_t)end_column;
-  if(FmsxVDPLineChunkEnd>=64u) FmsxVDPLineRendered=1;
+  FmsxVDPLineOffset67 = end_offset;
+  FmsxVDPLineChunkEnd = render_to > 32u ? 32u : (uint8_t)render_to;
+  if(FmsxVDPLineOffset67 >= 33) FmsxVDPLineRendered = 1;
 }
 
 static void fmsx_vdp_render_scanline(uint8_t scanline,uint8_t drawing,int ucount)
@@ -4414,6 +4461,7 @@ case 0x99: /* VDP status registers */
 {
   fmsx_apply_vdp_io_wait(fmsx_vdp_status_wait_cycles());
   if(!MODEL(MSX_MSX1)) fmsx_vdp_sync_before_status_read();
+  if(!MODEL(MSX_MSX1)) fmsx_vdp_sync_status_read_visual();
   const uint8_t status_reg = MODEL(MSX_MSX1)? 0u:(uint8_t)(VDP[15]&0x0Fu);
   const uint16_t port99_read_pc = fmsx_vdp_port99_read_pc(CPU.PC.W);
   const uint8_t live_status0 = fmsx_vdp_status0_live();
@@ -5685,7 +5733,8 @@ uint16_t LoopZ80(Z80 *R)
     ScanLine=ScanLine<(pal_timing? 312:261)? ScanLine+1:0;
     FmsxVDPLineRendered=0;
     FmsxVDPLineChunkEnd=0;
-    FmsxVDPLineColorSpritesValid=0u;
+    FmsxVDPLineOffset67=-1;
+    FmsxVDPLineScreen67StateValid=0u;
 
     /* If first scanline of the screen... */
     if(!ScanLine)
@@ -5880,8 +5929,14 @@ uint16_t LoopZ80(Z80 *R)
   {
     if((ScrMode==4) && !fmsx_vdp_hscroll_active256_local() && FmsxVDPLineChunkEnd)
       fmsx_vdp_render_screen4_partial((uint8_t)ScanLine,32u);
-    else if(((ScrMode==6)||(ScrMode==7)) && FmsxVDPLineChunkEnd)
-      fmsx_vdp_render_screen67_partial((uint8_t)ScanLine,64u);
+    else if((ScrMode==6)||(ScrMode==7))
+      /*
+       * SCREEN 6/7 partial rendering was already aligned to the blueMSX
+       * 32-cell active span, but blueMSX still closes the scanline at offset
+       * 33 after the last active cell. Keep the same sentinel here so the
+       * per-line state sees the same -1..33 contract as the reference code.
+       */
+      fmsx_vdp_render_screen67_partial((uint8_t)ScanLine,33);
     else
       fmsx_vdp_render_scanline((uint8_t)ScanLine,FmsxVDPDrawingLatched,FmsxVDPUCountLatched);
   }

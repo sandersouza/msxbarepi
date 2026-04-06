@@ -76,6 +76,7 @@ static const unsigned kStateBufferMaxBytes = 2u * 1024u * 1024u;
 static const unsigned kZ80TurboModeDes = 0u;
 static const unsigned kZ80TurboModePan = 1u;
 static const unsigned kZ80TurboModeMax = 2u;
+static const unsigned kZ80TurboModeSlo = 3u;
 static const u8 kJoyBridgeFireA = (u8) (1u << 4);
 static const boolean kBootQuiet = TRUE;
 /* Rensha modes are expressed in pulses per 10 frames (0.5, 1.0, 1.5). */
@@ -255,6 +256,8 @@ static unsigned Z80TurboPercentFromMode(unsigned mode)
 {
 	switch (mode)
 	{
+	case kZ80TurboModeSlo:
+		return 50u;   /* 1.789772MHz over 3.579545MHz base */
 	case kZ80TurboModePan:
 		return 150u;  /* 5.369318MHz over 3.579545MHz base */
 	case kZ80TurboModeMax:
@@ -1112,7 +1115,9 @@ CComboKernel::CComboKernel(void)
 	m_BootStartUs(0u),
 	m_BootToFmsxMs(0u),
 	m_StateIoBuffer(0),
-	m_StateIoBufferCapacity(0u)
+	m_StateIoBufferCapacity(0u),
+	m_FmsxPresentBuffer(0),
+	m_FmsxPresentBufferPixels(0u)
 {
 	s_Instance = this;
 	m_ActLED.Blink(5);
@@ -1180,6 +1185,12 @@ CComboKernel::~CComboKernel(void)
 		delete[] m_StateIoBuffer;
 		m_StateIoBuffer = 0;
 		m_StateIoBufferCapacity = 0u;
+	}
+	if (m_FmsxPresentBuffer != 0)
+	{
+		delete[] m_FmsxPresentBuffer;
+		m_FmsxPresentBuffer = 0;
+		m_FmsxPresentBufferPixels = 0u;
 	}
 	g_fmsx_uart_trace_serial = 0;
 	s_Instance = 0;
@@ -3073,6 +3084,9 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 		u16 *dst_base = (u16 *) (uintptr) frame_buffer->GetBuffer();
 		const unsigned pitch_pixels = frame_buffer->GetPitch() / sizeof(u16);
 		const unsigned scanline_mode = (m_ScanlineMode > kScanlineModeCrt) ? kScanlineModeCrt : m_ScanlineMode;
+		const boolean use_present_area = EnsureFmsxPresentBuffer(dst_width * dst_height);
+		u16 *present_base = use_present_area ? m_FmsxPresentBuffer : dst_base;
+		const unsigned present_pitch_pixels = use_present_area ? dst_width : pitch_pixels;
 		if (force_redraw)
 		{
 			/* Full clear on forced redraw to avoid capturing stale menu pixels into snapshot. */
@@ -3181,7 +3195,7 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 				const unsigned src_rel_y = m_BlitYMap[y];
 				const unsigned src_y = src_y0 + src_rel_y;
 				const u16 *src_line = pixels + (src_y * width);
-				u16 *dst_line = dst_base + ((offset_y + y) * pitch_pixels) + offset_x;
+				u16 *dst_line = present_base + (y * present_pitch_pixels);
 				const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
 				const boolean dark_crt =
 					(scanline_mode == kScanlineModeCrt)
@@ -3223,7 +3237,7 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 				const unsigned src_rel_y = (unsigned) (((u64) y * (u64) src_h) / (u64) dst_height);
 				const unsigned src_y = src_y0 + src_rel_y;
 				const u16 *src_line = pixels + (src_y * width);
-				u16 *dst_line = dst_base + ((offset_y + y) * pitch_pixels) + offset_x;
+				u16 *dst_line = present_base + (y * present_pitch_pixels);
 				const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
 				const boolean dark_crt =
 					(scanline_mode == kScanlineModeCrt)
@@ -3278,7 +3292,18 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 			m_BlitMapValid = FALSE;
 		}
 
-		if (m_DCacheEnabled)
+		if (use_present_area)
+		{
+			CDisplay::TArea area { offset_x, offset_x + dst_width - 1u, offset_y, offset_y + dst_height - 1u };
+			if (m_DCacheEnabled)
+			{
+				const unsigned flush_pixels = dst_width * dst_height;
+				FlushDCacheRange(present_base, flush_pixels * (unsigned) sizeof(u16));
+			}
+			(void) frame_buffer->WaitForVerticalSync();
+			frame_buffer->SetArea(area, present_base);
+		}
+		else if (m_DCacheEnabled)
 		{
 			u16 *flush_start = dst_base + (offset_y * pitch_pixels) + offset_x;
 			const unsigned flush_pixels = ((dst_height - 1u) * pitch_pixels) + dst_width;
@@ -3692,7 +3717,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			}
 			else if (SettingsKeyEquals(line, key_len, "z80_turbo"))
 			{
-				m_Z80TurboMode = value > 2u ? 0u : value;
+				m_Z80TurboMode = value > 3u ? 0u : value;
 			}
 			else if (SettingsKeyEquals(line, key_len, "rensha"))
 			{
@@ -4258,6 +4283,33 @@ boolean CComboKernel::EnsureStateIoBuffer(unsigned min_capacity)
 	}
 	m_StateIoBuffer = new_buffer;
 	m_StateIoBufferCapacity = min_capacity;
+	return TRUE;
+}
+
+boolean CComboKernel::EnsureFmsxPresentBuffer(unsigned min_pixels)
+{
+	static const unsigned kPresentBufferMaxPixels = kBlitMapMaxAxis * kBlitMapMaxAxis;
+
+	if (min_pixels == 0u || min_pixels > kPresentBufferMaxPixels)
+	{
+		return FALSE;
+	}
+	if (m_FmsxPresentBuffer != 0 && m_FmsxPresentBufferPixels >= min_pixels)
+	{
+		return TRUE;
+	}
+
+	u16 *new_buffer = new u16[min_pixels];
+	if (new_buffer == 0)
+	{
+		return FALSE;
+	}
+	if (m_FmsxPresentBuffer != 0)
+	{
+		delete[] m_FmsxPresentBuffer;
+	}
+	m_FmsxPresentBuffer = new_buffer;
+	m_FmsxPresentBufferPixels = min_pixels;
 	return TRUE;
 }
 
@@ -5135,7 +5187,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 #endif
 
 	case ComboMenuActionCycleZ80Turbo:
-		m_Z80TurboMode = (m_Z80TurboMode + 1u) % 3u;
+		m_Z80TurboMode = (m_Z80TurboMode + 1u) % 4u;
 		m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX
@@ -5149,7 +5201,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		break;
 
 	case ComboMenuActionCycleZ80TurboPrev:
-		m_Z80TurboMode = (m_Z80TurboMode == 0u) ? 2u : (m_Z80TurboMode - 1u);
+		m_Z80TurboMode = (m_Z80TurboMode == 0u) ? 3u : (m_Z80TurboMode - 1u);
 		m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX

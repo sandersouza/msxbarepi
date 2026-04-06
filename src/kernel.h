@@ -85,6 +85,7 @@ private:
     void LoadSettingsFromStorage(void);
     void SaveSettingsToStorage(void);
     boolean EnsureStateIoBuffer(unsigned min_capacity);
+    boolean EnsureFmsxPresentBuffer(unsigned min_pixels);
     boolean EnsureStateStorageDirectory(void);
     void SaveEmulatorStateToStorage(void);
     void LoadEmulatorStateFromStorage(void);
@@ -272,6 +273,8 @@ private:
     unsigned m_BootToFmsxMs;
     u8 *m_StateIoBuffer;
     unsigned m_StateIoBufferCapacity;
+    u16 *m_FmsxPresentBuffer;
+    unsigned m_FmsxPresentBufferPixels;
 
     static CComboKernel *s_Instance;
 };

@@ -19,6 +19,11 @@ extern uint8_t FmsxVDPScreenOnLatched;
 #define FMSX_SCREEN_ON (FmsxVDPScreenOnLatched)
 #endif
 
+#ifndef FMSX_DRAW_AREA
+extern uint8_t FmsxVDPDrawingLatched;
+#define FMSX_DRAW_AREA (FmsxVDPDrawingLatched)
+#endif
+
 extern uint8_t *FmsxVDPLineChrTabLatched;
 extern int FmsxVDPLineChrTabMLatched;
 extern uint8_t FmsxVDPLineR2Latched;
@@ -27,8 +32,8 @@ extern uint8_t FmsxVDPLineR26Latched;
 extern uint8_t FmsxVDPLineR27Latched;
 extern uint8_t FmsxVDPLineR18Latched;
 extern uint8_t FmsxVDPLineOddPageLatched;
-extern uint8_t FmsxVDPLineColorSpritesLatched[320];
-extern uint8_t FmsxVDPLineColorSpritesRender[320];
+extern uint8_t FmsxVDPLineColorSpritesLatched[384];
+extern uint8_t FmsxVDPLineColorSpritesRender[384];
 extern uint8_t FmsxVDPLineColorSpritesValid;
 extern uint8_t FmsxVDPLineColorSpritesRenderValid;
 extern void FmsxLatchColorSpritesLine(uint8_t Y,uint8_t *ZBuf);
@@ -289,13 +294,18 @@ void RefreshLine6(uint8_t Y)
   uint8_t BgRaw[1024];
   uint8_t BgIndex;
   uint8_t MaskBg;
-  uint8_t ZBuf[304];
+  uint8_t ZBuf[384];
   uint16_t *P=RefreshBorder512(Y,XPal[BGColor&0x03]);
   if(!P) return;
 
   RefreshBorder6Wide(P);
 
-  if(!FMSX_SCREEN_ON) ClearLine512(P,XPal[BGColor&0x03]);
+  if(!FMSX_SCREEN_ON || !FMSX_DRAW_AREA)
+  {
+    const uint16_t C0 = XPal[(BGColor>>2)&0x03];
+    const uint16_t C1 = XPal[BGColor&0x03];
+    for(PIdx=0;PIdx<512;PIdx++) P[PIdx] = (PIdx&1)? C1:C0;
+  }
   else
   {
     LastScanline = Y + FirstLine;
@@ -383,22 +393,23 @@ void RefreshLine6WideRange(uint8_t Y,unsigned X0,unsigned X1)
   unsigned Px1;
   uint8_t BgIndex;
   uint8_t MaskBg;
-  uint8_t ZBuf[304];
+  uint8_t ZBuf[384];
   uint16_t *P=RefreshBorder512(Y,XPal[BGColor&0x03]);
   if(!P) return;
 
-  if(X0>64u) X0=64u;
-  if(X1>64u) X1=64u;
+  if(X0>32u) X0=32u;
+  if(X1>32u) X1=32u;
   if(X1<=X0) return;
 
-  Px0=X0<<3;
-  Px1=X1<<3;
+  Px0=X0<<4;
+  Px1=X1<<4;
   RefreshBorder6Wide(P);
 
-  if(!FMSX_SCREEN_ON)
+  if(!FMSX_SCREEN_ON || !FMSX_DRAW_AREA)
   {
-    const uint16_t Bg = XPal[BGColor&0x03];
-    for(PIdx=(int)Px0;PIdx<(int)Px1;++PIdx) P[PIdx]=Bg;
+    const uint16_t C0 = XPal[(BGColor>>2)&0x03];
+    const uint16_t C1 = XPal[BGColor&0x03];
+    for(PIdx=(int)Px0;PIdx<(int)Px1;++PIdx) P[PIdx] = (PIdx&1)? C1:C0;
     return;
   }
 
@@ -442,11 +453,11 @@ void RefreshLine7(uint8_t Y)
   uint8_t BgRaw[1024];
   uint8_t BgIndex;
   uint8_t MaskBg;
-  uint8_t ZBuf[304];
+  uint8_t ZBuf[384];
   uint16_t *P=RefreshBorder512(Y,XPal[BGColor]);
   if(!P) return;
 
-  if(!FMSX_SCREEN_ON) ClearLine512(P,XPal[BGColor]);
+  if(!FMSX_SCREEN_ON || !FMSX_DRAW_AREA) ClearLine512(P,XPal[BGColor]);
   else
   {
     LastScanline = Y + FirstLine;
@@ -520,18 +531,18 @@ void RefreshLine7WideRange(uint8_t Y,unsigned X0,unsigned X1)
   uint8_t BgRaw[1024];
   uint8_t BgIndex;
   uint8_t MaskBg;
-  uint8_t ZBuf[304];
+  uint8_t ZBuf[384];
   uint16_t *P=RefreshBorder512(Y,XPal[BGColor]);
   if(!P) return;
 
-  if(X0>64u) X0=64u;
-  if(X1>64u) X1=64u;
+  if(X0>32u) X0=32u;
+  if(X1>32u) X1=32u;
   if(X1<=X0) return;
 
-  Px0=X0<<3;
-  Px1=X1<<3;
+  Px0=X0<<4;
+  Px1=X1<<4;
 
-  if(!FMSX_SCREEN_ON)
+  if(!FMSX_SCREEN_ON || !FMSX_DRAW_AREA)
   {
     const uint16_t Bg = XPal[BGColor];
     for(PIdx=(int)Px0;PIdx<(int)Px1;++PIdx) P[PIdx]=Bg;
