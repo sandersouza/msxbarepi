@@ -395,7 +395,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     machine_profile = machine_profile_clamp(machine_profile);
     if (rammapper_kb != 256u && rammapper_kb != 512u && rammapper_kb != 1024u) rammapper_kb = 256u;
     if (megaram_kb != 0u && megaram_kb != 256u && megaram_kb != 512u && megaram_kb != 1024u) megaram_kb = 0u;
-    if (z80_turbo_mode > 3u) z80_turbo_mode = 0u;
+    if (z80_turbo_mode > 2u) z80_turbo_mode = 0u;
     if (boot_mode > 2u) boot_mode = 0u;
     if (rensha_mode > 3u) rensha_mode = 0u;
     if (audio_gain_percent > 100u) audio_gain_percent = 100u;
@@ -457,7 +457,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     BuildLabelFlag(turbo_label, sizeof(turbo_label), locale->settings_z80_turbo,
                    z80_turbo_mode == 0u ? "NORM"
                    : (z80_turbo_mode == 1u ? "PAN"
-                   : (z80_turbo_mode == 2u ? "MAX" : "SLO")));
+                   : "MAX"));
     BuildLabelFlag(rensha_label, sizeof(rensha_label), locale->settings_rensha,
                    rensha_mode == 0u ? locale->flag_off : (rensha_mode == 1u ? "1" : (rensha_mode == 2u ? "2" : "3")));
     BuildLabelFlag(fm_music_label, sizeof(fm_music_label), locale->settings_fm_music, fm_music_enabled ? locale->flag_on : locale->flag_off);

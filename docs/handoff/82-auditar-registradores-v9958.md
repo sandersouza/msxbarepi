@@ -1998,3 +1998,35 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 - Estado operacional:
   - sem `git commit`
   - sem `git push`
+
+# Atualizacao incremental de 06/04/2026 - filha `#238` abre A/B local `-1..33` vs `0..32`
+
+- Antes de fechar a filha `#238`, a trilha abriu um A/B controlado do partial renderer wide por causa de um sintoma observado em `ZANAC EX`: o placar aparenta ser sobre-escrito em uma scanline, sugerindo problema no contrato de granularidade do partial quando o software troca screen/registers entre linhas.
+- Corte local aplicado na filha:
+  - `src/fmsx_local/MSX.c`
+    - `FmsxVDPLineOffset67` volta a `0`
+    - `fmsx_vdp_screen67_line_offset_now()` volta a `0..32`
+    - o sentinela `33` deixa de ser usado no partial `SCREEN 6/7`
+    - o fechamento da linha volta a chamar o partial com `32`
+- Build local validada na filha:
+  - `BUILD_BID=202604061000-issue238-screen67-back-to-32`
+  - `BUILD_ID=CA87`
+  - `BUILD_HASH=35411b2-f25f019fd7a4b314275b86fcc018b43b9f39114b`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 06/04/2026 - filha `#238` volta ao estado estavel e limpa telemetria/`SLO`
+
+- O A/B da filha `#238` entre `-1..33` e `0..32` nao moveu o sintoma em hardware e foi descartado.
+- A filha volta ao estado estavel do boot logo `MSX2+` e entra em preparacao de review:
+  - `-1..33` restaurado
+  - `BL238*`/`BL238W` silenciados
+  - `TURBO [SLO]` removido do runtime/menu
+- Build local validada na filha:
+  - `BUILD_BID=202604061030-issue238-clean-pr`
+  - `BUILD_ID=1911`
+  - `BUILD_HASH=35411b2-0b9ac33eedb8c6e0f3b5a6c34eeca8d34879b13a`
+- Estado operacional:
+  - pronto para `git commit`
+  - pronto para `git push`

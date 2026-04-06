@@ -76,7 +76,6 @@ static const unsigned kStateBufferMaxBytes = 2u * 1024u * 1024u;
 static const unsigned kZ80TurboModeDes = 0u;
 static const unsigned kZ80TurboModePan = 1u;
 static const unsigned kZ80TurboModeMax = 2u;
-static const unsigned kZ80TurboModeSlo = 3u;
 static const u8 kJoyBridgeFireA = (u8) (1u << 4);
 static const boolean kBootQuiet = TRUE;
 /* Rensha modes are expressed in pulses per 10 frames (0.5, 1.0, 1.5). */
@@ -256,8 +255,6 @@ static unsigned Z80TurboPercentFromMode(unsigned mode)
 {
 	switch (mode)
 	{
-	case kZ80TurboModeSlo:
-		return 50u;   /* 1.789772MHz over 3.579545MHz base */
 	case kZ80TurboModePan:
 		return 150u;  /* 5.369318MHz over 3.579545MHz base */
 	case kZ80TurboModeMax:
@@ -5187,7 +5184,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 #endif
 
 	case ComboMenuActionCycleZ80Turbo:
-		m_Z80TurboMode = (m_Z80TurboMode + 1u) % 4u;
+		m_Z80TurboMode = (m_Z80TurboMode + 1u) % 3u;
 		m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX
@@ -5201,7 +5198,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		break;
 
 	case ComboMenuActionCycleZ80TurboPrev:
-		m_Z80TurboMode = (m_Z80TurboMode == 0u) ? 3u : (m_Z80TurboMode - 1u);
+		m_Z80TurboMode = (m_Z80TurboMode == 0u) ? 2u : (m_Z80TurboMode - 1u);
 		m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX

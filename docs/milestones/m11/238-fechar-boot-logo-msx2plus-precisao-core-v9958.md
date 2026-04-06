@@ -1809,3 +1809,48 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Estado operacional:
   - sem `git commit`
   - sem `git push`
+
+# Atualizacao incremental de 06/04/2026 - A/B local do partial wide volta para `0..32`
+
+- Como experimento dirigido por um sintoma em `ZANAC EX` (placar aparentemente sobre-escrito em uma scanline quando o jogo troca de screen entre linhas), a `#238` abriu um A/B isolado do contrato do partial renderer wide.
+- Corte local aplicado:
+  - `src/fmsx_local/MSX.c`
+    - `FmsxVDPLineOffset67` volta a `0`
+    - `fmsx_vdp_screen67_line_offset_now()` volta a `0..32`
+    - `fmsx_vdp_render_screen67_partial()` deixa de usar o sentinela `33`
+    - o fechamento da scanline em HBlank volta a chamar o partial com `32`
+- Motivacao tecnica:
+  - medir se o contrato `-1..33` era parte do defeito residual fora do boot logo, especialmente em software que alterna screen/registers entre scanlines
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604061000-issue238-screen67-back-to-32` (OK)
+  - `BUILD_ID=CA87`
+  - artefato `sha1 f25f019fd7a4b314275b86fcc018b43b9f39114b`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 06/04/2026 - limpeza final e estado estavel para review
+
+- O A/B `0..32` aberto por causa de `ZANAC EX` nao moveu o sintoma em hardware e foi descartado.
+- A issue volta ao estado estavel da build `B2B2` para o boot logo do `MSX2+`, preservando o contrato `-1..33` do partial `SCREEN 6/7`.
+- Como preparacao para review:
+  - `BL238*`/`BL238W` foram silenciados
+  - o perfil experimental `Z80 Turbo [SLO]` foi removido do runtime/menu
+  - a documentacao operacional volta a expor apenas `OFF/PAN/MAX`
+- Corte local aplicado:
+  - `src/fmsx_local/MSX.c`
+  - `src/fmsx_host_stubs.c`
+  - `src/fmsx_runtime.c`
+  - `src/kernel.cpp`
+  - `src/tools/menu/combo_menu.cpp`
+  - `src/tools/menu/combo_menu_items.cpp`
+  - `docs/debug-layer.md`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604061030-issue238-clean-pr` (OK)
+  - `BUILD_ID=1911`
+  - artefato `sha1 0b9ac33eedb8c6e0f3b5a6c34eeca8d34879b13a`
+- Estado operacional:
+  - pronto para `git commit`
+  - pronto para `git push`

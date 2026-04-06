@@ -2138,10 +2138,9 @@ static void fmsx_vdp_render_screen67_partial(uint8_t scanline,int end_offset)
 {
   /*
    * blueMSX SCREEN 6/7 wide paths use BRK_6/BRK_7 = 24 inside a 32-cell line
-   * and prepare the next scanline's sprite buffer at that breakpoint. In the
-   * line512 path, the reference code also refreshes that buffer again at the
-   * right border (`X2 == 33`), which is where CC/collision side effects for
-   * the next line are finalized.
+   * and prepare the next scanline's sprite buffer at that breakpoint. The
+   * local partial path keeps the same active 32 cells, but preserves the
+   * blueMSX-style `-1..33` sentinel contract for line start/end.
    */
   const unsigned sprite_break = 24u;
   const unsigned render_from = FmsxVDPLineOffset67 < 0 ? 0u : (unsigned)FmsxVDPLineOffset67;
@@ -2357,43 +2356,11 @@ static void fmsx_vdp_record_regwrite(uint8_t reg,uint8_t old_value,uint8_t new_v
 
 static void fmsx_vdp_trace_bootlogo_regwrite(uint8_t reg,uint8_t value,uint8_t old_value,uint8_t source_port)
 {
-  char line[160];
-  const uint16_t pc = CPU.PC.W;
-  const uint8_t next_r25 = (reg==25u)? value:VDP[25];
-  const uint8_t next_r9 = (reg==9u)? value:VDP[9];
-  const uint8_t eo = (next_r9 & 0x04u) ? ((VDPStatus[2] & 0x02u) ? 0u : 1u) : 0u;
-
-  /*
-   * The previous BL238W gate waited for the visible logo window and ended up
-   * missing every relevant write in hardware. For the boot-logo prelude we
-   * want the earliest BIOS-side evidence possible, even before SCREEN 6 is
-   * already visible. Keep the trace bounded so UART volume stays manageable.
-   */
-  if(g_bootlogo_regwrite_trace_count >= 256u) return;
-
-  ++g_bootlogo_regwrite_trace_count;
-  snprintf(
-    line,sizeof(line),
-    "BL238W N:%03u F:%03u PC:%04X SL:%03d SM:%02u P:%02X R2:%02X R:%02X O:%02X V:%02X S2:%02X F9:%u I9:%u EO:%u R25:%02X R26:%02X R27:%02X\n",
-    g_bootlogo_regwrite_trace_count > 999u ? 999u : g_bootlogo_regwrite_trace_count,
-    FmsxVDPFrameCounter > 999u ? 999u : FmsxVDPFrameCounter,
-    pc,
-    ScanLine < 0 ? 0 : (ScanLine > 999 ? 999 : ScanLine),
-    ScrMode,
-    source_port,
-    (reg==2u)? value:VDP[2],
-    reg,
-    old_value,
-    value,
-    VDPStatus[2] & 0xFFu,
-    (next_r9 & 0x04u) ? 1u : 0u,
-    (next_r9 & 0x08u) ? 1u : 0u,
-    eo,
-    next_r25,
-    (reg==26u)? value:VDP[26],
-    (reg==27u)? value:VDP[27]
-  );
-  msxbare_uart_write(line);
+  (void)reg;
+  (void)value;
+  (void)old_value;
+  (void)source_port;
+  return;
 }
 
 static int fmsx_vdp_hscroll_active256_local(void)
@@ -5930,12 +5897,6 @@ uint16_t LoopZ80(Z80 *R)
     if((ScrMode==4) && !fmsx_vdp_hscroll_active256_local() && FmsxVDPLineChunkEnd)
       fmsx_vdp_render_screen4_partial((uint8_t)ScanLine,32u);
     else if((ScrMode==6)||(ScrMode==7))
-      /*
-       * SCREEN 6/7 partial rendering was already aligned to the blueMSX
-       * 32-cell active span, but blueMSX still closes the scanline at offset
-       * 33 after the last active cell. Keep the same sentinel here so the
-       * per-line state sees the same -1..33 contract as the reference code.
-       */
       fmsx_vdp_render_screen67_partial((uint8_t)ScanLine,33);
     else
       fmsx_vdp_render_scanline((uint8_t)ScanLine,FmsxVDPDrawingLatched,FmsxVDPUCountLatched);

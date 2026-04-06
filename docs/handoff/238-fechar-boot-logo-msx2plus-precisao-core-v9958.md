@@ -2216,3 +2216,65 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
 - Estado de fluxo:
   - sem `commit`
   - sem `push`
+
+## Atualizacao incremental de 06/04/2026 - A/B local `SCREEN 6/7` volta de `-1..33` para `0..32`
+
+- Antes de fechar a `#238`, a trilha abriu um experimento controlado motivado por um sintoma em `ZANAC EX`: o placar parece ser sobre-escrito em uma scanline quando o jogo muda de screen entre linhas para separar viewport e HUD.
+- Hipotese do A/B:
+  - o contrato discreto `-1..33` introduzido para o partial `SCREEN 6/7` pode ter ficado bom para o boot logo do `MSX2+`, mas ainda desalinhado para softwares que alternam screen/registers no limite da scanline
+  - vale medir localmente uma volta limpa ao modelo `0..32`, sem misturar outras mudancas
+- Corte local aplicado:
+  - `src/fmsx_local/MSX.c`
+    - `FmsxVDPLineOffset67` volta a nascer em `0`
+    - `fmsx_vdp_screen67_line_offset_now()` volta a produzir `0..32`
+    - `fmsx_vdp_render_screen67_partial()` deixa de usar o sentinela `33`
+    - o fechamento da linha em HBlank volta a chamar o partial com `32`
+- Objetivo tecnico:
+  - produzir um A/B isolado do contrato de granularidade do partial renderer wide
+  - medir se o sintoma do `ZANAC EX` aponta para um problema real de `-1..33` vs `0..32`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604061000-issue238-screen67-back-to-32` (OK)
+  - `BUILD_ID=CA87`
+  - artefato: `artifacts/kernel8-issue238.img`
+  - `BUILD_HASH=35411b2-f25f019fd7a4b314275b86fcc018b43b9f39114b`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+
+## Atualizacao incremental de 06/04/2026 - limpeza final da `#238` para PR
+
+- Com a validacao em hardware confirmando o boot logo do `MSX2+` perfeito em todos os modos de turbo na build `B2B2`, a trilha abriu apenas um ultimo A/B com `0..32` por causa de um sintoma separado em `ZANAC EX`.
+- Esse A/B nao moveu nada visualmente; por decisao da issue, ele foi descartado e o contrato do partial `SCREEN 6/7` voltou para o estado estavel `-1..33`.
+- Tambem ficou decidido que a branch deve ser fechada limpa:
+  - telemetria UART do boot logo (`BL238*`/`BL238W`) silenciada
+  - perfil experimental `Z80 Turbo [SLO]` removido do runtime/menu
+- Corte local aplicado:
+  - `src/fmsx_local/MSX.c`
+    - restaurado o contrato estavel `-1..33` do partial `SCREEN 6/7`
+    - `BL238W` passa a no-op
+  - `src/fmsx_host_stubs.c`
+    - bloco de emissao `BL238I/R/S/P/E/C` desativado
+  - `src/fmsx_runtime.c`
+    - runtime volta a aceitar apenas `NORM/PAN/MAX`
+  - `src/kernel.cpp`
+  - `src/tools/menu/combo_menu.cpp`
+  - `src/tools/menu/combo_menu_items.cpp`
+    - menu/runtime deixam de expor `SLO`
+  - `docs/debug-layer.md`
+    - `T` volta a documentar apenas `OFF/PAN/MAX`
+- Estado tecnico final da issue:
+  - boot logo `MSX2+` correto visualmente e no tempo total
+  - sem dependencia do pacing do Z80 para ficar correto
+  - split horizontal preservado
+  - `MASK` corrigido
+  - A/B `0..32` descartado para tratar `ZANAC EX` em issue propria depois
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604061030-issue238-clean-pr` (OK)
+  - `BUILD_ID=1911`
+  - artefato: `artifacts/kernel8-issue238.img`
+  - `BUILD_HASH=35411b2-0b9ac33eedb8c6e0f3b5a6c34eeca8d34879b13a`
+- Estado de fluxo:
+  - pronto para `commit`
+  - pronto para `push`

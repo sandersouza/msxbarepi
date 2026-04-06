@@ -164,7 +164,7 @@ Diretriz visual (overlay e menu):
   - `SL`: scanline atual.
   - `PAL/NTSC`: modo efetivo do VDP.
   - `L212`: flag de 212 linhas.
-  - `T`: turbo configurado no menu (`OFF=100`, `PAN=150`, `MAX=200`, `SLO=50`); nao reflete o turbo Panasonic virtual ligado por software.
+  - `T`: turbo configurado no menu (`OFF=100`, `PAN=150`, `MAX=200`); nao reflete o turbo Panasonic virtual ligado por software.
   - `SM`: screen mode atual.
   - `R2`: registrador da nametable/página de display.
   - `R25/R26/R27`: registradores de scroll/máscara.

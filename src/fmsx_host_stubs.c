@@ -1622,11 +1622,12 @@ void SetColor(uint8_t N, uint8_t R, uint8_t G, uint8_t B)
 void PutImage(void)
 {
     const int bootlogo_active = (ScrMode == 6) && ((VDP[25] & 0x03u) == 0x03u);
+    const int bootlogo_trace_enabled = 0;
 
     ensure_video_tables();
     set_image_buffer_size(ScrMode);
 
-    if (bootlogo_active)
+    if (bootlogo_trace_enabled && bootlogo_active)
     {
         if (!g_bootlogo_trace_seen)
         {
@@ -1684,7 +1685,7 @@ void PutImage(void)
         }
         g_bootlogo_trace_frames++;
     }
-    else if (g_bootlogo_trace_seen)
+    else if (bootlogo_trace_enabled && g_bootlogo_trace_seen)
     {
         const unsigned avg_dt = g_bootlogo_trace_dt_count != 0u
             ? (unsigned) (g_bootlogo_trace_dt_sum_ms / g_bootlogo_trace_dt_count)

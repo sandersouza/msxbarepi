@@ -888,7 +888,6 @@ static unsigned fmsx_runtime_z80_turbo_percent(void)
 {
     switch (g_z80_turbo_mode)
     {
-    case 3u: return 50u;  /* SLO */
     case 1u: return 150u; /* PAN */
     case 2u: return 200u; /* MAX */
     default: return 100u; /* DES */
@@ -1687,7 +1686,7 @@ void fmsx_runtime_notify_media_probe(void)
 
 void fmsx_runtime_set_z80_turbo_mode(unsigned mode)
 {
-    if (mode > 3u)
+    if (mode > 2u)
     {
         mode = 0u;
     }
