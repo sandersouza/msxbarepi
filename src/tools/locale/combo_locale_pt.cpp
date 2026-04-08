@@ -54,6 +54,8 @@ extern const TComboLocaleStrings g_ComboLocalePT = {
     "Gravar no disco",
     "DES",
     "LIG",
+    "MIN",
+    "MAX",
     "DUAL",
     "NONE",
     "N/A",

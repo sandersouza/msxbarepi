@@ -3,7 +3,9 @@
 
 #include "gfx_textbox.h"
 #include "combo_menu.h"
+#include "combo_screen_device.h"
 #include "media_catalog.h"
+#include "emulator_backend.h"
 #include "tools/usb_hid_keyboard.h"
 
 #include <circle/actled.h>
@@ -15,7 +17,6 @@
 #include <circle/logger.h>
 #include <circle/nulldevice.h>
 #include <circle/sched/scheduler.h>
-#include <circle/screen.h>
 #include <circle/serial.h>
 #include <circle/sound/soundbasedevice.h>
 #include <circle/timer.h>
@@ -61,11 +62,14 @@ private:
     void LogKmgTraceUart(void);
     void ResetUartPerfTelemetry(void);
     void ResolveViewportBox(unsigned src_width, unsigned src_height,
+                            const EmulatorBackendVideoPresentation *presentation,
                             unsigned *out_x, unsigned *out_y,
                             unsigned *out_w, unsigned *out_h);
     void ComputeViewportBox(unsigned src_width, unsigned src_height,
+                            const EmulatorBackendVideoPresentation *presentation,
                             unsigned *out_x, unsigned *out_y,
                             unsigned *out_w, unsigned *out_h) const;
+    void ClearPresentationSurfaces(void);
     void BlitFmsxFrame(boolean force_redraw);
     void HandleMenuAction(TComboMenuAction action);
     void ApplyRuntimeSettingsToFmsx(void);
@@ -76,7 +80,7 @@ private:
     void ExitPauseForBackendAction(void);
     void UpdateJoystickFromRaw(unsigned char modifiers, const unsigned char raw_keys[6]);
     void PushKeyboardStateToRuntime(boolean rensha_fire_on);
-    void SetDebugOverlayEnabled(boolean enabled);
+    void SetDebugOverlayMode(unsigned mode);
     void SetUartTelemetryEnabled(boolean enabled);
     void UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux);
     void UpdateLoadDiagTelemetry(unsigned stage);
@@ -101,7 +105,7 @@ private:
     CKernelOptions m_Options;
     CDeviceNameService m_DeviceNameService;
     CCPUThrottle m_CPUThrottle;
-    CScreenDevice m_Screen;
+    CComboScreenDevice m_Screen;
     CGfxTextBoxRenderer m_GfxText;
     CSerialDevice m_Serial;
     CNullDevice m_NullLog;
@@ -144,7 +148,7 @@ private:
     boolean m_UsbReady;
     u8 m_JoyBridgeBits;
     u8 m_JoyMappedBits;
-    boolean m_DebugOverlayEnabled;
+    unsigned m_DebugOverlayMode;
     boolean m_DebugOverlayUnlocked;
     boolean m_ScreenReady;
     boolean m_EmulationPaused;
@@ -213,12 +217,18 @@ private:
     unsigned m_BlitMapSrcH;
     unsigned m_BlitMapDstW;
     unsigned m_BlitMapDstH;
+    unsigned m_BlitRunCount;
     boolean m_BlitMapValid;
+    boolean m_BlitMapWovenHiRes;
     u16 m_BlitXMap[kBlitMapMaxAxis];
     u16 m_BlitYMap[kBlitMapMaxAxis];
+    u16 m_BlitRunSrcX[kBlitMapMaxAxis];
+    u16 m_BlitRunDstX[kBlitMapMaxAxis];
+    u16 m_BlitRunLen[kBlitMapMaxAxis];
     TGameMasterCatalog m_GameMasterCatalog;
     CComboPauseMenu m_PauseMenu;
     unsigned m_OverscanPercent;
+    boolean m_ScaleMaxFitEnabled;
     unsigned m_Language;
     unsigned m_ResolutionMode;
     boolean m_WidescreenEnabled;

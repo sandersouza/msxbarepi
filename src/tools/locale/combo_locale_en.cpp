@@ -54,6 +54,8 @@ extern const TComboLocaleStrings g_ComboLocaleEN = {
     "Save to disk",
     "OFF",
     "ON",
+    "MIN",
+    "MAX",
     "DUAL",
     "NONE",
     "N/A",

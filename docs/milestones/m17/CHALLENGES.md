@@ -94,6 +94,12 @@ Registro de desafios enfrentados por issue, decisão adotada e status da soluç�
 - Status: Futuro
 - Referência: [225-bug-knightmare-gold-pacing-pal50-sem-turbo.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/225-bug-knightmare-gold-pacing-pal50-sem-turbo.md)
 
+### #242 — UNKNOWN REALITY: lentidão residual de áudio + ZANAC EX: linha do placar
+- Desafio: após a estabilização do boot logo do `MSX2+`, sobraram dois resíduos menores mas ainda reproduzíveis: lentidão residual de áudio no demo `UNKNOWN REALITY` e sobrescrita de uma linha do placar no `ZANAC EX`.
+- Solução adotada: abrir uma issue `minor` única para atacar esses follow-ups sem reabrir a trilha principal da `#238`, mantendo o foco em pacing de áudio high-res/interlaced e split por scanline do placar.
+- Status: Futuro
+- Referência: [242-bug-unknown-reality-audio-lento-zanac-ex-placar.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/242-bug-unknown-reality-audio-lento-zanac-ex-placar.md)
+
 ### #224 — Knightmare Gold: falha na detecção de MSX2+
 - Desafio: `Knightmare Gold` detectava `HighSpeed VDP`, `128KB of videoRAM` e `SCC+`, mas ainda caia no menu com `MODE MSX2` e `SCROLL ORIGINAL`, sem liberar o caminho esperado de `SCROLL SMOOTH`.
 - Solução adotada: a trilha foi integrada ao fluxo normal da branch `#187`, adicionando o bloco Panasonic/S1985 no runtime fMSX, trace `KMG EVT` via kernel UART e a opcao de diagnostico `Refresh [NTSC/PAL]` apenas em `DEBUG=1`, abaixo de `Disk ROM`, sem quebrar o chaveamento legitimo por `R#9` do VDP.

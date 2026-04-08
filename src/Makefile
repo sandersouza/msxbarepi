@@ -75,7 +75,7 @@ CXXFLAGS += -Os -ffunction-sections -fdata-sections
 LDFLAGS += --gc-sections
 endif
 
-OBJS = main.o kernel.o tools/input/keyboard_input.o tools/input/usb_hid_input_queue.o tools/usb_hid_keyboard.o tools/render/gfx_textbox.o tools/render/viewport_screenshot.o tools/menu/combo_menu.o tools/menu/combo_menu_items.o tools/media/media_catalog.o tools/file_browser/combo_file_browser.o tools/debug/combo_debug_overlay.o
+OBJS = main.o kernel.o combo_screen_device.o tools/input/keyboard_input.o tools/input/usb_hid_input_queue.o tools/usb_hid_keyboard.o tools/render/gfx_textbox.o tools/render/viewport_screenshot.o tools/menu/combo_menu.o tools/menu/combo_menu_items.o tools/media/media_catalog.o tools/file_browser/combo_file_browser.o tools/debug/combo_debug_overlay.o
 OBJS += tools/locale/combo_locale.o tools/locale/combo_locale_pt.o tools/locale/combo_locale_en.o tools/locale/combo_locale_es.o
 OBJS += machine_profile_catalog.o
 OBJS += emulator_backend.o fmsx_backend_shim.o bluemsx_backend.o

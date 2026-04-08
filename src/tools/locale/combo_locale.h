@@ -63,6 +63,8 @@ typedef struct {
     const char *settings_save;
     const char *flag_off;
     const char *flag_on;
+    const char *flag_min;
+    const char *flag_max;
     const char *flag_dual;
     const char *flag_none;
     const char *flag_na;

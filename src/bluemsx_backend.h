@@ -12,6 +12,7 @@ boolean bluemsx_backend_reset(void);
 boolean bluemsx_backend_step_frame(void);
 void bluemsx_backend_shutdown(void);
 unsigned bluemsx_backend_video_frame(const u16 **pixels, unsigned *width, unsigned *height);
+void bluemsx_backend_get_video_presentation(EmulatorBackendVideoPresentation *presentation);
 unsigned bluemsx_backend_audio_pull(int16_t *dst, unsigned max_samples);
 void bluemsx_backend_input_push_joystick(u8 bridge_bits);
 void bluemsx_backend_input_push_keyboard(u8 modifiers, const unsigned char raw_keys[6]);

@@ -10,6 +10,190 @@
 ## Objetivo
 Implementar a precisão mínima necessária no nosso core do `V9958 stock` para fazer o boot logo do `MSX2+` funcionar com cadência, paginação e composição corretas, usando `blueMSX` como referência semântica principal e `V9958-Super` como validação cruzada de HDL.
 
+## Atualização incremental de 06/04/2026 - presenter reaproveita samples horizontais repetidos
+- Depois do ganho de FPS vindo do reaproveitamento de linhas verticais repetidas, o presenter ainda deixava custo redundante no eixo horizontal.
+- O corte local desta rodada atua em `src/kernel.cpp`:
+  - `BlitMappedLineRgb565()` e `BlitMappedLineRgb565NoDim()` agora cacheiam `prev_src_x/prev_sample`
+  - quando o `xmap` repete a mesma origem, o sample já processado é reutilizado
+  - isso não muda a imagem e reduz trabalho redundante por scanline
+- Objetivo:
+  - preservar a política visual nova
+  - extrair performance adicional, sobretudo em `HIRES`
+- Build local validada:
+  - `BUILD_BID=202604062015-issue238-blit-xmap-sample-reuse`
+  - `BUILD_ID=AFAF`
+  - `BUILD_HASH=35411b2-d626e9ee1cfd42edaff198525136a4ea54a68c90`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - `SCALE [MAX]` sem sentinel em `scale`
+
+- A primeira variante de `SCALE [MAX]` abriu excecao sincrona ainda no boot em campo.
+- Causa isolada:
+  - o estado `MAX` estava vivendo como sentinel (`scale=500`) no mesmo campo numerico de `Scale`
+  - isso contaminava clamp, persistencia e caminhos precoces do boot antes do primeiro blit
+- Corte local aplicado:
+  - `src/kernel.cpp`
+    - remove o sentinel `kScalePercentMaxFit`
+    - adiciona `m_ScaleMaxFitEnabled` como bit dedicado
+    - `ComputeViewportBox()` passa a decidir o fit maximo por esse bit
+    - `msxbarepi.cfg` passa a gravar `scale=<Nx>` e `scale_max=<0|1>`
+    - o parser aceita `scale=500` apenas como migracao defensiva para `scale_max=1`
+  - `src/tools/menu/combo_menu.h/.cpp`
+    - o menu ganha `m_ScaleMaxFitEnabled` proprio
+    - o ciclo `1x -> ... -> Nx -> MAX` continua, mas sem usar sentinel numerico
+  - `src/tools/menu/combo_menu_items.h/.cpp`
+    - o label `MAX` passa a depender do bit dedicado, nao do valor `500`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604081700-issue238-scale-max-mode-separate` (OK)
+  - `BUILD_ID=C624`
+  - artefato: `artifacts/kernel8-issue238.img`
+  - `BUILD_HASH=408c7e1-264470e464c277a06f3167d2d70aa98255207937`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - flush continuo no presenter direto
+
+- O proximo gargalo objetivo do viewport ficou no flush de cache do presenter:
+  - o path direto ao framebuffer ainda fazia `FlushDCacheRect565()` linha por linha
+  - isso pagava uma barreira de cache por scanline, custo que explode em `MAX` / `HIRES`
+- Corte local aplicado:
+  - `src/kernel.cpp`
+    - novo helper `FlushDCacheRect565Contiguous()`
+    - o path de direct present passa a flushar um span unico do retangulo tocado
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604081745-issue238-direct-flush-span` (OK)
+  - `BUILD_ID=DF41`
+  - artefato `sha1 83c25263f1ad41032eab7956b73267ce47726754`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - mailboxes grandes passam a preferir staging
+
+- O A/B com overlay de debug mostrou que `SCALE [MAX]` ficava mais rapido com debug ligado do que desligado.
+- Leitura tecnica:
+  - com debug ligado, o presenter ja usava o path de staging (`present buffer + SetArea()`)
+  - com debug desligado, `MAX` ainda usava `direct present`
+  - isso apontou para uma politica errada de apresentacao, nao para bug no VDP
+- Corte local aplicado:
+  - `src/kernel.cpp`
+    - novo helper `ShouldPreferPresentArea()`
+    - `MAX`, `HIRES` e viewport >= 50% da tela passam a preferir staging
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604081820-issue238-large-viewport-staging` (OK)
+  - `BUILD_ID=4871`
+  - artefato `sha1 2dedfb9b7b57285b04f1c0e38c0469026560c5d2`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - `Scale` manual restaurado
+
+- A politica automatica de mailbox passou a ser tratada como suspeita de regressao de performance.
+- Corte local aplicado:
+  - `src/kernel.cpp`
+    - `ComputeViewportBox()` volta a usar `m_OverscanPercent` como controle real do viewport
+    - `DEBUG` deixa de forcar `1x` e deixa de restaurar zoom maximo ao ser desligado
+    - o toggle de `DEBUG` para de resetar `Scale`
+  - `src/tools/menu/combo_menu_items.cpp`
+    - o item `Scale` volta a aparecer em `Settings`
+- Confirmacao de comportamento do presenter:
+  - nao ha limpeza completa de tela a cada frame no hot path normal
+  - a limpeza global fica restrita a `force_redraw`, `ClearPresentationSurfaces()` e mudancas de viewport
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - `Scale` volta a seguir a mailbox
+
+- Refinamento do corte anterior:
+  - `Scale` nao deve mudar ao entrar em `HIRES`
+  - o fator deve nascer da mailbox logica, nao do frame fisico do backend
+- Corte local aplicado:
+  - `src/kernel.cpp`
+    - `ComputeScaleMaxPercentForCurrentFrame()` passa a usar altura logica em `HIRES`
+    - `ComputeViewportBox()` usa `logical_src_w/logical_src_h` para manter o fator de zoom entre modos
+  - `src/tools/menu/combo_menu_items.cpp`
+    - o rotulo de `Scale` volta a `Nx`, sem `+`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - mailbox-base fixa `256x243`
+
+- Refinamento adicional do viewport:
+  - o calculo do box deixa de depender do frame corrente do backend
+  - a caixa passa a nascer de uma mailbox-base fixa `256x243`
+- Corte local aplicado:
+  - `src/kernel.cpp`
+    - `ComputeScaleMaxPercentForCurrentFrame()` usa base fixa `256x243`
+    - `ComputeViewportBox()` escala essa base em todos os modos
+- Objetivo:
+  - evitar achatamento vertical em `HIRES`
+  - impedir que a troca de modo altere o fator efetivo de zoom
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - `SCALE [MAX]`
+
+- O viewport ganhou um estado explicito `MAX` alem de `1x..Nx`.
+- Corte local aplicado:
+  - `src/kernel.cpp`
+    - novo sentinel `kScalePercentMaxFit=500`
+    - `ComputeViewportBox()` usa fit maximo da mailbox-base quando `MAX` esta ativo
+  - `src/tools/menu/combo_menu.cpp`
+    - o ciclo de `Scale` passa a incluir `MAX`
+  - `src/tools/menu/combo_menu_items.cpp`
+    - o label do item passa a exibir `MAX`
+- Objetivo:
+  - permitir, por exemplo em `720p`, preencher a tela no maximo possivel mesmo quando a escala inteira fica limitada a `2x`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualização incremental de 06/04/2026 - presenter reaproveita linhas escaladas repetidas
+- A política nova de viewport automático/pixel-perfect foi aprovada visualmente, mas derrubou a média de FPS para cerca de `37`.
+- O corte local desta rodada não mexe na geometria aprovada; ele ataca só o presenter:
+  - `src/kernel.cpp:BlitFmsxFrame()` agora detecta quando `dst_y` repete a mesma `src_y`
+  - se `src_rel_y` e o `dim_mode` forem iguais aos da linha anterior, a linha já escalada é reutilizada via `memcpy`
+  - isso vale tanto no path com mapas (`m_BlitYMap`) quanto no fallback sem mapas
+- Objetivo:
+  - preservar a política visual nova
+  - recuperar FPS removendo trabalho redundante no blit nearest-neighbor vertical
+- Build local validada:
+  - `BUILD_BID=202604061930-issue238-blit-row-reuse`
+  - `BUILD_ID=C35C`
+  - `BUILD_HASH=35411b2-5da9183318418f7775668d582f6ea8b338909ab1`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualização incremental de 06/04/2026 - viewport automático + save/load fechando o `F12`
+- A rodada final antes do fechamento da `#238` ajustou dois pontos de UX/host:
+  - `Save State` / `Load State` agora fecham o menu `F12` imediatamente e executam no tick seguinte
+  - o item `Scale` deixa de ser usado; o kernel passa a escolher o viewport automaticamente
+- Política nova do viewport:
+  - `DEBUG OFF`: mailbox no maior tamanho disponível preservando a proporção
+  - `DEBUG ON`: mailbox reduzida automaticamente ao menor perfil útil equivalente a `1x`
+  - modos `HIRES` (`>=512` colunas) sempre usam largura lógica de mailbox normal, mesmo com `Widescreen` ligado
+  - `Widescreen [ON]` só expande modos não-`HIRES`
+- Também foi corrigido o glitch de toggle do debug:
+  - ativar/desativar o overlay agora limpa framebuffer visível e staging/present buffer antes da nova apresentação
+- Build local validada:
+  - `BUILD_BID=202604061130-issue238-menu-state-pixelperfect`
+  - `BUILD_ID=0969`
+  - `BUILD_HASH=408c7e1-706a7f181059b14f0ea414d6f7b55bbaadac3a3a`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
 ## Atualização incremental de 06/04/2026 - `rightBorder` também precisa reapresentar a linha futura de sprites
 - O tempo total do boot já ficou no alvo, mas o defeito visual residual continuou reagindo ao turbo `7MHz`, o que reforça fase intra-frame e não `PAL/NTSC` ou `R#9 interlace`.
 - O diff direto contra o `blueMSX` fechou um desvio estrutural em `SCREEN 6/7`:
@@ -26,6 +210,25 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
   - `make -j4 DEBUG=1 BUILD_BID=202604060020-issue238-screen67-rightborder-sprites` (OK)
   - `BUILD_ID=829C`
   - artefato `sha1 81343e7d63566873d0333c02016971656e2b4b08`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+## Atualização incremental de 06/04/2026 - presenter hi-res passa a tecer campos por padrão
+- A regressão do demo `UNKNOWN REALITY` mostrou um sintoma diferente do boot logo:
+  - no modo `512x512`, as linhas apareciam com espaço entre elas
+  - isso recolocou o presenter hi-res do host no centro da investigação
+- A comparação aprofundada mostrou a divergência estrutural:
+  - `src/fmsx_host_stubs.c` ainda herdava do `fMSX/libretro` o default `HIRES_INTERLACED`
+  - esse path do fMSX/libretro deixa um campo preto entre linhas
+  - em HDMI progressivo, isso se manifesta exatamente como "linhas espaçadas"
+- As referências reforçaram o alvo:
+  - `blueMSX` apresenta o resultado interlaced como quadro hi-res composto
+  - `V9958-Super` usa double-buffer even/odd, lendo um campo enquanto escreve o outro, em vez de apagar o campo oposto
+- Corte local desta rodada:
+  - `src/fmsx_host_stubs.c`
+    - `g_hires_mode` passa do default `HIRES_INTERLACED` para `HIRES_PROGRESSIVE`
+    - comentário expandido registra explicitamente a divergência herdada do fMSX/libretro
 - Estado operacional:
   - sem `git commit`
   - sem `git push`
@@ -1854,3 +2057,252 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
 - Estado operacional:
   - pronto para `git commit`
   - pronto para `git push`
+# Atualizacao incremental de 06/04/2026 - UX de Save/Load + viewport pixel-perfect
+
+- Antes do fechamento da `#238`, a rodada recebeu dois ajustes menores de UX:
+  - `Save State` / `Load State` pelo menu `F12` agora fecham o menu imediatamente e executam no tick seguinte do loop principal
+  - o viewport `Standard` do emulador deixa de usar fit proporcional e passa a usar escalas inteiras reais (`pixel-perfect`)
+- Escopo tecnico:
+  - `src/kernel.cpp`
+  - `src/tools/menu/combo_menu.cpp`
+  - `src/tools/menu/combo_menu_items.cpp`
+  - `docs/debug-layer.md`
+- Semantica nova:
+  - `1x` = tamanho nativo do frame
+  - `2x..6x` = multiplos inteiros exatos
+  - `Widescreen [ON]` continua stretch/fit por design
+- Build local validada:
+  - `BUILD_BID=202604061130-issue238-menu-state-pixelperfect`
+  - artefato `artifacts/kernel8-issue238.img`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+
+# Atualizacao incremental de 07/04/2026 - presenter `HIRES` estava reinterpretando um buffer ja pretecido
+
+- A rodada local atual encontrou um desvio estrutural no presenter do host:
+  - em `HIRES_PROGRESSIVE`, o backend ja entrega um buffer fisico pretecido/intercalado por frame
+  - o presenter em `src/kernel.cpp` ainda fazia uma segunda tecida local, misturando pares de linhas e reduzindo a altura logica
+- Efeitos observados desse desvio:
+  - perda do efeito visual esperado em `HIRES`
+  - mailbox `HIRES` verticalmente esticada
+  - custo extra no presenter, agravando o FPS em `HIRES`
+- Corte local aplicado:
+  - `src/kernel.cpp`
+    - remove o mix vertical de pares de linhas do blit `HIRES`
+    - volta a usar `src_height` fisico no mapeamento vertical do presenter
+    - `HIRES` fora do debug volta a seguir a mailbox `4:3` normal
+    - `HIRES` com debug volta a usar `src_width/src_height` fisicos
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604071700-issue238-hires-no-second-weave` (OK)
+  - `BUILD_ID=1F9B`
+  - artefato `sha1 dda9b09e6506fb4c6c6d756335ecfd70ba2ffde8`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - regressao do `DEBUG` em `HIRES` foi separada do ajuste estrutural
+
+- O reteste em hardware do corte `1F9B` mostrou que o ajuste estrutural do presenter estava certo, mas abriu uma regressao de viewport no `DEBUG`:
+  - `HIRES` ficou verticalmente esticado
+  - o FPS medio caiu para ~29.4
+- O desvio ficou no box da mailbox do `DEBUG`, nao no blit principal:
+  - `src/kernel.cpp` passou a usar `src_width/src_height` fisicos para calcular a mailbox compacta de `HIRES`
+  - isso deixou o frame alto demais no overlay e derrubou a eficiencia do presenter
+- Corte local aplicado:
+  - `src/kernel.cpp`
+    - `DEBUG` volta a calcular o box de `HIRES` por `logical_width/logical_height`
+    - o blit continua usando o buffer fisico completo, sem reintroduzir tecida dupla
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604081130-issue238-hires-debug-logical-box` (OK)
+  - `BUILD_ID=69E2`
+  - artefato `sha1 47d574d199f84c7c87622570d18b69e8fbe3149c`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - rollback do ramo experimental de presenter `HIRES`
+
+- O ramo experimental recente de presenter `HIRES` foi descartado como linha ativa.
+- Motivo:
+  - o efeito visual/interlace nao melhorou de forma sustentada
+  - o `HIRES` ficou verticalmente esticado em campo
+  - o FPS geral caiu quando a mailbox preenchia a tela
+- Corte local aplicado:
+  - `src/kernel.cpp`
+    - rollback do path ativo para o contrato estavel anterior de viewport/blit
+    - `EmulatorBackendVideoPresentation` deixa de participar do path ativo do presenter
+- Objetivo:
+  - restaurar baseline estavel antes de continuar a investigacao de `HIRES`
+  - evitar novas rodadas de hardware em cima de um presenter sabidamente regressivo
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604081215-issue238-presenter-rollback-stable` (OK)
+  - `BUILD_ID=4742`
+  - artefato `sha1 c6f9c244c5cf5d4546b3313eecf626cc3523ace3`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - `DEBUG [MAX/MIN/OFF]`
+
+- O overlay de debug passou a operar em tres estados:
+  - `MAX`: overlay completo
+  - `MIN`: overlay curto de 3 linhas
+  - `OFF`: desligado
+- `F11` e `Settings -> Debugger` agora ciclam `MAX -> MIN -> OFF -> MAX`.
+- O modo `MIN` ficou limitado a:
+  - `TXTDBG BUILD:XXXX CPU FREQ:<MHz>`
+  - `DFS:<NTSC/PAL> FPS:<fps>`
+  - `Screen:<scr_mode> Mode:<Normal/Hires/Interlaced>`
+- Persistencia:
+  - `msxbarepi.cfg` grava `debugger=<0|1|2>`
+  - compatibilidade mantida para o valor legado `1` como `MAX`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604081950-issue238-debug-max-min-off` (OK)
+  - `BUILD_ID=07FD`
+  - `BUILD_HASH=408c7e1-e101539120147063c7d54b9a96861d31cfc6afb9`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - presenter grande migra para framebuffer virtual 2x + page flip local
+
+- A trilha de performance do viewport/mailbox contra o Circle fechou que o proximo ganho relevante nao viria de uma API grafica nova, e sim de usar o framebuffer do Circle do jeito certo:
+  - `SetArea()` ja pode usar DMA via `SCREEN_DMA_BURST_LENGTH`
+  - `WaitForVerticalSync()` + `SetVirtualOffset()` permitem page flip real
+  - o bloqueio do projeto era o `CScreenDevice` do Circle escrever sempre na pagina base, sem pagina traseira utilizavel pelo kernel
+- Corte local aplicado:
+  - `src/combo_screen_device.h`
+  - `src/combo_screen_device.cpp`
+  - `src/kernel.h`
+  - `src/kernel.cpp`
+  - `src/tools/render/gfx_textbox.h`
+  - `src/tools/render/gfx_textbox.cpp`
+  - `src/Makefile`
+- Estrutura nova:
+  - `CComboScreenDevice` cria `CBcmFrameBuffer` com `virtual height = 2x`
+  - um `CDisplay` local (`CComboBackBufferDisplay`) escreve na pagina traseira
+  - `CTerminalDevice` continua sendo usado, mas agora desenhando no back buffer
+  - o renderer de textbox passa a diferenciar `draw buffer` e `visible buffer`
+- Efeito esperado:
+  - viewport do emulador deixa de ser apresentado no meio do blit
+  - o flip de pagina passa para o fim do frame, depois de viewport + overlay + menu
+  - o path grande (`MAX` / `HIRES` / interlaced) deixa de depender da copia extra do presenter anterior
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604081930-issue238-combo-screen-flip` (OK)
+  - `BUILD_ID=72A0`
+  - `BUILD_HASH=408c7e1-6e9081008e790c99d3d5e348578e383e9b59d6b2`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - correção do handoff front/back page no presenter com page flip
+
+- O primeiro corte do presenter com framebuffer virtual 2x entrou em campo com UART/audio/input vivos, mas sem video.
+- O desvio estava no proprio handoff das paginas:
+  - depois do `flip`, a nova pagina traseira ficava vazia
+  - como o loop continua desenhando `rotor`/overlay a cada tick, a apresentacao passava a alternar para uma pagina sem o frame anterior
+- O corte local em `src/combo_screen_device.cpp` corrige isso:
+  - `SetVirtualOffset()` usa a altura fisica do framebuffer
+  - a nova `draw page` passa a ser inicializada com o conteudo da pagina que acabou de ficar visivel
+- Efeito esperado:
+  - o presenter deixa de perder o frame anterior entre flips
+  - viewport + overlay + menu voltam a operar incrementalmente sem apagar a tela
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604081930-issue238-combo-screen-flip` (OK)
+  - `BUILD_ID=72A0`
+  - `BUILD_HASH=408c7e1-6e9081008e790c99d3d5e348578e383e9b59d6b2`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - correção da geometria zero do terminal no wrapper local
+
+- A telemetria `PRES BOOT/PRES LOOP` mostrou que o presenter ainda nao estava ficando `dirty`, mesmo com o loop vivo.
+- A causa nao estava mais no `flip`, e sim na geometria do proprio `CTerminalDevice`:
+  - `CComboBackBufferDisplay::GetWidth()/GetHeight()` consultavam `owner->GetWidth()/GetHeight()`
+  - durante `CTerminalDevice::Initialize()`, o owner devolvia os valores do proprio terminal ainda nao inicializado (`0x0`)
+  - o terminal nascia com largura/altura `0`, invalidando overlay, menu, rotor e qualquer path incremental
+- O corte local em `src/combo_screen_device.cpp` corrige esse bootstrap:
+  - `GetWidth()/GetHeight()` so usam o terminal quando ele ja reporta valores `>0`
+  - antes disso, caem para a geometria fisica do `CBcmFrameBuffer`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604081930-issue238-combo-screen-flip` (OK)
+  - `BUILD_ID=72A0`
+  - `BUILD_HASH=408c7e1-ec1dc9dcde51a05ffca6fd5c949a2192a03cbf8c`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - viewport grande deixa de copiar o frame inteiro a cada flip
+
+- Com o video de volta, a nova telemetria de campo mostrou o custo dominante do presenter com page flip:
+  - `1x / Screen 7 / Hires ~= 48fps`
+  - `2x / Screen 7 / Hires ~= 40fps`
+  - `MAX / Screen 7 / Hires ~= 8fps`
+- A causa estava no handoff entre paginas:
+  - mesmo depois do `flip`, o wrapper ainda copiava o retangulo dirty inteiro da pagina visivel para a nova pagina traseira
+  - em viewport grande isso mantinha um `memcpy` caro por frame
+- O corte local em `src/combo_screen_device.h/.cpp` muda o contrato:
+  - quando o dirty ocupa >= `25%` da pagina, a copia imediata e pulada
+  - a pagina traseira passa a ser re-semeada sob demanda por `EnsureBackPageSeeded()` apenas se aparecer escrita incremental sem novo frame completo
+  - viewport pequeno continua sincronizando apenas o retangulo dirty
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604081930-issue238-combo-screen-flip` (OK)
+  - `BUILD_ID=72A0`
+  - `BUILD_HASH=408c7e1-dd6a68c4b83f824f4f8a092ca3e0ea6617f3109f`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - presenter local passa a operar em single-buffer por padrão
+
+- Mesmo depois de reduzir a copia do handoff, a trilha do presenter ainda ficou cara e levantou a suspeita de apresentacao da pagina errada.
+- O corte local atual simplifica o wrapper:
+  - `m_bPageFlipEnabled=FALSE` por padrao em `src/combo_screen_device.*`
+  - `draw page` e `visible page` passam a convergir para a pagina `0`
+  - `PresentIfDirty()` deixa de fazer `WaitForVerticalSync()+SetVirtualOffset()` nesse modo e vira apenas o commit/flush do retangulo dirty
+  - o suporte a double buffer/page flip continua no codigo, mas inerte
+- Objetivo:
+  - eliminar o custo e a complexidade do page flip do caminho principal
+  - voltar o viewport/mailbox para o contrato mais simples e previsivel
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604081930-issue238-combo-screen-flip` (OK)
+  - `BUILD_ID=72A0`
+  - `BUILD_HASH=408c7e1-565c8c8561d4e9b190b2199417d5baa9afff76cb`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - `Scale [MAX]` fixo e seguro para `HIRES/interlaced`
+
+- Depois de simplificar o presenter para single-buffer, a medicao de campo mostrou o novo limite real do viewport:
+  - `1x / Screen 7 / Hires ~= 60fps`
+  - `2x / Screen 7 / Hires ~= 60fps`
+  - `MAX / Screen 7 / Hires ~= 21.5fps`
+- A nova regra local da `#238` deixa `MAX` fixo por resolucao de saida, sem heuristica dinamica:
+  - `720p` e `768p`: `Scale [MAX] = 3x`
+  - `1080p`: `Scale [MAX] = 4x`
+  - fallback abaixo disso: `2x`
+  - a caixa continua nascendo da mailbox-base `256x243`
+- Objetivo:
+  - manter `MAX` dentro do orcamento de `16.67ms`
+  - preservar `1x..Nx` exatamente como ja estavam
+  - manter um tamanho previsivel por resolucao, mesmo que menor que o preenchimento total da tela
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604081930-issue238-combo-screen-flip` (OK)
+  - `BUILD_ID=72A0`
+  - `BUILD_HASH=408c7e1-9e79d5a95515d7eefc625e2846793bfc8aa7a981`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`

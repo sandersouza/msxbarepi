@@ -55,12 +55,16 @@ extern uint8_t FmsxVDPLineR27Latched;
 
 /*
  * Libretro selects this from the `fmsx_hires` frontend option. Baremetal has
- * no equivalent toggle yet, and leaving the default at OFF suppresses the
- * interlaced/odd-even presentation path entirely even when the VDP requests it.
- * Keep high-res output enabled by default so MSX2+/V9958 screens can exercise
- * the same display path that blueMSX exposes.
+ * no equivalent toggle yet. Leaving the default at OFF suppresses the hi-res
+ * presentation path entirely, but keeping the raw fMSX/libretro INTERLACED
+ * default on a progressive HDMI sink leaves a black gap between fields.
+ *
+ * blueMSX presents the interlaced V9958 result as a woven high-res frame, and
+ * the V9958-Super HDL uses an even/odd double buffer instead of blanking the
+ * opposite field. Mirror that behavior locally by keeping hi-res enabled by
+ * default while presenting it through the PROGRESSIVE/weaved host path.
  */
-static int g_hires_mode = HIRES_INTERLACED;
+static int g_hires_mode = HIRES_PROGRESSIVE;
 static int g_overscan = 0;
 static unsigned g_frame_number = 0;
 
@@ -76,6 +80,11 @@ static unsigned g_frame_number = 0;
 static uint16_t g_image_buffer[(WIDTH << 1) * (HEIGHT << 1)];
 static unsigned g_image_buffer_width = WIDTH;
 static unsigned g_image_buffer_height = HEIGHT;
+static unsigned g_image_logical_width = WIDTH;
+static unsigned g_image_logical_height = HEIGHT;
+static unsigned g_image_hires_mode = 0u;
+static unsigned g_image_interlaced_mode = 0u;
+static unsigned g_image_woven_hires = 0u;
 static volatile unsigned g_video_seq = 0;
 static unsigned g_bootlogo_trace_frames = 0;
 static unsigned g_bootlogo_trace_seen = 0;
@@ -1286,7 +1295,14 @@ static void ensure_video_tables(void)
 
 static void set_image_buffer_size(uint8_t screen_mode)
 {
+    const unsigned physical_width = ((screen_mode == 6) || (screen_mode == 7) || (screen_mode == MAXSCREEN + 1))
+        ? (WIDTH << 1)
+        : WIDTH;
     g_image_buffer_height = (LastScanline < HEIGHT || !OverscanMode) ? HEIGHT : (unsigned) (LastScanline + 1);
+    g_image_hires_mode = HiResMode ? 1u : 0u;
+    g_image_interlaced_mode = InterlacedMode ? 1u : 0u;
+    g_image_woven_hires = (HiResMode && !InterlacedMode) ? 1u : 0u;
+    g_image_logical_width = (physical_width >= 512u) ? (physical_width >> 1) : physical_width;
 
     if ((screen_mode == 6) || (screen_mode == 7) || (screen_mode == MAXSCREEN + 1))
     {
@@ -1305,6 +1321,10 @@ static void set_image_buffer_size(uint8_t screen_mode)
     {
         g_image_buffer_height <<= 1;
     }
+
+    g_image_logical_height = g_image_woven_hires && g_image_buffer_height > 1u
+        ? (g_image_buffer_height >> 1)
+        : g_image_buffer_height;
 }
 
 unsigned fmsx_video_get_latest(const u16 **pixels, unsigned *width, unsigned *height)
@@ -1323,6 +1343,20 @@ unsigned fmsx_video_get_latest(const u16 **pixels, unsigned *width, unsigned *he
     }
 
     return g_video_seq;
+}
+
+void fmsx_video_get_presentation(TFmsxVideoPresentation *presentation)
+{
+    if (presentation == 0)
+    {
+        return;
+    }
+
+    presentation->logical_width = g_image_logical_width;
+    presentation->logical_height = g_image_logical_height;
+    presentation->hires_mode = g_image_hires_mode;
+    presentation->interlaced_mode = g_image_interlaced_mode;
+    presentation->woven_hires = g_image_woven_hires;
 }
 
 void fmsx_runtime_set_joystick_bits(u8 bridge_bits)

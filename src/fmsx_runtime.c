@@ -116,6 +116,7 @@ extern uint8_t fmsx_vdp_get_ie1_target_line(void);
 extern int fmsx_vdp_get_ie1_target_delta(void);
 extern uint8_t fmsx_vdp_get_effective_odd_page(void);
 extern uint8_t fmsx_vdp_get_render_page(void);
+extern void fmsx_video_get_presentation(TFmsxVideoPresentation *presentation);
 extern void fmsx_vdp_trace_get_view(const TFmsxVDPTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
 extern void fmsx_kmg_trace_get_view(const TFmsxKmgTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
 extern void fmsx_scc_trace_get_view(const TFmsxSCCTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
@@ -2597,4 +2598,20 @@ unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsig
         return 0u;
     }
     return fmsx_video_get_latest(pixels, width, height);
+}
+
+void fmsx_runtime_get_video_presentation(TFmsxVideoPresentation *presentation)
+{
+    if (presentation == 0)
+    {
+        return;
+    }
+
+    memset(presentation, 0, sizeof(*presentation));
+    if (g_boot_video_gate_frames_remaining > 0u)
+    {
+        return;
+    }
+
+    fmsx_video_get_presentation(presentation);
 }

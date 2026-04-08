@@ -40,6 +40,18 @@ unsigned bluemsx_backend_video_frame(const u16 **pixels, unsigned *width, unsign
     return 0u;
 }
 
+void bluemsx_backend_get_video_presentation(EmulatorBackendVideoPresentation *presentation)
+{
+    if (presentation != 0)
+    {
+        presentation->logical_width = 0u;
+        presentation->logical_height = 0u;
+        presentation->hires_mode = FALSE;
+        presentation->interlaced_mode = FALSE;
+        presentation->woven_hires = FALSE;
+    }
+}
+
 unsigned bluemsx_backend_audio_pull(int16_t *dst, unsigned max_samples)
 {
     (void) dst;
