@@ -5,7 +5,7 @@
 - Estado remoto: OPEN
 - Prioridade: P1
 - Labels: `priority:P1`, `type:feature`, `area:input`, `area:usb-hid`
-- Estado local atual: EM PROGRESSO
+- Estado local atual: EM REVIEW
 - Branch ativa: `70-suporte-joysticks-usb-mapeamento-atari-msx`
 - Corte local atual:
   - suporte funcional inicial a `upad1` confirmado
@@ -20,3 +20,6 @@
   - cada captura no `JOYPAD MAPPING` promove imediatamente o slot para o mapa efetivo
   - `Save to disk` passa a gravar `joy_map_*` a partir do mapa atual do menu
   - `START` do gamepad conhecido passa a atuar como pausa (`F12`)
+  - em `720p`, `Scale = 3x` volta a existir tambem no modo manual, com crop vertical central em vez de achatamento
+  - o snapshot do menu pausado em `720p/3x` agora usa a mesma geometria logica do blit principal (`768x729` com crop vertical central), evitando a pequena mudanca de escala ao abrir o menu
+  - rodada declarada estavel e pronta para PR

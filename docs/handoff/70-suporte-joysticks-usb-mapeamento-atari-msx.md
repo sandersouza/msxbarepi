@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 70-suporte-joysticks-usb-mapeamento-atari-msx
 
-Ultima atualizacao: 09/04/2026 (01:30 -03)
+Ultima atualizacao: 09/04/2026 (03:05 -03)
 
 ## Objetivo da branch
 
@@ -14,13 +14,13 @@ Atacar a issue [#70](https://github.com/sandersouza/msxbarepi/issues/70):
 ## Estado atual
 
 - branch criada a partir de `main` ja com o merge da umbrella `#82`
-- issue remota `#70` permanece `OPEN`
+- issue remota `#70` pronta para `PR`
 - joystick USB ja funcional em hardware
 - submenu local `JOYPAD MAPPING` implementado no `F12`
 - navegacao do menu pausado por joystick USB implementada
 - `Scale` saiu de `Settings` e foi movido para `Debug`
-- sem `git commit`
-- sem `git push`
+- estado atual declarado estavel pelo usuario
+- pronto para `commit`, `push` e `PR` para `main`
 
 ## Corte local atual
 
@@ -44,6 +44,8 @@ Atacar a issue [#70](https://github.com/sandersouza/msxbarepi/issues/70):
   - `720p/768p = 3x`
   - `1080p = 4x`
 - com `Debug = MIN/MAX`, `Scale` volta a ser manual e controla o viewport
+- em `720p`, `Scale = 3x` voltou a ser permitido tambem no modo manual; quando a altura excede a tela, o presenter faz crop vertical central em vez de esmagar o frame
+- o snapshot de fundo do menu pausado agora segue o mesmo contrato do blit principal em `720p/3x`: preserva a altura logica `768x729` e aplica apenas crop vertical central na area visivel, evitando a pequena mudanca de escala ao abrir o menu
 - `JOYPAD MAPPING` nao entra mais por qualquer direcao do joystick; a entrada volta a depender apenas do seletor (`button 0` / `ENTER`)
 - ao capturar um novo controle dentro de `JOYPAD MAPPING`, o slot atual ja e promovido para o mapa efetivo antes de avancar ao proximo
 - `Save to disk` agora persiste os `joy_map_*` a partir do mapa atual do menu, sem depender do estado interno do device em runtime
@@ -105,9 +107,9 @@ Atacar a issue [#70](https://github.com/sandersouza/msxbarepi/issues/70):
 
 ## Build local validada
 
-- `BUILD_BID=202604090130-issue70-joymap-save-start`
-- `BUILD_ID=CE79`
-- `BUILD_HASH=a3b9655-1f7d1565606bb2a108a578bf0b3d7c91bbbefbbc`
+- `BUILD_BID=202604090240-issue70-menu-snapshot-crop`
+- `BUILD_ID=9EAC`
+- `BUILD_HASH=a3b9655-67643449b62fdd393766ab58ef09ceca01a7f186`
 - artefato: `artifacts/kernel8-issue70.img`
 
 ## Referencias iniciais
@@ -126,9 +128,10 @@ Atacar a issue [#70](https://github.com/sandersouza/msxbarepi/issues/70):
 - o caminho principal deve passar pelo pipeline atual de USB-HID/input ja usado pelo teclado
 - a implementacao deve manter aderencia ao padrao Atari/MSX observado pelo core do emulador, sem reintroduzir regressao no teclado/hotkeys
 
-## Riscos / proximos passos
+## Fechamento desta rodada
 
-1. Validar em hardware a nova politica de `Scale`: item so em `Debug`, automatico em `OFF`, manual em `MIN/MAX`.
-2. Confirmar em hardware o fluxo continuo do submenu `JOYPAD MAPPING` e a persistencia dos `joy_map_*`.
-3. Confirmar em hardware que o runtime continua sem regressao em attach/remove depois de remapear.
-4. So depois abrir a rodada de setup mais avancado/customizacao de botoes extras e perfis por pad.
+1. Suporte funcional de joystick USB confirmado em hardware.
+2. Navegacao do menu por joystick confirmada.
+3. `JOYPAD MAPPING` com captura continua e persistencia em `.cfg` confirmado.
+4. Ajuste de viewport em `720p/3x` confirmado sem mudanca de escala ao abrir o menu.
+5. Proxima rodada fica para setup/mapeamento avancado de botoes e perfis por pad.
