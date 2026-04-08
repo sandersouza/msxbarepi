@@ -613,7 +613,7 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned language,
 
     if (MSXBARE_ENABLE_DEBUG_OVERLAY)
     {
-        ADD_DEBUG_ITEM(overlay_label, ComboMenuActionToggleOverlay, overlay_available ? TRUE : FALSE);
+        ADD_DEBUG_ITEM(overlay_label, ComboMenuActionCycleOverlay, overlay_available ? TRUE : FALSE);
         ADD_DEBUG_ITEM(debug_log_label, ComboMenuActionToggleDebugLog, TRUE);
         ADD_DEBUG_ITEM(disk_rom_label, ComboMenuActionToggleDiskRom, TRUE);
         ADD_DEBUG_ITEM(kanji_rom_label, ComboMenuActionToggleKanjiRom, TRUE);

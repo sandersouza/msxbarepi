@@ -137,6 +137,17 @@ static unsigned NextDebugOverlayMode(unsigned mode)
 	}
 }
 
+static unsigned PrevDebugOverlayMode(unsigned mode)
+{
+	switch (ClampDebugOverlayMode(mode))
+	{
+	case ComboDebugOverlayOff: return ComboDebugOverlayMin;
+	case ComboDebugOverlayMax: return ComboDebugOverlayOff;
+	case ComboDebugOverlayMin:
+	default: return ComboDebugOverlayMax;
+	}
+}
+
 static const char *DebugOverlayModeLogLabel(unsigned mode)
 {
 	switch (ClampDebugOverlayMode(mode))
@@ -287,6 +298,17 @@ static unsigned ComputePixelScaleMaxPercent(unsigned screen_w, unsigned screen_h
 
 static unsigned ComputeScaleMaxPercentForCurrentFrame(unsigned screen_w, unsigned screen_h)
 {
+	/*
+	 * BT4 loads settings before BT8 initializes the HDMI screen. In that
+	 * window, preserve the persisted UI scale and defer clamping until the
+	 * real screen geometry exists, otherwise every saved factor collapses to
+	 * 1x during config load.
+	 */
+	if (screen_w == 0u || screen_h == 0u)
+	{
+		return kScalePercentHardMax;
+	}
+
 	const u16 *src_pixels = 0;
 	unsigned src_w = 0u;
 	unsigned src_h = 0u;
@@ -1847,24 +1869,7 @@ TComboShutdownMode CComboKernel::Run(void)
 		{
 			m_Logger.Write(FromKernel, LogNotice, "Boot step: first blit");
 			BlitFmsxFrame(TRUE);
-			{
-				CString line;
-				line.Format("PRES BOOT pre dirty=%u draw=%u vis=%u",
-					(unsigned) m_Screen.IsDirty(),
-					m_Screen.GetDrawPageIndex(),
-					m_Screen.GetVisiblePageIndex());
-				m_Logger.Write(FromKernel, LogNotice, line);
-			}
-			{
-				const boolean presented = m_Screen.PresentIfDirty(m_DCacheEnabled, TRUE);
-				CString line;
-				line.Format("PRES BOOT post ok=%u dirty=%u draw=%u vis=%u",
-					(unsigned) presented,
-					(unsigned) m_Screen.IsDirty(),
-					m_Screen.GetDrawPageIndex(),
-					m_Screen.GetVisiblePageIndex());
-				m_Logger.Write(FromKernel, LogNotice, line);
-			}
+			(void) m_Screen.PresentIfDirty(m_DCacheEnabled, TRUE);
 			m_Logger.Write(FromKernel, LogNotice, "Boot step: blit OK");
 		}
 	#endif
@@ -2321,30 +2326,7 @@ TComboShutdownMode CComboKernel::Run(void)
 				menu_anchor_x, menu_anchor_y, menu_anchor_w, menu_anchor_h);
 		}
 		m_Screen.Rotor(0, tick);
-		if (tick < 16u)
-		{
-			CString line;
-			line.Format("PRES LOOP pre t=%u dirty=%u draw=%u vis=%u",
-				tick,
-				(unsigned) m_Screen.IsDirty(),
-				m_Screen.GetDrawPageIndex(),
-				m_Screen.GetVisiblePageIndex());
-			m_Logger.Write(FromKernel, LogNotice, line);
-		}
-		{
-			const boolean presented = m_Screen.PresentIfDirty(m_DCacheEnabled, TRUE);
-			if (tick < 16u)
-			{
-				CString line;
-				line.Format("PRES LOOP post t=%u ok=%u dirty=%u draw=%u vis=%u",
-					tick,
-					(unsigned) presented,
-					(unsigned) m_Screen.IsDirty(),
-					m_Screen.GetDrawPageIndex(),
-					m_Screen.GetVisiblePageIndex());
-				m_Logger.Write(FromKernel, LogNotice, line);
-			}
-		}
+		(void) m_Screen.PresentIfDirty(m_DCacheEnabled, TRUE);
 		m_Scheduler.Yield();
 	}
 
@@ -4134,6 +4116,14 @@ void CComboKernel::LoadSettingsFromStorage(void)
 					{
 						clamped = kScalePercentHardMax;
 					}
+					else
+					{
+						const unsigned max_saved_factor = ScaleFactorFromPercent(kScalePercentHardMax);
+						if (clamped > 0u && clamped <= max_saved_factor)
+						{
+							clamped = ScalePercentFromFactor(clamped);
+						}
+					}
 					if (clamped != kScalePercentNone && clamped < kScalePercentMin) clamped = kScalePercentMin;
 					if (clamped > kScalePercentHardMax) clamped = kScalePercentHardMax;
 					m_OverscanPercent = (clamped == kScalePercentNone)
@@ -4392,7 +4382,7 @@ void CComboKernel::SaveSettingsToStorage(void)
 		} \
 	} while (0)
 
-		APPEND_LINE_FMT("scale=%u\n", m_OverscanPercent);
+		APPEND_LINE_FMT("scale=%u\n", ScaleFactorFromPercent(m_OverscanPercent));
 		APPEND_LINE_FMT("language=%u\n", m_Language);
 		APPEND_LINE_FMT("resolution=%u\n", m_ResolutionMode);
 		APPEND_LINE_FMT("widescreen=%u\n", m_WidescreenEnabled ? 1u : 0u);
@@ -5724,9 +5714,23 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		}
 		break;
 
-	case ComboMenuActionToggleOverlay:
+	case ComboMenuActionCycleOverlay:
 	#if MSXBARE_ENABLE_DEBUG_OVERLAY
 		SetDebugOverlayMode(NextDebugOverlayMode(m_DebugOverlayMode));
+		RefreshSettingsUiAfterAction();
+		{
+			CString line;
+			line.Format("Settings: Debugger %s", DebugOverlayModeLogLabel(m_DebugOverlayMode));
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
+	#else
+		m_Logger.Write(FromKernel, LogNotice, "Settings: Debugger indisponivel neste build");
+	#endif
+		break;
+
+	case ComboMenuActionCycleOverlayPrev:
+	#if MSXBARE_ENABLE_DEBUG_OVERLAY
+		SetDebugOverlayMode(PrevDebugOverlayMode(m_DebugOverlayMode));
 		RefreshSettingsUiAfterAction();
 		{
 			CString line;

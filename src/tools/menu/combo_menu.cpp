@@ -2683,22 +2683,29 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         else if ((items[m_Selected].action == ComboMenuActionToggleWidescreen)
               || (items[m_Selected].action == ComboMenuActionToggleDiskRom)
               || (items[m_Selected].action == ComboMenuActionToggleKanjiRom)
-              || (items[m_Selected].action == ComboMenuActionToggleOverlay)
+              || (items[m_Selected].action == ComboMenuActionCycleOverlay)
               || (items[m_Selected].action == ComboMenuActionToggleDebugLog))
         {
-            if (enter_edge || left_step || right_step)
+            if (items[m_Selected].action == ComboMenuActionCycleOverlay)
+            {
+                if (left_step)
+                {
+                    action = ComboMenuActionCycleOverlayPrev;
+                    m_ForceRedraw = TRUE;
+                    m_ForceHighlightRedraw = FALSE;
+                }
+                else if (right_step || enter_edge)
+                {
+                    action = ComboMenuActionCycleOverlay;
+                    m_ForceRedraw = TRUE;
+                    m_ForceHighlightRedraw = FALSE;
+                }
+            }
+            else if (enter_edge || left_step || right_step)
             {
                 action = items[m_Selected].action;
-                if (items[m_Selected].action == ComboMenuActionToggleWidescreen)
-                {
-                    m_ForceRedraw = TRUE;
-                    m_ForceHighlightRedraw = FALSE;
-                }
-                else
-                {
-                    m_ForceRedraw = TRUE;
-                    m_ForceHighlightRedraw = FALSE;
-                }
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
             }
             handled_settings_input = enter_edge || left_step || right_step;
         }

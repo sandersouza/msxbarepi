@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 82-auditar-registradores-v9958
 
-Ultima atualizacao: 06/04/2026 (00:20 -03)
+Ultima atualizacao: 08/04/2026 (15:10 -03)
 
 ## Objetivo da branch
 
@@ -19,6 +19,23 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 - O merge das sub-issues acontece primeiro na branch umbrella; so ao consolidar a trilha a `#82` abre PR proprio para `main`.
 - Nem `git commit` local nem `git push` devem acontecer nas sub-branches experimentais da trilha.
 - Ambos so voltam a ser permitidos quando o usuario declarar explicitamente que a issue ativa ficou estavel.
+
+## Atualizacao incremental de 08/04/2026 - rollback do experimento de mailbox `HIRES/interlaced`
+
+- A umbrella `#82` chegou a testar um corte no presenter para fazer `HIRES/interlaced` usar a altura logica do backend no calculo do viewport.
+- O sintoma geometrico melhorou, mas o custo em FPS piorou o suficiente para invalidar a rodada.
+- Acao tomada:
+  - `src/kernel.cpp` voltou ao contrato estavel anterior do viewport para `HIRES`
+  - o problema funcional de geometria fica explicitamente adiado para uma rodada posterior, sem bloquear a base estavel atual
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604082150-issue82-hires-interlaced-rollback` (OK)
+  - `BUILD_ID=5F90`
+  - artefato `artifacts/kernel8-issue82.img`
+  - artefato `sha1 9f7064adad19ed2ba35ccea198a720994c48f903`
+- Guardrail mantido:
+  - sem `git commit`
+  - sem `git push`
 
 ## Atualizacao incremental de 05/04/2026 - `#238` corrige o item de debug `Refresh [NTSC/PAL]`
 
@@ -2030,3 +2047,79 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 - Estado operacional:
   - pronto para `git commit`
   - pronto para `git push`
+
+# Atualizacao incremental de 08/04/2026 - ajustes pós-merge da `#238` no menu/config
+
+- Ja de volta na umbrella `#82`, a rodada seguinte corrigiu dois desvios de UX/config que sobraram depois do merge da filha `#238`:
+  - `Scale` no `msxbarepi.cfg` ainda era persistido no formato interno legado (`200/250/300...`), enquanto a UI ja operava como `1x..Nx`
+  - no menu `Debug`, o item `Debugger [MAX/MIN/OFF]` tratava `left/right` como toggle unico, em vez de respeitar `prev/next`; o ciclo completo deve continuar exclusivo do `F11`
+- Corte local aplicado:
+  - `src/kernel.cpp`
+    - `scale=` passa a ser salvo como fator numerico (`1..N`) em vez do percentual legado
+    - o parser continua aceitando formatos antigos (`200/250/300...` e `500`) por compatibilidade defensiva
+    - novo helper `PrevDebugOverlayMode()` para o caminho de seta esquerda no menu
+  - `src/tools/menu/combo_menu.cpp`
+    - o item `Debugger` em `MenuViewDebug` passa a mapear `left -> prev` e `right/enter -> next`
+  - `src/tools/menu/combo_menu_items.cpp/.h`
+    - `ComboMenuActionToggleOverlay` foi substituido por `ComboMenuActionCycleOverlay` / `ComboMenuActionCycleOverlayPrev`
+- Resultado esperado:
+  - `msxbarepi.cfg` passa a refletir `scale=1`, `scale=2`, `scale=3`, `scale=4`...
+  - `F11` continua ciclando `MAX -> MIN -> OFF`
+  - dentro do menu `Debug`, as setas agora andam corretamente para frente e para tras entre `MAX/MIN/OFF`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604082045-issue238-scale-cfg-debug-arrows` (OK)
+  - artefato `artifacts/kernel8-issue82.img`
+  - `sha1 5808e3b834934df831da4b837b0b01818837263a`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - `scale` volta a carregar corretamente no boot
+
+- O parser de `scale=` no `msxbarepi.cfg` ja estava aceitando corretamente o fator numerico da UI (`1..N`) e os formatos legados, mas o valor persistido ainda podia voltar para `1x` durante o boot.
+- Causa raiz:
+  - `LoadSettingsFromStorage()` roda em `BT4`, antes da inicializacao HDMI em `BT8`
+  - no fim da carga, `ComputeScaleMaxPercentForCurrentFrame(m_Screen.GetWidth(), m_Screen.GetHeight())` ainda via `screen_w/screen_h = 0`
+  - isso fazia o clamp inicial tratar o maximo como invalido e derrubar `m_OverscanPercent` para o minimo, mesmo com `scale=` corretamente lido do `.cfg`
+- Corte local aplicado:
+  - `src/kernel.cpp`
+    - `ComputeScaleMaxPercentForCurrentFrame()` passa a devolver `kScalePercentHardMax` enquanto a geometria da tela ainda nao existe (`0x0`)
+    - o clamp real continua acontecendo depois da inicializacao do display, quando a resolucao fisica ja e conhecida
+- Resultado esperado:
+  - `scale=` continua sendo salvo como `1`, `2`, `3`, `4`...
+  - o mesmo fator volta corretamente no boot, em vez de colapsar para `1x`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604082215-issue82-scale-load-boot` (OK)
+  - artefato `artifacts/kernel8-issue82.img`
+  - `BUILD_ID=D65A`
+  - `BUILD_HASH=9222903-d07a0146e2cb102beb3136926084f4da9b558c27`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - limpeza da telemetria residual do presenter
+
+- A umbrella ainda carregava telemetria UART residual da investigacao do presenter feita na filha `#238`, o que nao deveria ter sobrevivido ao fechamento da issue:
+  - `PRES BOOT ...`
+  - `PRES LOOP ...`
+  - `CSD INIT ...`
+  - `CSD DIRTY ...`
+  - `CSD PRESENT ...`
+- Corte local aplicado:
+  - `src/kernel.cpp`
+    - removidos os logs temporarios `PRES BOOT` e `PRES LOOP`
+    - `PresentIfDirty()` volta a ser chamado sem logging de diagnostico
+  - `src/combo_screen_device.cpp`
+    - removido o helper `ComboScreenTrace()`
+    - removidos os logs temporarios `CSD INIT`, `CSD DIRTY` e `CSD PRESENT`
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604082245-issue82-remove-presenter-uart` (OK)
+  - artefato `artifacts/kernel8-issue82.img`
+  - `BUILD_ID=0FB1`
+  - `BUILD_HASH=9222903-73a2025d05d587c167fc8a8bcb5f4e4d8bba31fe`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`

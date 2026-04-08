@@ -2,23 +2,9 @@
 
 #include <circle/devicenameservice.h>
 #include <circle/util.h>
-#include <stdarg.h>
-#include <stdio.h>
 
 static const char DevicePrefix[] = "tty";
 static const uintptr kComboScreenDCacheLineSize = 64u;
-
-extern "C" void msxbare_uart_write(const char *text);
-
-static void ComboScreenTrace(const char *fmt, ...)
-{
-	char line[192];
-	va_list ap;
-	va_start(ap, fmt);
-	vsnprintf(line, sizeof(line), fmt, ap);
-	va_end(ap);
-	msxbare_uart_write(line);
-}
 
 static void ComboFlushDCacheRange(void *addr, unsigned bytes)
 {
@@ -197,13 +183,6 @@ boolean CComboScreenDevice::Initialize(void)
 
 	ResetPresentationState();
 	ClearAllPages((TScreenColor) BLACK_COLOR, TRUE);
-	ComboScreenTrace("CSD INIT W:%u H:%u VW:%u VH:%u P:%u BUF:%08X\r\n",
-		m_pFrameBuffer->GetWidth(),
-		m_pFrameBuffer->GetHeight(),
-		m_pFrameBuffer->GetVirtWidth(),
-		m_pFrameBuffer->GetVirtHeight(),
-		m_pFrameBuffer->GetPitch(),
-		(unsigned) m_pFrameBuffer->GetBuffer());
 	if (!m_pTerminal->Initialize())
 	{
 		return FALSE;
@@ -341,8 +320,6 @@ unsigned CComboScreenDevice::GetDrawPageIndex(void) const
 
 void CComboScreenDevice::MarkDirtyRect(unsigned x, unsigned y, unsigned w, unsigned h)
 {
-	static unsigned s_dirty_logs = 0u;
-
 	if (w == 0u || h == 0u || m_pFrameBuffer == 0)
 	{
 		return;
@@ -371,12 +348,6 @@ void CComboScreenDevice::MarkDirtyRect(unsigned x, unsigned y, unsigned w, unsig
 		m_DirtyX2 = x2;
 		m_DirtyY2 = y2;
 		m_bDirty = TRUE;
-		if (s_dirty_logs < 8u)
-		{
-			ComboScreenTrace("CSD DIRTY %u,%u %ux%u DRAW:%u VIS:%u\r\n",
-				x, y, x2 - x, y2 - y, m_nBackPage, m_nFrontPage);
-			++s_dirty_logs;
-		}
 		return;
 	}
 
@@ -402,17 +373,8 @@ boolean CComboScreenDevice::IsDirty(void) const
 
 boolean CComboScreenDevice::PresentIfDirty(boolean dcache_enabled, boolean wait_vsync)
 {
-	static unsigned s_present_logs = 0u;
-	static unsigned s_no_dirty_logs = 0u;
-
 	if (!m_bDirty || m_pFrameBuffer == 0)
 	{
-		if (m_pFrameBuffer != 0 && s_no_dirty_logs < 4u)
-		{
-			ComboScreenTrace("CSD PRESENT skip dirty:%u draw:%u vis:%u\r\n",
-				(unsigned) m_bDirty, m_nBackPage, m_nFrontPage);
-			++s_no_dirty_logs;
-		}
 		return FALSE;
 	}
 
@@ -484,17 +446,7 @@ boolean CComboScreenDevice::PresentIfDirty(boolean dcache_enabled, boolean wait_
 			m_bBackPageSeeded = FALSE;
 		}
 	}
-	if (s_present_logs < 12u)
-	{
-		ComboScreenTrace("CSD PRESENT ok:%u offy:%u front:%u back:%u rect:%u,%u-%u,%u px0:%04X\r\n",
-			(unsigned) offset_ok,
-			m_nFrontPage * page_height,
-			m_nFrontPage,
-			m_nBackPage,
-			dirty_x1, dirty_y1, dirty_x2, dirty_y2,
-			visible_base != 0 ? visible_base[0] : 0u);
-		++s_present_logs;
-	}
+	(void) offset_ok;
 	ClearDirty();
 	return TRUE;
 }
