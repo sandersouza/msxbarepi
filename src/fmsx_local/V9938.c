@@ -31,6 +31,8 @@
 
 extern retro_log_printf_t log_cb;
 extern void fmsx_vdp_trace_command_transition(uint8_t active);
+extern uint64_t fmsx_vdp_cpu_cycles_now(void);
+extern int HPeriod;
 
 /*************************************************************/
 /** Other useful defines                                    **/
@@ -158,6 +160,7 @@ static void HmmvEngine(void);
 static void HmmmEngine(void);
 static void YmmmEngine(void);
 static void HmmcEngine(void);
+static int fmsx_msx2p_bootlogo_bios_timing_window(void);
 
 /*************************************************************/
 /** Variables visible only in this module                   **/
@@ -165,13 +168,18 @@ static void HmmcEngine(void);
 static uint8_t Mask[4] = { 0x0F,0x03,0x0F,0xFF };
 static int  PPB[4]  = { 2,4,2,1 };
 static int  PPL[4]  = { 256,512,512,256 };
-static int  VdpOpsCnt=1;
+static int  VdpOpsCnt=0;
 static void (*VdpEngine)(void)=0;
 static uint8_t VdpTraceCE = 0;
+static uint8_t VdpBootLogoTimingBoost = 0u;
+static uint64_t VdpLastCpuCycles = 0u;
+static uint32_t VdpCycleRemainder = 0u;
+static uint8_t VdpCycleValid = 0u;
 
 INLINE void VdpTraceSyncCE(void)
 {
   const uint8_t ce = (VDPStatus[2]&0x01u)? 1u:0u;
+  if(!ce) VdpBootLogoTimingBoost = 0u;
   if(ce!=VdpTraceCE)
   {
     VdpTraceCE = ce;
@@ -179,18 +187,78 @@ INLINE void VdpTraceSyncCE(void)
   }
 }
 
-/* Command budget per LoopVDP() call.
- * MSX2+ BIOS logo relies heavily on VDP block commands and stalls if the
- * command engine progresses too conservatively. Use a larger quantum there.
+INLINE void VdpPrimeCommandClock(uint64_t now_cycles)
+{
+  VdpLastCpuCycles = now_cycles;
+  VdpCycleRemainder = 0u;
+  VdpCycleValid = 1u;
+}
+
+/* Command budget per full scanline.
+ * Keep the current local throughput baseline, but stop delivering it in a
+ * single coarse lump at LoopVDP(). The first timing cut for issue #238 keeps
+ * the same average work per scanline and redistributes it over real CPU time,
+ * approximating blueMSX's time-driven sync without rewriting all local timing
+ * tables in the same patch.
  */
 INLINE int VdpOpsQuantum(void)
 {
+  int quantum = MODEL(MSX_MSX2P) ? 250000 : 12500;
+
   /*
-   * MSX2+ BIOS logo and some command-heavy transitions rely on sustained
-   * VDP copy throughput. Keep command progression higher on V9958 profiles
-   * without altering frame cadence.
+   * The conservative time-sync baseline from issue #238 restored boot safety,
+   * but hardware still shows the MSX2+ logo in SCREEN 6 progressing too
+   * slowly. BlueMSX advances the command engine continuously from time, while
+   * our local core still uses heavier historic timing tables. Instead of
+   * reintroducing the discarded absolute-timing cut, apply a bounded uplift
+   * only while CE is active, with extra headroom for the high-resolution
+   * bitmap modes that drive the logo.
    */
-  return MODEL(MSX_MSX2P) ? 250000 : 12500;
+  if(MODEL(MSX_MSX2P) && (VDPStatus[2]&0x01u))
+  {
+    if((ScrMode>=6)&&(ScrMode<=8)) quantum = 500000;
+    else quantum = 300000;
+  }
+
+  return quantum;
+}
+
+INLINE void VdpSyncCommandTime(void)
+{
+  const uint64_t now_cycles = fmsx_vdp_cpu_cycles_now();
+  const uint64_t line_cycles = (uint64_t)(unsigned)(HPeriod>0 ? HPeriod : CPU_HPERIOD);
+
+  if(!VdpCycleValid)
+  {
+    VdpPrimeCommandClock(now_cycles);
+  }
+  else if(now_cycles < VdpLastCpuCycles)
+  {
+    VdpPrimeCommandClock(now_cycles);
+    VdpOpsCnt = 0;
+  }
+  else if(now_cycles > VdpLastCpuCycles)
+  {
+    const uint64_t delta_cycles = now_cycles - VdpLastCpuCycles;
+    const uint64_t scaled_budget =
+      delta_cycles * (uint64_t)(unsigned)VdpOpsQuantum() + (uint64_t)VdpCycleRemainder;
+
+    VdpLastCpuCycles = now_cycles;
+    VdpOpsCnt += (int)(scaled_budget / line_cycles);
+    VdpCycleRemainder = (uint32_t)(scaled_budget % line_cycles);
+  }
+
+  if(VdpEngine)
+  {
+    if(VdpOpsCnt>0) VdpEngine();
+  }
+  else
+  {
+    VdpOpsCnt = 0;
+    VdpCycleRemainder = 0u;
+  }
+
+  VdpTraceSyncCE();
 }
 
 INLINE int VdpCommandScreenMode(void)
@@ -222,6 +290,66 @@ static int hmmm_timing[8]={ 818,  1111, 818,  854,
                             684,  879,  684,  708 };
 static int lmmm_timing[8]={ 1160, 1599, 1160, 1172, 
                             964,  1257, 964,  977 };
+
+/*
+ * BlueMSX command timing tables are the semantic reference for stock V9958.
+ * The local tables above are scaled fMSX values with NTSC/PAL variants; the
+ * logo-only "/8" workaround got close, but UART and disassembly already
+ * narrowed the hot path to BIOS polling around CE. Use the exact blueMSX
+ * deltas while the boot-logo command boost is armed, keeping the fallback
+ * local tables everywhere else.
+ */
+static const int srch_timing_bluemsx[4] = { 92,  125, 92,  92  };
+static const int line_timing_bluemsx[4] = { 120, 147, 120, 120 };
+static const int hmmv_timing_bluemsx[4] = { 49,  65,  49,  62  };
+static const int lmmv_timing_bluemsx[4] = { 98,  137, 98,  124 };
+static const int ymmm_timing_bluemsx[4] = { 65,  125, 65,  68  };
+static const int hmmm_timing_bluemsx[4] = { 92,  136, 92,  97  };
+static const int lmmm_timing_bluemsx[4] = { 129, 197, 129, 132 };
+
+static const int *fmsx_bootlogo_bluemsx_timing_table(const int *timing_values)
+{
+  if(timing_values == srch_timing) return srch_timing_bluemsx;
+  if(timing_values == line_timing) return line_timing_bluemsx;
+  if(timing_values == hmmv_timing) return hmmv_timing_bluemsx;
+  if(timing_values == lmmv_timing) return lmmv_timing_bluemsx;
+  if(timing_values == ymmm_timing) return ymmm_timing_bluemsx;
+  if(timing_values == hmmm_timing) return hmmm_timing_bluemsx;
+  if(timing_values == lmmm_timing) return lmmm_timing_bluemsx;
+  return 0;
+}
+
+static int fmsx_msx2p_bootlogo_bios_timing_window(void)
+{
+  const uint16_t pc = CPU.PC.W;
+
+  if(!MODEL(MSX_MSX2P)) return 0;
+
+  /*
+   * The MSX2+ boot logo BIOS does not start in the S#2 polling helpers
+   * themselves. UART and disassembly show an earlier prelude around 0x2A0F
+   * that prepares parameters, writes R#44/R#45/R#46, and later feeds R#26/R#27
+   * from the 0x7A71/0x7BB2 banked aliases. The old window only covered the
+   * polling wrappers rooted at 0x2BE4/0x2E3E/0x3040/0x3299, leaving the actual
+   * command start of the first logo stages outside the issue-176 timing boost.
+   *
+   * Keep the scope BIOS-local, but widen it enough to include that prelude and
+   * its +0x5000 banked alias, matching the actual PCs observed in field UART.
+   */
+  if(((pc>=0x2A0Fu)&&(pc<=0x2C59u)) ||
+     ((pc>=0x2E3Eu)&&(pc<=0x2F97u)) ||
+     ((pc>=0x3040u)&&(pc<=0x3147u)) ||
+     ((pc>=0x3299u)&&(pc<=0x3325u)))
+    return 1;
+
+  if(((pc>=0x7A0Fu)&&(pc<=0x7C59u)) ||
+     ((pc>=0x7E3Eu)&&(pc<=0x7F97u)) ||
+     ((pc>=0x8040u)&&(pc<=0x8147u)) ||
+     ((pc>=0x8299u)&&(pc<=0x8325u)))
+    return 1;
+
+  return 0;
+}
 
 
 /** VDPVRMP() **********************************************/
@@ -375,7 +503,34 @@ INLINE void VDPpset(uint8_t SM, int DX, int DY, uint8_t CL, uint8_t OP)
 /*************************************************************/
 static int GetVdpTimingValue(int *timing_values)
 {
-  return(timing_values[((VDP[1]>>6)&1)|(VDP[8]&2)|((VDP[9]<<1)&4)]);
+  /*
+   * blueMSX derives timingMode from "screen on while drawArea is active",
+   * not from R#1 bit6 alone. The local issue #238 work also showed that S#2
+   * bit6 is not a perfect proxy for drawArea: blueMSX clears bit6 slightly
+   * before the visible region starts, while command timing should stay on the
+   * off-screen bucket until the actual draw area is entered.
+   *
+   * Keep the local timing gate tied to the visible scanline range only.
+   * That preserves the intended fast bucket in bottom border/VBlank and in
+   * the pseudo top-border window that the BIOS sees through S#2 bit6.
+   */
+  const int draw_area = (ScanLine >= 0) && (ScanLine < (ScanLines212 ? 212 : 192)) ? 1 : 0;
+  const int timing_mode_4 = (((VDP[1]>>6)&1) & draw_area)|(VDP[8]&2);
+  int value = timing_values[timing_mode_4|((VDP[9]<<1)&4)];
+
+  if(VdpBootLogoTimingBoost)
+  {
+    const int *blue_values = fmsx_bootlogo_bluemsx_timing_table(timing_values);
+    if(blue_values)
+      value = blue_values[timing_mode_4];
+    else
+    {
+      value = (value + 7) / 8;
+      if(value < 1) value = 1;
+    }
+  }
+
+  return value;
 }
 
 /** SrchEgine()** ********************************************/
@@ -871,8 +1026,7 @@ void VDPWrite(uint8_t V)
 {
   VDPStatus[2]&=0x7F;
   VDPStatus[7]=VDP[44]=V;
-  if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
-  VdpTraceSyncCE();
+  VdpSyncCommandTime();
 }
 
 /** VDPRead() ************************************************/
@@ -881,9 +1035,37 @@ void VDPWrite(uint8_t V)
 uint8_t VDPRead(void)
 {
   VDPStatus[2]&=0x7F;
-  if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
-  VdpTraceSyncCE();
+  VdpSyncCommandTime();
   return(VDP[44]);
+}
+
+/** fmsx_vdp_sync_before_status_read() ***********************/
+/** Minimal status-read sync for V9938/V9958 command state. **/
+/*************************************************************/
+void fmsx_vdp_sync_before_status_read(void)
+{
+  /*
+   * blueMSX runs readStatus() through sync(vdp, now) before exposing S#n.
+   * Our local architecture does not have a direct equivalent to that full
+   * time-based sync hook, but the closest safe analogue is the same command
+   * slice flush already used by VDPRead()/VDPWrite(). This keeps CE/S7/S8/S9
+   * from lagging one CPU-side status read behind when the command engine has
+   * pending work in the current slice.
+   */
+  VdpSyncCommandTime();
+}
+
+/** fmsx_vdp_sync_before_cpu_mutation() **********************/
+/** Minimal write-side sync for V9938/V9958 command state. **/
+/*************************************************************/
+void fmsx_vdp_sync_before_cpu_mutation(void)
+{
+  /*
+   * blueMSX syncs the VDP before CPU-driven VRAM/register writes as well.
+   * Mirror that behavior with the same coarse command-slice flush used by
+   * status reads so CE/TR can advance before the write is applied.
+   */
+  VdpSyncCommandTime();
 }
 
 /** VDPDraw() ************************************************/
@@ -903,11 +1085,13 @@ uint8_t VDPDraw(uint8_t Op)
 
   switch(Op>>4) {
     case CM_ABRT:
+      VdpBootLogoTimingBoost=0u;
       VDPStatus[2]&=0xFE;
       VdpEngine=0;  
       VdpTraceSyncCE();
       return 1;
     case CM_POINT:
+      VdpBootLogoTimingBoost=0u;
       VDPStatus[2]&=0xFE;
       VdpEngine=0;  
       VDPStatus[7]=VDP[44]=
@@ -916,6 +1100,7 @@ uint8_t VDPDraw(uint8_t Op)
       VdpTraceSyncCE();
       return 1;
     case CM_PSET:
+      VdpBootLogoTimingBoost=0u;
       VDPStatus[2]&=0xFE;
       VdpEngine=0;  
       VDP_PSET(SM, 
@@ -956,6 +1141,7 @@ uint8_t VDPDraw(uint8_t Op)
       VdpEngine=HmmcEngine;  
       break;
     default:
+        VdpBootLogoTimingBoost=0u;
         return(0);
   }
 
@@ -997,10 +1183,15 @@ uint8_t VDPDraw(uint8_t Op)
     MMC.ANX = MMC.NX;
 
   /* Command execution started */
+  VdpBootLogoTimingBoost = fmsx_msx2p_bootlogo_bios_timing_window() ? 1u : 0u;
   VDPStatus[2]|=0x01;
+  VdpPrimeCommandClock(fmsx_vdp_cpu_cycles_now());
 
-  /* Start execution if we still have time slices */
-  if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
+  /*
+   * blueMSX only arms CE/state here and lets execution advance on the next
+   * sync point. Do not consume a command slice immediately on R#46 start,
+   * or short commands collapse into the same CPU-side status probe.
+   */
   VdpTraceSyncCE();
 
   /* Operation successfull initiated */
@@ -1012,17 +1203,5 @@ uint8_t VDPDraw(uint8_t Op)
 /*************************************************************/
 void LoopVDP(void)
 {
-  const int quantum = VdpOpsQuantum();
-
-  if(VdpOpsCnt<=0)
-  {
-    VdpOpsCnt+=quantum;
-    if(VdpEngine&&(VdpOpsCnt>0)) VdpEngine();
-  }
-  else
-  {
-    VdpOpsCnt=quantum;
-    if(VdpEngine) VdpEngine();
-  }
-  VdpTraceSyncCE();
+  VdpSyncCommandTime();
 }

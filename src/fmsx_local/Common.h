@@ -24,6 +24,10 @@ static uint16_t YJKColor(int Y,int J,int K);
 extern void PutImage(void);
 extern uint8_t FmsxVDPScreenOnLatched;
 extern int FmsxVDPRenderVScrollOverride;
+extern uint8_t FmsxVDPLineOddPageLatched;
+extern uint8_t FmsxVDPLineFlipEvenOddLatched;
+extern uint8_t FmsxVDPLineInterlaceOnLatched;
+extern uint8_t FmsxVDPLineR18Latched;
 
 #define FMSX_SCREEN_ON (FmsxVDPScreenOnLatched)
 /*
@@ -33,6 +37,31 @@ extern int FmsxVDPRenderVScrollOverride;
  */
 #define FMSX_RENDER_VSCROLL \
   ((FmsxVDPRenderVScrollOverride>=0)? (uint8_t)FmsxVDPRenderVScrollOverride:VDP[23])
+
+INLINE int FmsxDisplayHiResModeLatched(void)
+{
+  return FmsxVDPLineInterlaceOnLatched && (g_hires_mode != HIRES_OFF);
+}
+
+INLINE int FmsxDisplayInterlacedModeLatched(void)
+{
+  return FmsxDisplayHiResModeLatched() && (g_hires_mode == HIRES_INTERLACED);
+}
+
+INLINE int FmsxDisplayOddPageLatched(void)
+{
+  return FmsxVDPLineFlipEvenOddLatched ? (int)(FmsxVDPLineOddPageLatched & 0x01u) : 0;
+}
+
+INLINE int FmsxDisplayVAdjustLatched(void)
+{
+  return -(((int8_t)FmsxVDPLineR18Latched) >> 4);
+}
+
+INLINE int FmsxDisplayHAdjustLatched(void)
+{
+  return -(((int8_t)(uint8_t)(FmsxVDPLineR18Latched << 4)) >> 4);
+}
 
 /* V9958 horizontal scroll helpers:
  * R26 = coarse scroll blocks
@@ -129,8 +158,9 @@ INLINE uint8_t *V9958BitmapLinePtr(uint8_t *Base,uint8_t Y)
   LinePos=(((int)(Y+FMSX_RENDER_VSCROLL)<<7)&ChrTabM&0x7FFF);
   Pos=(BasePos&~0x7FFF)|LinePos;
 
-  /* fMSX flips even/odd display pages by subtracting 0x8000 on bitmap pages. */
-  if(FlipEvenOdd && OddPage && (Pos&0x8000)) Pos-=0x8000;
+  /* BlueMSX/openMSX treat EO/page selection as a line snapshot once scanout
+   * starts. Keep narrow bitmap modes aligned with the same rule. */
+  if(FmsxDisplayOddPageLatched() && (Pos&0x8000)) Pos-=0x8000;
 
   Size=VRAMPages<<14;
   if(Size>0)
@@ -232,9 +262,12 @@ uint16_t *RefreshBorder(uint8_t Y,uint16_t C)
 {
   uint16_t *P;
   int H,L,A;
+  const int lineHiResMode = FmsxDisplayHiResModeLatched();
+  const int lineInterlacedMode = FmsxDisplayInterlacedModeLatched();
+  const int lineOddPage = FmsxDisplayOddPageLatched();
 
   /* First line number in the buffer */
-  if(!Y) FirstLine=(ScanLines212?0:10)+BORDER+VAdjust;
+  if(!Y) FirstLine=(ScanLines212?0:10)+BORDER+FmsxDisplayVAdjustLatched();
 
   /* Return 0 if we've run out of the screen buffer due to overscan */
   if(Y>(OverscanMode?MAX_SCANLINE:211)) return(0);
@@ -245,7 +278,7 @@ uint16_t *RefreshBorder(uint8_t Y,uint16_t C)
   /* Start of the buffer */
   P=(uint16_t *)XBuf;
 
-  if(HiResMode)
+  if(lineHiResMode)
   {
     if(!Y)
       /* Paint top of the screen */
@@ -253,9 +286,9 @@ uint16_t *RefreshBorder(uint8_t Y,uint16_t C)
       {
         for(A=((WIDTH*L)<<1)-1,H=WIDTH;H>0;H--,A--)
         {
-          if (InterlacedMode)
+          if (lineInterlacedMode)
           {
-            if (OddPage)
+            if (lineOddPage)
             { // even lines are black
               P[A]=0;
               P[A-WIDTH]=C;
@@ -268,7 +301,7 @@ uint16_t *RefreshBorder(uint8_t Y,uint16_t C)
           }
           else // progressive: only touch this frame's lines
           {
-            if (OddPage)
+            if (lineOddPage)
               P[A-WIDTH]=C;
             else
               P[A]=C;
@@ -279,15 +312,15 @@ uint16_t *RefreshBorder(uint8_t Y,uint16_t C)
     /* Start of the line */
     P+=(WIDTH*(FirstLine+Y))<<1;
 
-    if (OddPage)
+    if (lineOddPage)
     {
-      if (InterlacedMode)
+      if (lineInterlacedMode)
         // erase previous frame's line
         for(A=(WIDTH<<1)-1,H=WIDTH;H>0;H--,A--) P[A]=0;
     }
     else
     {
-      if (InterlacedMode)
+      if (lineInterlacedMode)
         // erase previous frame's line
         for(H=WIDTH-1;H>=0;H--) P[H]=0;
       P+=WIDTH; // interlace offset
@@ -303,20 +336,20 @@ uint16_t *RefreshBorder(uint8_t Y,uint16_t C)
   }
 
   /* Paint left/right borders */
-  for(H=(WIDTH-256)/2+HAdjust;H>0;H--) P[H-1]=C;
-  for(H=(WIDTH-256)/2-HAdjust;H>0;H--) P[WIDTH-H]=C;
+  for(H=(WIDTH-256)/2+FmsxDisplayHAdjustLatched();H>0;H--) P[H-1]=C;
+  for(H=(WIDTH-256)/2-FmsxDisplayHAdjustLatched();H>0;H--) P[WIDTH-H]=C;
 
   /* Paint bottom of the screen */
   H=ScanLines212? 212:192;
 
-  if(HiResMode)
+  if(lineHiResMode)
   {
     if(Y==H-1)
       for(L=MAX_HEIGHT-Y;L>0;L--)
       {
         for(A=((WIDTH*L)<<1)-1,H=WIDTH;H>0;H--,A--)
         {
-          if (InterlacedMode)
+          if (lineInterlacedMode)
             // erase previous frame's line
             P[A]=0;
           P[A+WIDTH]=C;
@@ -327,7 +360,7 @@ uint16_t *RefreshBorder(uint8_t Y,uint16_t C)
     if(Y==H-1) for(H=WIDTH*(HEIGHT-H-FirstLine+1)-1;H>=WIDTH;H--) P[H]=C;
 
   /* Return pointer to the scanline in XBuf */
-  return(P+(WIDTH-256)/2+HAdjust);
+  return(P+(WIDTH-256)/2+FmsxDisplayHAdjustLatched());
 }
 
 /** Sprites() ************************************************/

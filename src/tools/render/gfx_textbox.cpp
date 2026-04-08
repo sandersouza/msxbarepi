@@ -214,7 +214,7 @@ static void DrawCustomArrowDownGlyph(CGfxTextBoxRenderer *renderer,
     DrawGlyphMatrix8x8(renderer, x, y, style, scale_x, scale_y, char_w, char_h, kArrowDownMatrix8x8);
 }
 
-CGfxTextBoxRenderer::CGfxTextBoxRenderer(CScreenDevice *screen)
+CGfxTextBoxRenderer::CGfxTextBoxRenderer(CComboScreenDevice *screen)
 : m_Screen(0)
 , m_FrameBuffer(0)
 , m_Font(DEFAULT_FONT, CCharGenerator::FontFlagsNone)
@@ -229,7 +229,7 @@ CGfxTextBoxRenderer::CGfxTextBoxRenderer(CScreenDevice *screen)
 	Attach(screen);
 }
 
-void CGfxTextBoxRenderer::Attach(CScreenDevice *screen)
+void CGfxTextBoxRenderer::Attach(CComboScreenDevice *screen)
 {
 	m_Screen = screen;
 	m_FrameBuffer = 0;
@@ -292,9 +292,10 @@ void CGfxTextBoxRenderer::PutPixel(unsigned x, unsigned y, TScreenColor color)
 
 	if (m_FrameBuffer != 0 && m_FrameBuffer->GetDepth() == 16)
 	{
-		u16 *base = (u16 *) (uintptr) m_FrameBuffer->GetBuffer();
-		const unsigned pitch_pixels = m_FrameBuffer->GetPitch() / sizeof(u16);
+		u16 *base = m_Screen->GetDrawBuffer16();
+		const unsigned pitch_pixels = m_Screen->GetPitchPixels();
 		base[(y * pitch_pixels) + x] = (u16) color;
+		m_Screen->MarkDirtyRect(x, y, 1u, 1u);
 		return;
 	}
 
@@ -337,8 +338,8 @@ void CGfxTextBoxRenderer::CopyRectFromScreen(unsigned x, unsigned y, unsigned w,
 
 	if (m_FrameBuffer != 0 && m_FrameBuffer->GetDepth() == 16)
 	{
-		const u16 *src_base = (const u16 *) (uintptr) m_FrameBuffer->GetBuffer();
-		const unsigned src_pitch = m_FrameBuffer->GetPitch() / sizeof(u16);
+		const u16 *src_base = m_Screen->GetDrawBuffer16();
+		const unsigned src_pitch = m_Screen->GetPitchPixels();
 		for (unsigned row = 0u; row < max_h; ++row)
 		{
 			const u16 *src = src_base + ((y + row) * src_pitch) + x;
@@ -378,6 +379,22 @@ void CGfxTextBoxRenderer::CopyRectFromVisibleScreen(unsigned x, unsigned y, unsi
 	const unsigned max_w = (x + w <= screen_w) ? w : (screen_w - x);
 	const unsigned max_h = (y + h <= screen_h) ? h : (screen_h - y);
 
+	if (m_FrameBuffer != 0 && m_FrameBuffer->GetDepth() == 16)
+	{
+		const u16 *src_base = m_Screen->GetVisibleBuffer16();
+		const unsigned src_pitch = m_Screen->GetPitchPixels();
+		for (unsigned row = 0u; row < max_h; ++row)
+		{
+			const u16 *src = src_base + ((y + row) * src_pitch) + x;
+			TScreenColor *dst = buffer + (row * buffer_stride_pixels);
+			for (unsigned col = 0u; col < max_w; ++col)
+			{
+				dst[col] = (TScreenColor) src[col];
+			}
+		}
+		return;
+	}
+
 	for (unsigned row = 0u; row < max_h; ++row)
 	{
 		TScreenColor *dst = buffer + (row * buffer_stride_pixels);
@@ -407,8 +424,8 @@ void CGfxTextBoxRenderer::EndOffscreenBlit(void)
 
 	if (m_FrameBuffer != 0 && m_FrameBuffer->GetDepth() == 16)
 	{
-		u16 *dst_base = (u16 *) (uintptr) m_FrameBuffer->GetBuffer();
-		const unsigned dst_pitch = m_FrameBuffer->GetPitch() / sizeof(u16);
+		u16 *dst_base = m_Screen->GetDrawBuffer16();
+		const unsigned dst_pitch = m_Screen->GetPitchPixels();
 		for (unsigned y = 0u; y < h; ++y)
 		{
 			u16 *dst = dst_base + ((origin_y + y) * dst_pitch) + origin_x;
@@ -418,6 +435,7 @@ void CGfxTextBoxRenderer::EndOffscreenBlit(void)
 				dst[x] = (u16) line[x];
 			}
 		}
+		m_Screen->MarkDirtyRect(origin_x, origin_y, w, h);
 	}
 	else
 	{

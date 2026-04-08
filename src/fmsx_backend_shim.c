@@ -32,6 +32,21 @@ unsigned fmsx_backend_shim_video_frame(const u16 **pixels, unsigned *width, unsi
     return fmsx_runtime_get_video_frame(pixels, width, height);
 }
 
+void fmsx_backend_shim_get_video_presentation(EmulatorBackendVideoPresentation *presentation)
+{
+    TFmsxVideoPresentation fmsx_presentation = {0};
+
+    fmsx_runtime_get_video_presentation(&fmsx_presentation);
+    if (presentation != 0)
+    {
+        presentation->logical_width = fmsx_presentation.logical_width;
+        presentation->logical_height = fmsx_presentation.logical_height;
+        presentation->hires_mode = fmsx_presentation.hires_mode ? TRUE : FALSE;
+        presentation->interlaced_mode = fmsx_presentation.interlaced_mode ? TRUE : FALSE;
+        presentation->woven_hires = fmsx_presentation.woven_hires ? TRUE : FALSE;
+    }
+}
+
 unsigned fmsx_backend_shim_audio_pull(int16_t *dst, unsigned max_samples)
 {
     return fmsx_audio_pull_samples(dst, max_samples);

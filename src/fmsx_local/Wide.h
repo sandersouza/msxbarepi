@@ -19,6 +19,25 @@ extern uint8_t FmsxVDPScreenOnLatched;
 #define FMSX_SCREEN_ON (FmsxVDPScreenOnLatched)
 #endif
 
+#ifndef FMSX_DRAW_AREA
+extern uint8_t FmsxVDPDrawingLatched;
+#define FMSX_DRAW_AREA (FmsxVDPDrawingLatched)
+#endif
+
+extern uint8_t *FmsxVDPLineChrTabLatched;
+extern int FmsxVDPLineChrTabMLatched;
+extern uint8_t FmsxVDPLineR2Latched;
+extern uint8_t FmsxVDPLineR25Latched;
+extern uint8_t FmsxVDPLineR26Latched;
+extern uint8_t FmsxVDPLineR27Latched;
+extern uint8_t FmsxVDPLineR18Latched;
+extern uint8_t FmsxVDPLineOddPageLatched;
+extern uint8_t FmsxVDPLineColorSpritesLatched[384];
+extern uint8_t FmsxVDPLineColorSpritesRender[384];
+extern uint8_t FmsxVDPLineColorSpritesValid;
+extern uint8_t FmsxVDPLineColorSpritesRenderValid;
+extern void FmsxLatchColorSpritesLine(uint8_t Y,uint8_t *ZBuf);
+
 /** ClearLine512() *******************************************/
 /** Clear 512 pixels from P with color C.                   **/
 /*************************************************************/
@@ -27,6 +46,113 @@ static void ClearLine512(uint16_t *P,uint16_t C)
   int J;
 
   for(J=0;J<512;J++) P[J]=C;
+}
+
+/**
+ * In MSX2+ bitmap multipage scroll, blueMSX neutralizes R#2 bit5 in the
+ * effective base address and then walks the second page through +0x8000.
+ * Our local core mirrors that by masking R#2 bit5 in fmsx_vdp_r2_base(),
+ * so the wide renderer should not try to reorder pages again from ChrTab.
+ */
+static unsigned V9958WideCoarseBlocksLatched(void)
+{
+  if(!MODEL(MSX_MSX2P)) return 0u;
+  return (unsigned)(FmsxVDPLineR26Latched & (((FmsxVDPLineR25Latched & 0x01u) && (FmsxVDPLineR2Latched & 0x20u)) ? 0x3Fu : 0x1Fu));
+}
+
+static unsigned V9958WideCoarseScrollLatched(void)
+{
+  return V9958WideCoarseBlocksLatched()<<3;
+}
+
+static unsigned V9958WideFineScrollLatched(void)
+{
+  return MODEL(MSX_MSX2P) ? (FmsxVDPLineR27Latched & 0x07u) : 0u;
+}
+
+static unsigned V9958WidePhysicalCoarseScrollLatched(void)
+{
+  /*
+   * In blueMSX line512 paths, SCREEN 6/7 scroll operates in the doubled
+   * physical scanout space. A 9-bit logical scroll becomes a 10-bit walk
+   * across the concatenated 1024-pixel wide line.
+   */
+  return V9958WideCoarseScrollLatched() << 1;
+}
+
+static unsigned V9958WidePhysicalFineScrollLatched(void)
+{
+  return V9958WideFineScrollLatched() << 1;
+}
+
+static unsigned V9958WideMaskLeftLatched(void)
+{
+  return (MODEL(MSX_MSX2P) && (FmsxVDPLineR25Latched & 0x02u)) ? 8u : 0u;
+}
+
+static unsigned V9958WideVirtualWidthLatched(void)
+{
+  return (MODEL(MSX_MSX2P) && (FmsxVDPLineR25Latched & 0x01u) && (FmsxVDPLineR2Latched & 0x20u)) ? 1024u : 512u;
+}
+
+static uint8_t *V9958BitmapLinePtrWideLatched(uint8_t Y)
+{
+  uint8_t *Base;
+  int Mask;
+  int Size;
+  int BasePos;
+  int LinePos;
+  int Pos;
+
+  Base=FmsxVDPLineChrTabLatched? FmsxVDPLineChrTabLatched:ChrTab;
+  Mask=FmsxVDPLineChrTabMLatched? FmsxVDPLineChrTabMLatched:ChrTabM;
+  BasePos=(int)(Base-VRAM);
+  LinePos=(((int)(Y+FMSX_RENDER_VSCROLL)<<7)&Mask&0x7FFF);
+  Pos=(BasePos&~0x7FFF)|LinePos;
+
+  /*
+   * blueMSX applies vdpIsOddPage() directly in SCREEN 6/7 bitmap addressing,
+   * independent of R#9 bit2. The visible MSX2+ boot logo keeps R#9=00 while
+   * still toggling the display page through S#2-derived odd/even state, so
+   * the wide path must honor the latched odd page unconditionally.
+   */
+  if(FmsxVDPLineOddPageLatched && (Pos&0x8000)) Pos-=0x8000;
+
+  Size=VRAMPages<<14;
+  if(Size>0)
+  {
+    Pos%=Size;
+    if(Pos<0) Pos+=Size;
+  }
+
+  return VRAM+Pos;
+}
+
+static void V9958WideBitmapPages(uint8_t Y,unsigned VirtualWidth,uint8_t **Page0,uint8_t **Page1)
+{
+  uint8_t *Base;
+  uint8_t *Next;
+
+  Base=V9958BitmapLinePtrWideLatched(Y);
+  Next=V9958ScrollPagePtr(Base,0x8000);
+
+  *Page0=Base;
+  *Page1=Next;
+}
+
+static void RefreshBorder6Wide(uint16_t *P)
+{
+  const int Left = (WIDTH-256)+2*FmsxDisplayHAdjustLatched();
+  const int Right = (WIDTH-256)-2*FmsxDisplayHAdjustLatched();
+  const uint16_t C0 = XPal[(BGColor>>2)&0x03];
+  const uint16_t C1 = XPal[BGColor&0x03];
+  int I;
+
+  for(I=0;I<Left;I++)
+    P[-Left+I] = (I&1)? C1:C0;
+
+  for(I=0;I<Right;I++)
+    P[512+I] = (I&1)? C1:C0;
 }
 
 /** RefreshBorder512() ***************************************/
@@ -38,9 +164,12 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
 {
   uint16_t *P;
   int H,L,A;
+  const int lineHiResMode = FmsxDisplayHiResModeLatched();
+  const int lineInterlacedMode = FmsxDisplayInterlacedModeLatched();
+  const int lineOddPage = FmsxDisplayOddPageLatched();
 
   /* First line number in the buffer */
-  if(!Y) FirstLine=(ScanLines212?0:10)+BORDER+VAdjust;
+  if(!Y) FirstLine=(ScanLines212?0:10)+BORDER+FmsxDisplayVAdjustLatched();
 
   /* Return 0 if we've run out of the screen buffer due to overscan */
   if(Y>(OverscanMode?MAX_SCANLINE:211)) return(0);
@@ -51,7 +180,7 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
   /* Start of the buffer */
   P=(uint16_t *)WBuf;
 
-  if(HiResMode)
+  if(lineHiResMode)
   {
     if(!Y)
       /* Paint top of the screen */
@@ -59,9 +188,9 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
       {
         for(A=((WIDTH*L)<<2)-1,H=WIDTH<<1;H>0;H--,A--)
         {
-          if (InterlacedMode)
+          if (lineInterlacedMode)
           {
-            if (OddPage)
+            if (lineOddPage)
             { // even lines are black
               P[A]=0;
               P[A-(WIDTH<<1)]=C;
@@ -74,7 +203,7 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
           }
           else // progressive: only touch this frame's lines
           {
-            if (OddPage)
+            if (lineOddPage)
               P[A-(WIDTH<<1)]=C;
             else
               P[A]=C;
@@ -85,15 +214,15 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
     /* Start of the line */
     P+=(WIDTH*(FirstLine+Y))<<2;
 
-    if (OddPage)
+    if (lineOddPage)
     {
-      if (InterlacedMode)
+      if (lineInterlacedMode)
         // erase previous frame's line
         for(A=(WIDTH<<2)-1,H=WIDTH<<1;H>0;H--,A--) P[A]=0;
     }
     else
     {
-      if (InterlacedMode)
+      if (lineInterlacedMode)
         // erase previous frame's line
         for(H=(WIDTH<<2)-1;H>=0;H--) P[H]=0;
       P+=WIDTH<<1; // interlace offset
@@ -109,13 +238,13 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
   }
 
   /* Paint left/right borders */
-  for(H=(WIDTH-256)+2*HAdjust;H>0;H--) P[H-1]=C;
-  for(H=(WIDTH-256)-2*HAdjust;H>0;H--) P[2*WIDTH-H]=C;
+  for(H=(WIDTH-256)+2*FmsxDisplayHAdjustLatched();H>0;H--) P[H-1]=C;
+  for(H=(WIDTH-256)-2*FmsxDisplayHAdjustLatched();H>0;H--) P[2*WIDTH-H]=C;
 
   /* Paint bottom of the screen */
   H=ScanLines212? 212:192;
 
-  if(HiResMode)
+  if(lineHiResMode)
   {
     if(Y==H-1)
     {
@@ -123,7 +252,7 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
       {
         for(A=((WIDTH*L)<<2)-1,H=WIDTH<<1;H>0;H--,A--)
         {
-          if (InterlacedMode)
+          if (lineInterlacedMode)
             // erase previous frame's line
             P[A]=0;
           P[A+(WIDTH<<1)]=C;
@@ -135,7 +264,20 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
     if(Y==H-1) for(H=2*WIDTH*(HEIGHT-H-FirstLine+1)-1;H>=2*WIDTH;H--) P[H]=C;
 
   /* Return pointer to the scanline in XBuf */
-  return(P+WIDTH-256+2*HAdjust);
+  return(P+WIDTH-256+2*FmsxDisplayHAdjustLatched());
+}
+
+static uint16_t V9958Screen6WideSpritePixel(uint8_t SpriteByte,unsigned Pixel)
+{
+  uint8_t Packed;
+
+  Packed=(Pixel&1u)? (uint8_t)(SpriteByte&0x07u): (uint8_t)(SpriteByte>>3);
+  return Packed? XPal[(Packed>>1)&0x03u]: 0u;
+}
+
+static uint16_t V9958Screen7WideSpritePixel(uint8_t SpriteByte)
+{
+  return SpriteByte? XPal[(SpriteByte>>1)&0x0Fu]: 0u;
 }
 
 /** RefreshScr6() ********************************************/
@@ -143,7 +285,7 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
 /*************************************************************/
 void RefreshLine6(uint8_t Y)
 {
-  uint8_t C,*T,*R,*T0,*T1;
+  uint8_t C,*R,*T0,*T1;
   int PIdx,Src;
   unsigned Coarse;
   unsigned Fine;
@@ -152,23 +294,39 @@ void RefreshLine6(uint8_t Y)
   uint8_t BgRaw[1024];
   uint8_t BgIndex;
   uint8_t MaskBg;
-  uint8_t ZBuf[304];
+  uint8_t ZBuf[384];
   uint16_t *P=RefreshBorder512(Y,XPal[BGColor&0x03]);
   if(!P) return;
 
-  if(!FMSX_SCREEN_ON) ClearLine512(P,XPal[BGColor&0x03]);
+  RefreshBorder6Wide(P);
+
+  if(!FMSX_SCREEN_ON || !FMSX_DRAW_AREA)
+  {
+    const uint16_t C0 = XPal[(BGColor>>2)&0x03];
+    const uint16_t C1 = XPal[BGColor&0x03];
+    for(PIdx=0;PIdx<512;PIdx++) P[PIdx] = (PIdx&1)? C1:C0;
+  }
   else
   {
     LastScanline = Y + FirstLine;
-    ColorSprites(Y,ZBuf);
-    R=ZBuf+32;
-    T=V9958BitmapLinePtr(ChrTab,Y);
-    Coarse = V9958CoarseScroll512();
-    Fine = V9958FineScroll512();
-    LeftMask = V9958MaskLeft512();
-    VirtualWidth = V9958VirtualWidth512();
+    if(!FmsxVDPLineColorSpritesValid)
+    {
+      FmsxLatchColorSpritesLine(Y,FmsxVDPLineColorSpritesLatched);
+      FmsxVDPLineColorSpritesValid=1u;
+    }
+    if(FmsxVDPLineColorSpritesRenderValid)
+      R=FmsxVDPLineColorSpritesRender+32;
+    else
+    {
+      memset(ZBuf,0,sizeof(ZBuf));
+      R=ZBuf+32;
+    }
+    Coarse = V9958WidePhysicalCoarseScrollLatched();
+    Fine = V9958WidePhysicalFineScrollLatched();
+    LeftMask = V9958WideMaskLeftLatched()<<1;
+    VirtualWidth = V9958WideVirtualWidthLatched();
 
-    T0=T;
+    V9958WideBitmapPages(Y,VirtualWidth,&T0,&T1);
     for(PIdx=0;PIdx<128;PIdx++)
     {
       BgRaw[(PIdx<<2)+0]=T0[PIdx]>>6;
@@ -179,8 +337,6 @@ void RefreshLine6(uint8_t Y)
 
     if(VirtualWidth>512u)
     {
-      /* SCR6 next horizontal page is +0x8000 in fMSX VRAM layout. */
-      T1=V9958ScrollPagePtr(T0,0x8000);
       for(PIdx=0;PIdx<128;PIdx++)
       {
         BgRaw[512+(PIdx<<2)+0]=T1[PIdx]>>6;
@@ -200,9 +356,86 @@ void RefreshLine6(uint8_t Y)
         BgIndex=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
       }
 
-      C=R[PIdx>>1];
-      P[PIdx]=XPal[C? C:BgIndex];
+      const uint16_t SpritePixel = V9958Screen6WideSpritePixel(R[PIdx>>1],(unsigned)PIdx);
+      P[PIdx]=SpritePixel? SpritePixel:XPal[BgIndex];
     }
+  }
+}
+
+static uint8_t V9958Screen6WideSampleLatched(uint8_t *Page0,uint8_t *Page1,unsigned VirtualWidth,unsigned Pos)
+{
+  uint8_t *Page;
+  uint8_t Value;
+
+  Pos&=VirtualWidth-1u;
+  Page=(VirtualWidth>512u) && (Pos&0x200u) ? Page1:Page0;
+  Pos&=0x1FFu;
+  Value=Page[Pos>>2];
+
+  switch(Pos&0x03u)
+  {
+    case 0: return Value>>6;
+    case 1: return (Value>>4)&0x03u;
+    case 2: return (Value>>2)&0x03u;
+    default:return Value&0x03u;
+  }
+}
+
+void RefreshLine6WideRange(uint8_t Y,unsigned X0,unsigned X1)
+{
+  uint8_t C,*R,*T0,*T1;
+  int PIdx;
+  unsigned Coarse;
+  unsigned Fine;
+  unsigned LeftMask;
+  unsigned VirtualWidth;
+  unsigned Px0;
+  unsigned Px1;
+  uint8_t BgIndex;
+  uint8_t MaskBg;
+  uint8_t ZBuf[384];
+  uint16_t *P=RefreshBorder512(Y,XPal[BGColor&0x03]);
+  if(!P) return;
+
+  if(X0>32u) X0=32u;
+  if(X1>32u) X1=32u;
+  if(X1<=X0) return;
+
+  Px0=X0<<4;
+  Px1=X1<<4;
+  RefreshBorder6Wide(P);
+
+  if(!FMSX_SCREEN_ON || !FMSX_DRAW_AREA)
+  {
+    const uint16_t C0 = XPal[(BGColor>>2)&0x03];
+    const uint16_t C1 = XPal[BGColor&0x03];
+    for(PIdx=(int)Px0;PIdx<(int)Px1;++PIdx) P[PIdx] = (PIdx&1)? C1:C0;
+    return;
+  }
+
+  LastScanline = Y + FirstLine;
+  if(FmsxVDPLineColorSpritesRenderValid)
+    R=FmsxVDPLineColorSpritesRender+32;
+  else
+  {
+    memset(ZBuf,0,sizeof(ZBuf));
+    R=ZBuf+32;
+  }
+  Coarse = V9958WidePhysicalCoarseScrollLatched();
+  Fine = V9958WidePhysicalFineScrollLatched();
+  LeftMask = V9958WideMaskLeftLatched()<<1;
+  VirtualWidth = V9958WideVirtualWidthLatched();
+
+  V9958WideBitmapPages(Y,VirtualWidth,&T0,&T1);
+  MaskBg=V9958Screen6WideSampleLatched(T0,T1,VirtualWidth,(unsigned)((int)Coarse-(int)Fine));
+  for(PIdx=(int)Px0;PIdx<(int)Px1;PIdx++)
+  {
+    BgIndex=MaskBg;
+    if(PIdx>=(int)LeftMask)
+      BgIndex=V9958Screen6WideSampleLatched(T0,T1,VirtualWidth,(unsigned)((int)PIdx-(int)Fine+(int)Coarse));
+
+    const uint16_t SpritePixel = V9958Screen6WideSpritePixel(R[PIdx>>1],(unsigned)PIdx);
+    P[PIdx]=SpritePixel? SpritePixel:XPal[BgIndex];
   }
 }
   
@@ -211,7 +444,7 @@ void RefreshLine6(uint8_t Y)
 /*************************************************************/
 void RefreshLine7(uint8_t Y)
 {
-  uint8_t C,*T,*R,*T0,*T1,*Plane0,*Plane1;
+  uint8_t C,*R,*T0,*T1,*Plane0,*Plane1;
   int PIdx,Src;
   unsigned Coarse;
   unsigned Fine;
@@ -220,23 +453,32 @@ void RefreshLine7(uint8_t Y)
   uint8_t BgRaw[1024];
   uint8_t BgIndex;
   uint8_t MaskBg;
-  uint8_t ZBuf[304];
+  uint8_t ZBuf[384];
   uint16_t *P=RefreshBorder512(Y,XPal[BGColor]);
   if(!P) return;
 
-  if(!FMSX_SCREEN_ON) ClearLine512(P,XPal[BGColor]);
+  if(!FMSX_SCREEN_ON || !FMSX_DRAW_AREA) ClearLine512(P,XPal[BGColor]);
   else
   {
     LastScanline = Y + FirstLine;
-    ColorSprites(Y,ZBuf);
-    R=ZBuf+32;
-    T=V9958BitmapLinePtr(ChrTab,Y);
-    Coarse = V9958CoarseScroll512();
-    Fine = V9958FineScroll512();
-    LeftMask = V9958MaskLeft512();
-    VirtualWidth = V9958VirtualWidth512();
+    if(!FmsxVDPLineColorSpritesValid)
+    {
+      FmsxLatchColorSpritesLine(Y,FmsxVDPLineColorSpritesLatched);
+      FmsxVDPLineColorSpritesValid=1u;
+    }
+    if(FmsxVDPLineColorSpritesRenderValid)
+      R=FmsxVDPLineColorSpritesRender+32;
+    else
+    {
+      memset(ZBuf,0,sizeof(ZBuf));
+      R=ZBuf+32;
+    }
+    Coarse = V9958WidePhysicalCoarseScrollLatched();
+    Fine = V9958WidePhysicalFineScrollLatched();
+    LeftMask = V9958WideMaskLeftLatched()<<1;
+    VirtualWidth = V9958WideVirtualWidthLatched();
 
-    T0=T;
+    V9958WideBitmapPages(Y,VirtualWidth,&T0,&T1);
     Plane0=T0;
     Plane1=V9958VRAMOffsetPtr(T0,(int)V9958InterleavedPlaneOffset());
     for(PIdx=0;PIdx<128;PIdx++)
@@ -249,8 +491,6 @@ void RefreshLine7(uint8_t Y)
 
     if(VirtualWidth>512u)
     {
-      /* SCR7 multipage follows the same +0x8000 page step as SCR5/6/8. */
-      T1=V9958ScrollPagePtr(T0,0x8000);
       Plane0=T1;
       Plane1=V9958VRAMOffsetPtr(T1,(int)V9958InterleavedPlaneOffset());
       for(PIdx=0;PIdx<128;PIdx++)
@@ -272,9 +512,92 @@ void RefreshLine7(uint8_t Y)
         BgIndex=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
       }
 
-      C=R[PIdx>>1];
-      P[PIdx]=XPal[C? C:BgIndex];
+      const uint16_t SpritePixel = V9958Screen7WideSpritePixel(R[PIdx>>1]);
+      P[PIdx]=SpritePixel? SpritePixel:XPal[BgIndex];
     }
+  }
+}
+
+void RefreshLine7WideRange(uint8_t Y,unsigned X0,unsigned X1)
+{
+  uint8_t C,*R,*T0,*T1,*Plane0,*Plane1;
+  int PIdx,Src;
+  unsigned Coarse;
+  unsigned Fine;
+  unsigned LeftMask;
+  unsigned VirtualWidth;
+  unsigned Px0;
+  unsigned Px1;
+  uint8_t BgRaw[1024];
+  uint8_t BgIndex;
+  uint8_t MaskBg;
+  uint8_t ZBuf[384];
+  uint16_t *P=RefreshBorder512(Y,XPal[BGColor]);
+  if(!P) return;
+
+  if(X0>32u) X0=32u;
+  if(X1>32u) X1=32u;
+  if(X1<=X0) return;
+
+  Px0=X0<<4;
+  Px1=X1<<4;
+
+  if(!FMSX_SCREEN_ON || !FMSX_DRAW_AREA)
+  {
+    const uint16_t Bg = XPal[BGColor];
+    for(PIdx=(int)Px0;PIdx<(int)Px1;++PIdx) P[PIdx]=Bg;
+    return;
+  }
+
+  LastScanline = Y + FirstLine;
+  if(FmsxVDPLineColorSpritesRenderValid)
+    R=FmsxVDPLineColorSpritesRender+32;
+  else
+  {
+    memset(ZBuf,0,sizeof(ZBuf));
+    R=ZBuf+32;
+  }
+  Coarse = V9958WidePhysicalCoarseScrollLatched();
+  Fine = V9958WidePhysicalFineScrollLatched();
+  LeftMask = V9958WideMaskLeftLatched()<<1;
+  VirtualWidth = V9958WideVirtualWidthLatched();
+
+  V9958WideBitmapPages(Y,VirtualWidth,&T0,&T1);
+  Plane0=T0;
+  Plane1=V9958VRAMOffsetPtr(T0,(int)V9958InterleavedPlaneOffset());
+  for(PIdx=0;PIdx<128;PIdx++)
+  {
+    BgRaw[(PIdx<<2)+0]=Plane0[PIdx]>>4;
+    BgRaw[(PIdx<<2)+1]=Plane0[PIdx]&0x0F;
+    BgRaw[(PIdx<<2)+2]=Plane1[PIdx]>>4;
+    BgRaw[(PIdx<<2)+3]=Plane1[PIdx]&0x0F;
+  }
+
+  if(VirtualWidth>512u)
+  {
+    Plane0=T1;
+    Plane1=V9958VRAMOffsetPtr(T1,(int)V9958InterleavedPlaneOffset());
+    for(PIdx=0;PIdx<128;PIdx++)
+    {
+      BgRaw[512+(PIdx<<2)+0]=Plane0[PIdx]>>4;
+      BgRaw[512+(PIdx<<2)+1]=Plane0[PIdx]&0x0F;
+      BgRaw[512+(PIdx<<2)+2]=Plane1[PIdx]>>4;
+      BgRaw[512+(PIdx<<2)+3]=Plane1[PIdx]&0x0F;
+    }
+  }
+
+  MaskBg=BgRaw[(unsigned)((int)Coarse-(int)Fine)&(VirtualWidth-1u)];
+  for(PIdx=(int)Px0;PIdx<(int)Px1;PIdx++)
+  {
+    BgIndex=MaskBg;
+    if(PIdx>=(int)LeftMask)
+    {
+      Src=PIdx-(int)Fine+(int)Coarse;
+      BgIndex=BgRaw[(unsigned)Src&(VirtualWidth-1u)];
+    }
+
+    const uint16_t SpritePixel = V9958Screen7WideSpritePixel(R[PIdx>>1]);
+    P[PIdx]=SpritePixel? SpritePixel:XPal[BgIndex];
   }
 }
 

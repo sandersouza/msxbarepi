@@ -13,6 +13,7 @@ Este diretorio concentra utilitarios operacionais de build, validacao de ambient
 - Cria Initramfs (`msx.cpio`): `make-initramfs.sh`
 - Exporta a build em um pacote ZIP: `make-sdcard-package.sh`
 - Suite de benchmark/regressao: `perf-regression.sh`
+- Gera discos `.DSK` de debug V9958: `build-v9958-debug-disks.py`
 - Fluxo oficial de preparo de SD (formatando): `prepare-sd.sh`
 - Atualizacao incremental de SD (sem formatar): `update-sd-incremental.sh`
 
@@ -218,6 +219,35 @@ Exemplo:
 ### Observacoes
 
 - Requer ao menos uma ROM (`*.ROM` ou `*.rom`) no diretorio de entrada.
+
+## 5.1) build-v9958-debug-disks.py
+
+### Funcao
+
+Gera imagens MSX FAT12 720KB em `sdcard/disks/DEBUG/` para a trilha de auditoria do V9958 (`#82`), com `AUTOEXEC.BAS` e programas BASIC de repro.
+
+### Como usar
+
+```bash
+python3 scripts/build-v9958-debug-disks.py
+```
+
+Diretorios customizados:
+
+```bash
+python3 scripts/build-v9958-debug-disks.py \
+  --output-dir sdcard/disks/DEBUG \
+  --source-copy-dir sdcard/disks/DEBUG/src
+```
+
+### Observacoes
+
+- Gera atualmente:
+  - `V9958_STS006_SRCH.DSK`
+  - `V9958_REG004_R17.DSK`
+- Cada disco tem `AUTOEXEC.BAS` no root e o programa principal correspondente.
+- O script tambem emite copias host dos programas BASIC em `sdcard/disks/DEBUG/src/`.
+- O fluxo oficial de `make sdcard` ignora `sdcard/disks/` por design; esses discos sao artefatos de apoio para debug/hardware, nao payload automatico do boot.
 - Ordena arquivos para gerar CPIO reproduzivel.
 - Se `CONFIG_MSXBARE_ONE_ROM_MODE=y` em `.config`:
   - com `CONFIG_MSXBARE_ONE_ROM_PATH` valido, injeta essa ROM como `CARTA.ROM` no CPIO;

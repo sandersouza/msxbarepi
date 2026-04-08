@@ -3,6 +3,12 @@
 
 #include <circle/types.h>
 
+typedef enum {
+    ComboDebugOverlayOff = 0,
+    ComboDebugOverlayMax = 1,
+    ComboDebugOverlayMin = 2
+} TComboDebugOverlayMode;
+
 enum TComboMenuAction {
     ComboMenuActionNone = 0,
     ComboMenuActionSeparator,
@@ -39,7 +45,8 @@ enum TComboMenuAction {
     ComboMenuActionCycleRenshaPrev,
     ComboMenuActionToggleFmMusic,
     ComboMenuActionToggleSccCart,
-    ComboMenuActionToggleOverlay,
+    ComboMenuActionCycleOverlay,
+    ComboMenuActionCycleOverlayPrev,
     ComboMenuActionToggleDebugLog,
     ComboMenuActionAudioGainChanged,
     ComboMenuActionApplyGameMasterCheat,
@@ -72,6 +79,7 @@ const TComboMenuItem *combo_menu_load_disk_items_get(unsigned language,
                                                       const char *drive2_name,
                                                       unsigned *count);
 const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
+                                                     boolean scale_max_fit_enabled,
                                                      unsigned max_scale_percent,
                                                      unsigned language,
                                                      unsigned resolution_mode,
@@ -89,7 +97,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
                                                      boolean scc_cart_enabled,
                                                      boolean scc_dual_cart_enabled,
                                                      boolean scc_dual_cart_available,
-                                                     boolean overlay_enabled,
+                                                     unsigned overlay_mode,
                                                      boolean overlay_available,
                                                      boolean debug_log_enabled,
                                                      unsigned audio_gain_percent,
@@ -99,7 +107,7 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned language,
                                                  boolean disk_rom_enabled,
                                                  boolean kanji_rom_enabled,
                                                  boolean kanji_rom_available,
-                                                 boolean overlay_enabled,
+                                                 unsigned overlay_mode,
                                                  boolean overlay_available,
                                                  boolean debug_log_enabled,
                                                  unsigned *count);

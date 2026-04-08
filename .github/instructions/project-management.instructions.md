@@ -28,8 +28,13 @@ applyTo:
 ## Branches
 
 - Branch de issue deve ser vinculada a issue de origem.
+- Quando uma issue atuar como umbrella/epic com branch propria, cada sub-issue operacional deve nascer em branch derivada da branch umbrella, e nao diretamente de `main`.
+- Nessa topologia, a branch da sub-issue deve abrir PR para a branch umbrella; a branch umbrella so abre PR para `main` ao consolidar a trilha.
 - Branch de release deve seguir padrao `release/<versao>`.
 - Nunca reescrever historico da `main`.
+- Nem `git commit` local nem `git push` devem acontecer durante iteracoes experimentais da issue; ambos so sao permitidos quando o usuario declarar explicitamente que o estado atual da issue esta estavel.
+- Nao publicar nem consolidar cortes intermediarios apenas para backup/sincronizacao; manter iteracoes experimentais somente no worktree ate confirmacao do usuario.
+- Se um commit local for feito por engano antes da estabilidade da issue, desfazer imediatamente esse commit de volta ao worktree antes de continuar.
 - Antes de remover branch local, confirmar com o usuario.
 
 ## Ciclo de issue/board
@@ -47,7 +52,8 @@ applyTo:
 
 ## PRs
 
-- Ao concluir issue estavel, abrir PR da branch da issue para `main`.
+- Ao concluir issue estavel sem umbrella ativa, abrir PR da branch da issue para `main`.
+- Ao concluir sub-issue que esteja trabalhando sob uma umbrella branch ativa, abrir PR da branch da sub-issue para a branch umbrella correspondente.
 - Enviar link do PR para aprovacao/review antes de seguir para proxima issue.
 - Garantir labels coerentes entre issue e PR (prioridade/tipo/area/beta).
 

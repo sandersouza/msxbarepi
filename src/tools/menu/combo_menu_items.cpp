@@ -114,6 +114,39 @@ static unsigned AudioGainUiLevelFromPercent(unsigned percent)
     return (percent * 9u + 50u) / 100u;
 }
 
+static unsigned MenuScaleFactorFromPercent(unsigned percent)
+{
+    if (percent <= 200u)
+    {
+        return 1u;
+    }
+    if (percent < 250u)
+    {
+        percent = 250u;
+    }
+    if (percent > 450u)
+    {
+        percent = 450u;
+    }
+    return 2u + ((percent - 250u) / 50u);
+}
+
+static const char *MenuOverlayModeFlag(const TComboLocaleStrings *locale, unsigned overlay_mode)
+{
+    if (locale == 0)
+    {
+        return "";
+    }
+
+    switch (overlay_mode)
+    {
+    case ComboDebugOverlayMax: return locale->flag_max;
+    case ComboDebugOverlayMin: return locale->flag_min;
+    case ComboDebugOverlayOff:
+    default: return locale->flag_off;
+    }
+}
+
 static void BuildLabelFlag(char *dst, unsigned dst_size, const char *label, const char *flag)
 {
     if (dst == 0 || dst_size == 0u)
@@ -340,6 +373,7 @@ const TComboMenuItem *combo_menu_load_disk_items_get(unsigned language,
 }
 
 const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
+                                                     boolean scale_max_fit_enabled,
                                                      unsigned max_scale_percent,
                                                      unsigned language,
                                                      unsigned resolution_mode,
@@ -357,7 +391,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
                                                      boolean scc_cart_enabled,
                                                      boolean scc_dual_cart_enabled,
                                                      boolean scc_dual_cart_available,
-                                                     boolean overlay_enabled,
+                                                     unsigned overlay_mode,
                                                      boolean overlay_available,
                                                      boolean debug_log_enabled,
                                                      unsigned audio_gain_percent,
@@ -386,10 +420,8 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     }
 
     language = combo_locale_clamp_language(language);
-    if (scale_percent < 250u) scale_percent = 250u;
-    if (max_scale_percent < 250u) max_scale_percent = 250u;
-    if (max_scale_percent > 450u) max_scale_percent = 450u;
-    if (scale_percent > max_scale_percent) scale_percent = max_scale_percent;
+    if (scale_percent < 200u) scale_percent = 200u;
+    if (max_scale_percent < 200u) max_scale_percent = 200u;
     if (resolution_mode > 3u) resolution_mode = 0u;
     if (scanline_mode > 2u) scanline_mode = 2u;
     machine_profile = machine_profile_clamp(machine_profile);
@@ -401,7 +433,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     if (audio_gain_percent > 100u) audio_gain_percent = 100u;
     (void) refresh_rate_hz;
     (void) disk_rom_enabled;
-    (void) overlay_enabled;
+    (void) overlay_mode;
     (void) overlay_available;
     (void) debug_log_enabled;
 
@@ -410,15 +442,16 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
                    resolution_mode == 0u ? locale->resolution_auto
                    : (resolution_mode == 1u ? locale->resolution_1080
                    : (resolution_mode == 2u ? locale->resolution_720 : locale->resolution_768)));
-
-    char scale_flag[4];
-    unsigned scale_factor = 1u + ((scale_percent - 250u) / 50u);
-    if (scale_factor < 1u) scale_factor = 1u;
-    if (scale_factor > 5u) scale_factor = 5u;
-    scale_flag[0] = (char) ('0' + (scale_factor % 10u));
-    scale_flag[1] = 'x';
-    scale_flag[2] = '\0';
-    BuildLabelFlag(scale_label, sizeof(scale_label), locale->settings_scale, scale_flag);
+    {
+        char scale_flag[8];
+        const unsigned scale_factor = MenuScaleFactorFromPercent(scale_percent);
+        (void) scale_max_fit_enabled;
+        (void) max_scale_percent;
+        scale_flag[0] = (char) ('0' + (scale_factor % 10u));
+        scale_flag[1] = 'x';
+        scale_flag[2] = '\0';
+        BuildLabelFlag(scale_label, sizeof(scale_label), locale->settings_scale, scale_flag);
+    }
 
     BuildLabelFlag(widescreen_label, sizeof(widescreen_label), locale->settings_widescreen, widescreen_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(scanline_label, sizeof(scanline_label), locale->settings_scanlines,
@@ -438,7 +471,9 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     BuildLabelFlag(megaram_label, sizeof(megaram_label), locale->settings_megaram,
                    megaram_kb == 0u ? locale->flag_off : (megaram_kb == 512u ? "512" : (megaram_kb == 1024u ? "1024" : "256")));
     BuildLabelFlag(turbo_label, sizeof(turbo_label), locale->settings_z80_turbo,
-                   z80_turbo_mode == 0u ? "NORM" : (z80_turbo_mode == 1u ? "PAN" : "MAX"));
+                   z80_turbo_mode == 0u ? "NORM"
+                   : (z80_turbo_mode == 1u ? "PAN"
+                   : "MAX"));
     BuildLabelFlag(rensha_label, sizeof(rensha_label), locale->settings_rensha,
                    rensha_mode == 0u ? locale->flag_off : (rensha_mode == 1u ? "1" : (rensha_mode == 2u ? "2" : "3")));
     BuildLabelFlag(fm_music_label, sizeof(fm_music_label), locale->settings_fm_music, fm_music_enabled ? locale->flag_on : locale->flag_off);
@@ -538,7 +573,7 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned language,
                                                  boolean disk_rom_enabled,
                                                  boolean kanji_rom_enabled,
                                                  boolean kanji_rom_available,
-                                                 boolean overlay_enabled,
+                                                 unsigned overlay_mode,
                                                  boolean overlay_available,
                                                  boolean debug_log_enabled,
                                                  unsigned *count)
@@ -557,7 +592,7 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned language,
     }
 
     BuildLabelFlag(overlay_label, sizeof(overlay_label), locale->settings_debugger,
-                   overlay_enabled ? locale->flag_on : locale->flag_off);
+                   MenuOverlayModeFlag(locale, overlay_mode));
     BuildLabelFlag(debug_log_label, sizeof(debug_log_label), locale->settings_sd_log,
                    debug_log_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(disk_rom_label, sizeof(disk_rom_label), locale->settings_disk_rom,
@@ -578,7 +613,7 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned language,
 
     if (MSXBARE_ENABLE_DEBUG_OVERLAY)
     {
-        ADD_DEBUG_ITEM(overlay_label, ComboMenuActionToggleOverlay, overlay_available ? TRUE : FALSE);
+        ADD_DEBUG_ITEM(overlay_label, ComboMenuActionCycleOverlay, overlay_available ? TRUE : FALSE);
         ADD_DEBUG_ITEM(debug_log_label, ComboMenuActionToggleDebugLog, TRUE);
         ADD_DEBUG_ITEM(disk_rom_label, ComboMenuActionToggleDiskRom, TRUE);
         ADD_DEBUG_ITEM(kanji_rom_label, ComboMenuActionToggleKanjiRom, TRUE);

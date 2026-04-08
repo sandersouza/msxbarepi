@@ -166,6 +166,11 @@ static unsigned AudioGainPercentFromUiLevel(unsigned level)
     return (level * 100u + 4u) / 9u;
 }
 
+static unsigned ComboClampOverlayMode(unsigned mode)
+{
+    return (mode <= ComboDebugOverlayMin) ? mode : ComboDebugOverlayOff;
+}
+
 static void ComboClearPixels(TScreenColor *buffer, unsigned count)
 {
     if (buffer == 0 || count == 0u)
@@ -753,9 +758,10 @@ CComboPauseMenu::CComboPauseMenu(void)
   m_Col(1),
   m_Selected(0),
   m_LastDrawnSelected(0xFFFFFFFFu),
-  m_Visible(FALSE),
+    m_Visible(FALSE),
     m_View(MenuViewRoot),
     m_ScalePercent(250u),
+    m_ScaleMaxFitEnabled(FALSE),
     m_MaxScalePercent(450u),
     m_Language(ComboLanguageEN),
     m_ResolutionMode(0u),
@@ -775,7 +781,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_SccCartEnabled(TRUE),
     m_SccDualCartEnabled(FALSE),
     m_SccDualCartAvailable(TRUE),
-    m_OverlayEnabled(FALSE),
+    m_OverlayMode(ComboDebugOverlayOff),
     m_OverlayAvailable(FALSE),
     m_DebugLogEnabled(FALSE),
     m_AudioGainPercent(50u),
@@ -835,7 +841,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnSccCart(TRUE),
     m_LastDrawnSccDualCart(FALSE),
     m_LastDrawnSccDualCartAvailable(TRUE),
-    m_LastDrawnOverlay(FALSE),
+    m_LastDrawnOverlayMode(ComboDebugOverlayOff),
     m_LastDrawnOverlayAvailable(FALSE),
     m_LastDrawnDebugLogEnabled(FALSE),
     m_LastDrawnAudioGainPercent(50u),
@@ -960,6 +966,7 @@ void CComboPauseMenu::Reset(void)
     m_LastBackPressed = FALSE;
     m_LastDrawnView = MenuViewRoot;
     m_LastDrawnScalePercent = m_ScalePercent;
+    m_LastDrawnScaleMaxFitEnabled = m_ScaleMaxFitEnabled;
     m_LastDrawnMaxScalePercent = m_MaxScalePercent;
     m_LastDrawnLanguage = m_Language;
     m_LastDrawnResolutionMode = m_ResolutionMode;
@@ -977,7 +984,7 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnSccCart = m_SccCartEnabled;
     m_LastDrawnSccDualCart = m_SccDualCartEnabled;
     m_LastDrawnSccDualCartAvailable = m_SccDualCartAvailable;
-    m_LastDrawnOverlay = m_OverlayEnabled;
+    m_LastDrawnOverlayMode = m_OverlayMode;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
     m_LastDrawnDebugLogEnabled = m_DebugLogEnabled;
     m_LastDrawnAudioGainPercent = m_AudioGainPercent;
@@ -1029,7 +1036,7 @@ void CComboPauseMenu::Reset(void)
 
 void CComboPauseMenu::SetScalePercent(unsigned percent)
 {
-    if (percent < 250u)
+    if (percent != 200u && percent < 250u)
     {
         percent = 250u;
     }
@@ -1043,9 +1050,19 @@ void CComboPauseMenu::SetScalePercent(unsigned percent)
     }
 }
 
+void CComboPauseMenu::SetScaleMaxFitEnabled(boolean enabled)
+{
+    (void) enabled;
+    if (m_ScaleMaxFitEnabled != FALSE)
+    {
+        m_ScaleMaxFitEnabled = FALSE;
+        m_ForceRedraw = TRUE;
+    }
+}
+
 void CComboPauseMenu::SetMaxScalePercent(unsigned percent)
 {
-    if (percent < 250u) percent = 250u;
+    if (percent < 200u) percent = 200u;
     if (percent > 450u) percent = 450u;
     if (m_MaxScalePercent != percent)
     {
@@ -1094,6 +1111,11 @@ unsigned CComboPauseMenu::GetResolutionMode(void) const
 unsigned CComboPauseMenu::GetScalePercent(void) const
 {
     return m_ScalePercent;
+}
+
+boolean CComboPauseMenu::IsScaleMaxFitEnabled(void) const
+{
+    return FALSE;
 }
 
 void CComboPauseMenu::SetWidescreenEnabled(boolean enabled)
@@ -1318,11 +1340,13 @@ void CComboPauseMenu::SetSccDualCartState(boolean enabled, boolean available)
     }
 }
 
-void CComboPauseMenu::SetOverlayEnabled(boolean enabled, boolean available)
+void CComboPauseMenu::SetOverlayMode(unsigned mode, boolean available)
 {
-    if (m_OverlayEnabled != enabled || m_OverlayAvailable != available)
+    mode = ComboClampOverlayMode(mode);
+    available = available ? TRUE : FALSE;
+    if (m_OverlayMode != mode || m_OverlayAvailable != available)
     {
-        m_OverlayEnabled = enabled;
+        m_OverlayMode = mode;
         m_OverlayAvailable = available;
         m_ForceRedraw = TRUE;
     }
@@ -1713,6 +1737,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
     {
         return combo_menu_settings_items_get(
             m_ScalePercent,
+            m_ScaleMaxFitEnabled,
             m_MaxScalePercent,
             m_Language,
             m_ResolutionMode,
@@ -1730,7 +1755,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_SccCartEnabled,
             m_SccDualCartEnabled,
             m_SccDualCartAvailable,
-            m_OverlayEnabled,
+            m_OverlayMode,
             m_OverlayAvailable,
             m_DebugLogEnabled,
             m_AudioGainPercent,
@@ -1744,7 +1769,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_DiskRomEnabled,
             m_KanjiRomEnabled,
             m_KanjiRomAvailable,
-            m_OverlayEnabled,
+            m_OverlayMode,
             m_OverlayAvailable,
             m_DebugLogEnabled,
             count);
@@ -2435,16 +2460,28 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             unsigned next_value = m_ScalePercent;
             if (left_step)
             {
-                next_value = (next_value <= 250u) ? 250u : (next_value - 50u);
+                next_value = (next_value <= 250u) ? 200u : (next_value - 50u);
             }
             if (right_step || enter_edge)
             {
-                next_value = (next_value >= m_MaxScalePercent) ? m_MaxScalePercent : (next_value + 50u);
+                if (next_value == 200u)
+                {
+                    next_value = (m_MaxScalePercent >= 250u) ? 250u : 200u;
+                }
+                else if (next_value < m_MaxScalePercent)
+                {
+                    next_value += 50u;
+                    if (next_value > m_MaxScalePercent)
+                    {
+                        next_value = m_MaxScalePercent;
+                    }
+                }
             }
 
             if (next_value != m_ScalePercent)
             {
                 m_ScalePercent = next_value;
+                m_ScaleMaxFitEnabled = FALSE;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
                 action = ComboMenuActionOverscanChanged;
@@ -2646,22 +2683,29 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         else if ((items[m_Selected].action == ComboMenuActionToggleWidescreen)
               || (items[m_Selected].action == ComboMenuActionToggleDiskRom)
               || (items[m_Selected].action == ComboMenuActionToggleKanjiRom)
-              || (items[m_Selected].action == ComboMenuActionToggleOverlay)
+              || (items[m_Selected].action == ComboMenuActionCycleOverlay)
               || (items[m_Selected].action == ComboMenuActionToggleDebugLog))
         {
-            if (enter_edge || left_step || right_step)
+            if (items[m_Selected].action == ComboMenuActionCycleOverlay)
+            {
+                if (left_step)
+                {
+                    action = ComboMenuActionCycleOverlayPrev;
+                    m_ForceRedraw = TRUE;
+                    m_ForceHighlightRedraw = FALSE;
+                }
+                else if (right_step || enter_edge)
+                {
+                    action = ComboMenuActionCycleOverlay;
+                    m_ForceRedraw = TRUE;
+                    m_ForceHighlightRedraw = FALSE;
+                }
+            }
+            else if (enter_edge || left_step || right_step)
             {
                 action = items[m_Selected].action;
-                if (items[m_Selected].action == ComboMenuActionToggleWidescreen)
-                {
-                    m_ForceRedraw = TRUE;
-                    m_ForceHighlightRedraw = FALSE;
-                }
-                else
-                {
-                    m_ForceRedraw = TRUE;
-                    m_ForceHighlightRedraw = FALSE;
-                }
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
             }
             handled_settings_input = enter_edge || left_step || right_step;
         }
@@ -2966,6 +3010,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnSelected == m_Selected
      && m_LastDrawnView == m_View
      && m_LastDrawnScalePercent == m_ScalePercent
+     && m_LastDrawnScaleMaxFitEnabled == m_ScaleMaxFitEnabled
      && m_LastDrawnMaxScalePercent == m_MaxScalePercent
      && m_LastDrawnLanguage == m_Language
      && m_LastDrawnResolutionMode == m_ResolutionMode
@@ -2985,7 +3030,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnSccCart == m_SccCartEnabled
      && m_LastDrawnSccDualCart == m_SccDualCartEnabled
      && m_LastDrawnSccDualCartAvailable == m_SccDualCartAvailable
-     && m_LastDrawnOverlay == m_OverlayEnabled
+     && m_LastDrawnOverlayMode == m_OverlayMode
      && m_LastDrawnOverlayAvailable == m_OverlayAvailable
      && m_LastDrawnDebugLogEnabled == m_DebugLogEnabled
      && m_LastDrawnAudioGainPercent == m_AudioGainPercent
@@ -3277,6 +3322,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnSelected = m_Selected;
     m_LastDrawnView = m_View;
     m_LastDrawnScalePercent = m_ScalePercent;
+    m_LastDrawnScaleMaxFitEnabled = m_ScaleMaxFitEnabled;
     m_LastDrawnMaxScalePercent = m_MaxScalePercent;
     m_LastDrawnLanguage = m_Language;
     m_LastDrawnResolutionMode = m_ResolutionMode;
@@ -3296,7 +3342,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnSccCart = m_SccCartEnabled;
     m_LastDrawnSccDualCart = m_SccDualCartEnabled;
     m_LastDrawnSccDualCartAvailable = m_SccDualCartAvailable;
-    m_LastDrawnOverlay = m_OverlayEnabled;
+    m_LastDrawnOverlayMode = m_OverlayMode;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
     m_LastDrawnDebugLogEnabled = m_DebugLogEnabled;
     m_LastDrawnAudioGainPercent = m_AudioGainPercent;

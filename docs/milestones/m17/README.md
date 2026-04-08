@@ -5,7 +5,7 @@
 - Título: FIX: Minor Issues / Other Issues
 - Estado: open
 - Due date: sem-data
-- Open issues: 7
+- Open issues: 9
 - Closed issues: 13
 - URL: https://github.com/sandersouza/msxbarepi/milestone/17
 
@@ -18,3 +18,4 @@ FIX diversos para pequenos problemas encontrados, que não afetem o funcionament
 - Baseline de calibração A/V para iterações futuras
 - Correções de input (Rensha Turbo + latência de teclado)
 - Correção de glitch de scroll fino V9958 (caso GRADIUS2E)
+- Follow-ups residuais de demos/jogos já estabilizados no core

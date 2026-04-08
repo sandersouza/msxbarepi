@@ -18,6 +18,14 @@ typedef struct {
 } TFmsxRuntimeStatus;
 
 typedef struct {
+    unsigned logical_width;
+    unsigned logical_height;
+    unsigned hires_mode;
+    unsigned interlaced_mode;
+    unsigned woven_hires;
+} TFmsxVideoPresentation;
+
+typedef struct {
     unsigned write_calls;
     unsigned samples_written;
     unsigned samples_pulled;
@@ -257,9 +265,20 @@ typedef struct {
     unsigned reg25;
     unsigned reg26;
     unsigned reg27;
+    unsigned reg17;
     unsigned reg19;
     unsigned reg1;
     unsigned reg7;
+    unsigned status8;
+    unsigned status9;
+    unsigned last_status_read_reg;
+    unsigned last_status_read_value;
+    unsigned last_port99_op;
+    unsigned last_port99_value;
+    unsigned last_port99_alatch;
+    unsigned last_port99_vkey;
+    unsigned last_port99_r15;
+    unsigned last_port99_pc;
     unsigned screen_on;
     unsigned ie0_enabled;
     unsigned vblank_flag;
@@ -328,6 +347,10 @@ typedef struct {
     unsigned vdp_port99_reads;
     unsigned vdp_port99_writes;
     unsigned vdp_port9b_writes;
+    unsigned vdp_port9b_last_reg17_before;
+    unsigned vdp_port9b_last_target;
+    unsigned vdp_port9b_last_reg17_after;
+    unsigned vdp_port9b_last_value;
     unsigned trace_last_event_type;
     unsigned trace_last_window;
     unsigned trace_last_pc;
@@ -391,6 +414,7 @@ void fmsx_runtime_keyboard_drain_step(void);
 void fmsx_runtime_keyboard_reset_pipeline(void);
 void fmsx_runtime_set_overscan(boolean enabled);
 void fmsx_runtime_set_refresh_hz(unsigned hz);
+void fmsx_runtime_debug_force_refresh_hz(unsigned hz);
 unsigned fmsx_runtime_get_refresh_hz(void);
 unsigned fmsx_runtime_get_z80_turbo_percent(void);
 uint64_t fmsx_runtime_get_frame_interval_us_exact(void);
@@ -466,6 +490,7 @@ void fmsx_runtime_set_load_diag(unsigned stage);
 unsigned fmsx_runtime_get_load_diag(void);
 TFmsxRuntimeStatus fmsx_runtime_get_status(void);
 unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsigned *height);
+void fmsx_runtime_get_video_presentation(TFmsxVideoPresentation *presentation);
 unsigned fmsx_audio_pull_samples(int16_t *dst, unsigned max_samples);
 void fmsx_audio_get_stats(TFmsxAudioStats *stats);
 void fmsx_keyboard_get_debug(TFmsxKeyboardDebug *stats);

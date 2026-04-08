@@ -84,6 +84,18 @@ extern uint32_t FmsxIE1FiredHBlankCount;
 extern uint32_t FmsxVDPPort99ReadCount;
 extern uint32_t FmsxVDPPort99WriteCount;
 extern uint32_t FmsxVDPPort9BWriteCount;
+extern uint8_t FmsxVDPPort9BLastReg17Before;
+extern uint8_t FmsxVDPPort9BLastTarget;
+extern uint8_t FmsxVDPPort9BLastReg17After;
+extern uint8_t FmsxVDPPort9BLastValue;
+extern uint8_t FmsxVDPLastStatusReadReg;
+extern uint8_t FmsxVDPLastStatusReadValue;
+extern uint8_t FmsxVDPLastPort99Op;
+extern uint8_t FmsxVDPLastPort99Value;
+extern uint8_t FmsxVDPLastPort99ALatch;
+extern uint8_t FmsxVDPLastPort99VKey;
+extern uint8_t FmsxVDPLastPort99R15;
+extern uint16_t FmsxVDPLastPort99PC;
 extern uint32_t FmsxVDPRegWriteCount[64];
 extern uint32_t FmsxVDPStatusReadCount[16];
 extern uint32_t FmsxKanjiReadCount;
@@ -95,6 +107,7 @@ extern uint8_t SSL[4];
 extern uint8_t ScrMode;
 extern uint8_t VDP[64];
 extern uint8_t VDPStatus[16];
+extern void VDPOut(uint8_t R,uint8_t V);
 extern AY8910 PSG;
 extern YM2413 OPLL;
 extern uint8_t fmsx_vdp_get_status1_live(void);
@@ -103,6 +116,7 @@ extern uint8_t fmsx_vdp_get_ie1_target_line(void);
 extern int fmsx_vdp_get_ie1_target_delta(void);
 extern uint8_t fmsx_vdp_get_effective_odd_page(void);
 extern uint8_t fmsx_vdp_get_render_page(void);
+extern void fmsx_video_get_presentation(TFmsxVideoPresentation *presentation);
 extern void fmsx_vdp_trace_get_view(const TFmsxVDPTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
 extern void fmsx_kmg_trace_get_view(const TFmsxKmgTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
 extern void fmsx_scc_trace_get_view(const TFmsxSCCTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
@@ -1487,6 +1501,35 @@ void fmsx_runtime_set_refresh_hz(unsigned hz)
     fmsx_audio_reanchor_stream_timing();
 }
 
+void fmsx_runtime_debug_force_refresh_hz(unsigned hz)
+{
+    const unsigned clamped = (hz == 50u) ? 50u : 60u;
+
+    g_refresh_hz = clamped;
+
+    if (!g_fmsx_status.running)
+    {
+        fmsx_audio_reanchor_stream_timing();
+        return;
+    }
+
+    if (MODEL(MSX_MSX1))
+    {
+        fmsx_audio_reanchor_stream_timing();
+        return;
+    }
+
+    {
+        const uint8_t next_r9 = (clamped == 50u) ? (uint8_t)(VDP[9] | 0x02u) : (uint8_t)(VDP[9] & ~0x02u);
+        if (VDP[9] != next_r9)
+        {
+            VDPOut(9u, next_r9);
+        }
+    }
+
+    fmsx_audio_reanchor_stream_timing();
+}
+
 unsigned fmsx_runtime_get_refresh_hz(void)
 {
     return fmsx_runtime_effective_refresh_hz();
@@ -2281,9 +2324,20 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
     stats->reg25 = (unsigned) VDP[25];
     stats->reg26 = (unsigned) VDP[26];
     stats->reg27 = (unsigned) VDP[27];
+    stats->reg17 = (unsigned) VDP[17];
     stats->reg19 = (unsigned) VDP[19];
     stats->reg1 = (unsigned) VDP[1];
     stats->reg7 = (unsigned) VDP[7];
+    stats->status8 = (unsigned) VDPStatus[8];
+    stats->status9 = (unsigned) VDPStatus[9];
+    stats->last_status_read_reg = (unsigned) FmsxVDPLastStatusReadReg;
+    stats->last_status_read_value = (unsigned) FmsxVDPLastStatusReadValue;
+    stats->last_port99_op = (unsigned) FmsxVDPLastPort99Op;
+    stats->last_port99_value = (unsigned) FmsxVDPLastPort99Value;
+    stats->last_port99_alatch = (unsigned) FmsxVDPLastPort99ALatch;
+    stats->last_port99_vkey = (unsigned) FmsxVDPLastPort99VKey;
+    stats->last_port99_r15 = (unsigned) FmsxVDPLastPort99R15;
+    stats->last_port99_pc = (unsigned) FmsxVDPLastPort99PC;
     stats->screen_on = (VDP[1] & 0x40u) ? 1u : 0u;
     stats->ie0_enabled = (VDP[1] & 0x20u) ? 1u : 0u;
     stats->vblank_flag = (VDPStatus[0] & 0x80u) ? 1u : 0u;
@@ -2406,6 +2460,10 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
         VDP_DELTA(stats->vdp_port9b_writes,FmsxVDPPort9BWriteCount,     s_p9b);
 #undef VDP_DELTA
     }
+    stats->vdp_port9b_last_reg17_before = (unsigned) FmsxVDPPort9BLastReg17Before;
+    stats->vdp_port9b_last_target = (unsigned) FmsxVDPPort9BLastTarget;
+    stats->vdp_port9b_last_reg17_after = (unsigned) FmsxVDPPort9BLastReg17After;
+    stats->vdp_port9b_last_value = (unsigned) FmsxVDPPort9BLastValue;
     {
         TFmsxVDPTraceView trace_view;
         const TFmsxVDPTraceEvent *last_event = 0;
@@ -2540,4 +2598,20 @@ unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsig
         return 0u;
     }
     return fmsx_video_get_latest(pixels, width, height);
+}
+
+void fmsx_runtime_get_video_presentation(TFmsxVideoPresentation *presentation)
+{
+    if (presentation == 0)
+    {
+        return;
+    }
+
+    memset(presentation, 0, sizeof(*presentation));
+    if (g_boot_video_gate_frames_remaining > 0u)
+    {
+        return;
+    }
+
+    fmsx_video_get_presentation(presentation);
 }

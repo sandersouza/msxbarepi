@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
 LOG="/tmp/msx2p-boot-serial.log"
-DEV="/dev/cu.usbserial-12410"
+DEV="/dev/cu.usbserial-21230"
 BAUD="115200"
 
-rm -f "$LOG"
+if [ -f "$LOG" ]; then
+    echo "Clearing serial log $LOG"
+    rm -Rf $LOG
+fi
 
-screen -L -c <(echo "logfile $LOG") "$DEV" "$BAUD"
+echo "Logging serial output to $LOG"
+TERM=xterm minicom -o -D $DEV -b $BAUD -8 -C $LOG
