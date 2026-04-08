@@ -147,6 +147,10 @@ boolean combo_viewport_screenshot_capture_from_emulator(const u16 *src_pixels,
                                                         unsigned dst_y,
                                                         unsigned dst_w,
                                                         unsigned dst_h,
+                                                        unsigned full_dst_w,
+                                                        unsigned full_dst_h,
+                                                        unsigned crop_x,
+                                                        unsigned crop_y,
                                                         unsigned scanline_mode)
 {
     if (src_pixels == 0 || src_w == 0u || src_h == 0u || dst_w == 0u || dst_h == 0u)
@@ -167,16 +171,36 @@ boolean combo_viewport_screenshot_capture_from_emulator(const u16 *src_pixels,
         return FALSE;
     }
 
+    if (full_dst_w == 0u)
+    {
+        full_dst_w = dst_w;
+    }
+    if (full_dst_h == 0u)
+    {
+        full_dst_h = dst_h;
+    }
+    if (crop_x >= full_dst_w)
+    {
+        crop_x = 0u;
+    }
+    if (crop_y >= full_dst_h)
+    {
+        crop_y = 0u;
+    }
+
     for (unsigned y = 0u; y < dst_h; ++y)
     {
-        const unsigned src_y = (unsigned) (((u64) y * (u64) src_h) / (u64) dst_h);
+        const unsigned src_y =
+            (unsigned) (((u64) (y + crop_y) * (u64) src_h) / (u64) full_dst_h);
         const u16 *src_row = src_pixels + (src_y * src_w);
         TScreenColor *dst_row = g_ViewportScreenshotBuffer + (y * dst_w);
         const boolean dark_lcd = (scanline_mode == 1u) && ((y & 1u) != 0u);
-        const boolean dark_crt = (scanline_mode == 2u) && IsCrtDimmedHalfRow(y, src_y, src_h, dst_h);
+        const boolean dark_crt =
+            (scanline_mode == 2u) && IsCrtDimmedHalfRow(y, src_y, src_h, dst_h);
         for (unsigned x = 0u; x < dst_w; ++x)
         {
-            const unsigned src_x = (unsigned) (((u64) x * (u64) src_w) / (u64) dst_w);
+            const unsigned src_x =
+                (unsigned) (((u64) (x + crop_x) * (u64) src_w) / (u64) full_dst_w);
             u16 sample = src_row[src_x];
             if (scanline_mode == 2u)
             {

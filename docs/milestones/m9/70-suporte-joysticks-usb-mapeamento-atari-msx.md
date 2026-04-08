@@ -5,3 +5,21 @@
 - Estado remoto: OPEN
 - Prioridade: P1
 - Labels: `priority:P1`, `type:feature`, `area:input`, `area:usb-hid`
+- Estado local atual: EM REVIEW
+- Branch ativa: `70-suporte-joysticks-usb-mapeamento-atari-msx`
+- Corte local atual:
+  - suporte funcional inicial a `upad1` confirmado
+  - mapeamento fixo Atari/MSX para pads conhecidos do Circle
+  - fallback generico via `hat/axes/buttons`
+  - submenu `JOYPAD MAPPING` no `F12` com captura continua ciclica, auto-entrada pelo primeiro comando do joystick e persistencia em `joy_map_*`
+  - navegacao do proprio menu por joystick USB (`A/B` + direcional)
+  - `Scale` movido de `Settings` para `Debug`
+  - `Debug OFF` agora usa escala automatica fixa por resolucao (`3x` em `720/768p`, `4x` em `1080p`)
+  - `Debug MIN/MAX` mantem `Scale` manual no menu `Debug`
+  - `JOYPAD MAPPING` volta a abrir apenas pelo seletor (`button 0` / `ENTER`), nao por qualquer direcao
+  - cada captura no `JOYPAD MAPPING` promove imediatamente o slot para o mapa efetivo
+  - `Save to disk` passa a gravar `joy_map_*` a partir do mapa atual do menu
+  - `START` do gamepad conhecido passa a atuar como pausa (`F12`)
+  - em `720p`, `Scale = 3x` volta a existir tambem no modo manual, com crop vertical central em vez de achatamento
+  - o snapshot do menu pausado em `720p/3x` agora usa a mesma geometria logica do blit principal (`768x729` com crop vertical central), evitando a pequena mudanca de escala ao abrir o menu
+  - rodada declarada estavel e pronta para PR

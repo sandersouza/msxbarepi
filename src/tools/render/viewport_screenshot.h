@@ -26,6 +26,10 @@ boolean combo_viewport_screenshot_capture_from_emulator(const u16 *src_pixels,
                                                         unsigned dst_y,
                                                         unsigned dst_w,
                                                         unsigned dst_h,
+                                                        unsigned full_dst_w,
+                                                        unsigned full_dst_h,
+                                                        unsigned crop_x,
+                                                        unsigned crop_y,
                                                         unsigned scanline_mode);
 boolean combo_viewport_screenshot_get(TViewportScreenshotView *out_view);
 uintptr combo_viewport_screenshot_address(void);

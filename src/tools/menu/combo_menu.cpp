@@ -777,6 +777,11 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_MegaRamKb(0u),
     m_Z80TurboMode(0u),
     m_RenshaMode(0u),
+    m_JoystickMapCodes{0u},
+    m_JoystickMapEditCodes{0u},
+    m_JoystickMapDirty(FALSE),
+    m_LastJoystickCaptureCode(0u),
+    m_JoystickMapReturnSelected(0u),
     m_FmMusicEnabled(TRUE),
     m_SccCartEnabled(TRUE),
     m_SccDualCartEnabled(FALSE),
@@ -1018,6 +1023,13 @@ void CComboPauseMenu::Reset(void)
     m_ForceContentRedraw = FALSE;
     m_SuppressNextRender = FALSE;
     m_RequestBackgroundRestore = FALSE;
+    m_JoystickMapDirty = FALSE;
+    m_LastJoystickCaptureCode = 0u;
+    m_JoystickMapReturnSelected = 0u;
+    for (unsigned i = 0u; i < CUsbHidGamepad::MapSlotCount; ++i)
+    {
+        m_JoystickMapEditCodes[i] = m_JoystickMapCodes[i];
+    }
     m_LastBoxValid = FALSE;
     ResetRepeatState();
     m_LastUpPressed = FALSE;
@@ -1308,6 +1320,42 @@ void CComboPauseMenu::SetRenshaMode(unsigned mode)
     }
 }
 
+void CComboPauseMenu::SetJoystickMapCodes(const u16 *codes, unsigned count)
+{
+    boolean changed = FALSE;
+
+    for (unsigned i = 0u; i < CUsbHidGamepad::MapSlotCount; ++i)
+    {
+        const u16 next = (codes != 0 && i < count) ? CUsbHidGamepad::ClampControlCode(codes[i]) : 0u;
+        if (m_JoystickMapCodes[i] != next || m_JoystickMapEditCodes[i] != next)
+        {
+            m_JoystickMapCodes[i] = next;
+            m_JoystickMapEditCodes[i] = next;
+            changed = TRUE;
+        }
+    }
+
+    if (changed)
+    {
+        m_JoystickMapDirty = FALSE;
+        m_LastJoystickCaptureCode = 0u;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+void CComboPauseMenu::GetJoystickMapCodes(u16 *codes, unsigned count) const
+{
+    if (codes == 0 || count == 0u)
+    {
+        return;
+    }
+
+    for (unsigned i = 0u; i < count; ++i)
+    {
+        codes[i] = (i < CUsbHidGamepad::MapSlotCount) ? m_JoystickMapCodes[i] : 0u;
+    }
+}
+
 void CComboPauseMenu::SetFmMusicEnabled(boolean enabled)
 {
     enabled = enabled ? TRUE : FALSE;
@@ -1580,12 +1628,23 @@ boolean CComboPauseMenu::IsInSettings(void) const
     return (m_View != MenuViewRoot) ? TRUE : FALSE;
 }
 
+boolean CComboPauseMenu::IsCapturingJoystickMap(void) const
+{
+    return (m_View == MenuViewJoystickMap) ? TRUE : FALSE;
+}
+
 void CComboPauseMenu::ReturnToRoot(void)
 {
     const unsigned old_view = m_View;
     m_View = MenuViewRoot;
     m_Selected = FindFirstSelectable();
-    const boolean silent_settings_back = (old_view == MenuViewSettings) ? TRUE : FALSE;
+    m_JoystickMapDirty = FALSE;
+    m_LastJoystickCaptureCode = 0u;
+    for (unsigned i = 0u; i < CUsbHidGamepad::MapSlotCount; ++i)
+    {
+        m_JoystickMapEditCodes[i] = m_JoystickMapCodes[i];
+    }
+    const boolean silent_settings_back = (old_view == MenuViewSettings || old_view == MenuViewJoystickMap) ? TRUE : FALSE;
     m_ForceRedraw = silent_settings_back ? FALSE : TRUE;
     m_ForceHighlightRedraw = FALSE;
     m_ForceContentRedraw = FALSE;
@@ -1736,9 +1795,6 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
     if (m_View == MenuViewSettings)
     {
         return combo_menu_settings_items_get(
-            m_ScalePercent,
-            m_ScaleMaxFitEnabled,
-            m_MaxScalePercent,
             m_Language,
             m_ResolutionMode,
             m_WidescreenEnabled,
@@ -1761,9 +1817,31 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_AudioGainPercent,
             count);
     }
+    if (m_View == MenuViewJoystickMap)
+    {
+        static char code_labels[CUsbHidGamepad::MapSlotCount][16];
+
+        for (unsigned i = 0u; i < CUsbHidGamepad::MapSlotCount; ++i)
+        {
+            CUsbHidGamepad::FormatControlCode(m_JoystickMapEditCodes[i], code_labels[i], sizeof(code_labels[i]));
+        }
+
+        return combo_menu_joystick_map_items_get(
+            m_Language,
+            code_labels[CUsbHidGamepad::MapSlotUp],
+            code_labels[CUsbHidGamepad::MapSlotDown],
+            code_labels[CUsbHidGamepad::MapSlotLeft],
+            code_labels[CUsbHidGamepad::MapSlotRight],
+            code_labels[CUsbHidGamepad::MapSlotButton1],
+            code_labels[CUsbHidGamepad::MapSlotButton2],
+            count);
+    }
     if (m_View == MenuViewDebug)
     {
         return combo_menu_debug_items_get(
+            m_ScalePercent,
+            m_OverlayMode == ComboDebugOverlayOff ? m_MaxScalePercent : m_ScalePercent,
+            m_MaxScalePercent,
             m_Language,
             m_RefreshRateHz,
             m_DiskRomEnabled,
@@ -1970,6 +2048,22 @@ unsigned CComboPauseMenu::FindFirstSelectable(void) const
     return 0u;
 }
 
+unsigned CComboPauseMenu::FindActionIndex(TComboMenuAction action) const
+{
+    unsigned item_count = 0u;
+    const TComboMenuItem *items = GetItems(&item_count);
+
+    for (unsigned i = 0u; i < item_count; ++i)
+    {
+        if (items[i].action == action)
+        {
+            return i;
+        }
+    }
+
+    return FindFirstSelectable();
+}
+
 unsigned CComboPauseMenu::FindPrevSelectable(unsigned from) const
 {
     unsigned item_count = 0u;
@@ -2022,7 +2116,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                                                boolean enter_pressed,
                                                boolean back_pressed,
                                                boolean delete_pressed,
-                                               char jump_letter)
+                                               char jump_letter,
+                                               u16 joystick_capture_code)
 {
     const unsigned old_view = m_View;
     const unsigned old_selected = m_Selected;
@@ -2057,6 +2152,38 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_LastEnterPressed = enter_pressed;
         m_LastDeletePressed = delete_pressed;
         return ComboMenuActionNone;
+    }
+
+    TComboMenuAction action = ComboMenuActionNone;
+    const boolean joystick_capture_edge =
+        (joystick_capture_code != 0u && joystick_capture_code != m_LastJoystickCaptureCode) ? TRUE : FALSE;
+
+    if (back_pressed && !m_LastBackPressed && m_View == MenuViewJoystickMap)
+    {
+        action = m_JoystickMapDirty ? ComboMenuActionApplyJoystickMap : ComboMenuActionNone;
+        for (unsigned i = 0u; i < CUsbHidGamepad::MapSlotCount; ++i)
+        {
+            m_JoystickMapCodes[i] = m_JoystickMapEditCodes[i];
+        }
+        m_View = MenuViewSettings;
+        m_Selected = m_JoystickMapReturnSelected;
+        m_JoystickMapDirty = FALSE;
+        m_LastJoystickCaptureCode = 0u;
+        m_ForceRedraw = TRUE;
+        m_ForceHighlightRedraw = FALSE;
+        m_ForceContentRedraw = FALSE;
+        m_RequestBackgroundRestore = TRUE;
+        ResetRepeatState();
+        m_LastBackPressed = back_pressed;
+        m_LastUpPressed = up_pressed;
+        m_LastDownPressed = down_pressed;
+        m_LastPageUpPressed = page_up_pressed;
+        m_LastPageDownPressed = page_down_pressed;
+        m_LastLeftPressed = left_pressed;
+        m_LastRightPressed = right_pressed;
+        m_LastEnterPressed = enter_pressed;
+        m_LastDeletePressed = delete_pressed;
+        return action;
     }
 
     if (back_pressed && !m_LastBackPressed && m_View != MenuViewRoot)
@@ -2098,12 +2225,64 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         return ComboMenuActionNone;
     }
 
+    if (m_View == MenuViewJoystickMap)
+    {
+        if (m_Selected >= CUsbHidGamepad::MapSlotCount)
+        {
+            m_Selected = 0u;
+        }
+
+        if (joystick_capture_edge)
+        {
+            joystick_capture_code = CUsbHidGamepad::ClampControlCode(joystick_capture_code);
+            boolean changed = FALSE;
+            for (unsigned i = 0u; i < CUsbHidGamepad::MapSlotCount; ++i)
+            {
+                if (i != m_Selected && m_JoystickMapEditCodes[i] == joystick_capture_code)
+                {
+                    m_JoystickMapEditCodes[i] = 0u;
+                    changed = TRUE;
+                }
+            }
+            if (m_JoystickMapEditCodes[m_Selected] != joystick_capture_code)
+            {
+                m_JoystickMapEditCodes[m_Selected] = joystick_capture_code;
+                changed = TRUE;
+            }
+            if (changed)
+            {
+                for (unsigned i = 0u; i < CUsbHidGamepad::MapSlotCount; ++i)
+                {
+                    m_JoystickMapCodes[i] = m_JoystickMapEditCodes[i];
+                }
+            }
+            m_JoystickMapDirty = TRUE;
+            m_Selected = (m_Selected + 1u) % CUsbHidGamepad::MapSlotCount;
+            m_ForceRedraw = TRUE;
+            m_ForceHighlightRedraw = FALSE;
+            m_ForceContentRedraw = FALSE;
+        }
+
+        m_LastJoystickCaptureCode = joystick_capture_code;
+        ResetRepeatState();
+        m_LastBackPressed = back_pressed;
+        m_LastUpPressed = up_pressed;
+        m_LastDownPressed = down_pressed;
+        m_LastPageUpPressed = page_up_pressed;
+        m_LastPageDownPressed = page_down_pressed;
+        m_LastLeftPressed = left_pressed;
+        m_LastRightPressed = right_pressed;
+        m_LastEnterPressed = enter_pressed;
+        m_LastDeletePressed = delete_pressed;
+        return ComboMenuActionNone;
+    }
+
     if (m_Selected >= item_count || !items[m_Selected].selectable)
     {
         m_Selected = FindFirstSelectable();
     }
 
-    TComboMenuAction action = ComboMenuActionNone;
+    m_LastJoystickCaptureCode = joystick_capture_code;
 
     if (m_View == MenuViewGameMasterCheats)
     {
@@ -2749,6 +2928,21 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         {
             action = ComboMenuActionGameMaster;
         }
+        else if (m_View == MenuViewSettings && items[m_Selected].action == ComboMenuActionOpenJoystickMap)
+        {
+            m_JoystickMapReturnSelected = m_Selected;
+            for (unsigned i = 0u; i < CUsbHidGamepad::MapSlotCount; ++i)
+            {
+                m_JoystickMapEditCodes[i] = m_JoystickMapCodes[i];
+            }
+            m_JoystickMapDirty = FALSE;
+            m_LastJoystickCaptureCode = joystick_capture_code;
+            m_View = MenuViewJoystickMap;
+            m_Selected = FindFirstSelectable();
+            m_ForceRedraw = TRUE;
+            m_ForceHighlightRedraw = FALSE;
+            m_RequestBackgroundRestore = TRUE;
+        }
         else if (m_View == MenuViewLoadRom
               && (items[m_Selected].action == ComboMenuActionCartridgeA || items[m_Selected].action == ComboMenuActionCartridgeB))
         {
@@ -2889,6 +3083,10 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     if (m_View == MenuViewSettings)
     {
         title = locale->title_settings;
+    }
+    else if (m_View == MenuViewJoystickMap)
+    {
+        title = locale->title_joystick_map;
     }
     else if (m_View == MenuViewDebug)
     {
@@ -3138,7 +3336,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         const unsigned row = 2u + i;
         const unsigned y = box_y + (row * cell_h);
         const unsigned text_len = ComboStrLen(items[i].label);
-        const boolean settings_row = (m_View == MenuViewSettings || m_View == MenuViewDebug);
+        const boolean settings_row = (m_View == MenuViewSettings || m_View == MenuViewDebug || m_View == MenuViewJoystickMap);
         const boolean load_media_row = (m_View == MenuViewLoadRom || m_View == MenuViewLoadDisk);
         const boolean browser_row = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser);
         const boolean cheat_list_row = (m_View == MenuViewGameMasterCheats);

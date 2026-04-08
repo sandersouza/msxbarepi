@@ -68,8 +68,11 @@ Objetivo: painel legivel no framebuffer HDMI com MMU/cache ativo, sem depender d
 - Overlay compacto no canto superior esquerdo.
 - O painel pode usar a largura horizontal inteira da linha quando isso ajudar a ficar contido até a `linha 15`.
 - Emulador segue rodando ao fundo.
-- O item `Scale` voltou a controlar o viewport do emulador.
-- O overlay de `DEBUG` nao altera mais o fator de zoom; ele deve continuar visivel em qualquer escala.
+- O item `Scale` agora vive no menu `Debug`, nao mais em `Settings`.
+- Com `Debugger = OFF`, o viewport ignora a escala manual e usa sempre o maximo fixo permitido pela resolucao atual:
+  - `720p/768p = 3x`
+  - `1080p = 4x`
+- Com `Debugger = MIN/MAX`, o viewport volta a usar o fator manual de `Scale`.
 - `Standard`: usa `logical_src_w x normalized_src_h` multiplicado pelo fator de `Scale`.
 - `HIRES` (`>=512` colunas): usa largura logica normal da mailbox e o mesmo fator de `Scale`.
 - `Widescreen [ON]`: mantem `16:9` apenas para modos nao-`HIRES`, mas continua respeitando o fator manual de `Scale`.
@@ -114,7 +117,8 @@ Diretriz visual (overlay e menu):
 - Anti-flicker: redesenhar menu apenas em mudanca de estado (mostrar/ocultar, selecao, reposicionamento).
 
 ## Menu relacionado
-- `Settings -> Debugger`: sempre aparece em builds `DEBUG=1` e opera diretamente como `MAX/MIN/OFF`.
+- `Debug -> Debugger`: sempre aparece em builds `DEBUG=1` e opera diretamente como `MAX/MIN/OFF`.
+- `Debug -> Scale`: so afeta o viewport quando `Debugger` estiver em `MIN` ou `MAX`.
 - Em builds com `DEBUG=1`, `Settings` volta a mostrar `Refresh [NTSC/PAL]` logo abaixo de `Disk ROM` para diagnostico.
 - Nesse caminho de diagnostico, o toggle agora atua no estado efetivo do VDP em runtime:
   - em `MSX2/MSX2+`, ele força `R#9 bit1` (`PAL/NTSC`) no core local;

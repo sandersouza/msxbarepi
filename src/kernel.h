@@ -6,6 +6,7 @@
 #include "combo_screen_device.h"
 #include "media_catalog.h"
 #include "emulator_backend.h"
+#include "tools/usb_hid_gamepad.h"
 #include "tools/usb_hid_keyboard.h"
 
 #include <circle/actled.h>
@@ -79,6 +80,7 @@ private:
     void ResetEmulationRuntimeState(void);
     void ExitPauseForBackendAction(void);
     void UpdateJoystickFromRaw(unsigned char modifiers, const unsigned char raw_keys[6]);
+    u8 ResolveRuntimeJoystickBits(void) const;
     void PushKeyboardStateToRuntime(boolean rensha_fire_on);
     void SetDebugOverlayMode(unsigned mode);
     void SetUartTelemetryEnabled(boolean enabled);
@@ -119,6 +121,7 @@ private:
     FATFS m_SettingsFileSystem;
 
     CSoundBaseDevice *m_Sound;
+    CUsbHidGamepad m_UsbGamepad;
     CUsbHidKeyboard m_UsbKeyboard;
 
     u32 m_AudioPhase;

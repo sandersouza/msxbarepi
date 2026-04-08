@@ -13,6 +13,7 @@ typedef struct {
     const char *title_pause;
     const char *title_settings;
     const char *title_debug;
+    const char *title_joystick_map;
     const char *title_load_rom;
     const char *title_load_disk;
     const char *title_game_master;
@@ -54,6 +55,7 @@ typedef struct {
     const char *settings_mapper;
     const char *settings_megaram;
     const char *settings_z80_turbo;
+    const char *settings_joystick_map;
     const char *settings_rensha;
     const char *settings_fm_music;
     const char *settings_scc_cart;
@@ -61,6 +63,13 @@ typedef struct {
     const char *settings_sd_log;
     const char *settings_audio_gain;
     const char *settings_save;
+    const char *joystick_map_up;
+    const char *joystick_map_down;
+    const char *joystick_map_left;
+    const char *joystick_map_right;
+    const char *joystick_map_button1;
+    const char *joystick_map_button2;
+    const char *joystick_map_return;
     const char *flag_off;
     const char *flag_on;
     const char *flag_min;
