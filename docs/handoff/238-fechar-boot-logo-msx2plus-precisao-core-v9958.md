@@ -2807,27 +2807,83 @@ Fechar a issue `#238` implementando a precisao minima de core do `V9958 stock` n
   - sem `commit`
   - sem `push`
 
-## Atualizacao incremental de 08/04/2026 - `Scale [MAX]` fixo e seguro para `HIRES/interlaced`
+## Atualizacao incremental de 08/04/2026 - `Scale` volta a ser puramente numerico
 
-- A rodada seguinte confirmou que o gargalo residual de `MAX` nao estava mais no core da emulacao; era fill-rate puro do presenter:
-  - `1x / Screen 7 / Hires ~= 60fps`
-  - `2x / Screen 7 / Hires ~= 60fps`
-  - `MAX / Screen 7 / Hires ~= 21.5fps`
-- A nova diretriz passou a ser explicitamente fixa por resolucao da saida HDMI, sem heuristica adaptativa e sem branch especial de `Widescreen`.
-- O corte local atual em `src/kernel.cpp` aplica exatamente a regra definida na rodada:
-  - `720p` e `768p`: `Scale [MAX] = 3x`
-  - `1080p`: `Scale [MAX] = 4x`
-  - fallback abaixo disso: `2x`
-  - o viewport continua nascendo da mailbox-base `256x243`, nao do frame atual do backend
+- A rodada seguinte abandonou de vez o `Scale [MAX]`.
+- O corte local atual restaura o contrato simples:
+  - o menu volta a exibir apenas `1x`, `2x`, `3x`, `4x` e assim por diante
+  - `src/kernel.cpp` deixa de tratar `m_ScaleMaxFitEnabled` como estado funcional do viewport
+  - `src/tools/menu/combo_menu.cpp` deixa de ciclar para `MAX` no item `Scale`
+  - `src/tools/menu/combo_menu_items.cpp` volta a renderizar apenas labels numericas
+  - `msxbarepi.cfg` volta a gravar somente `scale=<Nx>`
+- Compatibilidade:
+  - `scale=500` ou `scale_max=1` ainda sao aceitos na leitura e migram para o maior fator discreto valido da resolucao atual
 - Efeito esperado:
-  - `MAX` fica estavel e previsivel por resolucao
-  - `1x..Nx` continuam inalterados
-  - `720p/768p` passam a usar `729` linhas e `1080p` passa a usar `972` linhas no `MAX`
+  - `Scale` volta a ser previsivel e discreto
+  - o viewport deixa de ter qualquer modo especial fora da sequencia numerica
+  - o comportamento entre UI, runtime e persistencia volta a ser uniforme
 - Validacao local:
   - `./scripts/check-third-party-pristine.sh` (OK)
   - `make -j4 DEBUG=1 BUILD_BID=202604081930-issue238-combo-screen-flip` (OK)
   - `BUILD_ID=72A0`
-  - `BUILD_HASH=408c7e1-9e79d5a95515d7eefc625e2846793bfc8aa7a981`
+  - `BUILD_HASH=408c7e1-7788bae85726a25f5460d5ff92033899bdcbce84`
 - Estado de fluxo:
   - sem `commit`
   - sem `push`
+
+## Atualizacao incremental de 08/04/2026 - fast path de escala inteira exata para o presenter
+
+- O proximo gargalo local da `#238` apareceu no A/B do usuario em `1080p + 4x`, onde o viewport numerico ficou funcional, mas ainda caiu para ~`50fps`.
+- A causa estava em `src/kernel.cpp`:
+  - o presenter ja tinha um fast path dedicado apenas ao caso fisico `2x`
+  - `1080p + 4x` em modo normal e varios casos `HIRES` fisicos exatos continuavam caindo no mapper generico `xmap/ymap`
+- O corte local atual generaliza esse fast path:
+  - `BlitLineExpand2xRgb565NoDim()` foi substituido por `BlitLineExpandNxRgb565NoDim()`
+  - `BlitFmsxFrame()` agora detecta qualquer escala fisica inteira exata (`dst = src * N`, com `N >= 2`) quando `scanlines == OFF`
+  - nesses casos, o presenter expande horizontalmente por `FillRun565()` e replica verticalmente por `memcpy`, evitando o custo do mapper generico
+- Objetivo:
+  - recuperar `1080p + 4x` no path numerico
+  - beneficiar tambem `HIRES` quando o frame fisico cair em um multiplo inteiro exato
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604081930-issue238-combo-screen-flip` (OK)
+  - `BUILD_ID=72A0`
+  - `BUILD_HASH=408c7e1-74fb1d5011cb5a41e7f565e24a441b5aff386d39`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+
+## Atualizacao incremental de 08/04/2026 - flush do dirty rect deixa de varrer padding invisivel
+
+- A rodada seguinte da `#238` mostrou que `1080p + 4x` ainda seguia perto de `52fps`, mesmo depois do fast path de escala inteira exata.
+- A causa nova ficou no wrapper single-buffer em `src/combo_screen_device.cpp`:
+  - no modo sem page flip, `PresentIfDirty()` ainda flushava o dirty rect como um span contiguo unico entre a primeira e a ultima linha
+  - isso incluia todo o padding lateral fora da mailbox entre cada linha do viewport
+  - em `1080p + 4x` (`1024x972` dentro de `1920x1080`), esse flush acabava varrendo quase `1.87x` o viewport util
+- O corte local atual introduz `ComboFlushDCacheRect565()`:
+  - flush contiguo apenas quando o retangulo ocupa a largura inteira do pitch
+  - caso contrario, flush linha a linha apenas na largura real da mailbox
+- Objetivo:
+  - reduzir o custo estrutural do presenter single-buffer em viewports grandes centralizados
+  - recuperar desempenho em `1080p + 4x` sem reabrir page flip ou mudar a geometria
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604081930-issue238-combo-screen-flip` (OK)
+  - `BUILD_ID=72A0`
+  - `BUILD_HASH=408c7e1-ea4c20eb3135434e806ab2f4f874f3f12de1704a`
+- Estado de fluxo:
+  - sem `commit`
+  - sem `push`
+
+## Atualizacao incremental de 08/04/2026 - resíduo de `1080p + 4x` desmembrado para minor issue
+
+- Depois das ultimas rodadas locais e do A/B em hardware, a `#238` ficou funcionalmente estabilizada:
+  - boot logo do `MSX2+` correto
+  - presenter local estavel
+  - `Scale` novamente numerico e previsivel
+- O único resíduo remanescente validado em campo ficou de performance:
+  - em `1080p + 4x`, `HIRES/interlaced` ainda roda perto de `~53 FPS`
+  - isso nao bloqueia mais o objetivo funcional da `#238`
+- Decisao operacional:
+  - desmembrar esse residual para a milestone `m17` como follow-up de baixa prioridade
+  - a `#238` fica pronta para consolidacao/fechamento assim que a issue minor estiver publicada e sincronizada

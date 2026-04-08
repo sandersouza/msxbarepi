@@ -1052,9 +1052,10 @@ void CComboPauseMenu::SetScalePercent(unsigned percent)
 
 void CComboPauseMenu::SetScaleMaxFitEnabled(boolean enabled)
 {
-    if (m_ScaleMaxFitEnabled != enabled)
+    (void) enabled;
+    if (m_ScaleMaxFitEnabled != FALSE)
     {
-        m_ScaleMaxFitEnabled = enabled;
+        m_ScaleMaxFitEnabled = FALSE;
         m_ForceRedraw = TRUE;
     }
 }
@@ -1114,7 +1115,7 @@ unsigned CComboPauseMenu::GetScalePercent(void) const
 
 boolean CComboPauseMenu::IsScaleMaxFitEnabled(void) const
 {
-    return m_ScaleMaxFitEnabled;
+    return FALSE;
 }
 
 void CComboPauseMenu::SetWidescreenEnabled(boolean enabled)
@@ -2457,43 +2458,30 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         if (items[m_Selected].action == ComboMenuActionOverscanChanged)
         {
             unsigned next_value = m_ScalePercent;
-            boolean next_max_fit = m_ScaleMaxFitEnabled;
             if (left_step)
             {
-                if (next_max_fit)
-                {
-                    next_max_fit = FALSE;
-                    next_value = m_MaxScalePercent;
-                }
-                else
-                {
-                    next_value = (next_value <= 250u) ? 200u : (next_value - 50u);
-                }
+                next_value = (next_value <= 250u) ? 200u : (next_value - 50u);
             }
             if (right_step || enter_edge)
             {
-                if (next_max_fit)
-                {
-                    next_max_fit = TRUE;
-                }
-                else if (next_value == 200u)
+                if (next_value == 200u)
                 {
                     next_value = (m_MaxScalePercent >= 250u) ? 250u : 200u;
                 }
-                else if (next_value >= m_MaxScalePercent)
+                else if (next_value < m_MaxScalePercent)
                 {
-                    next_max_fit = TRUE;
-                }
-                else
-                {
-                    next_value = next_value + 50u;
+                    next_value += 50u;
+                    if (next_value > m_MaxScalePercent)
+                    {
+                        next_value = m_MaxScalePercent;
+                    }
                 }
             }
 
-            if (next_value != m_ScalePercent || next_max_fit != m_ScaleMaxFitEnabled)
+            if (next_value != m_ScalePercent)
             {
                 m_ScalePercent = next_value;
-                m_ScaleMaxFitEnabled = next_max_fit;
+                m_ScaleMaxFitEnabled = FALSE;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
                 action = ComboMenuActionOverscanChanged;

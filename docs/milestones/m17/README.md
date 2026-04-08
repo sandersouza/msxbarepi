@@ -5,7 +5,7 @@
 - Título: FIX: Minor Issues / Other Issues
 - Estado: open
 - Due date: sem-data
-- Open issues: 8
+- Open issues: 9
 - Closed issues: 13
 - URL: https://github.com/sandersouza/msxbarepi/milestone/17
 

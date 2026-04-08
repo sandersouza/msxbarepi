@@ -218,12 +218,14 @@ static boolean ShouldPreferPresentArea(unsigned dst_w,
 						 boolean scale_max_fit_enabled,
 						 boolean hires_mode)
 {
+	(void) scale_max_fit_enabled;
+
 	if (dst_w == 0u || dst_h == 0u || screen_w == 0u || screen_h == 0u)
 	{
 		return FALSE;
 	}
 
-	if (scale_max_fit_enabled || hires_mode)
+	if (hires_mode)
 	{
 		return TRUE;
 	}
@@ -1131,6 +1133,28 @@ static void BlitMappedRunsRgb565(u16 *dst_line,
 	}
 }
 
+static void BlitLineExpandNxRgb565NoDim(u16 *dst_line,
+							const u16 *src_line,
+							unsigned src_width,
+							unsigned scale,
+							boolean crt_black_lift)
+{
+	if (dst_line == 0 || src_line == 0 || src_width == 0u || scale == 0u)
+	{
+		return;
+	}
+
+	for (unsigned x = 0u; x < src_width; ++x)
+	{
+		u16 sample = src_line[x];
+		if (crt_black_lift)
+		{
+			sample = ApplyCrtBlackLevel565(sample);
+		}
+		FillRun565(dst_line + (x * scale), sample, scale);
+	}
+}
+
 static void FillRect565(u16 *dst_base,
 					  unsigned pitch_pixels,
 					  unsigned screen_width,
@@ -1791,9 +1815,10 @@ TComboShutdownMode CComboKernel::Run(void)
 	{
 		const unsigned max_scale = ComputeScaleMaxPercentForCurrentFrame(m_Screen.GetWidth(), m_Screen.GetHeight());
 		m_PauseMenu.SetMaxScalePercent(max_scale);
-		m_OverscanPercent = m_ScaleMaxFitEnabled ? max_scale : ClampScalePercent(m_OverscanPercent, max_scale);
+		m_ScaleMaxFitEnabled = FALSE;
+		m_OverscanPercent = ClampScalePercent(m_OverscanPercent, max_scale);
 		m_PauseMenu.SetScalePercent(m_OverscanPercent);
-		m_PauseMenu.SetScaleMaxFitEnabled(m_ScaleMaxFitEnabled);
+		m_PauseMenu.SetScaleMaxFitEnabled(FALSE);
 	}
 	SetUartTelemetryEnabled(m_UartTelemetryEnabled);
 	#if MSXBARE_ENABLE_FMSX
@@ -3374,17 +3399,11 @@ void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
 			const unsigned max_scale =
 				ComputePixelScaleMaxPercent(screen_width, screen_height, box_base_w, box_base_h);
 			const unsigned scale_percent = ClampScalePercent(m_OverscanPercent, max_scale);
-			const boolean scale_max_fit = m_ScaleMaxFitEnabled;
 			const unsigned scale_factor = ScaleFactorFromPercent(scale_percent);
 			const unsigned max_scale_factor = ComputeFixedMaxScaleFactor(screen_height);
 			(void) src_width;
 			(void) src_height;
-			if (scale_max_fit)
-			{
-				dst_width = box_base_w * max_scale_factor;
-				dst_height = box_base_h * max_scale_factor;
-			}
-			else if (m_WidescreenEnabled && !hires_mode)
+			if (m_WidescreenEnabled && !hires_mode)
 			{
 				const unsigned ar_num = 16u;
 				const unsigned ar_den = 9u;
@@ -3399,8 +3418,10 @@ void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
 			}
 			else
 			{
-				dst_width = box_base_w * scale_factor;
-				dst_height = box_base_h * scale_factor;
+				const unsigned effective_scale =
+					(scale_factor > max_scale_factor) ? max_scale_factor : scale_factor;
+				dst_width = box_base_w * effective_scale;
+				dst_height = box_base_h * effective_scale;
 			}
 		}
 
@@ -3549,6 +3570,37 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 				if (left_w > 0u && mid_h > 0u) m_Screen.MarkDirtyRect(old_box_x, iy0, left_w, mid_h);
 				if (right_w > 0u && mid_h > 0u) m_Screen.MarkDirtyRect(ix1, iy0, right_w, mid_h);
 			}
+		}
+		const unsigned exact_scale_x =
+			(src_w > 0u && (dst_width % src_w) == 0u) ? (dst_width / src_w) : 0u;
+		const unsigned exact_scale_y =
+			(src_h > 0u && (dst_height % src_h) == 0u) ? (dst_height / src_h) : 0u;
+		const boolean exact_integer_physical =
+			(scanline_mode == kScanlineModeOff)
+			&& (src_x0 == 0u)
+			&& (src_y0 == 0u)
+			&& (exact_scale_x >= 2u)
+			&& (exact_scale_x == exact_scale_y)
+			&& (dst_width == (src_w * exact_scale_x))
+			&& (dst_height == (src_h * exact_scale_y));
+		if (exact_integer_physical)
+		{
+			const unsigned scale = exact_scale_x;
+			for (unsigned y = 0u; y < src_h; ++y)
+			{
+				const u16 *src_line = pixels + (y * width);
+				u16 *dst_line0 =
+					present_base + present_offset_pixels + ((y * scale) * present_pitch_pixels);
+				BlitLineExpandNxRgb565NoDim(dst_line0, src_line, src_w, scale, FALSE);
+				for (unsigned copy = 1u; copy < scale; ++copy)
+				{
+					memcpy(dst_line0 + (copy * present_pitch_pixels),
+						dst_line0,
+						dst_width * sizeof(u16));
+				}
+			}
+			m_Screen.MarkDirtyRect(offset_x, offset_y, dst_width, dst_height);
+			return;
 		}
 		const boolean can_use_maps = (dst_width <= kBlitMapMaxAxis) && (dst_height <= kBlitMapMaxAxis);
 		if (can_use_maps)
@@ -3864,7 +3916,7 @@ void CComboKernel::ApplyRuntimeSettingsToFmsx(void)
 	{
 		return;
 	}
-	fmsx_runtime_set_overscan((m_ScaleMaxFitEnabled || m_OverscanPercent > kScalePercentMin) ? TRUE : FALSE);
+	fmsx_runtime_set_overscan((m_OverscanPercent > kScalePercentMin) ? TRUE : FALSE);
 	fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 	fmsx_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
 	fmsx_runtime_set_boot_mode(m_BootMode);
@@ -4080,7 +4132,6 @@ void CComboKernel::LoadSettingsFromStorage(void)
 					unsigned clamped = value;
 					if (clamped == 500u)
 					{
-						m_ScaleMaxFitEnabled = TRUE;
 						clamped = kScalePercentHardMax;
 					}
 					if (clamped != kScalePercentNone && clamped < kScalePercentMin) clamped = kScalePercentMin;
@@ -4091,7 +4142,10 @@ void CComboKernel::LoadSettingsFromStorage(void)
 				}
 				else if (SettingsKeyEquals(line, key_len, "scale_max"))
 				{
-					m_ScaleMaxFitEnabled = value ? TRUE : FALSE;
+					if (value)
+					{
+						m_OverscanPercent = kScalePercentHardMax;
+					}
 				}
 				else if (SettingsKeyEquals(line, key_len, "overscan"))
 				{
@@ -4247,12 +4301,13 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	{
 		const unsigned max_scale = ComputeScaleMaxPercentForCurrentFrame(m_Screen.GetWidth(), m_Screen.GetHeight());
 		m_PauseMenu.SetMaxScalePercent(max_scale);
-		m_OverscanPercent = m_ScaleMaxFitEnabled ? max_scale : ClampScalePercent(m_OverscanPercent, max_scale);
+		m_ScaleMaxFitEnabled = FALSE;
+		m_OverscanPercent = ClampScalePercent(m_OverscanPercent, max_scale);
 		m_PauseMenu.SetScalePercent(m_OverscanPercent);
-		m_PauseMenu.SetScaleMaxFitEnabled(m_ScaleMaxFitEnabled);
+		m_PauseMenu.SetScaleMaxFitEnabled(FALSE);
 	}
 #if MSXBARE_ENABLE_FMSX
-	fmsx_runtime_set_overscan((m_ScaleMaxFitEnabled || m_OverscanPercent > kScalePercentMin) ? TRUE : FALSE);
+	fmsx_runtime_set_overscan((m_OverscanPercent > kScalePercentMin) ? TRUE : FALSE);
 	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
 	fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 	fmsx_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
@@ -4338,7 +4393,6 @@ void CComboKernel::SaveSettingsToStorage(void)
 	} while (0)
 
 		APPEND_LINE_FMT("scale=%u\n", m_OverscanPercent);
-		APPEND_LINE_FMT("scale_max=%u\n", m_ScaleMaxFitEnabled ? 1u : 0u);
 		APPEND_LINE_FMT("language=%u\n", m_Language);
 		APPEND_LINE_FMT("resolution=%u\n", m_ResolutionMode);
 		APPEND_LINE_FMT("widescreen=%u\n", m_WidescreenEnabled ? 1u : 0u);
@@ -5288,10 +5342,10 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 
 	case ComboMenuActionOverscanChanged:
 		m_OverscanPercent = m_PauseMenu.GetScalePercent();
-		m_ScaleMaxFitEnabled = m_PauseMenu.IsScaleMaxFitEnabled();
+		m_ScaleMaxFitEnabled = FALSE;
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX
-		fmsx_runtime_set_overscan((m_ScaleMaxFitEnabled || m_OverscanPercent > kScalePercentMin) ? TRUE : FALSE);
+		fmsx_runtime_set_overscan((m_OverscanPercent > kScalePercentMin) ? TRUE : FALSE);
 		/* Scale changes can shrink/grow viewport; force deterministic full redraw + fresh snapshot. */
 		if (m_EmulationPaused && m_FmsxReady)
 		{
@@ -5302,11 +5356,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 	#endif
 		{
 			CString line;
-			if (m_ScaleMaxFitEnabled)
-			{
-				line.Format("Settings: Scale MAX");
-			}
-			else if (ScalePercentIsNone(m_OverscanPercent))
+			if (ScalePercentIsNone(m_OverscanPercent))
 			{
 				line.Format("Settings: Scale 1x");
 			}
@@ -6178,16 +6228,8 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	{
 		const unsigned max_scale = ComputeScaleMaxPercentForCurrentFrame(m_Screen.GetWidth(), m_Screen.GetHeight());
 		m_PauseMenu.SetMaxScalePercent(max_scale);
-		if (m_ScaleMaxFitEnabled)
-		{
-			if (m_OverscanPercent != max_scale)
-			{
-				m_OverscanPercent = max_scale;
-				m_PauseMenu.SetScalePercent(m_OverscanPercent);
-				m_ForceViewportFullClearNextFrame = TRUE;
-			}
-		}
-		else if (!ScalePercentIsNone(m_OverscanPercent)
+		m_ScaleMaxFitEnabled = FALSE;
+		if (!ScalePercentIsNone(m_OverscanPercent)
 			&& m_OverscanPercent > max_scale)
 		{
 			m_OverscanPercent = max_scale;

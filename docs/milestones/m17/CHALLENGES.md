@@ -100,6 +100,12 @@ Registro de desafios enfrentados por issue, decisão adotada e status da soluç�
 - Status: Futuro
 - Referência: [242-bug-unknown-reality-audio-lento-zanac-ex-placar.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/242-bug-unknown-reality-audio-lento-zanac-ex-placar.md)
 
+### #243 — HIRES/interlaced ainda degrada em 1080p com Scale 4x
+- Desafio: mesmo depois da estabilização funcional da `#238`, os modos `HIRES/interlaced` ainda ficam em torno de `~53 FPS` em `1080p + 4x`, enquanto resoluções/escalas menores já voltaram ao comportamento esperado.
+- Solução adotada: abrir follow-up `minor` dedicado ao resíduo de performance do presenter/render path high-res, isolando o gargalo sem reabrir a trilha funcional do boot logo do `MSX2+`.
+- Status: Futuro
+- Referência: [243-bug-hires-interlaced-lentidao-1080p-scale-4x.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/243-bug-hires-interlaced-lentidao-1080p-scale-4x.md)
+
 ### #224 — Knightmare Gold: falha na detecção de MSX2+
 - Desafio: `Knightmare Gold` detectava `HighSpeed VDP`, `128KB of videoRAM` e `SCC+`, mas ainda caia no menu com `MODE MSX2` e `SCROLL ORIGINAL`, sem liberar o caminho esperado de `SCROLL SMOOTH`.
 - Solução adotada: a trilha foi integrada ao fluxo normal da branch `#187`, adicionando o bloco Panasonic/S1985 no runtime fMSX, trace `KMG EVT` via kernel UART e a opcao de diagnostico `Refresh [NTSC/PAL]` apenas em `DEBUG=1`, abaixo de `Disk ROM`, sem quebrar o chaveamento legitimo por `R#9` do VDP.

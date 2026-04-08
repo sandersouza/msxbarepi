@@ -445,20 +445,11 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     {
         char scale_flag[8];
         const unsigned scale_factor = MenuScaleFactorFromPercent(scale_percent);
+        (void) scale_max_fit_enabled;
         (void) max_scale_percent;
-        if (scale_max_fit_enabled)
-        {
-            scale_flag[0] = 'M';
-            scale_flag[1] = 'A';
-            scale_flag[2] = 'X';
-            scale_flag[3] = '\0';
-        }
-        else
-        {
-            scale_flag[0] = (char) ('0' + (scale_factor % 10u));
-            scale_flag[1] = 'x';
-            scale_flag[2] = '\0';
-        }
+        scale_flag[0] = (char) ('0' + (scale_factor % 10u));
+        scale_flag[1] = 'x';
+        scale_flag[2] = '\0';
         BuildLabelFlag(scale_label, sizeof(scale_label), locale->settings_scale, scale_flag);
     }
 

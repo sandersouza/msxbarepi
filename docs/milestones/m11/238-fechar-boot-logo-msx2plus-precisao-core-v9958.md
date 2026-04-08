@@ -2283,26 +2283,82 @@ Implementar a precisão mínima necessária no nosso core do `V9958 stock` para 
   - sem `git commit`
   - sem `git push`
 
-# Atualizacao incremental de 08/04/2026 - `Scale [MAX]` fixo e seguro para `HIRES/interlaced`
+# Atualizacao incremental de 08/04/2026 - `Scale` volta a ser puramente numerico
 
-- Depois de simplificar o presenter para single-buffer, a medicao de campo mostrou o novo limite real do viewport:
-  - `1x / Screen 7 / Hires ~= 60fps`
-  - `2x / Screen 7 / Hires ~= 60fps`
-  - `MAX / Screen 7 / Hires ~= 21.5fps`
-- A nova regra local da `#238` deixa `MAX` fixo por resolucao de saida, sem heuristica dinamica:
-  - `720p` e `768p`: `Scale [MAX] = 3x`
-  - `1080p`: `Scale [MAX] = 4x`
-  - fallback abaixo disso: `2x`
-  - a caixa continua nascendo da mailbox-base `256x243`
+- A trilha da `#238` abandonou de vez o `Scale [MAX]`.
+- O corte local atual restaura o contrato simples:
+  - menu com `1x`, `2x`, `3x`, `4x` e assim por diante
+  - `src/kernel.cpp` deixa de tratar `m_ScaleMaxFitEnabled` como estado funcional
+  - `src/tools/menu/combo_menu.cpp` deixa de ciclar para `MAX`
+  - `src/tools/menu/combo_menu_items.cpp` volta a exibir apenas labels numericas
+  - `msxbarepi.cfg` volta a persistir apenas `scale=<Nx>`
+- Compatibilidade:
+  - `scale=500` ou `scale_max=1` ainda sao aceitos no parser e migrados para o maior fator discreto valido da resolucao atual
 - Objetivo:
-  - manter `MAX` dentro do orcamento de `16.67ms`
-  - preservar `1x..Nx` exatamente como ja estavam
-  - manter um tamanho previsivel por resolucao, mesmo que menor que o preenchimento total da tela
+  - voltar a um contrato simples, estavel e previsivel
+  - eliminar o modo especial `MAX` do runtime, da UI e da persistencia
 - Validacao local:
   - `./scripts/check-third-party-pristine.sh` (OK)
   - `make -j4 DEBUG=1 BUILD_BID=202604081930-issue238-combo-screen-flip` (OK)
   - `BUILD_ID=72A0`
-  - `BUILD_HASH=408c7e1-9e79d5a95515d7eefc625e2846793bfc8aa7a981`
+  - `BUILD_HASH=408c7e1-7788bae85726a25f5460d5ff92033899bdcbce84`
 - Estado operacional:
   - sem `git commit`
   - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - fast path de escala inteira exata para o presenter
+
+- A rodada seguinte mostrou o proximo gargalo do presenter da `#238`: com o `Scale` novamente numerico, `1080p + 4x` ainda ficava perto de `50fps`, mesmo sem o modo especial `MAX`.
+- A causa estava em `src/kernel.cpp`:
+  - o presenter ja tinha um fast path apenas para o caso fisico `2x`
+  - `1080p + 4x` e varios cenarios `HIRES` com multiplo inteiro exato continuavam caindo no mapper generico `xmap/ymap`
+- O corte local atual generaliza o path rapido:
+  - `BlitLineExpand2xRgb565NoDim()` foi substituido por `BlitLineExpandNxRgb565NoDim()`
+  - `BlitFmsxFrame()` passa a detectar qualquer escala fisica inteira exata (`dst = src * N`, com `N >= 2`) quando `scanlines == OFF`
+  - nesses casos, o presenter expande horizontalmente por `FillRun565()` e replica verticalmente por `memcpy`, evitando o mapper generico
+- Objetivo:
+  - recuperar desempenho em `1080p + 4x`
+  - beneficiar tambem casos `HIRES` que caiam em `2x` ou outro multiplo inteiro fisico exato
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604081930-issue238-combo-screen-flip` (OK)
+  - `BUILD_ID=72A0`
+  - `BUILD_HASH=408c7e1-74fb1d5011cb5a41e7f565e24a441b5aff386d39`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - flush do dirty rect deixa de varrer padding invisivel
+
+- A rodada seguinte mostrou que `1080p + 4x` ainda ficava perto de `52fps`, mesmo depois do fast path de escala inteira exata.
+- O custo remanescente ficou no presenter single-buffer em `src/combo_screen_device.cpp`:
+  - `PresentIfDirty()` ainda flushava o dirty rect como um span contiguo unico entre a primeira e a ultima linha
+  - isso acabava incluindo todo o padding lateral fora da mailbox entre as linhas
+  - em `1080p + 4x` (`1024x972` dentro de `1920x1080`), o flush passava a cobrir quase `1.87x` o viewport util
+- O corte local atual introduz `ComboFlushDCacheRect565()`:
+  - flush contiguo apenas quando o retangulo ocupa a largura inteira do pitch
+  - do contrario, flush linha a linha apenas na largura real do dirty rect
+- Objetivo:
+  - reduzir o custo estrutural do presenter single-buffer em viewport grande centralizado
+  - recuperar desempenho em `1080p + 4x` sem alterar geometria nem reabrir page flip
+- Validacao local:
+  - `./scripts/check-third-party-pristine.sh` (OK)
+  - `make -j4 DEBUG=1 BUILD_BID=202604081930-issue238-combo-screen-flip` (OK)
+  - `BUILD_ID=72A0`
+  - `BUILD_HASH=408c7e1-ea4c20eb3135434e806ab2f4f874f3f12de1704a`
+- Estado operacional:
+  - sem `git commit`
+  - sem `git push`
+
+# Atualizacao incremental de 08/04/2026 - resíduo de `1080p + 4x` desmembrado para minor issue
+
+- Depois das ultimas rodadas locais e do A/B em hardware, a `#238` ficou funcionalmente estabilizada:
+  - boot logo do `MSX2+` correto
+  - presenter local estavel
+  - `Scale` novamente numerico e previsivel
+- O único resíduo remanescente validado em campo ficou de performance:
+  - em `1080p + 4x`, `HIRES/interlaced` ainda roda perto de `~53 FPS`
+  - isso nao bloqueia mais o objetivo funcional principal da `#238`
+- Decisao operacional:
+  - mover esse residual para uma issue `minor` dedicada na milestone `m17`
+  - preparar a `#238` para consolidacao/fechamento sem reabrir a trilha principal

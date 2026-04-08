@@ -40,6 +40,33 @@ static void ComboFlushDCacheRange(void *addr, unsigned bytes)
 	asm volatile ("dsb ish" ::: "memory");
 }
 
+static void ComboFlushDCacheRect565(u16 *base,
+					  unsigned pitch_pixels,
+					  unsigned x,
+					  unsigned y,
+					  unsigned width,
+					  unsigned height)
+{
+	if (base == 0 || width == 0u || height == 0u || pitch_pixels == 0u)
+	{
+		return;
+	}
+
+	if (x == 0u && width == pitch_pixels)
+	{
+		u16 *flush_start = base + (y * pitch_pixels);
+		const unsigned flush_pixels = height * pitch_pixels;
+		ComboFlushDCacheRange(flush_start, flush_pixels * (unsigned) sizeof(u16));
+		return;
+	}
+
+	for (unsigned row = 0u; row < height; ++row)
+	{
+		u16 *flush_start = base + ((y + row) * pitch_pixels) + x;
+		ComboFlushDCacheRange(flush_start, width * (unsigned) sizeof(u16));
+	}
+}
+
 class CComboBackBufferDisplay : public CDisplay
 {
 public:
@@ -395,11 +422,10 @@ boolean CComboScreenDevice::PresentIfDirty(boolean dcache_enabled, boolean wait_
 		{
 			u16 *draw_base = GetDrawBuffer16();
 			const unsigned pitch_pixels = GetPitchPixels();
-			u16 *flush_start = draw_base + (m_DirtyY1 * pitch_pixels) + m_DirtyX1;
 			const unsigned flush_w = m_DirtyX2 - m_DirtyX1;
 			const unsigned flush_h = m_DirtyY2 - m_DirtyY1;
-			const unsigned flush_pixels = ((flush_h - 1u) * pitch_pixels) + flush_w;
-			ComboFlushDCacheRange(flush_start, flush_pixels * (unsigned) sizeof(u16));
+			ComboFlushDCacheRect565(draw_base, pitch_pixels,
+				m_DirtyX1, m_DirtyY1, flush_w, flush_h);
 		}
 
 		ClearDirty();
