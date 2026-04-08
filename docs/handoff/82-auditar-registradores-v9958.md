@@ -20,6 +20,16 @@ Usar a branch umbrella da `#82` para estruturar e iniciar a trilha de auditoria 
 - Nem `git commit` local nem `git push` devem acontecer nas sub-branches experimentais da trilha.
 - Ambos so voltam a ser permitidos quando o usuario declarar explicitamente que a issue ativa ficou estavel.
 
+## Estado atual
+
+- issue ativa da umbrella `#82` declarada estavel pelo usuario
+- branch local consolidada e publicada em `origin/82-auditar-registradores-v9958`
+- PR aberto para `main`:
+  - [#245 - issue82: finalize V9958 stock umbrella stabilization](https://github.com/sandersouza/msxbarepi/pull/245)
+- follow-ups menores segregados:
+  - [#242](https://github.com/sandersouza/msxbarepi/issues/242)
+  - [#243](https://github.com/sandersouza/msxbarepi/issues/243)
+
 ## Atualizacao incremental de 08/04/2026 - rollback do experimento de mailbox `HIRES/interlaced`
 
 - A umbrella `#82` chegou a testar um corte no presenter para fazer `HIRES/interlaced` usar a altura logica do backend no calculo do viewport.

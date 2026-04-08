@@ -5,7 +5,12 @@
 - Estado remoto: OPEN
 - Prioridade: P1
 - Labels: `priority:P1`, `type:feature`, `area:video`, `area:emulation`
-- Estado local atual: EM PROGRESSO
+- Estado local atual: EM REVIEW
+
+## PR de consolidacao
+- PR umbrella: [#245 - issue82: finalize V9958 stock umbrella stabilization](https://github.com/sandersouza/msxbarepi/pull/245)
+- Branch: `82-auditar-registradores-v9958`
+- Base: `main`
 
 ## Objetivo atual
 Transformar a `#82` na issue-epic da auditoria comparativa do `V9958 stock`, usando `blueMSX` como referência software, `V9958-Super` como referência HDL/semântica stock e o nosso core local como alvo da análise.

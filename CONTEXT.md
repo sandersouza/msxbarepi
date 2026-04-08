@@ -8,8 +8,9 @@ Ponto de entrada rapido para contexto operacional do projeto.
 - Branch ativa da rodada: `82-auditar-registradores-v9958`.
 - Estado atual da rodada:
   - a `#238` ja foi mergeada e fechada
-  - o trabalho ativo voltou para a umbrella `#82`
-  - nao ha `commit` nem `push` locais nesta rodada experimental
+  - a umbrella `#82` foi consolidada como estado estavel
+  - PR aberto para `main`: [#245](https://github.com/sandersouza/msxbarepi/pull/245)
+  - follow-ups residuais segregados em `#242` e `#243`
 - Atualizacao incremental da umbrella `#82`:
   - um experimento de mailbox para `Screen 7 / HIRES / interlaced` chegou a corrigir a geometria, mas derrubou o FPS e foi revertido
   - o estado local voltou ao contrato estavel anterior do viewport `HIRES`
