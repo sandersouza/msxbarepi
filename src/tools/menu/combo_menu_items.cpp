@@ -372,10 +372,7 @@ const TComboMenuItem *combo_menu_load_disk_items_get(unsigned language,
                                count);
 }
 
-const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
-                                                     boolean scale_max_fit_enabled,
-                                                     unsigned max_scale_percent,
-                                                     unsigned language,
+const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
                                                      unsigned resolution_mode,
                                                      boolean widescreen_enabled,
                                                      unsigned scanline_mode,
@@ -400,7 +397,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     static TComboMenuItem settings_items[32];
     static char language_label[32];
     static char resolution_label[32];
-    static char scale_label[32];
     static char widescreen_label[32];
     static char scanline_label[32];
     static char boot_label[32];
@@ -409,6 +405,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     static char megaram_label[32];
     static char turbo_label[32];
     static char rensha_label[32];
+    static char joypad_mapping_label[40];
     static char fm_music_label[32];
     static char scc_label[32];
     static char audio_gain_label[32];
@@ -420,8 +417,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     }
 
     language = combo_locale_clamp_language(language);
-    if (scale_percent < 200u) scale_percent = 200u;
-    if (max_scale_percent < 200u) max_scale_percent = 200u;
     if (resolution_mode > 3u) resolution_mode = 0u;
     if (scanline_mode > 2u) scanline_mode = 2u;
     machine_profile = machine_profile_clamp(machine_profile);
@@ -442,17 +437,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
                    resolution_mode == 0u ? locale->resolution_auto
                    : (resolution_mode == 1u ? locale->resolution_1080
                    : (resolution_mode == 2u ? locale->resolution_720 : locale->resolution_768)));
-    {
-        char scale_flag[8];
-        const unsigned scale_factor = MenuScaleFactorFromPercent(scale_percent);
-        (void) scale_max_fit_enabled;
-        (void) max_scale_percent;
-        scale_flag[0] = (char) ('0' + (scale_factor % 10u));
-        scale_flag[1] = 'x';
-        scale_flag[2] = '\0';
-        BuildLabelFlag(scale_label, sizeof(scale_label), locale->settings_scale, scale_flag);
-    }
-
     BuildLabelFlag(widescreen_label, sizeof(widescreen_label), locale->settings_widescreen, widescreen_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(scanline_label, sizeof(scanline_label), locale->settings_scanlines,
                    scanline_mode == 0u ? locale->scan_des : (scanline_mode == 1u ? locale->scan_lcd : locale->scan_crt));
@@ -476,6 +460,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
                    : "MAX"));
     BuildLabelFlag(rensha_label, sizeof(rensha_label), locale->settings_rensha,
                    rensha_mode == 0u ? locale->flag_off : (rensha_mode == 1u ? "1" : (rensha_mode == 2u ? "2" : "3")));
+    BuildLabelFlag(joypad_mapping_label, sizeof(joypad_mapping_label), locale->settings_joystick_map, "->");
     BuildLabelFlag(fm_music_label, sizeof(fm_music_label), locale->settings_fm_music, fm_music_enabled ? locale->flag_on : locale->flag_off);
     {
         const char *scc_flag = locale->flag_off;
@@ -511,7 +496,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     ADD_SETTING_ITEM(language_label, ComboMenuActionCycleLanguage, ComboMenuRedrawMenuOnly, TRUE);
     ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
     ADD_SETTING_ITEM(resolution_label, ComboMenuActionCycleResolution, ComboMenuRedrawMenuOnly, TRUE);
-    ADD_SETTING_ITEM(scale_label, ComboMenuActionOverscanChanged, ComboMenuRedrawMenuAndViewport, TRUE);
     ADD_SETTING_ITEM(widescreen_label, ComboMenuActionToggleWidescreen, ComboMenuRedrawMenuAndViewport, TRUE);
     ADD_SETTING_ITEM(scanline_label, ComboMenuActionCycleScanlines, ComboMenuRedrawMenuAndViewport, TRUE);
     if (MSXBARE_FEAT_FMPAC || MSXBARE_FEAT_SCC)
@@ -553,6 +537,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     }
     ADD_SETTING_ITEM(turbo_label, ComboMenuActionCycleZ80Turbo, ComboMenuRedrawMenuOnly, TRUE);
     ADD_SETTING_ITEM(rensha_label, ComboMenuActionCycleRensha, ComboMenuRedrawMenuOnly, TRUE);
+    ADD_SETTING_ITEM(joypad_mapping_label, ComboMenuActionOpenJoystickMap, ComboMenuRedrawMenuOnly, TRUE);
 
     settings_items[item_count].label = "";
     settings_items[item_count].action = ComboMenuActionNone;
@@ -568,7 +553,70 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned scale_percent,
     return settings_items;
 }
 
-const TComboMenuItem *combo_menu_debug_items_get(unsigned language,
+const TComboMenuItem *combo_menu_joystick_map_items_get(unsigned language,
+                                                        const char *up_code,
+                                                        const char *down_code,
+                                                        const char *left_code,
+                                                        const char *right_code,
+                                                        const char *button1_code,
+                                                        const char *button2_code,
+                                                        unsigned *count)
+{
+    static TComboMenuItem items[8];
+    static char up_label[48];
+    static char down_label[48];
+    static char left_label[48];
+    static char right_label[48];
+    static char button1_label[48];
+    static char button2_label[48];
+
+    const TComboLocaleStrings *locale = combo_locale_get(language);
+    if (locale == 0)
+    {
+        locale = combo_locale_get(ComboLanguageEN);
+    }
+
+    BuildLabelFlag(up_label, sizeof(up_label), locale->joystick_map_up, up_code != 0 ? up_code : locale->flag_none);
+    BuildLabelFlag(down_label, sizeof(down_label), locale->joystick_map_down, down_code != 0 ? down_code : locale->flag_none);
+    BuildLabelFlag(left_label, sizeof(left_label), locale->joystick_map_left, left_code != 0 ? left_code : locale->flag_none);
+    BuildLabelFlag(right_label, sizeof(right_label), locale->joystick_map_right, right_code != 0 ? right_code : locale->flag_none);
+    BuildLabelFlag(button1_label, sizeof(button1_label), locale->joystick_map_button1, button1_code != 0 ? button1_code : locale->flag_none);
+    BuildLabelFlag(button2_label, sizeof(button2_label), locale->joystick_map_button2, button2_code != 0 ? button2_code : locale->flag_none);
+
+    items[0].label = up_label;
+    items[1].label = down_label;
+    items[2].label = left_label;
+    items[3].label = right_label;
+    items[4].label = button1_label;
+    items[5].label = button2_label;
+    for (unsigned i = 0u; i < 6u; ++i)
+    {
+        items[i].action = ComboMenuActionNone;
+        items[i].selectable = TRUE;
+        items[i].redraw_policy = ComboMenuRedrawMenuOnly;
+    }
+
+    items[6].label = "";
+    items[6].action = ComboMenuActionNone;
+    items[6].selectable = FALSE;
+    items[6].redraw_policy = ComboMenuRedrawMenuOnly;
+
+    items[7].label = locale->joystick_map_return;
+    items[7].action = ComboMenuActionNone;
+    items[7].selectable = FALSE;
+    items[7].redraw_policy = ComboMenuRedrawMenuOnly;
+
+    if (count != 0)
+    {
+        *count = 8u;
+    }
+    return items;
+}
+
+const TComboMenuItem *combo_menu_debug_items_get(unsigned scale_percent,
+                                                 unsigned effective_scale_percent,
+                                                 unsigned max_scale_percent,
+                                                 unsigned language,
                                                  unsigned refresh_rate_hz,
                                                  boolean disk_rom_enabled,
                                                  boolean kanji_rom_enabled,
@@ -578,7 +626,8 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned language,
                                                  boolean debug_log_enabled,
                                                  unsigned *count)
 {
-    static TComboMenuItem debug_items[8];
+    static TComboMenuItem debug_items[9];
+    static char scale_label[32];
     static char refresh_label[32];
     static char disk_rom_label[32];
     static char kanji_rom_label[32];
@@ -589,6 +638,22 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned language,
     if (locale == 0)
     {
         locale = combo_locale_get(ComboLanguageEN);
+    }
+
+    if (scale_percent < 200u) scale_percent = 200u;
+    if (effective_scale_percent < 200u) effective_scale_percent = 200u;
+    if (max_scale_percent < 200u) max_scale_percent = 200u;
+
+    {
+        char scale_flag[8];
+        const unsigned display_scale_percent =
+            (overlay_mode == ComboDebugOverlayOff) ? effective_scale_percent : scale_percent;
+        const unsigned scale_factor = MenuScaleFactorFromPercent(display_scale_percent);
+        (void) max_scale_percent;
+        scale_flag[0] = (char) ('0' + (scale_factor % 10u));
+        scale_flag[1] = 'x';
+        scale_flag[2] = '\0';
+        BuildLabelFlag(scale_label, sizeof(scale_label), locale->settings_scale, scale_flag);
     }
 
     BuildLabelFlag(overlay_label, sizeof(overlay_label), locale->settings_debugger,
@@ -614,6 +679,8 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned language,
     if (MSXBARE_ENABLE_DEBUG_OVERLAY)
     {
         ADD_DEBUG_ITEM(overlay_label, ComboMenuActionCycleOverlay, overlay_available ? TRUE : FALSE);
+        ADD_DEBUG_ITEM(scale_label, ComboMenuActionOverscanChanged,
+            (overlay_available && overlay_mode != ComboDebugOverlayOff) ? TRUE : FALSE);
         ADD_DEBUG_ITEM(debug_log_label, ComboMenuActionToggleDebugLog, TRUE);
         ADD_DEBUG_ITEM(disk_rom_label, ComboMenuActionToggleDiskRom, TRUE);
         ADD_DEBUG_ITEM(kanji_rom_label, ComboMenuActionToggleKanjiRom, TRUE);

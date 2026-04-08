@@ -76,7 +76,12 @@ static const unsigned kStateBufferMaxBytes = 2u * 1024u * 1024u;
 static const unsigned kZ80TurboModeDes = 0u;
 static const unsigned kZ80TurboModePan = 1u;
 static const unsigned kZ80TurboModeMax = 2u;
+static const u8 kJoyBridgeRight = (u8) (1u << 0);
+static const u8 kJoyBridgeLeft = (u8) (1u << 1);
+static const u8 kJoyBridgeDown = (u8) (1u << 2);
+static const u8 kJoyBridgeUp = (u8) (1u << 3);
 static const u8 kJoyBridgeFireA = (u8) (1u << 4);
+static const u8 kJoyBridgeFireB = (u8) (1u << 5);
 static const boolean kBootQuiet = TRUE;
 /* Rensha modes are expressed in pulses per 10 frames (0.5, 1.0, 1.5). */
 static const unsigned kRenshaRateDen = 20u; /* 1/20 pulse per frame unit */
@@ -356,6 +361,42 @@ static unsigned ClampScalePercent(unsigned percent, unsigned max_scale)
 	if (percent < kScalePercentMin) percent = kScalePercentMin;
 	if (percent > max_scale) percent = max_scale;
 	return percent;
+}
+
+static unsigned ComputeEffectiveViewportScalePercent(unsigned manual_scale_percent,
+									 unsigned max_scale_percent,
+									 unsigned screen_height,
+									 unsigned overlay_mode)
+{
+	if (max_scale_percent < kScalePercentMin)
+	{
+		max_scale_percent = kScalePercentMin;
+	}
+	if (max_scale_percent > kScalePercentHardMax)
+	{
+		max_scale_percent = kScalePercentHardMax;
+	}
+
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+	if (DebugOverlayModeEnabled(ClampDebugOverlayMode(overlay_mode)))
+	{
+		return ClampScalePercent(manual_scale_percent, max_scale_percent);
+	}
+#else
+	(void) overlay_mode;
+#endif
+
+	unsigned fixed_scale_percent = ScalePercentFromFactor(ComputeFixedMaxScaleFactor(screen_height));
+	if (fixed_scale_percent > max_scale_percent)
+	{
+		fixed_scale_percent = max_scale_percent;
+	}
+	return fixed_scale_percent;
+}
+
+static boolean EffectiveOverscanEnabled(unsigned scale_percent)
+{
+	return (scale_percent > kScalePercentMin) ? TRUE : FALSE;
 }
 
 static char Port99OpTag(unsigned op)
@@ -1309,6 +1350,7 @@ CComboKernel::CComboKernel(void)
 	m_USBHCI(&m_Interrupt, &m_Timer, TRUE),
 	m_EMMC(&m_Interrupt, &m_Timer, &m_ActLED),
 	m_Sound(0),
+	m_UsbGamepad(),
 	m_UsbKeyboard(),
 	m_AudioPhase(0),
 	m_AudioStep((u32)(((u64)440u << 32) / (u64)kSampleRate)),
@@ -1821,6 +1863,11 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetMegaRamKb(m_MegaRamKb);
 	m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
 	m_PauseMenu.SetRenshaMode(m_RenshaMode);
+	{
+		u16 joy_codes[CUsbHidGamepad::MapSlotCount];
+		m_UsbGamepad.GetMappingCodes(joy_codes, CUsbHidGamepad::MapSlotCount);
+		m_PauseMenu.SetJoystickMapCodes(joy_codes, CUsbHidGamepad::MapSlotCount);
+	}
 	m_PauseMenu.SetFmMusicEnabled(m_FmMusicEnabled);
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
 	m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled,
@@ -1854,7 +1901,7 @@ TComboShutdownMode CComboKernel::Run(void)
 			{
 				m_UsbReady = TRUE;
 				m_Logger.Write(FromKernel, LogNotice, "USB host ready");
-				m_Logger.Write(FromKernel, LogNotice, "Attach USB keyboard and type");
+				m_Logger.Write(FromKernel, LogNotice, "Attach USB keyboard/gamepad");
 				BootPhase(m_Logger, "BT11", "USB Host... OK");
 			}
 			else
@@ -1901,7 +1948,7 @@ TComboShutdownMode CComboKernel::Run(void)
 				{
 					m_UsbReady = TRUE;
 					m_Logger.Write(FromKernel, LogNotice, "USB host ready");
-					m_Logger.Write(FromKernel, LogNotice, "Attach USB keyboard and type");
+					m_Logger.Write(FromKernel, LogNotice, "Attach USB keyboard/gamepad");
 				}
 				else
 				{
@@ -1919,7 +1966,18 @@ TComboShutdownMode CComboKernel::Run(void)
 
 		if (updated)
 		{
+			if (m_UsbGamepad.AttachIfAvailable(m_DeviceNameService, m_Logger))
+			{
+				u16 joy_codes[CUsbHidGamepad::MapSlotCount];
+				m_UsbGamepad.GetMappingCodes(joy_codes, CUsbHidGamepad::MapSlotCount);
+				m_PauseMenu.SetJoystickMapCodes(joy_codes, CUsbHidGamepad::MapSlotCount);
+			}
 			(void) m_UsbKeyboard.AttachIfAvailable(m_DeviceNameService, m_Logger, KeyPressedHandler);
+		}
+
+		if (m_UsbGamepad.ConsumeRemovedEvent())
+		{
+			m_Logger.Write(FromKernel, LogNotice, "USB gamepad removed");
 		}
 
 		if (m_UsbKeyboard.ConsumeRemovedEvent())
@@ -1977,6 +2035,10 @@ TComboShutdownMode CComboKernel::Run(void)
 			{
 				UpdateJoystickFromRaw(m_LastKeyboardModifiers, m_LastKeyboardRawKeys);
 			}
+		}
+		else if (m_EmulationPaused)
+		{
+			UpdateJoystickFromRaw(m_LastKeyboardModifiers, m_LastKeyboardRawKeys);
 		}
 
 		if (m_SettingsSavePending)
@@ -2082,7 +2144,7 @@ TComboShutdownMode CComboKernel::Run(void)
 				}
 
 				boolean rensha_fire_on = TRUE;
-				u8 joy_bits_runtime = m_JoyBridgeBits;
+				u8 joy_bits_runtime = ResolveRuntimeJoystickBits();
 				const unsigned rate_num = (m_RenshaMode > 3u) ? 0u : m_RenshaMode;
 				const boolean rensha_pressed = m_RenshaSpaceHeld ? TRUE : FALSE;
 				if (rate_num > 0u && rensha_pressed)
@@ -3380,9 +3442,12 @@ void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
 			const unsigned box_base_h = kViewportBaseHeight;
 			const unsigned max_scale =
 				ComputePixelScaleMaxPercent(screen_width, screen_height, box_base_w, box_base_h);
-			const unsigned scale_percent = ClampScalePercent(m_OverscanPercent, max_scale);
+			const unsigned scale_percent =
+				ComputeEffectiveViewportScalePercent(m_OverscanPercent,
+					max_scale,
+					screen_height,
+					m_DebugOverlayMode);
 			const unsigned scale_factor = ScaleFactorFromPercent(scale_percent);
-			const unsigned max_scale_factor = ComputeFixedMaxScaleFactor(screen_height);
 			(void) src_width;
 			(void) src_height;
 			if (m_WidescreenEnabled && !hires_mode)
@@ -3400,10 +3465,8 @@ void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
 			}
 			else
 			{
-				const unsigned effective_scale =
-					(scale_factor > max_scale_factor) ? max_scale_factor : scale_factor;
-				dst_width = box_base_w * effective_scale;
-				dst_height = box_base_h * effective_scale;
+				dst_width = box_base_w * scale_factor;
+				dst_height = box_base_h * scale_factor;
 			}
 		}
 
@@ -3898,7 +3961,14 @@ void CComboKernel::ApplyRuntimeSettingsToFmsx(void)
 	{
 		return;
 	}
-	fmsx_runtime_set_overscan((m_OverscanPercent > kScalePercentMin) ? TRUE : FALSE);
+	{
+		const unsigned effective_scale = ComputeEffectiveViewportScalePercent(
+			m_OverscanPercent,
+			ComputeScaleMaxPercentForCurrentFrame(m_Screen.GetWidth(), m_Screen.GetHeight()),
+			m_Screen.GetHeight(),
+			m_DebugOverlayMode);
+		fmsx_runtime_set_overscan(EffectiveOverscanEnabled(effective_scale));
+	}
 	fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 	fmsx_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
 	fmsx_runtime_set_boot_mode(m_BootMode);
@@ -4068,14 +4138,17 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	boolean has_cfg_diska = FALSE;
 	boolean has_cfg_diskb = FALSE;
 	boolean has_scc_plus = FALSE;
+	boolean has_joy_map = FALSE;
 	char cfg_carta_path[192];
 	char cfg_cartb_path[192];
 	char cfg_diska_path[192];
 	char cfg_diskb_path[192];
+	u16 joy_map_codes[CUsbHidGamepad::MapSlotCount];
 	cfg_carta_path[0] = '\0';
 	cfg_cartb_path[0] = '\0';
 	cfg_diska_path[0] = '\0';
 	cfg_diskb_path[0] = '\0';
+	m_UsbGamepad.GetMappingCodes(joy_map_codes, CUsbHidGamepad::MapSlotCount);
 
 	char *line = buffer;
 	while (*line != '\0')
@@ -4234,6 +4307,36 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			{
 				m_AudioOutputGainPct = (value > 100u) ? 100u : value;
 			}
+			else if (SettingsKeyEquals(line, key_len, "joy_map_up"))
+			{
+				joy_map_codes[CUsbHidGamepad::MapSlotUp] = CUsbHidGamepad::ClampControlCode((u16) value);
+				has_joy_map = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "joy_map_down"))
+			{
+				joy_map_codes[CUsbHidGamepad::MapSlotDown] = CUsbHidGamepad::ClampControlCode((u16) value);
+				has_joy_map = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "joy_map_left"))
+			{
+				joy_map_codes[CUsbHidGamepad::MapSlotLeft] = CUsbHidGamepad::ClampControlCode((u16) value);
+				has_joy_map = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "joy_map_right"))
+			{
+				joy_map_codes[CUsbHidGamepad::MapSlotRight] = CUsbHidGamepad::ClampControlCode((u16) value);
+				has_joy_map = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "joy_map_button1"))
+			{
+				joy_map_codes[CUsbHidGamepad::MapSlotButton1] = CUsbHidGamepad::ClampControlCode((u16) value);
+				has_joy_map = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "joy_map_button2"))
+			{
+				joy_map_codes[CUsbHidGamepad::MapSlotButton2] = CUsbHidGamepad::ClampControlCode((u16) value);
+				has_joy_map = TRUE;
+			}
 			else if (SettingsKeyEquals(line, key_len, "cart_a_path"))
 			{
 				ParseTextValueLine(eq + 1, line_end, cfg_carta_path, sizeof(cfg_carta_path));
@@ -4260,6 +4363,10 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	}
 
 	NormalizeSettingsForBuild();
+	if (has_joy_map)
+	{
+		m_UsbGamepad.SetMappingCodes(joy_map_codes, CUsbHidGamepad::MapSlotCount, TRUE);
+	}
 
 	m_RefreshRateHz = ClampRefreshRateHz(m_RefreshRateHz);
 	m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
@@ -4279,6 +4386,11 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetMegaRamKb(m_MegaRamKb);
 	m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
 	m_PauseMenu.SetRenshaMode(m_RenshaMode);
+	{
+		u16 joy_codes[CUsbHidGamepad::MapSlotCount];
+		m_UsbGamepad.GetMappingCodes(joy_codes, CUsbHidGamepad::MapSlotCount);
+		m_PauseMenu.SetJoystickMapCodes(joy_codes, CUsbHidGamepad::MapSlotCount);
+	}
 	m_PauseMenu.SetFmMusicEnabled(m_FmMusicEnabled);
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
 	m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled,
@@ -4297,7 +4409,14 @@ void CComboKernel::LoadSettingsFromStorage(void)
 		m_PauseMenu.SetScaleMaxFitEnabled(FALSE);
 	}
 #if MSXBARE_ENABLE_FMSX
-	fmsx_runtime_set_overscan((m_OverscanPercent > kScalePercentMin) ? TRUE : FALSE);
+	{
+		const unsigned effective_scale = ComputeEffectiveViewportScalePercent(
+			m_OverscanPercent,
+			ComputeScaleMaxPercentForCurrentFrame(m_Screen.GetWidth(), m_Screen.GetHeight()),
+			m_Screen.GetHeight(),
+			m_DebugOverlayMode);
+		fmsx_runtime_set_overscan(EffectiveOverscanEnabled(effective_scale));
+	}
 	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
 	fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 	fmsx_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
@@ -4396,6 +4515,16 @@ void CComboKernel::SaveSettingsToStorage(void)
 	APPEND_LINE_FMT("megaram_kb=%u\n", m_MegaRamKb);
 	APPEND_LINE_FMT("z80_turbo=%u\n", m_Z80TurboMode);
 	APPEND_LINE_FMT("rensha=%u\n", m_RenshaMode);
+	{
+		u16 joy_codes[CUsbHidGamepad::MapSlotCount];
+		m_PauseMenu.GetJoystickMapCodes(joy_codes, CUsbHidGamepad::MapSlotCount);
+		APPEND_LINE_FMT("joy_map_up=%u\n", (unsigned) joy_codes[CUsbHidGamepad::MapSlotUp]);
+		APPEND_LINE_FMT("joy_map_down=%u\n", (unsigned) joy_codes[CUsbHidGamepad::MapSlotDown]);
+		APPEND_LINE_FMT("joy_map_left=%u\n", (unsigned) joy_codes[CUsbHidGamepad::MapSlotLeft]);
+		APPEND_LINE_FMT("joy_map_right=%u\n", (unsigned) joy_codes[CUsbHidGamepad::MapSlotRight]);
+		APPEND_LINE_FMT("joy_map_button1=%u\n", (unsigned) joy_codes[CUsbHidGamepad::MapSlotButton1]);
+		APPEND_LINE_FMT("joy_map_button2=%u\n", (unsigned) joy_codes[CUsbHidGamepad::MapSlotButton2]);
+	}
 	APPEND_LINE_FMT("fm_music=%u\n", m_FmMusicEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("scc_plus=%u\n", m_SccCartEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("scc_dual=%u\n", m_SccDualCartEnabled ? 1u : 0u);
@@ -4992,7 +5121,7 @@ void CComboKernel::LoadEmulatorStateFromStorage(void)
 	}
 
 		PushKeyboardStateToRuntime(TRUE);
-		emulator_backend_input_push_joystick(m_JoyBridgeBits);
+		emulator_backend_input_push_joystick(ResolveRuntimeJoystickBits());
 		if (emulator_backend_step_frame())
 		{
 			const EmulatorBackendRuntimeStatus runtime_status = emulator_backend_get_status();
@@ -5335,7 +5464,14 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		m_ScaleMaxFitEnabled = FALSE;
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX
-		fmsx_runtime_set_overscan((m_OverscanPercent > kScalePercentMin) ? TRUE : FALSE);
+		{
+			const unsigned effective_scale = ComputeEffectiveViewportScalePercent(
+				m_OverscanPercent,
+				ComputeScaleMaxPercentForCurrentFrame(m_Screen.GetWidth(), m_Screen.GetHeight()),
+				m_Screen.GetHeight(),
+				m_DebugOverlayMode);
+			fmsx_runtime_set_overscan(EffectiveOverscanEnabled(effective_scale));
+		}
 		/* Scale changes can shrink/grow viewport; force deterministic full redraw + fresh snapshot. */
 		if (m_EmulationPaused && m_FmsxReady)
 		{
@@ -5714,6 +5850,17 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		}
 		break;
 
+	case ComboMenuActionApplyJoystickMap:
+	{
+		u16 joy_codes[CUsbHidGamepad::MapSlotCount];
+		m_PauseMenu.GetJoystickMapCodes(joy_codes, CUsbHidGamepad::MapSlotCount);
+		m_UsbGamepad.SetMappingCodes(joy_codes, CUsbHidGamepad::MapSlotCount, TRUE);
+		m_PauseMenu.SetJoystickMapCodes(joy_codes, CUsbHidGamepad::MapSlotCount);
+		RefreshSettingsUiAfterAction();
+		m_Logger.Write(FromKernel, LogNotice, "Settings: JOYPAD MAPPING updated");
+		break;
+	}
+
 	case ComboMenuActionCycleOverlay:
 	#if MSXBARE_ENABLE_DEBUG_OVERLAY
 		SetDebugOverlayMode(NextDebugOverlayMode(m_DebugOverlayMode));
@@ -5878,6 +6025,17 @@ void CComboKernel::SetDebugOverlayMode(unsigned mode)
 	}
 	m_PauseMenu.SetOverlayMode(m_DebugOverlayMode, TRUE);
 	m_PauseMenu.RequestRedraw();
+#if MSXBARE_ENABLE_FMSX
+	if (m_FmsxReady)
+	{
+		const unsigned effective_scale = ComputeEffectiveViewportScalePercent(
+			m_OverscanPercent,
+			ComputeScaleMaxPercentForCurrentFrame(m_Screen.GetWidth(), m_Screen.GetHeight()),
+			m_Screen.GetHeight(),
+			m_DebugOverlayMode);
+		fmsx_runtime_set_overscan(EffectiveOverscanEnabled(effective_scale));
+	}
+#endif
 	if (m_ScreenReady && m_DebugOverlayUnlocked)
 	{
 		ClearDebugOverlay();
@@ -6063,6 +6221,22 @@ void CComboKernel::PushKeyboardStateToRuntime(boolean rensha_fire_on)
 #endif
 }
 
+u8 CComboKernel::ResolveRuntimeJoystickBits(void) const
+{
+	u8 bits = (u8) (m_JoyBridgeBits | m_UsbGamepad.GetBridgeBits());
+
+	if ((bits & (kJoyBridgeLeft | kJoyBridgeRight)) == (kJoyBridgeLeft | kJoyBridgeRight))
+	{
+		bits &= (u8) ~(kJoyBridgeLeft | kJoyBridgeRight);
+	}
+	if ((bits & (kJoyBridgeUp | kJoyBridgeDown)) == (kJoyBridgeUp | kJoyBridgeDown))
+	{
+		bits &= (u8) ~(kJoyBridgeUp | kJoyBridgeDown);
+	}
+
+	return bits;
+}
+
 void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned char raw_keys[6])
 {
 	m_RenshaSpaceHeld = FALSE;
@@ -6102,20 +6276,41 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 
 	TComboKeyboardInputState key_state;
 	ComboDecodeKeyboardRaw(modifiers, raw_keys, &key_state);
+	const u8 menu_joy_bits = m_UsbGamepad.GetMenuBits();
+	if ((menu_joy_bits & CUsbHidGamepad::MenuBitPause) != 0u)
+	{
+		key_state.pause_pressed = TRUE;
+	}
+	if (m_EmulationPaused && !m_PauseMenu.IsCapturingJoystickMap())
+	{
+		if ((menu_joy_bits & CUsbHidGamepad::MenuBitUp) != 0u)
+		{
+			key_state.menu_up_pressed = TRUE;
+		}
+		if ((menu_joy_bits & CUsbHidGamepad::MenuBitDown) != 0u)
+		{
+			key_state.menu_down_pressed = TRUE;
+		}
+		if ((menu_joy_bits & CUsbHidGamepad::MenuBitLeft) != 0u)
+		{
+			key_state.menu_left_pressed = TRUE;
+		}
+		if ((menu_joy_bits & CUsbHidGamepad::MenuBitRight) != 0u)
+		{
+			key_state.menu_right_pressed = TRUE;
+		}
+		if ((menu_joy_bits & CUsbHidGamepad::MenuBitSelect) != 0u)
+		{
+			key_state.menu_enter_pressed = TRUE;
+		}
+		if ((menu_joy_bits & CUsbHidGamepad::MenuBitBack) != 0u)
+		{
+			key_state.menu_back_pressed = TRUE;
+		}
+	}
 	if (same_report)
 	{
-		/* Auto-repeat only for navigation keys (arrows + page up/down). */
-		const boolean allow_repeat =
-			key_state.menu_up_pressed
-			|| key_state.menu_down_pressed
-			|| key_state.menu_left_pressed
-			|| key_state.menu_right_pressed
-			|| key_state.menu_page_up_pressed
-			|| key_state.menu_page_down_pressed;
-		if (!allow_repeat)
-		{
-			return;
-		}
+		/* While paused, keep polling so joystick mapping can capture without a fresh keyboard edge. */
 	}
 
 	if (key_state.f1_pressed && !m_LastF12Pressed)
@@ -6254,7 +6449,8 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 		key_state.menu_enter_pressed,
 		key_state.menu_back_pressed,
 		key_state.menu_delete_pressed,
-		(!same_report ? key_state.menu_jump_letter : '\0'));
+		(!same_report ? key_state.menu_jump_letter : '\0'),
+		m_UsbGamepad.GetActiveControlCode());
 	const boolean now_in_settings = m_PauseMenu.IsInSettings() ? TRUE : FALSE;
 	if (m_EmulationPaused && now_in_settings && !m_LastPauseWasInSettings)
 	{

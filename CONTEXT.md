@@ -2,22 +2,35 @@
 
 Ponto de entrada rapido para contexto operacional do projeto.
 
-- Contexto completo e historico de handoff da branch atual: [docs/handoff/82-auditar-registradores-v9958.md](docs/handoff/82-auditar-registradores-v9958.md)
-- Regra operacional da trilha `#82`: `82-auditar-registradores-v9958` permanece como branch umbrella; cada sub-issue da trilha deve abrir branch derivada dela, subir PR contra a umbrella e so depois entrar no PR final `#82 -> main`.
-- Novo guardrail de fluxo da trilha: nem `git commit` local nem `git push` devem acontecer durante cortes experimentais; ambos so voltam quando o usuario declarar explicitamente que a issue ativa ficou estavel.
-- Branch ativa da rodada: `82-auditar-registradores-v9958`.
+- Contexto completo e historico de handoff da branch atual: [docs/handoff/70-suporte-joysticks-usb-mapeamento-atari-msx.md](docs/handoff/70-suporte-joysticks-usb-mapeamento-atari-msx.md)
+- Guardrail ativo: nem `git commit` local nem `git push` devem acontecer durante cortes experimentais; ambos so voltam quando o usuario declarar explicitamente que a issue ativa ficou estavel.
+- Branch ativa da rodada: `70-suporte-joysticks-usb-mapeamento-atari-msx`
 - Estado atual da rodada:
-  - a `#238` ja foi mergeada e fechada
-  - a umbrella `#82` foi consolidada como estado estavel
-  - PR aberto para `main`: [#245](https://github.com/sandersouza/msxbarepi/pull/245)
-  - follow-ups residuais segregados em `#242` e `#243`
-- Atualizacao incremental da umbrella `#82`:
-  - um experimento de mailbox para `Screen 7 / HIRES / interlaced` chegou a corrigir a geometria, mas derrubou o FPS e foi revertido
-  - o estado local voltou ao contrato estavel anterior do viewport `HIRES`
-  - build local validada: `BUILD_BID=202604082150-issue82-hires-interlaced-rollback`, `BUILD_ID=5F90`, `BUILD_HASH=9222903-9f7064adad19ed2ba35ccea198a720994c48f903`
-- Atualizacao incremental da `#238`: a investigacao de performance do presenter contra a documentacao/codigo do Circle foi consolidada num corte estrutural: em vez de continuar no path `SetArea()`/copia, a branch ganhou um `combo_screen_device` local com `CBcmFrameBuffer` virtual `2x`, um `CDisplay` que escreve sempre na pagina traseira e flip explicito por `WaitForVerticalSync()+SetVirtualOffset()` no fim do frame. `src/kernel.cpp`, `src/kernel.h`, `src/tools/render/gfx_textbox.*` e `src/Makefile` foram adaptados para esse modelo; o viewport grande agora desenha na pagina traseira e o presenter deixa de apresentar no meio do blit. Build local validada: `BUILD_BID=202604081930-issue238-combo-screen-flip`, `BUILD_ID=72A0`, `BUILD_HASH=408c7e1-6e9081008e790c99d3d5e348578e383e9b59d6b2`. Sem `commit`, sem `push`.
-- Atualizacao incremental da `#238`: o overlay de debug deixou de ser binario e passou a operar em `MAX/MIN/OFF`. O `F11` e o item `Settings -> Debugger` agora ciclam `MAX -> MIN -> OFF -> MAX`, e o modo `MIN` foi reduzido a 3 linhas (`BUILD + CPU FREQ`, `DFS + FPS`, `Screen + Mode`). `msxbarepi.cfg` passa a persistir `debugger=<0|1|2>`, mantendo compatibilidade com o valor legado `1` como `MAX`. Build local validada: `BUILD_BID=202604081950-issue238-debug-max-min-off`, `BUILD_ID=07FD`, `BUILD_HASH=408c7e1-e101539120147063c7d54b9a96861d31cfc6afb9`. Sem `commit`, sem `push`.
-- Atualizacao incremental da `#238`: a rodada local atual encontrou um desvio estrutural no presenter `HIRES`. O host em `HIRES_PROGRESSIVE` ja entrega um buffer pretecido/intercalado por frame em `src/fmsx_host_stubs.c`, mas `src/kernel.cpp` ainda tratava esse frame como se precisasse de uma segunda tecida, fazendo mix vertical de pares de linhas e calculando a mailbox `HIRES` por proporcao de `logical_height`. O corte local atual remove essa segunda tecida do presenter, volta a mapear `HIRES` sobre a altura fisica real do buffer e restaura a regra de mailbox `4:3` para `HIRES` fora do debug. Build local validada: `BUILD_BID=202604071700-issue238-hires-no-second-weave`, `BUILD_ID=1F9B`, `BUILD_HASH=35411b2-dda9b09e6506fb4c6c6d756335ecfd70ba2ffde8`. Sem `commit`, sem `push`.
+  - a umbrella `#82` ja foi mergeada em `main`
+  - a issue ativa agora e a `#70`
+  - o worktree local contem o suporte funcional de joystick USB, o submenu `JOYPAD MAPPING`, a navegacao do menu pausado por joystick, a nova politica de `Scale` no menu `Debug` e a persistencia/carga do `joy_map_*` pelo `.cfg`
+- Corte tecnico atual:
+  - wrapper local `src/tools/usb_hid_gamepad.*`
+  - attach de `upad1` via Circle `usbgamepad`
+  - mapeamento fixo Atari/MSX para pads conhecidos
+  - fallback generico por `hat/axes/buttons`
+  - combinacao do gamepad USB com o bridge atual do teclado antes do push ao backend
+  - submenu `JOYPAD MAPPING` em `Settings`, abaixo de `Rensha`
+  - item de menu renderizado como `Joypad mapping [->]`, com o sufixo alinhado a direita
+  - captura continua ciclica de controle do gamepad para `UP/DOWN/LEFT/RIGHT/Button1/Button2`, sem depender de `ENTER` por item
+  - o loop pausado do menu continua sendo processado mesmo sem nova borda de teclado, para que a captura do joystick nao dependa de tecla auxiliar
+  - menu pausado navegavel por joystick USB: `button 0`/`A` = seletor, `button 1`/`B` = `ESC`, direcional/hat/analogico esquerdo = setas
+  - `START` do gamepad conhecido atua como pausa global (`F12`)
+  - `JOYPAD MAPPING` so abre pelo seletor (`button 0` / `ENTER`), nunca por direcao
+  - cada captura no `JOYPAD MAPPING` promove imediatamente o slot para o mapa efetivo
+  - `Scale` saiu de `Settings` e foi movido para `Debug`
+  - com `Debugger = OFF`, o viewport usa automaticamente o maior fator permitido pela resolucao atual (`3x` em `720/768p`, `4x` em `1080p`)
+  - com `Debugger = MIN/MAX`, o `Scale` manual volta a valer no viewport
+  - `Save to disk` grava os `joy_map_*` a partir do mapa atual do menu, e o boot recarrega esse mapa em `BT4`
+- Build local validada:
+  - `BUILD_BID=202604090130-issue70-joymap-save-start`
+  - `BUILD_ID=CE79`
+  - `BUILD_HASH=a3b9655-1f7d1565606bb2a108a578bf0b3d7c91bbbefbbc`
 - Atualizacao incremental da `#238`: o reteste em campo mostrou que o `1F9B` corrigiu o diagnostico da tecida dupla, mas introduziu uma regressao especifica do `DEBUG`: a mailbox compacta de `HIRES` passou a usar a altura fisica dobrada do frame, o que esticou a imagem verticalmente e derrubou o FPS medio para ~29.4. O corte local atual limita essa mudanca ao presenter normal e restaura, so para o box de `DEBUG`, a geometria logica do frame (`logical_width/logical_height`) enquanto o blit continua lendo o buffer fisico completo. Build local validada: `BUILD_BID=202604081130-issue238-hires-debug-logical-box`, `BUILD_ID=69E2`, `BUILD_HASH=35411b2-47d574d199f84c7c87622570d18b69e8fbe3149c`. Sem `commit`, sem `push`.
 - Atualizacao incremental da `#238`: a investigacao de `HIRES` por metadata/presenter foi descartada como ramo experimental ruim. O presenter em `src/kernel.cpp` voltou ao contrato estavel de viewport/blit do branch, ignorando o plumbing local de `EmulatorBackendVideoPresentation` no path ativo. Isso remove a regressao de `HIRES` verticalmente esticado e a queda geral de FPS introduzida pelos builds `1F9B/69E2`. Build local validada: `BUILD_BID=202604081215-issue238-presenter-rollback-stable`, `BUILD_ID=4742`, `BUILD_HASH=35411b2-c6f9c244c5cf5d4546b3313eecf626cc3523ace3`. Sem `commit`, sem `push`.
 - Atualizacao incremental da `#238`: depois do ganho de FPS recuperado pelo reaproveitamento de linhas verticais repetidas, o presenter recebeu um segundo corte de performance, agora no custo horizontal. Em `src/kernel.cpp`, `BlitMappedLineRgb565()` e `BlitMappedLineRgb565NoDim()` passaram a reutilizar o sample ja processado quando o `xmap` repete a mesma `src_x`, evitando reler e redimencionar o mesmo pixel varias vezes na mesma scanline. O objetivo e espremer performance extra, especialmente em `HIRES`, sem mexer um pixel da imagem. Build local validada: `BUILD_BID=202604062015-issue238-blit-xmap-sample-reuse`, `BUILD_ID=AFAF`, `BUILD_HASH=35411b2-d626e9ee1cfd42edaff198525136a4ea54a68c90`. Sem `commit`, sem `push`.

@@ -5,6 +5,7 @@
 #include "gfx_textbox.h"
 #include "combo_file_browser.h"
 #include "combo_menu_items.h"
+#include "../usb_hid_gamepad.h"
 
 class CComboPauseMenu
 {
@@ -43,6 +44,8 @@ public:
     void SetZ80TurboMode(unsigned mode);
     unsigned GetZ80TurboMode(void) const;
     void SetRenshaMode(unsigned mode);
+    void SetJoystickMapCodes(const u16 *codes, unsigned count);
+    void GetJoystickMapCodes(u16 *codes, unsigned count) const;
     void SetFmMusicEnabled(boolean enabled);
     void SetSccCartEnabled(boolean enabled);
     void SetSccDualCartState(boolean enabled, boolean available);
@@ -63,6 +66,7 @@ public:
     void OpenGameMaster(TGameMasterCatalog *catalog, unsigned load_status, unsigned error_line);
     unsigned GetAudioGainPercent(void) const;
     boolean IsInSettings(void) const;
+    boolean IsCapturingJoystickMap(void) const;
     void ReturnToRoot(void);
     void RequestRedraw(void);
     void InvalidateViewportSnapshot(void);
@@ -80,7 +84,8 @@ public:
                                  boolean enter_pressed,
                                  boolean back_pressed,
                                  boolean delete_pressed,
-                                 char jump_letter);
+                                 char jump_letter,
+                                 u16 joystick_capture_code);
     void Render(boolean visible, CGfxTextBoxRenderer *renderer, unsigned screen_width, unsigned screen_height,
                 unsigned anchor_x, unsigned anchor_y, unsigned anchor_w, unsigned anchor_h);
 
@@ -89,12 +94,13 @@ private:
         MenuViewRoot = 0,
         MenuViewSettings = 1,
         MenuViewDebug = 2,
-        MenuViewLoadRom = 3,
-        MenuViewLoadRomBrowser = 4,
-        MenuViewLoadDisk = 5,
-        MenuViewLoadDiskBrowser = 6,
-        MenuViewGameMasterBrowser = 7,
-        MenuViewGameMasterCheats = 8
+        MenuViewJoystickMap = 3,
+        MenuViewLoadRom = 4,
+        MenuViewLoadRomBrowser = 5,
+        MenuViewLoadDisk = 6,
+        MenuViewLoadDiskBrowser = 7,
+        MenuViewGameMasterBrowser = 8,
+        MenuViewGameMasterCheats = 9
     };
     static void CopySmallText(char *dst, unsigned dst_size, const char *src);
     void ResetRepeatState(void);
@@ -102,6 +108,7 @@ private:
     unsigned FindFirstSelectable(void) const;
     unsigned FindPrevSelectable(unsigned from) const;
     unsigned FindNextSelectable(unsigned from) const;
+    unsigned FindActionIndex(TComboMenuAction action) const;
     void ResetGameMasterState(void);
     const TGameMasterGame *GetSelectedGameMasterGame(void) const;
     unsigned GetSelectedGameMasterCheatCount(void) const;
@@ -131,6 +138,11 @@ private:
     unsigned m_MegaRamKb;
     unsigned m_Z80TurboMode;
     unsigned m_RenshaMode;
+    u16 m_JoystickMapCodes[CUsbHidGamepad::MapSlotCount];
+    u16 m_JoystickMapEditCodes[CUsbHidGamepad::MapSlotCount];
+    boolean m_JoystickMapDirty;
+    u16 m_LastJoystickCaptureCode;
+    unsigned m_JoystickMapReturnSelected;
     boolean m_FmMusicEnabled;
     boolean m_SccCartEnabled;
     boolean m_SccDualCartEnabled;
