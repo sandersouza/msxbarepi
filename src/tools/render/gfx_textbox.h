@@ -1,8 +1,9 @@
 #ifndef MSXBARE_CIRCLE_MSXBARE_GFX_TEXTBOX_H
 #define MSXBARE_CIRCLE_MSXBARE_GFX_TEXTBOX_H
 
+#include "combo_screen_device.h"
+
 #include <circle/chargenerator.h>
-#include <circle/screen.h>
 #include <circle/types.h>
 
 struct TGfxTextStyle
@@ -33,9 +34,9 @@ struct TGfxOffscreenState
 class CGfxTextBoxRenderer
 {
 public:
-	CGfxTextBoxRenderer(CScreenDevice *screen = 0);
+	CGfxTextBoxRenderer(CComboScreenDevice *screen = 0);
 
-	void Attach(CScreenDevice *screen);
+	void Attach(CComboScreenDevice *screen);
 	unsigned GetCharWidth(void) const;
 	unsigned GetCharHeight(void) const;
 
@@ -64,7 +65,7 @@ private:
 	void PutPixel(unsigned x, unsigned y, TScreenColor color);
 
 private:
-	CScreenDevice *m_Screen;
+	CComboScreenDevice *m_Screen;
 	CBcmFrameBuffer *m_FrameBuffer;
 	CCharGenerator m_Font;
 	boolean m_OffscreenActive;

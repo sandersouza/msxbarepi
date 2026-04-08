@@ -41,6 +41,7 @@
 #include <streams/file_stream_transforms.h>
 
 extern retro_log_printf_t log_cb;
+extern void msxbare_uart_write(const char *text);
 extern void fmsx_runtime_notify_media_probe(void);
 extern int g_fmsx_fmpac_enabled;
 extern unsigned g_fmsx_megaram_kb;
@@ -130,16 +131,16 @@ static uint8_t g_fmsx_audio_cycle_valid = 0u;
 static unsigned g_fmsx_hrefresh_frac_acc_240 = 0u;
 static unsigned g_fmsx_hrefresh_frac_acc_256 = 0u;
 static int g_fmsx_active_cpu_cycles_current_line = CPU_H240;
+static uint16_t fmsx_vdp_s2_helper_caller_pc(uint16_t pc);
+static uint16_t fmsx_vdp_port99_write_pc(uint16_t pc);
 
 static int fmsx_scale_cycles(int cycles)
 {
   long long scaled;
+  const unsigned percent = FmsxTurboPercent < 50u ? 50u : (FmsxTurboPercent > 300u ? 300u : FmsxTurboPercent);
 
   if(cycles <= 0) return 1;
-  if(FmsxTurboPercent < 100u) FmsxTurboPercent = 100u;
-  if(FmsxTurboPercent > 300u) FmsxTurboPercent = 300u;
-
-  scaled = ((long long)cycles * (long long)FmsxTurboPercent) / 100ll;
+  scaled = ((long long)cycles * (long long)percent) / 100ll;
   if(scaled < 1ll) scaled = 1ll;
   if(scaled > 0x7FFFFFFFll) scaled = 0x7FFFFFFFll;
   return (int)scaled;
@@ -148,7 +149,7 @@ static int fmsx_scale_cycles(int cycles)
 static int fmsx_hrefresh_cpu_cycles_exact(int active_vdp_ticks)
 {
   const unsigned denom = 600u; /* 6 VDP clocks per CPU clock, scaled by percent */
-  const unsigned percent = FmsxTurboPercent < 100u ? 100u : (FmsxTurboPercent > 300u ? 300u : FmsxTurboPercent);
+  const unsigned percent = FmsxTurboPercent < 50u ? 50u : (FmsxTurboPercent > 300u ? 300u : FmsxTurboPercent);
   const unsigned numer = (unsigned)active_vdp_ticks * percent;
   unsigned *acc;
   unsigned whole;
@@ -173,7 +174,7 @@ void fmsx_cpu_set_turbo_percent(unsigned percent)
 {
   int base_vperiod;
 
-  if(percent < 100u) percent = 100u;
+  if(percent < 50u) percent = 50u;
   if(percent > 300u) percent = 300u;
   FmsxTurboPercent = percent;
   g_fmsx_hrefresh_frac_acc_240 = 0u;
@@ -196,6 +197,11 @@ uint64_t fmsx_audio_cpu_cycles_now(void)
   if(elapsed > g_fmsx_audio_phase_cycles) elapsed = g_fmsx_audio_phase_cycles;
 
   return g_fmsx_audio_cycle_base + (uint64_t)(unsigned)elapsed;
+}
+
+uint64_t fmsx_vdp_cpu_cycles_now(void)
+{
+  return fmsx_audio_cpu_cycles_now();
 }
 
 unsigned fmsx_audio_effective_cpu_clock_hz(void)
@@ -291,17 +297,45 @@ uint32_t FmsxVDPFrameCounter = 0;     /* Number of VDP frame starts observed */
 uint8_t FmsxVDPLinePhase = 0;         /* 0=active scan, 1=HBlank */
 uint8_t FmsxVDPScreenOnLatched = 0;   /* Display enable latched per scanline */
 int FmsxVDPRenderVScrollOverride = -1;/* Optional per-line VScroll override for renderer */
+uint8_t *FmsxVDPLineChrTabLatched = 0; /* ChrTab snapshot for current scanline */
+int FmsxVDPLineChrTabMLatched = 0;    /* ChrTabM snapshot for current scanline */
+uint8_t FmsxVDPLineR2Latched = 0;     /* R#2 snapshot for current scanline */
+uint8_t FmsxVDPLineR25Latched = 0;    /* R#25 snapshot for current scanline */
+uint8_t FmsxVDPLineR26Latched = 0;    /* R#26 snapshot for current scanline */
+uint8_t FmsxVDPLineR27Latched = 0;    /* R#27 snapshot for current scanline */
+uint8_t FmsxVDPLineR18Latched = 0;    /* R#18 snapshot for current scanline */
+uint8_t FmsxVDPLineR9Latched = 0;     /* R#9 snapshot for current scanline */
+uint8_t FmsxVDPLineOddPageLatched = 0;/* EO-derived display page for current scanline */
+uint8_t FmsxVDPLineFlipEvenOddLatched = 0; /* R#9 bit2 snapshot for current scanline */
+uint8_t FmsxVDPLineInterlaceOnLatched = 0; /* R#9 bit3 snapshot for current scanline */
+uint8_t FmsxVDPLineColorSpritesLatched[384]; /* SCREEN 6/7 sprite line prepared for the next scanline, with 32px margins */
+uint8_t FmsxVDPLineColorSpritesRender[384];  /* SCREEN 6/7 sprite line consumed by the current scanline, with 32px margins */
+uint8_t FmsxVDPLineColorSpritesValid = 0;    /* next-line sprite line ready */
+uint8_t FmsxVDPLineColorSpritesRenderValid = 0; /* current-line sprite line ready */
 static uint8_t FmsxVDPLineVScrollLatched = 0; /* VScroll captured at scanline start */
 static int FmsxVDPUCountLatched = 0;  /* Frame visibility accumulator for current scanline */
-static uint8_t FmsxVDPDrawingLatched = 0; /* Drawing state for current scanline */
+uint8_t FmsxVDPDrawingLatched = 0; /* Drawing state for current scanline */
 static uint8_t FmsxVDPLineRendered = 0;   /* Current scanline already composed before HBlank */
-static uint8_t FmsxVDPLineChunkEnd = 0;   /* Screen 4 partial render end column (0..32) */
+static uint8_t FmsxVDPLineChunkEnd = 0;   /* Partial render end column for current scanline */
+static int FmsxVDPLineOffset67 = -1;      /* SCREEN 6/7 partial line offset in blueMSX-style -1..33 units */
+static uint8_t FmsxVDPLineScreen67StateValid = 0; /* SCREEN 6/7 state captured at first render of the line */
 uint32_t FmsxIE1EventCount = 0;       /* Number of VDP line-coincidence events */
 uint32_t FmsxIE1AckCount = 0;         /* Number of S#1 reads that clear IE1 flag */
 uint32_t FmsxIE1ArmedCount = 0;       /* Number of times IE1 was armed on active line */
 uint32_t FmsxIE1FiredHBlankCount = 0; /* Number of armed IE1 events fired on HBlank */
 static uint8_t FmsxIE1PendingHBlank = 0;
 static uint8_t FmsxVDPDisplayStateDirty = 0;
+static uint32_t FmsxVDPStatus0LiveFrame = ~0u;
+static int FmsxVDPStatus0LiveLine = -1;
+static uint8_t FmsxVDPStatus0LiveCollision = 0;
+static uint8_t FmsxVDPStatus0LiveSprite = 0x1Fu;
+static uint16_t FmsxVDPStatus0LiveX = 0;
+static uint16_t FmsxVDPStatus0LiveY = 0;
+static uint32_t FmsxVDPStatus0LatchedFrame = ~0u;
+static int FmsxVDPStatus0LatchedLine = -1;
+static unsigned g_bootlogo_regwrite_trace_count = 0u;
+static uint8_t g_fmsx_vdp_write_source_port = 0xFFu;
+static uint16_t g_fmsx_vdp_write_source_pc = 0u;
 static TFmsxVDPTraceEvent g_fmsx_vdp_trace[FMSX_VDP_TRACE_CAPACITY];
 static unsigned g_fmsx_vdp_trace_head = 0;
 static unsigned g_fmsx_vdp_trace_count = 0;
@@ -391,7 +425,43 @@ uint8_t FmsxVDPLastPort99VKey = 1;
 uint8_t FmsxVDPLastPort99R15 = 0;
 uint16_t FmsxVDPLastPort99PC = 0;
 uint32_t FmsxVDPRegWriteCount[64];    /* Per-register VDP write counters */
+uint16_t FmsxVDPRegLastWritePC[64];    /* Last CPU PC observed for each VDP register write */
+uint16_t FmsxVDPRegLastWriteLine[64];  /* Last scanline observed for each VDP register write */
+uint32_t FmsxVDPRegLastWriteFrame[64]; /* Last VDP frame observed for each VDP register write */
+uint8_t FmsxVDPRegLastWritePort[64];   /* Source port (99h/9Bh/FFh fallback) for last register write */
+uint8_t FmsxVDPRegLastWriteOld[64];    /* Previous value observed on the last register write */
+uint8_t FmsxVDPRegLastWriteNew[64];    /* New value observed on the last register write */
 uint32_t FmsxVDPStatusReadCount[16];  /* Per-status-register read counters via R#15 */
+enum {
+  FMSX_S2_HELPER_10D8 = 0,
+  FMSX_S2_HELPER_10E1,
+  FMSX_S2_HELPER_363D,
+  FMSX_S2_HELPER_3646,
+  FMSX_S2_HELPER_2BE6,
+  FMSX_S2_HELPER_2279,
+  FMSX_S2_HELPER_OTHER,
+  FMSX_S2_HELPER_COUNT
+};
+#define FMSX_S2_CALLER_CAPACITY 16
+uint32_t FmsxVDPS2HelperReadCount[FMSX_S2_HELPER_COUNT];
+uint16_t FmsxVDPS2CallerPC[FMSX_S2_CALLER_CAPACITY];
+uint32_t FmsxVDPS2CallerCount[FMSX_S2_CALLER_CAPACITY];
+uint32_t FmsxVDPS2CallerOverflowCount = 0;
+uint32_t FmsxVDPS2Bit0SetCount = 0;
+uint32_t FmsxVDPS2Bit1SetCount = 0;
+uint32_t FmsxVDPS2Bit6SetCount = 0;
+uint32_t FmsxVDPS2Bit0RiseCount = 0;
+uint32_t FmsxVDPS2Bit0FallCount = 0;
+uint32_t FmsxVDPS2Bit1RiseCount = 0;
+uint32_t FmsxVDPS2Bit1FallCount = 0;
+uint32_t FmsxVDPS2Bit6RiseCount = 0;
+uint32_t FmsxVDPS2Bit6FallCount = 0;
+uint8_t FmsxVDPS2LastLive = 0;
+uint8_t FmsxVDPS2LastValid = 0;
+uint32_t FmsxVDPStatus0Read7A66Count = 0;
+uint32_t FmsxVDPStatus0Read7A66Bit5Count = 0;
+uint32_t FmsxVDPStatus0Read7A68Count = 0;
+uint32_t FmsxVDPStatus0Read7A68Bit5Count = 0;
 uint32_t FmsxKanjiReadCount = 0;      /* Reads from Kanji data port D9h */
 uint32_t FmsxKanjiAddrWriteCount = 0; /* Writes to Kanji address ports D8h/D9h */
 uint32_t FmsxKanjiNullReadCount = 0;  /* D9h reads while Kanji ROM pointer is null */
@@ -592,6 +662,7 @@ static int fmsx_vdp_status_wait_cycles(void)
 {
   int cycles = kVDPIOWaitCyclesStatusBase;
   const uint8_t status_reg = (uint8_t)(VDP[15] & 0x0Fu);
+  const int line_wait_cycles = (HPeriod > 0) ? HPeriod : CPU_HPERIOD;
 
   /*
    * Apply extra delay for tight polling loops with interrupts disabled.
@@ -619,7 +690,77 @@ static int fmsx_vdp_status_wait_cycles(void)
     g_vdp_status_poll_last_pc = 0xFFFFu;
   }
 
+  /*
+   * The MSX2+ logo hot path in KANJIBASIC does not miss VDP writes; it burns
+   * wall time in S#2 polling:
+   *
+   *   7A8B / 7A91 : wait for bit6 high -> low once per logo step
+   *   7BC6        : wait for CE clear after the LINE/PSET launch helper
+   *
+   * Field UART shows the visible R26/R27 steps landing roughly 85 presented
+   * frames apart, which means the previous +64/+96 cycle nudge was far too
+   * small to approximate blueMSX's continuously advancing board time. Model
+   * these waits in scanline-scale chunks instead of tiny fixed delays, but
+   * keep the scope strictly limited to those direct KANJIBASIC callers.
+   */
+  if(MODEL(MSX_MSX2P) && (status_reg==2u))
+  {
+    switch(fmsx_vdp_s2_helper_caller_pc(CPU.PC.W))
+    {
+      case 0x7A8Bu:
+      case 0x7A91u:
+        cycles += line_wait_cycles * 4;
+        break;
+      case 0x7BC6u:
+        cycles += line_wait_cycles * 8;
+        break;
+      default:
+        break;
+    }
+  }
+
   return cycles;
+}
+
+static int fmsx_vdp_port99_hotloop_write_extra_cycles(uint16_t write_pc)
+{
+  const int line_wait_cycles = (HPeriod > 0) ? HPeriod : CPU_HPERIOD;
+
+  if(!MODEL(MSX_MSX2P)) return 0;
+
+  switch(write_pc)
+  {
+    /*
+     * 7A83 helper:
+     *   OUT(99),02 / OUT(99),8F before the bit6 loops
+     *   OUT(99),00 / OUT(99),8F when restoring R15 afterwards
+     *
+     * This helper is frame-paced, not the inner CE hammer, so keep it at a
+     * single scanline of extra time per write.
+     */
+    case 0x7A85u:
+    case 0x7A89u:
+    case 0x7A98u:
+    case 0x7A9Cu:
+      return line_wait_cycles;
+
+    /*
+     * 7BBE helper, called from 7BB4:
+     *   OUT(99),02 / OUT(99),8F / IN(99) / OUT(99),00 / OUT(99),8F
+     *
+     * This is the tight inner wait for CE clear. Charge the surrounding
+     * writes more aggressively so the whole helper body approaches the
+     * board-time cost blueMSX naturally accumulates through sync().
+     */
+    case 0x7BBEu:
+    case 0x7BC2u:
+    case 0x7BCAu:
+    case 0x7BCEu:
+      return line_wait_cycles * 2;
+
+    default:
+      return 0;
+  }
 }
 
 /* Forward declaration: used by BIOS shadow sync helpers before prototype block. */
@@ -630,11 +771,19 @@ static uint8_t fmsx_vdp_status1_live(void);
 static uint8_t fmsx_vdp_ie1_target_line(void);
 static int fmsx_vdp_ie1_target_delta(void);
 static uint8_t fmsx_vdp_effective_odd_page(void);
+static int fmsx_vdp_active_vdp_ticks(void);
+static unsigned fmsx_vdp_line_ticks_now(void);
+static void fmsx_vdp_trace_bootlogo_regwrite(uint8_t reg,uint8_t value,uint8_t old_value,uint8_t source_port);
 static int fmsx_vdp_hscroll_active256_local(void);
 void RefreshLine4PlainRange(uint8_t Y,unsigned X0,unsigned X1);
+void RefreshLine6WideRange(uint8_t Y,unsigned X0,unsigned X1);
+void RefreshLine7WideRange(uint8_t Y,unsigned X0,unsigned X1);
+void FmsxLatchColorSpritesLine(uint8_t Y,uint8_t *ZBuf);
 static uint8_t fmsx_vdp_render_page(void);
 static void fmsx_vdp_render_scanline(uint8_t scanline,uint8_t drawing,int ucount);
 static void fmsx_vdp_render_screen4_partial(uint8_t scanline,unsigned end_column);
+static void fmsx_vdp_render_screen67_partial(uint8_t scanline,int end_offset);
+static void fmsx_vdp_sync_status_read_visual(void);
 static void fmsx_vdp_trace_log(uint8_t event_type);
 static void fmsx_vdp_trace_log_io(uint8_t event_type,uint32_t aux_addr,uint8_t aux_value,uint8_t aux_reg,uint8_t aux_ctrl);
 static void fmsx_vdp_sync_before_cpu_write(void);
@@ -1223,8 +1372,235 @@ uint8_t SetScreen(void);                 /* Change screen mode              */
 
 static int fmsx_vdp_vblank_start(void)
 {
-  return PALVideo ? (ScanLines212? (212+42):(192+52))
-                  : (ScanLines212? (212+18):(192+28));
+  /*
+   * blueMSX raises VBlank/IE0 at the start of the bottom border, i.e. right
+   * after the last visible scanline. The local loop already numbers visible
+   * lines from 0, so the VBlank edge must happen at 192/212 rather than at
+   * the end of the full border window.
+   */
+  return ScanLines212 ? 212 : 192;
+}
+
+static int fmsx_vdp_frame_lines(void)
+{
+  return PALVideo ? 313 : 262;
+}
+
+static int fmsx_vdp_previsible_lines(void)
+{
+  /*
+   * blueMSX keeps S#2 bit6 high until onVStart(), then clears it low through
+   * the following top-border + draw-area window. The local scheduler does not
+   * model those hidden top-border scanlines explicitly, so projecting the low
+   * window into the tail of the previous frame is too early and can force the
+   * KANJIBASIC logo helper 7A83 to miss the intended high->low transition by
+   * a full extra frame.
+   *
+   * Keep the VStart low strictly at/after the first visible local scanline.
+   * That is still a coarse approximation, but it matches blueMSX much better
+   * than inventing a low window before frame start.
+   */
+  return 0;
+}
+
+static int fmsx_vdp_projected_top_border_lines(void)
+{
+  int first_line;
+
+  /*
+   * blueMSX flips S#2 bit1 at onDisplay(), i.e. at frame-start, long before
+   * the pre-visible VStart edge where bit6 goes low. The local loop collapses
+   * the top border entirely, so BIOS-side status polling would otherwise only
+   * see the new frame parity once ScanLine reaches 0. Project that missing
+   * top-border interval onto the tail of the previous frame.
+   *
+   * firstLine = displayOffset + visible-offset + VAdjust
+   * projected top-border lines = firstLine - 1
+   */
+  first_line = (PALVideo ? 27 : 0) + (ScanLines212 ? 14 : 24) - (((int8_t)VDP[18]) >> 4);
+  if(first_line < 1) first_line = 1;
+  return first_line - 1;
+}
+
+static uint8_t fmsx_vdp_draw_area_active(void)
+{
+  return (ScanLine >= 0) && (ScanLine < fmsx_vdp_vblank_start()) ? 1u : 0u;
+}
+
+static uint16_t fmsx_vdp_normalize_s2_caller_pc(uint16_t pc)
+{
+  /*
+   * Keep helper classification conservative: only convert machine addresses in
+   * the standard 0x4000..0x7FFF slot window to linear 16KB ROM offsets.
+   *
+   * The earlier 0x7A00 -> 0x2A00 special-case proved too speculative for the
+   * MSX2+ boot-logo worker path. Runtime callers in that window may come from
+   * copied/relocated code or from a different ROM page than the one we first
+   * assumed, and forcing the -0x5000 alias poisoned BL238 telemetry. Raw PCs
+   * remain stored verbatim; this helper is now only for coarse helper buckets
+   * that are known to live in linear ROM space.
+   */
+  return (pc >= 0x4000u) && (pc < 0x8000u) ? (uint16_t)(pc - 0x4000u) : pc;
+}
+
+static uint16_t fmsx_vdp_s2_helper_caller_pc(uint16_t pc)
+{
+  const uint16_t normalized_pc = fmsx_vdp_normalize_s2_caller_pc(pc);
+
+  /*
+   * MSX2PEXT funnels most S#2 reads through 2BEFh:
+   *
+   *   2BE4: call 2BEFh ; busy/CE loop
+   *   10D6: call 2BEFh ; wait low->high on bit6
+   *   363B: call 2BEFh ; wait high->low/parity on bit6/bit1
+   *
+   * When the IN A,(99h) at 2BF8h triggers InZ80(), CPU.PC points inside the
+   * common helper, so classifying by live PC collapses every read into OTHER.
+   * The helper keeps SP stable through the read, so the return address on the
+   * Z80 stack still points back to the real caller branch.
+   */
+  if((normalized_pc >= 0x2BEFu) && (normalized_pc <= 0x2C02u))
+  {
+    const uint16_t sp = CPU.SP.W;
+    return (uint16_t)(RdZ80(sp) | ((uint16_t)RdZ80((uint16_t)(sp + 1u)) << 8));
+  }
+
+  /*
+   * For direct "IN A,(99h)" sites, CPU.PC already points to the next
+   * instruction by the time InZ80() runs. Recover the actual opcode address
+   * when the two preceding bytes match "DB 99".
+   */
+  if(pc >= 2u)
+  {
+    const uint16_t insn_pc = (uint16_t)(pc - 2u);
+    if((RdZ80(insn_pc) == 0xDBu) && (RdZ80((uint16_t)(insn_pc + 1u)) == 0x99u))
+      return insn_pc;
+  }
+
+  return pc;
+}
+
+static uint16_t fmsx_vdp_port99_read_pc(uint16_t pc)
+{
+  if(pc >= 2u)
+  {
+    const uint16_t insn_pc = (uint16_t)(pc - 2u);
+    if((RdZ80(insn_pc) == 0xDBu) && (RdZ80((uint16_t)(insn_pc + 1u)) == 0x99u))
+      return insn_pc;
+  }
+
+  return pc;
+}
+
+static uint16_t fmsx_vdp_port99_write_pc(uint16_t pc)
+{
+  if(pc >= 2u)
+  {
+    const uint16_t insn_pc = (uint16_t)(pc - 2u);
+    if((RdZ80(insn_pc) == 0xD3u) && (RdZ80((uint16_t)(insn_pc + 1u)) == 0x99u))
+      return insn_pc;
+  }
+
+  return pc;
+}
+
+static unsigned fmsx_vdp_s2_helper_slot_from_caller(uint16_t caller_pc)
+{
+  switch(fmsx_vdp_normalize_s2_caller_pc(caller_pc))
+  {
+    case 0x10DBu: return FMSX_S2_HELPER_10D8;
+    case 0x10E4u: return FMSX_S2_HELPER_10E1;
+    case 0x3640u: return FMSX_S2_HELPER_363D;
+    case 0x3649u: return FMSX_S2_HELPER_3646;
+    case 0x2BE9u: return FMSX_S2_HELPER_2BE6;
+    case 0x2279u: return FMSX_S2_HELPER_2279;
+    default:      return FMSX_S2_HELPER_OTHER;
+  }
+}
+
+static unsigned fmsx_vdp_s2_helper_slot(uint16_t pc)
+{
+  return fmsx_vdp_s2_helper_slot_from_caller(fmsx_vdp_s2_helper_caller_pc(pc));
+}
+
+static void fmsx_vdp_note_s2_caller(uint16_t caller_pc)
+{
+  unsigned i;
+  int empty = -1;
+
+  for(i = 0; i < FMSX_S2_CALLER_CAPACITY; ++i)
+  {
+    if(FmsxVDPS2CallerCount[i] && (FmsxVDPS2CallerPC[i] == caller_pc))
+    {
+      ++FmsxVDPS2CallerCount[i];
+      return;
+    }
+    if(!FmsxVDPS2CallerCount[i] && (empty < 0)) empty = (int)i;
+  }
+
+  if(empty >= 0)
+  {
+    FmsxVDPS2CallerPC[empty] = caller_pc;
+    FmsxVDPS2CallerCount[empty] = 1u;
+    return;
+  }
+
+  /*
+   * These counters are consumed via deltas in BL238 telemetry, so they must
+   * stay monotonic. If we ever exceed the exact bucket capacity, keep the
+   * known buckets intact and fold the rest into an overflow counter instead
+   * of decaying existing slots and fabricating hot callers.
+   */
+  ++FmsxVDPS2CallerOverflowCount;
+}
+
+static uint8_t fmsx_vdp_previsible_window_active(void)
+{
+  const unsigned line_ticks = fmsx_vdp_line_ticks_now();
+  const unsigned previsible_ticks = 40u;
+  const int first_projected_line = fmsx_vdp_frame_lines() - fmsx_vdp_previsible_lines();
+  const unsigned start_ticks = (unsigned)HPERIOD > previsible_ticks
+    ? (unsigned)HPERIOD - previsible_ticks
+    : 0u;
+
+  /*
+   * The local scheduler collapses the top border, so the pre-visible VStart
+   * window seen by BIOS-side S#2 polling has to be projected onto the tail of
+   * the previous frame. In blueMSX this low window starts at
+   * `(leftBorder - 10)`, i.e. roughly 40 VDP ticks before the visible span,
+   * and then remains low for 4 HPERIODs.
+   *
+   * Model that by projecting the first 4 top-border lines onto the last 4
+   * scanlines of the previous frame. The first projected line only goes low in
+   * its final 40 VDP ticks; the remaining 3 projected lines stay low for their
+   * full duration.
+   */
+  if(ScanLine < 0) return 0u;
+  if(ScanLine < first_projected_line) return 0u;
+
+  if(ScanLine > first_projected_line) return 1u;
+
+  return line_ticks >= start_ticks ? 1u : 0u;
+}
+
+static uint8_t fmsx_vdp_projected_next_frame_parity_active(void)
+{
+  const int projected_lines = fmsx_vdp_projected_top_border_lines();
+  const int frame_lines = fmsx_vdp_frame_lines();
+
+  if(fmsx_vdp_previsible_window_active()) return 1u;
+  if(projected_lines <= 0) return 0u;
+  if(ScanLine < 0) return 0u;
+
+  /*
+   * With the synthetic pre-visible VStart window removed, keep the projected
+   * next-frame parity disabled as well. blueMSX flips bit1 at onDisplay(),
+   * but the collapsed local top border has no real time slice where software
+   * can observe that parity before the visible frame starts. Projecting it
+   * into the previous frame again proved too speculative for the MSX2+ logo.
+   */
+  (void)frame_lines;
+  return 0u;
 }
 
 static int fmsx_vdp_active_cpu_cycles(void)
@@ -1275,6 +1651,15 @@ static unsigned fmsx_vdp_line_ticks_now(void)
   return ticks;
 }
 
+static int fmsx_vdp_screen67_line_offset_now(void)
+{
+  const unsigned line_ticks = fmsx_vdp_line_ticks_now();
+  int cur_offset = (int)((line_ticks + 32u) >> 5) - 1;
+
+  if(cur_offset > 33) cur_offset = 33;
+  return cur_offset;
+}
+
 static uint8_t fmsx_vdp_status2_hr(void)
 {
   /*
@@ -1301,11 +1686,18 @@ static uint8_t fmsx_vdp_status2_hr(void)
 static uint8_t fmsx_vdp_status2_vr(void)
 {
   /*
-   * Keep VR tied to the effective vertical display window. The draw area
-   * remains active up to the first VBlank line; outside that window S#2 bit6
-   * must stay high.
+   * blueMSX clears S#2 bit6 at the vertical-start edge before the first
+   * visible line, then keeps it low through the active draw area. The local
+   * loop has no explicit top-border scanlines, so represent that pre-visible
+   * low window in the tail of the previous frame instead of holding bit6 high
+   * until ScanLine 0.
    */
-  return (ScanLine>=fmsx_vdp_vblank_start())? 1u:0u;
+  if(fmsx_vdp_draw_area_active()) return 0u;
+
+  if(fmsx_vdp_previsible_window_active())
+    return 0u;
+
+  return 1u;
 }
 
 static uint8_t fmsx_vdp_status2_live(void)
@@ -1318,7 +1710,272 @@ static uint8_t fmsx_vdp_status2_live(void)
   if(fmsx_vdp_status2_vr()) status |= 0x40u;
   else                      status &= (uint8_t)~0x40u;
 
+  /*
+   * blueMSX flips S#2 bit1 at frame-start, so BIOS polling sees the next-frame
+   * parity through the entire top border, not only when VStart pulls bit6 low.
+   * The local loop collapses that top border, so project the next-frame parity
+   * onto the tail of the previous frame. Keep this change in the live status
+   * path only: rendering/page selection still keys off the raw latch.
+   */
+  if(fmsx_vdp_projected_next_frame_parity_active()) status ^= 0x02u;
+
   return status;
+}
+
+static int fmsx_vdp_status0_mark_sprite_row_collision(
+  uint8_t *occupied,
+  int xbuf,
+  const uint8_t *pattern_ptr,
+  uint8_t sprite16,
+  uint8_t zoom,
+  int *collision_idx)
+{
+  int half, bit, rep;
+
+  for(half=0;half<(sprite16? 2:1);++half)
+  {
+    const uint8_t pattern = pattern_ptr[half? 16:0];
+    const int base = half*(zoom? 16:8);
+
+    for(bit=0;bit<8;++bit)
+      if(pattern&(0x80u>>bit))
+      {
+        const int pixel = base + (zoom? (bit<<1):bit);
+        const int reps = zoom? 2:1;
+
+        for(rep=0;rep<reps;++rep)
+        {
+          const int idx = xbuf + pixel + rep;
+          if((idx<0)||(idx>=384)) continue;
+          if(occupied[idx])
+          {
+            if(collision_idx) *collision_idx = idx;
+            return 1;
+          }
+          occupied[idx] = 1u;
+        }
+      }
+  }
+
+  return 0;
+}
+
+static uint8_t fmsx_vdp_status0_color_line_state(
+  int line,
+  uint8_t *sprite_status,
+  uint16_t *x_col,
+  uint16_t *y_col)
+{
+  static const uint8_t SprHeights[4] = { 8,16,16,32 };
+  uint8_t occupied[384];
+  const uint8_t OH = SprHeights[VDP[1]&0x03u];
+  const uint8_t IH = SprHeights[VDP[1]&0x02u];
+  const uint8_t render_vscroll = VDP[23];
+  const uint8_t all_sprites = OPTION(MSX_ALLSPRITE)? 1u:0u;
+  const uint8_t solid_color0 = SolidColor0 ? 1u:0u;
+  const uint8_t *AT = SprTab;
+  uint8_t visible_count = 0u;
+  uint8_t status_index = 31u;
+  uint8_t overflow = 0u;
+  int i;
+
+  memset(occupied,0,sizeof(occupied));
+
+  for(i=0;i<32;++i,AT+=4)
+  {
+    const uint8_t term = AT[0];
+    const uint8_t scan_y = (uint8_t)(line + render_vscroll);
+    const uint8_t sprite_line_u8 = (uint8_t)(scan_y - AT[0]);
+    const int row = (OH > IH) ? (sprite_line_u8 >> 1) : sprite_line_u8;
+    uint8_t color_attr;
+    uint8_t color_low;
+    uint8_t pattern_index;
+    const uint8_t *pattern_ptr;
+    int xbuf;
+    int collision_idx = -1;
+
+    if(term==216u) break;
+    if(row >= (int)IH) continue;
+
+    color_attr = SprTab[-0x0200 + ((AT - SprTab) << 2) + row];
+    color_low = color_attr & 0x0Fu;
+    pattern_index = IH>8 ? (AT[2]&0xFCu) : AT[2];
+    pattern_ptr = SprGen + (((int)pattern_index)<<3) + row;
+    xbuf = (int)AT[1] + ((color_attr & 0x80u) ? 0 : 32);
+
+    /*
+     * Align the live status path with blueMSX/colorSpritesLine():
+     * - per-line color bytes live in the color table, not in AT[3]
+     * - a leading CC sprite is ignored until a normal sprite entered the line
+     * - transparent color-0 sprites do not collide unless color-0 is solid
+     * - CC/OR sprites do not contribute to status0 bit5
+     */
+    if((color_attr & 0x40u) && (visible_count == 0u)) continue;
+
+    if(visible_count>=MAXSPRITE2)
+    {
+      if(!overflow)
+      {
+        overflow = 1u;
+        status_index = (uint8_t)i;
+      }
+      if(!all_sprites) break;
+    }
+    else
+    {
+      ++visible_count;
+    }
+
+    if((!color_low && !solid_color0) || (color_attr & 0x60u)) continue;
+
+    if(fmsx_vdp_status0_mark_sprite_row_collision(
+         occupied,
+         xbuf,
+         pattern_ptr,
+         IH>8,
+         OH>IH,
+         &collision_idx))
+    {
+      if(x_col) *x_col = (uint16_t)((collision_idx-32)+12);
+      if(y_col) *y_col = (uint16_t)(line+8);
+      if(sprite_status)
+      {
+        if(!overflow) status_index = (i<32)? (uint8_t)i:31u;
+        *sprite_status = (overflow? 0x40u:0x00u) | (status_index&0x1Fu);
+      }
+      return 1u;
+    }
+  }
+
+  if(!overflow) status_index = (i<32)? (uint8_t)i:31u;
+  if(sprite_status) *sprite_status = (overflow? 0x40u:0x00u) | (status_index&0x1Fu);
+  return 0u;
+}
+
+static uint8_t fmsx_vdp_status0_line_state(
+  int line,
+  uint8_t *sprite_status,
+  uint16_t *x_col,
+  uint16_t *y_col)
+{
+  static const uint8_t SprHeights[4] = { 8,16,16,32 };
+  uint8_t occupied[384];
+  const uint8_t color_mode = (ScrMode>3u)? 1u:0u;
+  const uint8_t stop_y = 208u;
+  const uint8_t max_sprites = MAXSPRITE1;
+  const uint8_t OH = SprHeights[VDP[1]&0x03u];
+  const uint8_t IH = SprHeights[VDP[1]&0x02u];
+  const uint8_t render_vscroll = VDP[23];
+  const uint8_t all_sprites = OPTION(MSX_ALLSPRITE)? 1u:0u;
+  const uint8_t *AT = SprTab;
+  uint8_t visible_count = 0u;
+  const uint8_t line8 = (uint8_t)line;
+  uint8_t status_index = 31u;
+  uint8_t overflow = 0u;
+  int i;
+
+  if(sprite_status) *sprite_status = 0x1Fu;
+  if(SpritesOFF||!ScrMode||(ScrMode>=MAXSCREEN+1)) return 0u;
+  if(color_mode) return fmsx_vdp_status0_color_line_state(line,sprite_status,x_col,y_col);
+
+  memset(occupied,0,sizeof(occupied));
+
+  for(i=0;i<32;++i,AT+=4)
+  {
+    const uint8_t term = AT[0];
+    int K,row;
+    int xbuf;
+    const uint8_t *pattern_ptr;
+    int collision_idx = -1;
+
+    if(term==stop_y) break;
+
+    const uint8_t scan_y = (uint8_t)(line8+render_vscroll);
+    K=AT[0];
+    if(K>256-(int)IH) K-=256;
+    if(!((scan_y>K)&&(scan_y<=K+(int)OH))) continue;
+    row=(int)scan_y-K-1;
+
+    if(OH>IH) row >>= 1;
+
+    if(visible_count>=max_sprites)
+    {
+      if(!overflow)
+      {
+        overflow = 1u;
+        status_index = (uint8_t)i;
+      }
+      if(!all_sprites) break;
+    }
+    else
+    {
+      ++visible_count;
+    }
+
+    xbuf = (int)AT[1] + ((AT[3]&0x80u)? 0:32);
+    pattern_ptr = SprGen + (((int)(IH>8? (AT[2]&0xFCu):AT[2]))<<3) + row;
+
+    if(fmsx_vdp_status0_mark_sprite_row_collision(
+         occupied,
+         xbuf,
+         pattern_ptr,
+         IH>8,
+         OH>IH,
+         &collision_idx))
+    {
+      if(x_col) *x_col = (uint16_t)((collision_idx-32)+12);
+      if(y_col) *y_col = (uint16_t)(line+8);
+      if(sprite_status)
+      {
+        if(!overflow) status_index = (i<32)? (uint8_t)i:31u;
+        *sprite_status = (overflow? 0x40u:0x00u) | (status_index&0x1Fu);
+      }
+      return 1u;
+    }
+  }
+
+  if(!overflow) status_index = (i<32)? (uint8_t)i:31u;
+  if(sprite_status) *sprite_status = (overflow? 0x40u:0x00u) | (status_index&0x1Fu);
+  return 0u;
+}
+
+static void fmsx_vdp_update_status0_live_cache(void)
+{
+  if((ScanLine<0)||(ScanLine>=256))
+  {
+    FmsxVDPStatus0LiveFrame = FmsxVDPFrameCounter;
+    FmsxVDPStatus0LiveLine = ScanLine;
+    FmsxVDPStatus0LiveCollision = 0u;
+    FmsxVDPStatus0LiveSprite = 0x1Fu;
+    FmsxVDPStatus0LiveX = 0u;
+    FmsxVDPStatus0LiveY = 0u;
+    return;
+  }
+
+  if((FmsxVDPStatus0LiveFrame==FmsxVDPFrameCounter)
+  && (FmsxVDPStatus0LiveLine==ScanLine))
+    return;
+
+  FmsxVDPStatus0LiveFrame = FmsxVDPFrameCounter;
+  FmsxVDPStatus0LiveLine = ScanLine;
+  FmsxVDPStatus0LiveCollision =
+    fmsx_vdp_status0_line_state(ScanLine,&FmsxVDPStatus0LiveSprite,&FmsxVDPStatus0LiveX,&FmsxVDPStatus0LiveY);
+}
+
+static uint8_t fmsx_vdp_status0_live(void)
+{
+  /*
+   * blueMSX returns the latched status0 byte and clears it on read. It does
+   * not re-synthesize sprite-collision bit5 from the current line during the
+   * read itself. KANJIBASIC's 7A66/7A68 loop relies on that latch timing,
+   * because a fresh collision only becomes visible after the sprite pipeline
+   * materializes it, not merely because the current scanline still collides.
+   *
+   * Keep the live cache around for telemetry/debug, but return the raw latch
+   * here so the two consecutive IN(99h) reads observe the same contract as the
+   * blueMSX/V9958 status path.
+   */
+  return VDPStatus[0];
 }
 
 static void fmsx_vdp_clear_ie1_status(void)
@@ -1369,7 +2026,6 @@ static void fmsx_vdp_sync_before_cpu_write(void)
    * the end of the line; if the line is still composed later in HBlank, those
    * writes bleed backwards into the line that just finished scanning out.
    */
-  if(!fmsx_vdp_kmg_sync_window_active()) goto sync_command;
   if(!FmsxVDPDrawingLatched) goto sync_command;
   if(FmsxVDPUCountLatched<100) goto sync_command;
   if((ScanLine<0)||(ScanLine>=256)) goto sync_command;
@@ -1390,6 +2046,23 @@ static void fmsx_vdp_sync_before_cpu_write(void)
     goto sync_command;
   }
 
+  /*
+   * blueMSX keeps SCREEN 6/7 rendering incremental across the current line.
+   * The boot logo mutates VRAM/register state while the scanout is active, so
+   * freezing the whole line here makes the already-visible prefix inherit the
+   * future state. Render only the scanned suffix before committing the write.
+   */
+  if((ScrMode==6)||(ScrMode==7))
+  {
+    const int end_offset = fmsx_vdp_screen67_line_offset_now();
+
+    if(end_offset > FmsxVDPLineOffset67)
+      fmsx_vdp_render_screen67_partial((uint8_t)ScanLine,end_offset);
+    goto sync_command;
+  }
+
+  if(!fmsx_vdp_kmg_sync_window_active()) goto sync_command;
+
   fmsx_vdp_render_scanline((uint8_t)ScanLine,FmsxVDPDrawingLatched,FmsxVDPUCountLatched);
   FmsxVDPLineRendered=1;
 
@@ -1402,6 +2075,32 @@ sync_command:
   fmsx_vdp_sync_before_cpu_mutation();
 }
 
+static void fmsx_vdp_sync_status_read_visual(void)
+{
+  /*
+   * blueMSX runs sync(vdp, now) before every status-port read. That sync does
+   * not only advance CE/TR; it also moves the current line's partial refresh
+   * window forward. The local core only did the command-side flush here, while
+   * SCREEN 6/7 partial rendering advanced only on VDP writes and at HBlank.
+   *
+   * The MSX2+ boot logo spends most of its time polling 0x99, so that gap let
+   * the visible bitmap/sprite composition lag behind the producer even when the
+   * timing telemetry already matched. Mirror the visual side of blueMSX here by
+   * advancing the current SCREEN 6/7 partial line on status reads too.
+   */
+  if((ScrMode!=6)&&(ScrMode!=7)) return;
+  if((ScanLine<0)||(ScanLine>=256)) return;
+  if(FmsxVDPLineRendered) return;
+  if(!FmsxVDPDrawingLatched) return;
+  if(FmsxVDPUCountLatched<100) return;
+
+  {
+    const int end_offset = fmsx_vdp_screen67_line_offset_now();
+    if(end_offset > FmsxVDPLineOffset67)
+      fmsx_vdp_render_screen67_partial((uint8_t)ScanLine,end_offset);
+  }
+}
+
 static void fmsx_vdp_render_screen4_partial(uint8_t scanline,unsigned end_column)
 {
   if(end_column>32u) end_column=32u;
@@ -1411,6 +2110,64 @@ static void fmsx_vdp_render_screen4_partial(uint8_t scanline,unsigned end_column
   FmsxVDPRenderVScrollOverride = -1;
   FmsxVDPLineChunkEnd=(uint8_t)end_column;
   if(FmsxVDPLineChunkEnd>=32u) FmsxVDPLineRendered=1;
+}
+
+static void fmsx_vdp_capture_screen67_render_state_now(void)
+{
+  if(FmsxVDPLineScreen67StateValid) return;
+
+  /*
+   * blueMSX SCREEN 6/7 captures scroll/page state on the first refresh call
+   * of the line (X == -1), not at the raw scanline boundary. If the BIOS
+   * updates R#2/R#25/R#26/R#27 before that first refresh, the current line
+   * already uses the new state. Mirror that lazily here.
+   */
+  FmsxVDPLineChrTabLatched=ChrTab;
+  FmsxVDPLineChrTabMLatched=ChrTabM;
+  FmsxVDPLineR2Latched=VDP[2];
+  FmsxVDPLineR25Latched=VDP[25];
+  FmsxVDPLineR26Latched=VDP[26];
+  FmsxVDPLineR27Latched=VDP[27];
+  FmsxVDPLineR18Latched=VDP[18];
+  FmsxVDPLineOddPageLatched=fmsx_vdp_effective_odd_page();
+  FmsxVDPLineVScrollLatched=VDP[23];
+  FmsxVDPLineScreen67StateValid=1u;
+}
+
+static void fmsx_vdp_render_screen67_partial(uint8_t scanline,int end_offset)
+{
+  /*
+   * blueMSX SCREEN 6/7 wide paths use BRK_6/BRK_7 = 24 inside a 32-cell line
+   * and prepare the next scanline's sprite buffer at that breakpoint. The
+   * local partial path keeps the same active 32 cells, but preserves the
+   * blueMSX-style `-1..33` sentinel contract for line start/end.
+   */
+  const unsigned sprite_break = 24u;
+  const unsigned render_from = FmsxVDPLineOffset67 < 0 ? 0u : (unsigned)FmsxVDPLineOffset67;
+  const unsigned render_to = end_offset > 32 ? 32u : (unsigned)end_offset;
+
+  if(end_offset > 33) end_offset = 33;
+  if(end_offset <= FmsxVDPLineOffset67) return;
+
+  fmsx_vdp_capture_screen67_render_state_now();
+
+  if(!FmsxVDPLineColorSpritesValid && (end_offset >= (int)sprite_break))
+  {
+    FmsxLatchColorSpritesLine(scanline,FmsxVDPLineColorSpritesLatched);
+    FmsxVDPLineColorSpritesValid = 1u;
+  }
+
+  FmsxVDPRenderVScrollOverride = (int)FmsxVDPLineVScrollLatched;
+  if(render_to > render_from)
+  {
+    if(ScrMode==6) RefreshLine6WideRange(scanline,render_from,render_to);
+    else           RefreshLine7WideRange(scanline,render_from,render_to);
+  }
+  FmsxVDPRenderVScrollOverride = -1;
+
+  FmsxVDPLineOffset67 = end_offset;
+  FmsxVDPLineChunkEnd = render_to > 32u ? 32u : (uint8_t)render_to;
+  if(FmsxVDPLineOffset67 >= 33) FmsxVDPLineRendered = 1;
 }
 
 static void fmsx_vdp_render_scanline(uint8_t scanline,uint8_t drawing,int ucount)
@@ -1464,7 +2221,8 @@ static void fmsx_vdp_render_scanline(uint8_t scanline,uint8_t drawing,int ucount
 #else
   if(!ModeYJK||(ScrMode<7)||(ScrMode>8))
   {
-    if(fmsx_vdp_kmg_sync_window_active() && (ScrMode==4) && !fmsx_vdp_hscroll_active256_local())
+    if(((ScrMode==6)||(ScrMode==7))
+    || (fmsx_vdp_kmg_sync_window_active() && (ScrMode==4) && !fmsx_vdp_hscroll_active256_local()))
       FmsxVDPRenderVScrollOverride = (int)FmsxVDPLineVScrollLatched;
     (RefreshLine[ScrMode])(scanline);
     FmsxVDPRenderVScrollOverride = -1;
@@ -1562,6 +2320,47 @@ static uint8_t fmsx_vdp_effective_odd_page(void)
    * Bit1=0 selects the alternate ("odd") page when EO is enabled.
    */
   return (VDPStatus[2]&0x02u)? 0u:1u;
+}
+
+static void fmsx_vdp_set_write_context(uint8_t source_port)
+{
+  g_fmsx_vdp_write_source_port = source_port;
+  g_fmsx_vdp_write_source_pc = CPU.PC.W;
+  if(CPU.PC.W >= 2u)
+  {
+    const uint16_t insn_pc = (uint16_t)(CPU.PC.W - 2u);
+    if((RdZ80(insn_pc) == 0xD3u) && (RdZ80((uint16_t)(insn_pc + 1u)) == source_port))
+      g_fmsx_vdp_write_source_pc = insn_pc;
+  }
+}
+
+static void fmsx_vdp_clear_write_context(void)
+{
+  g_fmsx_vdp_write_source_port = 0xFFu;
+  g_fmsx_vdp_write_source_pc = 0u;
+}
+
+static void fmsx_vdp_record_regwrite(uint8_t reg,uint8_t old_value,uint8_t new_value)
+{
+  const uint16_t line =
+    (ScanLine < 0) ? 0u : (uint16_t)(ScanLine > 0xFFFF ? 0xFFFF : ScanLine);
+
+  FmsxVDPRegLastWritePC[reg] =
+    g_fmsx_vdp_write_source_pc ? g_fmsx_vdp_write_source_pc : CPU.PC.W;
+  FmsxVDPRegLastWriteLine[reg] = line;
+  FmsxVDPRegLastWriteFrame[reg] = FmsxVDPFrameCounter;
+  FmsxVDPRegLastWritePort[reg] = g_fmsx_vdp_write_source_port;
+  FmsxVDPRegLastWriteOld[reg] = old_value;
+  FmsxVDPRegLastWriteNew[reg] = new_value;
+}
+
+static void fmsx_vdp_trace_bootlogo_regwrite(uint8_t reg,uint8_t value,uint8_t old_value,uint8_t source_port)
+{
+  (void)reg;
+  (void)value;
+  (void)old_value;
+  (void)source_port;
+  return;
 }
 
 static int fmsx_vdp_hscroll_active256_local(void)
@@ -3278,6 +4077,13 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   FmsxP1LastSS = 0xFF;
   FmsxVDPFrameCounter = 0;
   FmsxVDPLinePhase = 0;
+  FmsxVDPStatus0LiveFrame = ~0u;
+  FmsxVDPStatus0LiveLine = -1;
+  FmsxVDPStatus0LiveCollision = 0u;
+  FmsxVDPStatus0LiveX = 0u;
+  FmsxVDPStatus0LiveY = 0u;
+  FmsxVDPStatus0LatchedFrame = ~0u;
+  FmsxVDPStatus0LatchedLine = -1;
   FmsxVDPScreenOnLatched = 0;
   FmsxIE1EventCount = 0;
   FmsxIE1AckCount = 0;
@@ -3285,6 +4091,7 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   FmsxIE1FiredHBlankCount = 0;
   FmsxIE1PendingHBlank = 0;
   FmsxVDPDisplayStateDirty = 0;
+  g_bootlogo_regwrite_trace_count = 0u;
   FmsxVDPPort99ReadCount = 0;
   FmsxVDPPort99WriteCount = 0;
   FmsxVDPPort9BWriteCount = 0;
@@ -3301,7 +4108,33 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   FmsxVDPLastPort99R15 = 0;
   FmsxVDPLastPort99PC = 0;
   memset(FmsxVDPRegWriteCount,0,sizeof(FmsxVDPRegWriteCount));
+  memset(FmsxVDPRegLastWritePC,0,sizeof(FmsxVDPRegLastWritePC));
+  memset(FmsxVDPRegLastWriteLine,0,sizeof(FmsxVDPRegLastWriteLine));
+  memset(FmsxVDPRegLastWriteFrame,0,sizeof(FmsxVDPRegLastWriteFrame));
+  memset(FmsxVDPRegLastWritePort,0,sizeof(FmsxVDPRegLastWritePort));
+  memset(FmsxVDPRegLastWriteOld,0,sizeof(FmsxVDPRegLastWriteOld));
+  memset(FmsxVDPRegLastWriteNew,0,sizeof(FmsxVDPRegLastWriteNew));
+  fmsx_vdp_clear_write_context();
   memset(FmsxVDPStatusReadCount,0,sizeof(FmsxVDPStatusReadCount));
+  memset(FmsxVDPS2HelperReadCount,0,sizeof(FmsxVDPS2HelperReadCount));
+  memset(FmsxVDPS2CallerPC,0,sizeof(FmsxVDPS2CallerPC));
+  memset(FmsxVDPS2CallerCount,0,sizeof(FmsxVDPS2CallerCount));
+  FmsxVDPS2CallerOverflowCount = 0;
+  FmsxVDPS2Bit0SetCount = 0;
+  FmsxVDPS2Bit1SetCount = 0;
+  FmsxVDPS2Bit6SetCount = 0;
+  FmsxVDPS2Bit0RiseCount = 0;
+  FmsxVDPS2Bit0FallCount = 0;
+  FmsxVDPS2Bit1RiseCount = 0;
+  FmsxVDPS2Bit1FallCount = 0;
+  FmsxVDPS2Bit6RiseCount = 0;
+  FmsxVDPS2Bit6FallCount = 0;
+  FmsxVDPS2LastLive = 0u;
+  FmsxVDPS2LastValid = 0u;
+  FmsxVDPStatus0Read7A66Count = 0u;
+  FmsxVDPStatus0Read7A66Bit5Count = 0u;
+  FmsxVDPStatus0Read7A68Count = 0u;
+  FmsxVDPStatus0Read7A68Bit5Count = 0u;
   memset(g_fmsx_kmg_trace,0,sizeof(g_fmsx_kmg_trace));
   g_fmsx_kmg_trace_head = 0;
   g_fmsx_kmg_trace_count = 0;
@@ -3595,14 +4428,52 @@ case 0x99: /* VDP status registers */
 {
   fmsx_apply_vdp_io_wait(fmsx_vdp_status_wait_cycles());
   if(!MODEL(MSX_MSX1)) fmsx_vdp_sync_before_status_read();
+  if(!MODEL(MSX_MSX1)) fmsx_vdp_sync_status_read_visual();
   const uint8_t status_reg = MODEL(MSX_MSX1)? 0u:(uint8_t)(VDP[15]&0x0Fu);
+  const uint16_t port99_read_pc = fmsx_vdp_port99_read_pc(CPU.PC.W);
+  const uint8_t live_status0 = fmsx_vdp_status0_live();
   const uint8_t live_status1 = fmsx_vdp_status1_live();
   const uint8_t live_status2 = fmsx_vdp_status2_live();
   FmsxVDPPort99ReadCount++;
   FmsxVDPStatusReadCount[status_reg]++;
+  if(status_reg==0u)
+  {
+    if(port99_read_pc==0x7A66u)
+    {
+      ++FmsxVDPStatus0Read7A66Count;
+      if(live_status0&0x20u) ++FmsxVDPStatus0Read7A66Bit5Count;
+    }
+    else if(port99_read_pc==0x7A68u)
+    {
+      ++FmsxVDPStatus0Read7A68Count;
+      if(live_status0&0x20u) ++FmsxVDPStatus0Read7A68Bit5Count;
+    }
+  }
+  if(status_reg==2u)
+  {
+    const uint16_t s2_caller_pc = fmsx_vdp_s2_helper_caller_pc(CPU.PC.W);
+    if(live_status2 & 0x01u) ++FmsxVDPS2Bit0SetCount;
+    if(live_status2 & 0x02u) ++FmsxVDPS2Bit1SetCount;
+    if(live_status2 & 0x40u) ++FmsxVDPS2Bit6SetCount;
+    if(FmsxVDPS2LastValid)
+    {
+      const uint8_t prev = FmsxVDPS2LastLive;
+      const uint8_t now = live_status2;
+      if(!(prev & 0x01u) && (now & 0x01u)) ++FmsxVDPS2Bit0RiseCount;
+      if((prev & 0x01u) && !(now & 0x01u)) ++FmsxVDPS2Bit0FallCount;
+      if(!(prev & 0x02u) && (now & 0x02u)) ++FmsxVDPS2Bit1RiseCount;
+      if((prev & 0x02u) && !(now & 0x02u)) ++FmsxVDPS2Bit1FallCount;
+      if(!(prev & 0x40u) && (now & 0x40u)) ++FmsxVDPS2Bit6RiseCount;
+      if((prev & 0x40u) && !(now & 0x40u)) ++FmsxVDPS2Bit6FallCount;
+    }
+    FmsxVDPS2LastLive = live_status2;
+    FmsxVDPS2LastValid = 1u;
+    FmsxVDPS2HelperReadCount[fmsx_vdp_s2_helper_slot_from_caller(s2_caller_pc)]++;
+    fmsx_vdp_note_s2_caller(s2_caller_pc);
+  }
   /* MSX1/TMS9918 exposes only status register #0. */
-  if(MODEL(MSX_MSX1)) Port=VDPStatus[0];
-  else Port=(status_reg==1u)? live_status1:((status_reg==2u)? live_status2:VDPStatus[status_reg]);
+  if(MODEL(MSX_MSX1)) Port=live_status0;
+  else Port=(status_reg==0u)? live_status0:((status_reg==1u)? live_status1:((status_reg==2u)? live_status2:VDPStatus[status_reg]));
   /*
    * V9938/V9958 references (blueMSX and V9958-Super) reset the 0x99 latch
    * sequencer on every status read. Keep MSX1/TMS9918 on the upstream path,
@@ -3615,7 +4486,7 @@ case 0x99: /* VDP status registers */
   /* Update status register's contents */
   switch(status_reg)
   {
-    case 0: VDPStatus[0]&=0x5F;SetIRQ(~INT_IE0);break;
+    case 0: VDPStatus[0]&=0x1F;SetIRQ(~INT_IE0);break;
     case 1:
       if(Port&0x01u) FmsxIE1AckCount++;
       fmsx_vdp_clear_ie1_status();
@@ -3629,7 +4500,7 @@ case 0x99: /* VDP status registers */
   FmsxVDPLastPort99ALatch = ALatch;
   FmsxVDPLastPort99VKey = VKey;
   FmsxVDPLastPort99R15 = MODEL(MSX_MSX1)? 0u:(uint8_t)(VDP[15]&0x0Fu);
-  FmsxVDPLastPort99PC = CPU.PC.W;
+  FmsxVDPLastPort99PC = port99_read_pc;
   /* Return the status register value */
   return(Port);
 }
@@ -3839,7 +4710,20 @@ case 0x98: /* VDP Data */
 
 case 0x99: /* VDP Address Latch */
   FmsxVDPPort99WriteCount++;
-  fmsx_apply_vdp_io_wait(fmsx_vdp_write_wait_cycles());
+  {
+    const uint16_t port99_pc = fmsx_vdp_port99_write_pc(CPU.PC.W);
+    fmsx_apply_vdp_io_wait(
+      fmsx_vdp_write_wait_cycles() + fmsx_vdp_port99_hotloop_write_extra_cycles(port99_pc)
+    );
+  }
+  /*
+   * blueMSX synchronizes the VDP on every 0x99 write, including the first
+   * latch byte before R#15/status selection or VRAM address setup is
+   * completed. The local path used to skip that sync while VKey==1, which
+   * effectively erased one OUT(99h) worth of command progress in tight BIOS
+   * polling helpers such as MSX2PEXT:2BEF.
+   */
+  if(!MODEL(MSX_MSX1)) fmsx_vdp_sync_before_cpu_write();
   if(VKey)
   {
     ALatch=Value;
@@ -3849,11 +4733,10 @@ case 0x99: /* VDP Address Latch */
     FmsxVDPLastPort99ALatch = ALatch;
     FmsxVDPLastPort99VKey = VKey;
     FmsxVDPLastPort99R15 = MODEL(MSX_MSX1)? 0u:(uint8_t)(VDP[15]&0x0Fu);
-    FmsxVDPLastPort99PC = CPU.PC.W;
+    FmsxVDPLastPort99PC = fmsx_vdp_port99_write_pc(CPU.PC.W);
   }
   else
   {
-    fmsx_vdp_sync_before_cpu_write();
     VKey=1;
     switch(Value&0xC0)
     {
@@ -3861,18 +4744,23 @@ case 0x99: /* VDP Address Latch */
       {
         /* Writing into VDP registers */
         const uint8_t reg = Value&0x3F;
+        const uint8_t old_reg_value = VDP[reg];
         /* MSX1/TMS9918 has only R#0..R#7. Ignore higher registers. */
         if(!MODEL(MSX_MSX1) || (reg<=7))
         {
+          if((reg==2u)||(reg==9u)||(reg==18u)||(reg==25u)||(reg==26u)||(reg==27u))
+            fmsx_vdp_trace_bootlogo_regwrite(reg,ALatch,old_reg_value,0x99u);
           fmsx_vdp_trace_log_io(FMSX_VDP_EVENT_PORT99_REG,0u,ALatch,reg,Value);
+          fmsx_vdp_set_write_context(0x99u);
           VDPOut(reg,ALatch);
+          fmsx_vdp_clear_write_context();
         }
         FmsxVDPLastPort99Op = (reg==15u)? 4u:3u;
         FmsxVDPLastPort99Value = Value;
         FmsxVDPLastPort99ALatch = ALatch;
         FmsxVDPLastPort99VKey = VKey;
         FmsxVDPLastPort99R15 = MODEL(MSX_MSX1)? 0u:(uint8_t)(VDP[15]&0x0Fu);
-        FmsxVDPLastPort99PC = CPU.PC.W;
+        FmsxVDPLastPort99PC = fmsx_vdp_port99_write_pc(CPU.PC.W);
         break;
       }
       case 0x00:
@@ -3884,7 +4772,7 @@ case 0x99: /* VDP Address Latch */
         FmsxVDPLastPort99ALatch = ALatch;
         FmsxVDPLastPort99VKey = VKey;
         FmsxVDPLastPort99R15 = MODEL(MSX_MSX1)? 0u:(uint8_t)(VDP[15]&0x0Fu);
-        FmsxVDPLastPort99PC = CPU.PC.W;
+        FmsxVDPLastPort99PC = fmsx_vdp_port99_write_pc(CPU.PC.W);
         fmsx_vdp_trace_log_io(
           FMSX_VDP_EVENT_PORT99_ADDR,
           (((uint32_t)VDP[14])<<14) | (uint32_t)(VAddr&0x3FFFu),
@@ -3942,7 +4830,11 @@ case 0x9B: /* VDP Register Access */
   if(J!=17)
   {
     fmsx_vdp_sync_before_cpu_write();
+    if((J==2u)||(J==9u)||(J==18u)||(J==25u)||(J==26u)||(J==27u))
+      fmsx_vdp_trace_bootlogo_regwrite(J,Value,VDP[J],0x9Bu);
+    fmsx_vdp_set_write_context(0x9Bu);
     VDPOut(J,Value);
+    fmsx_vdp_clear_write_context();
   }
   if(!(VDP[17]&0x80)) VDP[17]=(J+1)&0x3F;
   FmsxVDPPort9BLastReg17After = VDP[17];
@@ -4602,6 +5494,7 @@ void SetMegaROM(int Slot,uint8_t P0,uint8_t P1,uint8_t P2,uint8_t P3)
 void VDPOut(uint8_t R,uint8_t V)
 {
   uint8_t J,R2Base;
+  const uint8_t old_v = VDP[R];
 
   if(R<64u) FmsxVDPRegWriteCount[R]++;
 
@@ -4668,6 +5561,7 @@ void VDPOut(uint8_t R,uint8_t V)
 
   /* Write value into a register */
   VDP[R]=V;
+  if(R<64u) fmsx_vdp_record_regwrite(R,old_v,V);
   if((R==19)||(R==23))
   {
     if(FmsxIE1PendingHBlank||(!(VDPStatus[1]&0x01u)&&(IRQPending&INT_IE1)))
@@ -4680,6 +5574,8 @@ void VDPOut(uint8_t R,uint8_t V)
     fmsx_sync_bios_region_flag(PALVideo? 1:0);
     fmsx_sync_bios_vdp_r9_shadow();
   }
+  if((old_v!=V)&&((R==2u)||(R==9u)||(R==18u)||(R==25u)||(R==26u)||(R==27u)))
+    fmsx_vdp_trace_bootlogo_regwrite(R,V,old_v,0xFFu);
 }
 
 /** Printer() ************************************************/
@@ -4804,6 +5700,8 @@ uint16_t LoopZ80(Z80 *R)
     ScanLine=ScanLine<(pal_timing? 312:261)? ScanLine+1:0;
     FmsxVDPLineRendered=0;
     FmsxVDPLineChunkEnd=0;
+    FmsxVDPLineOffset67=-1;
+    FmsxVDPLineScreen67StateValid=0u;
 
     /* If first scanline of the screen... */
     if(!ScanLine)
@@ -4849,13 +5747,61 @@ uint16_t LoopZ80(Z80 *R)
     }
 
     /* Border/visible state for the current scanline must be decided at the
-     * start of the line, before mid-line VDP writes can prepare the next one. */
-    if(ScanLine==(ScanLines212? 212:192)) Drawing=0;
+     * start of the line, before mid-line VDP writes can prepare the next one.
+     *
+     * blueMSX raises VBlank/IE0 at the start of the first bottom-border line,
+     * not at the end of that line. The local loop used to defer this edge to
+     * the HBlank branch, effectively one line late for BIOS-side S#2 bit6
+     * waits. Arm the VBlank edge here, exactly when the scanline enters the
+     * non-drawing region.
+     */
+    if(ScanLine==fmsx_vdp_vblank_start())
+    {
+      Drawing=0;
+      VDPStatus[0]|=0x80;
+      VDPStatus[2]|=0x40;
+      fmsx_vdp_cancel_ie1();
+
+      if(VDP[1]&0x20)
+      {
+        SetIRQ(INT_IE0);
+        fmsx_vdp_trace_log(FMSX_VDP_EVENT_IE0_FIRE);
+      }
+    }
 
     fmsx_vdp_commit_line_display_state();
+    FmsxVDPLineChrTabLatched=ChrTab;
+    FmsxVDPLineChrTabMLatched=ChrTabM;
+    FmsxVDPLineR2Latched=VDP[2];
+    FmsxVDPLineR25Latched=VDP[25];
+    FmsxVDPLineR26Latched=VDP[26];
+    FmsxVDPLineR27Latched=VDP[27];
+    FmsxVDPLineR18Latched=VDP[18];
+    FmsxVDPLineR9Latched=VDP[9];
+    FmsxVDPLineFlipEvenOddLatched=(VDP[9]&0x04u)? 1u:0u;
+    FmsxVDPLineInterlaceOnLatched=(VDP[9]&0x08u)? 1u:0u;
+    FmsxVDPLineOddPageLatched=fmsx_vdp_effective_odd_page();
     FmsxVDPLineVScrollLatched=VDP[23];
     FmsxVDPDrawingLatched=Drawing;
     FmsxVDPUCountLatched=UCount;
+
+    /*
+     * blueMSX prepares the color-sprite line at a fixed breakpoint and the
+     * next scanline consumes that prepared buffer via getSpritesLine().
+     * Mirror that pipeline locally for SCREEN 6/7 instead of mixing a live
+     * same-line ColorSprites() buffer with a mid-scanline captured one.
+     */
+    if(FmsxVDPLineColorSpritesValid)
+    {
+      memcpy(FmsxVDPLineColorSpritesRender,
+             FmsxVDPLineColorSpritesLatched,
+             sizeof(FmsxVDPLineColorSpritesRender));
+      FmsxVDPLineColorSpritesRenderValid=1u;
+    }
+    else
+      FmsxVDPLineColorSpritesRenderValid=0u;
+
+    FmsxVDPLineColorSpritesValid=0u;
 
     /* Line coincidence is active at 0..255 */
     /* in PAL and 0..234/244 in NTSC        */
@@ -4913,9 +5859,10 @@ uint16_t LoopZ80(Z80 *R)
     if(VPeriod>J) R->IPeriod+=VPeriod-J;
   }
 
-  /* If first scanline of VBlank... */
-  J=pal_timing? (ScanLines212? 212+42:192+52):(ScanLines212? 212+18:192+28);
-  if(!Drawing&&(ScanLine==J))
+  /* If first scanline of VBlank was not armed at line start for some reason,
+   * keep the old HBlank-side path as a safety net. */
+  J=fmsx_vdp_vblank_start();
+  if(!Drawing&&(ScanLine==J)&&!(VDPStatus[2]&0x40u))
   {
     /* Set VBlank bit, set VRefresh bit */
     VDPStatus[0]|=0x80;
@@ -4949,6 +5896,8 @@ uint16_t LoopZ80(Z80 *R)
   {
     if((ScrMode==4) && !fmsx_vdp_hscroll_active256_local() && FmsxVDPLineChunkEnd)
       fmsx_vdp_render_screen4_partial((uint8_t)ScanLine,32u);
+    else if((ScrMode==6)||(ScrMode==7))
+      fmsx_vdp_render_screen67_partial((uint8_t)ScanLine,33);
     else
       fmsx_vdp_render_scanline((uint8_t)ScanLine,FmsxVDPDrawingLatched,FmsxVDPUCountLatched);
   }

@@ -14,12 +14,14 @@ public:
 
     void Reset(void);
     void SetScalePercent(unsigned percent);
+    void SetScaleMaxFitEnabled(boolean enabled);
     void SetMaxScalePercent(unsigned percent);
     void SetLanguage(unsigned language);
     void SetResolutionMode(unsigned mode);
     unsigned GetLanguage(void) const;
     unsigned GetResolutionMode(void) const;
     unsigned GetScalePercent(void) const;
+    boolean IsScaleMaxFitEnabled(void) const;
     void SetWidescreenEnabled(boolean enabled);
     void SetScanlineMode(unsigned mode);
     void SetRefreshRateHz(unsigned hz);
@@ -44,7 +46,7 @@ public:
     void SetFmMusicEnabled(boolean enabled);
     void SetSccCartEnabled(boolean enabled);
     void SetSccDualCartState(boolean enabled, boolean available);
-    void SetOverlayEnabled(boolean enabled, boolean available);
+    void SetOverlayMode(unsigned mode, boolean available);
     void SetDebugLogEnabled(boolean enabled);
     void SetAudioGainPercent(unsigned percent);
     void SetLoadRomSlotNames(const char *slot1_name, const char *slot2_name);
@@ -113,6 +115,7 @@ private:
     boolean m_Visible;
     unsigned m_View;
     unsigned m_ScalePercent;
+    boolean m_ScaleMaxFitEnabled;
     unsigned m_MaxScalePercent;
     unsigned m_Language;
     unsigned m_ResolutionMode;
@@ -132,7 +135,7 @@ private:
     boolean m_SccCartEnabled;
     boolean m_SccDualCartEnabled;
     boolean m_SccDualCartAvailable;
-    boolean m_OverlayEnabled;
+    unsigned m_OverlayMode;
     boolean m_OverlayAvailable;
     boolean m_DebugLogEnabled;
     unsigned m_AudioGainPercent;
@@ -173,6 +176,7 @@ private:
     boolean m_LastBackPressed;
     unsigned m_LastDrawnView;
     unsigned m_LastDrawnScalePercent;
+    boolean m_LastDrawnScaleMaxFitEnabled;
     unsigned m_LastDrawnMaxScalePercent;
     unsigned m_LastDrawnLanguage;
     unsigned m_LastDrawnResolutionMode;
@@ -192,7 +196,7 @@ private:
     boolean m_LastDrawnSccCart;
     boolean m_LastDrawnSccDualCart;
     boolean m_LastDrawnSccDualCartAvailable;
-    boolean m_LastDrawnOverlay;
+    unsigned m_LastDrawnOverlayMode;
     boolean m_LastDrawnOverlayAvailable;
     boolean m_LastDrawnDebugLogEnabled;
     unsigned m_LastDrawnAudioGainPercent;

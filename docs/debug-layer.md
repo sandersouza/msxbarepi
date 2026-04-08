@@ -36,8 +36,10 @@ make DEBUG=0
 - Em build sem debug, hotkeys de debug ficam inertes (somente `F12` pausa/menu).
 
 ## Teclas de atalho (com debug compilado)
-- `F11`: liga/desliga overlay de debug.
-  - ao ligar, o runtime força `Settings -> Scale [NONE]` para abrir espaço visual ao painel.
+- `F11`: alterna o overlay de debug em ciclo `MAX -> MIN -> OFF -> MAX`.
+  - `MAX`: overlay completo atual.
+  - `MIN`: overlay compacto de 3 linhas.
+  - `OFF`: overlay desligado.
 - `F12`: pausa/retoma emulacao (menu de pausa).
 - `F6`: mute/unmute `Layer 1` (PSG + ruido).
 - `F7`: mute/unmute `Layer 2` (FM-PAC).
@@ -66,8 +68,11 @@ Objetivo: painel legivel no framebuffer HDMI com MMU/cache ativo, sem depender d
 - Overlay compacto no canto superior esquerdo.
 - O painel pode usar a largura horizontal inteira da linha quando isso ajudar a ficar contido até a `linha 15`.
 - Emulador segue rodando ao fundo.
-- Em preset de debug, limitar escala do blit do emulador (ex.: `2x`) para reduzir sobreposicao visual.
-- Para captura de overlay sobre viewport/mailbox pequeno, `Settings -> Scale [NONE]` passa a desligar o indice de escala do mailbox sem mexer na trilha de telemetria (`TM2..TM6D`).
+- O item `Scale` voltou a controlar o viewport do emulador.
+- O overlay de `DEBUG` nao altera mais o fator de zoom; ele deve continuar visivel em qualquer escala.
+- `Standard`: usa `logical_src_w x normalized_src_h` multiplicado pelo fator de `Scale`.
+- `HIRES` (`>=512` colunas): usa largura logica normal da mailbox e o mesmo fator de `Scale`.
+- `Widescreen [ON]`: mantem `16:9` apenas para modos nao-`HIRES`, mas continua respeitando o fator manual de `Scale`.
 
 Regras validadas em hardware:
 
@@ -97,6 +102,11 @@ Diretriz visual (overlay e menu):
   - `Disk Drive A`
   - `Disk Drive B`
   - `Settings`
+- `Save State` / `Load State`:
+  - ao acionar pelo menu `F12`, a acao e enfileirada, o menu fecha imediatamente e o save/load roda no tick seguinte do loop principal
+- Ao ativar ou desativar o overlay de debug, o kernel agora limpa a tela inteira antes da nova apresentacao:
+  - framebuffer visivel
+  - staging/present buffer
 - Selecao visual: inversao de cores, faixa com margem lateral, itens centralizados.
 - Navegacao: `Up/Down` com auto-repeat por hold nas listas do menu.
 - Em `Settings` e `Debug`, `Left/Right` tambem repetem por hold para ciclar valores.
@@ -104,8 +114,14 @@ Diretriz visual (overlay e menu):
 - Anti-flicker: redesenhar menu apenas em mudanca de estado (mostrar/ocultar, selecao, reposicionamento).
 
 ## Menu relacionado
-- `Settings -> Debugger`: sempre aparece em builds `DEBUG=1` e opera diretamente como `ON/OFF`.
+- `Settings -> Debugger`: sempre aparece em builds `DEBUG=1` e opera diretamente como `MAX/MIN/OFF`.
 - Em builds com `DEBUG=1`, `Settings` volta a mostrar `Refresh [NTSC/PAL]` logo abaixo de `Disk ROM` para diagnostico.
+- Nesse caminho de diagnostico, o toggle agora atua no estado efetivo do VDP em runtime:
+  - em `MSX2/MSX2+`, ele força `R#9 bit1` (`PAL/NTSC`) no core local;
+  - o overlay passa a refletir imediatamente o modo efetivo (`PALVideo`), e nao apenas o pacing base do host.
+- O item do menu deve espelhar o estado efetivo em tempo real:
+  - mesmo com o emulador pausado/menu aberto, `Standard` precisa refletir o `R#9 bit1` atual do runtime;
+  - se o software tiver mudado `PAL/NTSC` antes da pausa (ex.: `OUT` no BASIC), o menu deve abrir ja mostrando esse estado real.
 - Em builds com `DEBUG=1`, `Debug` tambem mostra `Kanji ROM [ON/OFF]`:
   - o toggle atua no runtime real do `fMSX`, ligando/desligando a `KANJI.ROM` quando ela existir no set carregado;
   - em perfil `MSX2+`, o mesmo toggle tambem corta ou restaura o mapeamento de `KANJIBASIC/MSX-JE`, para o A/B do boot screen ser perceptivel;
@@ -118,11 +134,15 @@ Diretriz visual (overlay e menu):
   - `FM-PAC` (ON/OFF)
   - `Audio Gain` (0..9)
 - Em `DEBUG=1`, `Settings` tambem mostra:
-  - `Debugger [ON/OFF]`
+  - `Debugger [MAX/MIN/OFF]`
   - `UART Log [ON/OFF]`
 - `UART Log` usa o mesmo estado operacional da tecla `F10`.
 
 ## Overlay: linhas e labels
+- Modo `MIN`:
+  - `Linha 1`: `TXTDBG BUILD:XXXX CPU FREQ:<MHz>`
+  - `Linha 2`: `DFS:NTSC|PAL FPS:<fps>`
+  - `Linha 3`: `Screen:<scr_mode> Mode:Normal|Hires|Interlaced`
 - `TXTDBG`: estado geral (MMU/cache/pause).
   - `BUILD`: hash de 16 bits calculado a partir de `MSXBARE_BUILD_BID` para rastreio visual da build em teste.
   - `OS`: contador com largura fixa `000..999` (modulo 1000) para evitar jitter visual na linha.

@@ -18,6 +18,14 @@ typedef struct {
 } TFmsxRuntimeStatus;
 
 typedef struct {
+    unsigned logical_width;
+    unsigned logical_height;
+    unsigned hires_mode;
+    unsigned interlaced_mode;
+    unsigned woven_hires;
+} TFmsxVideoPresentation;
+
+typedef struct {
     unsigned write_calls;
     unsigned samples_written;
     unsigned samples_pulled;
@@ -406,6 +414,7 @@ void fmsx_runtime_keyboard_drain_step(void);
 void fmsx_runtime_keyboard_reset_pipeline(void);
 void fmsx_runtime_set_overscan(boolean enabled);
 void fmsx_runtime_set_refresh_hz(unsigned hz);
+void fmsx_runtime_debug_force_refresh_hz(unsigned hz);
 unsigned fmsx_runtime_get_refresh_hz(void);
 unsigned fmsx_runtime_get_z80_turbo_percent(void);
 uint64_t fmsx_runtime_get_frame_interval_us_exact(void);
@@ -481,6 +490,7 @@ void fmsx_runtime_set_load_diag(unsigned stage);
 unsigned fmsx_runtime_get_load_diag(void);
 TFmsxRuntimeStatus fmsx_runtime_get_status(void);
 unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsigned *height);
+void fmsx_runtime_get_video_presentation(TFmsxVideoPresentation *presentation);
 unsigned fmsx_audio_pull_samples(int16_t *dst, unsigned max_samples);
 void fmsx_audio_get_stats(TFmsxAudioStats *stats);
 void fmsx_keyboard_get_debug(TFmsxKeyboardDebug *stats);

@@ -54,6 +54,8 @@ extern const TComboLocaleStrings g_ComboLocaleES = {
     "Guardar no disco",
     "DES",
     "ACT",
+    "MIN",
+    "MAX",
     "DUAL",
     "NONE",
     "N/D",

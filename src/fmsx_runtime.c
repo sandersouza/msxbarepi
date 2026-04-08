@@ -107,6 +107,7 @@ extern uint8_t SSL[4];
 extern uint8_t ScrMode;
 extern uint8_t VDP[64];
 extern uint8_t VDPStatus[16];
+extern void VDPOut(uint8_t R,uint8_t V);
 extern AY8910 PSG;
 extern YM2413 OPLL;
 extern uint8_t fmsx_vdp_get_status1_live(void);
@@ -115,6 +116,7 @@ extern uint8_t fmsx_vdp_get_ie1_target_line(void);
 extern int fmsx_vdp_get_ie1_target_delta(void);
 extern uint8_t fmsx_vdp_get_effective_odd_page(void);
 extern uint8_t fmsx_vdp_get_render_page(void);
+extern void fmsx_video_get_presentation(TFmsxVideoPresentation *presentation);
 extern void fmsx_vdp_trace_get_view(const TFmsxVDPTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
 extern void fmsx_kmg_trace_get_view(const TFmsxKmgTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
 extern void fmsx_scc_trace_get_view(const TFmsxSCCTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
@@ -1499,6 +1501,35 @@ void fmsx_runtime_set_refresh_hz(unsigned hz)
     fmsx_audio_reanchor_stream_timing();
 }
 
+void fmsx_runtime_debug_force_refresh_hz(unsigned hz)
+{
+    const unsigned clamped = (hz == 50u) ? 50u : 60u;
+
+    g_refresh_hz = clamped;
+
+    if (!g_fmsx_status.running)
+    {
+        fmsx_audio_reanchor_stream_timing();
+        return;
+    }
+
+    if (MODEL(MSX_MSX1))
+    {
+        fmsx_audio_reanchor_stream_timing();
+        return;
+    }
+
+    {
+        const uint8_t next_r9 = (clamped == 50u) ? (uint8_t)(VDP[9] | 0x02u) : (uint8_t)(VDP[9] & ~0x02u);
+        if (VDP[9] != next_r9)
+        {
+            VDPOut(9u, next_r9);
+        }
+    }
+
+    fmsx_audio_reanchor_stream_timing();
+}
+
 unsigned fmsx_runtime_get_refresh_hz(void)
 {
     return fmsx_runtime_effective_refresh_hz();
@@ -2567,4 +2598,20 @@ unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsig
         return 0u;
     }
     return fmsx_video_get_latest(pixels, width, height);
+}
+
+void fmsx_runtime_get_video_presentation(TFmsxVideoPresentation *presentation)
+{
+    if (presentation == 0)
+    {
+        return;
+    }
+
+    memset(presentation, 0, sizeof(*presentation));
+    if (g_boot_video_gate_frames_remaining > 0u)
+    {
+        return;
+    }
+
+    fmsx_video_get_presentation(presentation);
 }

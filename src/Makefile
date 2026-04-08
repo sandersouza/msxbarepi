@@ -75,7 +75,7 @@ CXXFLAGS += -Os -ffunction-sections -fdata-sections
 LDFLAGS += --gc-sections
 endif
 
-OBJS = main.o kernel.o tools/input/keyboard_input.o tools/input/usb_hid_input_queue.o tools/usb_hid_keyboard.o tools/render/gfx_textbox.o tools/render/viewport_screenshot.o tools/menu/combo_menu.o tools/menu/combo_menu_items.o tools/media/media_catalog.o tools/file_browser/combo_file_browser.o tools/debug/combo_debug_overlay.o
+OBJS = main.o kernel.o combo_screen_device.o tools/input/keyboard_input.o tools/input/usb_hid_input_queue.o tools/usb_hid_keyboard.o tools/render/gfx_textbox.o tools/render/viewport_screenshot.o tools/menu/combo_menu.o tools/menu/combo_menu_items.o tools/media/media_catalog.o tools/file_browser/combo_file_browser.o tools/debug/combo_debug_overlay.o
 OBJS += tools/locale/combo_locale.o tools/locale/combo_locale_pt.o tools/locale/combo_locale_en.o tools/locale/combo_locale_es.o
 OBJS += machine_profile_catalog.o
 OBJS += emulator_backend.o fmsx_backend_shim.o bluemsx_backend.o
@@ -84,6 +84,7 @@ OBJS += emulator_backend.o fmsx_backend_shim.o bluemsx_backend.o
 EXTRACLEAN += tools/*.o tools/*.d tools/*/*.o tools/*/*.d
 
 OBJS += fmsx_runtime.o fmsx_host_stubs.o fmsx_compat_stubs.o fmsx_libc_shim.o
+OBJS += fmsx_math_shim.o
 OBJS += bluemsx_savestate_stubs.o fmsx_upstream_bluemsx_openym2413_2.o fmsx_local_ym2413_bluemsx.o
 OBJS += gamemaster_catalog.o
 OBJS += fmsx_virtual_fs.o fmsx_initramfs.o
@@ -108,9 +109,9 @@ LIBS = $(CIRCLEHOME)/lib/sound/libsound.a \
 include $(CIRCLEHOME)/Rules.mk
 
 $(CIRCLEHOME)/addon/SDCard/libsdcard.a:
-	$(MAKE) -C $(CIRCLEHOME)/addon/SDCard
+	$(MAKE) -C $(CIRCLEHOME)/addon/SDCard PREFIX64=$(PREFIX64)
 
 $(CIRCLEHOME)/addon/fatfs/libfatfs.a:
-	$(MAKE) -C $(CIRCLEHOME)/addon/fatfs EXTRAINCLUDE=-I$(CURDIR)/fatfs_compat
+	$(MAKE) -C $(CIRCLEHOME)/addon/fatfs PREFIX64=$(PREFIX64) EXTRAINCLUDE=-I$(CURDIR)/fatfs_compat
 
 -include $(DEPS)

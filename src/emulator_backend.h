@@ -22,6 +22,14 @@ typedef struct {
 } EmulatorBackendRuntimeStatus;
 
 typedef struct {
+    unsigned logical_width;
+    unsigned logical_height;
+    boolean hires_mode;
+    boolean interlaced_mode;
+    boolean woven_hires;
+} EmulatorBackendVideoPresentation;
+
+typedef struct {
     EmulatorBackendKind active_backend;
     const char *active_backend_name;
     boolean init_attempted;
@@ -40,6 +48,7 @@ boolean emulator_backend_reset(void);
 boolean emulator_backend_step_frame(void);
 void emulator_backend_shutdown(void);
 unsigned emulator_backend_video_frame(const u16 **pixels, unsigned *width, unsigned *height);
+void emulator_backend_get_video_presentation(EmulatorBackendVideoPresentation *presentation);
 unsigned emulator_backend_audio_pull(int16_t *dst, unsigned max_samples);
 void emulator_backend_input_push_joystick(u8 bridge_bits);
 void emulator_backend_input_push_keyboard(u8 modifiers, const unsigned char raw_keys[6]);

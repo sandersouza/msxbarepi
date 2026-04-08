@@ -24,6 +24,18 @@ extern "C" unsigned long long msxbare_monotonic_time_us(void)
 	return CTimer::GetClockTicks64();
 }
 
+static CSerialDevice *g_fmsx_uart_trace_serial = 0;
+
+extern "C" void msxbare_uart_write(const char *text)
+{
+	if (g_fmsx_uart_trace_serial == 0 || text == 0 || text[0] == '\0')
+	{
+		return;
+	}
+
+	g_fmsx_uart_trace_serial->Write(text, strlen(text));
+}
+
 static const char FromKernel[] = "combo";
 static const unsigned kSampleRate = 48000;
 static const unsigned kChunkSize = 384 * 10;
@@ -104,6 +116,38 @@ static unsigned BuildHash16(void)
 	return cached;
 }
 
+static unsigned ClampDebugOverlayMode(unsigned mode)
+{
+	return (mode <= ComboDebugOverlayMin) ? mode : ComboDebugOverlayOff;
+}
+
+static boolean DebugOverlayModeEnabled(unsigned mode)
+{
+	return ClampDebugOverlayMode(mode) != ComboDebugOverlayOff ? TRUE : FALSE;
+}
+
+static unsigned NextDebugOverlayMode(unsigned mode)
+{
+	switch (ClampDebugOverlayMode(mode))
+	{
+	case ComboDebugOverlayOff: return ComboDebugOverlayMax;
+	case ComboDebugOverlayMax: return ComboDebugOverlayMin;
+	case ComboDebugOverlayMin:
+	default: return ComboDebugOverlayOff;
+	}
+}
+
+static const char *DebugOverlayModeLogLabel(unsigned mode)
+{
+	switch (ClampDebugOverlayMode(mode))
+	{
+	case ComboDebugOverlayMax: return "MAX";
+	case ComboDebugOverlayMin: return "MIN";
+	case ComboDebugOverlayOff:
+	default: return "OFF";
+	}
+}
+
 static void BootPhase(CLogger &logger, const char *phase, const char *status)
 {
 	CString line;
@@ -140,41 +184,105 @@ static unsigned UMin(unsigned a, unsigned b)
 	return a < b ? a : b;
 }
 
+static const unsigned kViewportBaseWidth = 256u;
+static const unsigned kViewportBaseHeight = 243u;
+
+static boolean CanUseDirectPresentWithDebug(unsigned dst_x,
+							 unsigned dst_y,
+							 unsigned dst_w,
+							 unsigned dst_h,
+							 unsigned screen_w,
+							 unsigned screen_h)
+{
+	(void) dst_x;
+	(void) dst_w;
+	(void) screen_w;
+	(void) screen_h;
+
+	/*
+	 * In debug mode the viewport is forced down to a compact 1x-style mailbox,
+	 * centered on screen. When its top edge stays well below the text overlay
+	 * band, direct present is safe and avoids the extra SetArea() copy.
+	 */
+	if (dst_h == 0u)
+	{
+		return FALSE;
+	}
+	return dst_y >= 144u ? TRUE : FALSE;
+}
+
+static boolean ShouldPreferPresentArea(unsigned dst_w,
+						 unsigned dst_h,
+						 unsigned screen_w,
+						 unsigned screen_h,
+						 boolean scale_max_fit_enabled,
+						 boolean hires_mode)
+{
+	(void) scale_max_fit_enabled;
+
+	if (dst_w == 0u || dst_h == 0u || screen_w == 0u || screen_h == 0u)
+	{
+		return FALSE;
+	}
+
+	if (hires_mode)
+	{
+		return TRUE;
+	}
+
+	const u64 dst_area = (u64) dst_w * (u64) dst_h;
+	const u64 screen_area = (u64) screen_w * (u64) screen_h;
+
+	/*
+	 * Large mailboxes are faster through the compact staging buffer than by
+	 * writing directly into the visible framebuffer with pitch gaps and cache
+	 * flushes. The debug-overlay A/B already proved this path wins for MAX.
+	 */
+	return (dst_area * 2u >= screen_area) ? TRUE : FALSE;
+}
+
+static unsigned ScaleFactorFromPercent(unsigned percent)
+{
+	if (percent == kScalePercentNone)
+	{
+		return 1u;
+	}
+	if (percent < kScalePercentMin)
+	{
+		percent = kScalePercentMin;
+	}
+	if (percent > kScalePercentHardMax)
+	{
+		percent = kScalePercentHardMax;
+	}
+	return 2u + ((percent - kScalePercentMin) / kScalePercentStep);
+}
+
+static unsigned ScalePercentFromFactor(unsigned factor)
+{
+	if (factor <= 1u)
+	{
+		return kScalePercentNone;
+	}
+	if (factor >= 6u)
+	{
+		return kScalePercentHardMax;
+	}
+	return kScalePercentMin + ((factor - 2u) * kScalePercentStep);
+}
+
 static unsigned ComputePixelScaleMaxPercent(unsigned screen_w, unsigned screen_h,
 								unsigned src_w, unsigned src_h)
 {
 	if (screen_w == 0u || screen_h == 0u || src_w == 0u || src_h == 0u)
 	{
-		return kScalePercentMin;
+		return kScalePercentNone;
 	}
 
-	const unsigned max_x = (screen_w * 100u) / src_w;
-	const unsigned max_y = (screen_h * 100u) / src_h;
-	unsigned max_pct = UMin(max_x, max_y);
-	max_pct = (max_pct / kScalePercentStep) * kScalePercentStep;
-	if (max_pct < kScalePercentMin) max_pct = kScalePercentMin;
-	if (max_pct > kScalePercentHardMax) max_pct = kScalePercentHardMax;
-	return max_pct;
-}
-
-static unsigned ComputeLogicalSourceWidth(unsigned src_w)
-{
-	/* MSX hi-res modes (e.g. 512-wide) use narrow pixels on CRT. Use logical width for viewport sizing. */
-	return (src_w >= 512u) ? (src_w / 2u) : src_w;
-}
-
-static unsigned NormalizeViewportSourceHeight(unsigned src_h)
-{
-	if (src_h == 0u)
-	{
-		return 0u;
-	}
-
-	if (src_h <= 243u) return 243u;
-	if (src_h <= 256u) return 256u;
-	if (src_h <= 486u) return 486u;
-	if (src_h <= 512u) return 512u;
-	return src_h;
+	unsigned max_factor = UMin(screen_w / src_w, screen_h / src_h);
+	if (max_factor < 1u) max_factor = 1u;
+	if (max_factor > 6u) max_factor = 6u;
+	return ScalePercentFromFactor(max_factor);
 }
 
 static unsigned ComputeScaleMaxPercentForCurrentFrame(unsigned screen_w, unsigned screen_h)
@@ -194,10 +302,22 @@ static unsigned ComputeScaleMaxPercentForCurrentFrame(unsigned screen_w, unsigne
 		src_w = 256u;
 		src_h = 192u;
 	}
+	(void) src_w;
+	(void) src_h;
+	return ComputePixelScaleMaxPercent(screen_w, screen_h, kViewportBaseWidth, kViewportBaseHeight);
+}
 
-	src_h = NormalizeViewportSourceHeight(src_h);
-	const unsigned logical_src_w = ComputeLogicalSourceWidth(src_w);
-	return ComputePixelScaleMaxPercent(screen_w, screen_h, logical_src_w, src_h);
+static unsigned ComputeFixedMaxScaleFactor(unsigned screen_h)
+{
+	if (screen_h >= 1080u)
+	{
+		return 4u;
+	}
+	if (screen_h >= 720u)
+	{
+		return 3u;
+	}
+	return 2u;
 }
 
 static boolean ScalePercentIsNone(unsigned percent)
@@ -666,22 +786,35 @@ static void BlitMappedLineRgb565(u16 *dst_line,
 	}
 
 	unsigned x = 0u;
+	unsigned prev_src_x = 0xFFFFFFFFu;
+	u16 prev_sample = 0u;
 
 	/* Align to 32-bit stores when possible (2 pixels per write). */
 	if ((((uintptr) dst_line) & 0x2u) != 0u)
 	{
-		u16 sample = src_line[src_x0 + xmap[0]];
-		if (crt_black_lift)
+		const unsigned src_x = src_x0 + xmap[0];
+		u16 sample;
+		if (src_x == prev_src_x)
 		{
-			sample = ApplyCrtBlackLevel565(sample);
+			sample = prev_sample;
 		}
-		if (dim_mode == 1u)
+		else
 		{
-			sample = (u16) ((sample & 0xF7DEu) >> 1);
-		}
-		else if (dim_mode == 2u && dim_lut != 0)
-		{
-			sample = dim_lut[sample];
+			sample = src_line[src_x];
+			if (crt_black_lift)
+			{
+				sample = ApplyCrtBlackLevel565(sample);
+			}
+			if (dim_mode == 1u)
+			{
+				sample = (u16) ((sample & 0xF7DEu) >> 1);
+			}
+			else if (dim_mode == 2u && dim_lut != 0)
+			{
+				sample = dim_lut[sample];
+			}
+			prev_src_x = src_x;
+			prev_sample = sample;
 		}
 		dst_line[0] = sample;
 		x = 1u;
@@ -689,42 +822,82 @@ static void BlitMappedLineRgb565(u16 *dst_line,
 
 	for (; x + 1u < dst_width; x += 2u)
 	{
-		u16 s0 = src_line[src_x0 + xmap[x]];
-		u16 s1 = src_line[src_x0 + xmap[x + 1u]];
-		if (crt_black_lift)
+		const unsigned src_x0_mapped = src_x0 + xmap[x];
+		u16 s0;
+		if (src_x0_mapped == prev_src_x)
 		{
-			s0 = ApplyCrtBlackLevel565(s0);
-			s1 = ApplyCrtBlackLevel565(s1);
+			s0 = prev_sample;
 		}
-		if (dim_mode == 1u)
+		else
 		{
-			u32 packed = (u32) s0 | ((u32) s1 << 16);
-			packed = (packed & 0xF7DEF7DEu) >> 1;
-			*(u32 *) (void *) (dst_line + x) = packed;
-			continue;
+			s0 = src_line[src_x0_mapped];
+			if (crt_black_lift)
+			{
+				s0 = ApplyCrtBlackLevel565(s0);
+			}
+			if (dim_mode == 1u)
+			{
+				s0 = (u16) ((s0 & 0xF7DEu) >> 1);
+			}
+			else if (dim_mode == 2u)
+			{
+				s0 = dim_lut[s0];
+			}
+			prev_src_x = src_x0_mapped;
+			prev_sample = s0;
 		}
-		else if (dim_mode == 2u)
+		const unsigned src_x1_mapped = src_x0 + xmap[x + 1u];
+		u16 s1;
+		if (src_x1_mapped == prev_src_x)
 		{
-			s0 = dim_lut[s0];
-			s1 = dim_lut[s1];
+			s1 = prev_sample;
+		}
+		else
+		{
+			s1 = src_line[src_x1_mapped];
+			if (crt_black_lift)
+			{
+				s1 = ApplyCrtBlackLevel565(s1);
+			}
+			if (dim_mode == 1u)
+			{
+				s1 = (u16) ((s1 & 0xF7DEu) >> 1);
+			}
+			else if (dim_mode == 2u)
+			{
+				s1 = dim_lut[s1];
+			}
+			prev_src_x = src_x1_mapped;
+			prev_sample = s1;
 		}
 		*(u32 *) (void *) (dst_line + x) = (u32) s0 | ((u32) s1 << 16);
 	}
 
 	if (x < dst_width)
 	{
-		u16 sample = src_line[src_x0 + xmap[x]];
-		if (crt_black_lift)
+		const unsigned src_x = src_x0 + xmap[x];
+		u16 sample;
+		if (src_x == prev_src_x)
 		{
-			sample = ApplyCrtBlackLevel565(sample);
+			sample = prev_sample;
 		}
-		if (dim_mode == 1u)
+		else
 		{
-			sample = (u16) ((sample & 0xF7DEu) >> 1);
-		}
-		else if (dim_mode == 2u && dim_lut != 0)
-		{
-			sample = dim_lut[sample];
+			sample = src_line[src_x];
+			if (crt_black_lift)
+			{
+				sample = ApplyCrtBlackLevel565(sample);
+			}
+			if (dim_mode == 1u)
+			{
+				sample = (u16) ((sample & 0xF7DEu) >> 1);
+			}
+			else if (dim_mode == 2u && dim_lut != 0)
+			{
+				sample = dim_lut[sample];
+			}
+			prev_src_x = src_x;
+			prev_sample = sample;
 		}
 		dst_line[x] = sample;
 	}
@@ -743,31 +916,76 @@ static void BlitMappedLineRgb565NoDim(u16 *dst_line,
 	}
 
 	unsigned x = 0u;
+	unsigned prev_src_x = 0xFFFFFFFFu;
+	u16 prev_sample = 0u;
 
 	/* Align to 32-bit stores when possible (2 pixels per write). */
 	if ((((uintptr) dst_line) & 0x2u) != 0u)
 	{
-		u16 sample = src_line[src_x0 + xmap[0]];
-		dst_line[0] = crt_black_lift ? ApplyCrtBlackLevel565(sample) : sample;
+		const unsigned src_x = src_x0 + xmap[0];
+		u16 sample;
+		if (src_x == prev_src_x)
+		{
+			sample = prev_sample;
+		}
+		else
+		{
+			sample = src_line[src_x];
+			sample = crt_black_lift ? ApplyCrtBlackLevel565(sample) : sample;
+			prev_src_x = src_x;
+			prev_sample = sample;
+		}
+		dst_line[0] = sample;
 		x = 1u;
 	}
 
 	for (; x + 1u < dst_width; x += 2u)
 	{
-		u16 s0 = src_line[src_x0 + xmap[x]];
-		u16 s1 = src_line[src_x0 + xmap[x + 1u]];
-		if (crt_black_lift)
+		const unsigned src_x0_mapped = src_x0 + xmap[x];
+		u16 s0;
+		if (src_x0_mapped == prev_src_x)
 		{
-			s0 = ApplyCrtBlackLevel565(s0);
-			s1 = ApplyCrtBlackLevel565(s1);
+			s0 = prev_sample;
+		}
+		else
+		{
+			s0 = src_line[src_x0_mapped];
+			s0 = crt_black_lift ? ApplyCrtBlackLevel565(s0) : s0;
+			prev_src_x = src_x0_mapped;
+			prev_sample = s0;
+		}
+		const unsigned src_x1_mapped = src_x0 + xmap[x + 1u];
+		u16 s1;
+		if (src_x1_mapped == prev_src_x)
+		{
+			s1 = prev_sample;
+		}
+		else
+		{
+			s1 = src_line[src_x1_mapped];
+			s1 = crt_black_lift ? ApplyCrtBlackLevel565(s1) : s1;
+			prev_src_x = src_x1_mapped;
+			prev_sample = s1;
 		}
 		*(u32 *) (void *) (dst_line + x) = (u32) s0 | ((u32) s1 << 16);
 	}
 
 	if (x < dst_width)
 	{
-		u16 sample = src_line[src_x0 + xmap[x]];
-		dst_line[x] = crt_black_lift ? ApplyCrtBlackLevel565(sample) : sample;
+		const unsigned src_x = src_x0 + xmap[x];
+		u16 sample;
+		if (src_x == prev_src_x)
+		{
+			sample = prev_sample;
+		}
+		else
+		{
+			sample = src_line[src_x];
+			sample = crt_black_lift ? ApplyCrtBlackLevel565(sample) : sample;
+			prev_src_x = src_x;
+			prev_sample = sample;
+		}
+		dst_line[x] = sample;
 	}
 }
 
@@ -816,6 +1034,127 @@ static void FlushDCacheRange(void *addr, unsigned bytes)
 	asm volatile ("dsb ish" ::: "memory");
 }
 
+static void FlushDCacheRect565(u16 *base,
+					 unsigned pitch_pixels,
+					 unsigned x,
+					 unsigned y,
+					 unsigned width,
+					 unsigned height)
+{
+	if (base == 0 || width == 0u || height == 0u)
+	{
+		return;
+	}
+
+	for (unsigned row = 0u; row < height; ++row)
+	{
+		FlushDCacheRange(base + ((y + row) * pitch_pixels) + x, width * (unsigned) sizeof(u16));
+	}
+}
+
+static void FlushDCacheRect565Contiguous(u16 *base,
+						 unsigned pitch_pixels,
+						 unsigned x,
+						 unsigned y,
+						 unsigned width,
+						 unsigned height)
+{
+	if (base == 0 || width == 0u || height == 0u || pitch_pixels == 0u)
+	{
+		return;
+	}
+
+	u16 *flush_start = base + (y * pitch_pixels) + x;
+	const unsigned flush_pixels = ((height - 1u) * pitch_pixels) + width;
+	FlushDCacheRange(flush_start, flush_pixels * (unsigned) sizeof(u16));
+}
+
+static void FillRun565(u16 *dst, u16 sample, unsigned count)
+{
+	if (dst == 0 || count == 0u)
+	{
+		return;
+	}
+
+	if ((((uintptr) dst) & 0x2u) != 0u)
+	{
+		*dst++ = sample;
+		if (--count == 0u)
+		{
+			return;
+		}
+	}
+
+	const u32 packed = (u32) sample | ((u32) sample << 16);
+	while (count >= 2u)
+	{
+		*(u32 *) (void *) dst = packed;
+		dst += 2;
+		count -= 2u;
+	}
+	if (count != 0u)
+	{
+		*dst = sample;
+	}
+}
+
+static void BlitMappedRunsRgb565(u16 *dst_line,
+						  const u16 *src_line,
+						  const u16 *run_src_x,
+						  const u16 *run_dst_x,
+						  const u16 *run_len,
+						  unsigned run_count,
+						  unsigned src_x0,
+						  unsigned dim_mode,
+						  const u16 *dim_lut,
+						  boolean crt_black_lift)
+{
+	if (dst_line == 0 || src_line == 0 || run_src_x == 0 || run_dst_x == 0 || run_len == 0)
+	{
+		return;
+	}
+
+	for (unsigned i = 0u; i < run_count; ++i)
+	{
+		u16 sample = src_line[src_x0 + run_src_x[i]];
+		if (crt_black_lift)
+		{
+			sample = ApplyCrtBlackLevel565(sample);
+		}
+		if (dim_mode == 1u)
+		{
+			sample = (u16) ((sample & 0xF7DEu) >> 1);
+		}
+		else if (dim_mode == 2u && dim_lut != 0)
+		{
+			sample = dim_lut[sample];
+		}
+		FillRun565(dst_line + run_dst_x[i], sample, run_len[i]);
+	}
+}
+
+static void BlitLineExpandNxRgb565NoDim(u16 *dst_line,
+							const u16 *src_line,
+							unsigned src_width,
+							unsigned scale,
+							boolean crt_black_lift)
+{
+	if (dst_line == 0 || src_line == 0 || src_width == 0u || scale == 0u)
+	{
+		return;
+	}
+
+	for (unsigned x = 0u; x < src_width; ++x)
+	{
+		u16 sample = src_line[x];
+		if (crt_black_lift)
+		{
+			sample = ApplyCrtBlackLevel565(sample);
+		}
+		FillRun565(dst_line + (x * scale), sample, scale);
+	}
+}
+
 static void FillRect565(u16 *dst_base,
 					  unsigned pitch_pixels,
 					  unsigned screen_width,
@@ -855,7 +1194,7 @@ static void FillRect565(u16 *dst_base,
 	}
 }
 
-static void FillRectScreen(CScreenDevice *screen,
+static void FillRectScreen(CComboScreenDevice *screen,
 					   unsigned x,
 					   unsigned y,
 					   unsigned w,
@@ -975,7 +1314,7 @@ CComboKernel::CComboKernel(void)
 	m_UsbReady(FALSE),
 	m_JoyBridgeBits(0),
 	m_JoyMappedBits(ComboKeyboardJoyMask()),
-	m_DebugOverlayEnabled(MSXBARE_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE),
+	m_DebugOverlayMode(MSXBARE_ENABLE_DEBUG_OVERLAY ? ComboDebugOverlayMax : ComboDebugOverlayOff),
 	m_DebugOverlayUnlocked(TRUE),
 	m_ScreenReady(FALSE),
 	m_EmulationPaused(FALSE),
@@ -1044,9 +1383,12 @@ CComboKernel::CComboKernel(void)
 	m_BlitMapSrcH(0),
 	m_BlitMapDstW(0),
 	m_BlitMapDstH(0),
+	m_BlitRunCount(0u),
 	m_BlitMapValid(FALSE),
+	m_BlitMapWovenHiRes(FALSE),
 	m_GameMasterCatalog{{0}},
 	m_OverscanPercent(250u),
+	m_ScaleMaxFitEnabled(FALSE),
 	m_Language(ComboLanguagePT),
 	m_ResolutionMode(kResolutionModeAuto),
 	m_WidescreenEnabled(FALSE),
@@ -1100,7 +1442,9 @@ CComboKernel::CComboKernel(void)
 	m_BootStartUs(0u),
 	m_BootToFmsxMs(0u),
 	m_StateIoBuffer(0),
-	m_StateIoBufferCapacity(0u)
+	m_StateIoBufferCapacity(0u),
+	m_FmsxPresentBuffer(0),
+	m_FmsxPresentBufferPixels(0u)
 {
 	s_Instance = this;
 	m_ActLED.Blink(5);
@@ -1169,6 +1513,13 @@ CComboKernel::~CComboKernel(void)
 		m_StateIoBuffer = 0;
 		m_StateIoBufferCapacity = 0u;
 	}
+	if (m_FmsxPresentBuffer != 0)
+	{
+		delete[] m_FmsxPresentBuffer;
+		m_FmsxPresentBuffer = 0;
+		m_FmsxPresentBufferPixels = 0u;
+	}
+	g_fmsx_uart_trace_serial = 0;
 	s_Instance = 0;
 }
 
@@ -1184,6 +1535,7 @@ boolean CComboKernel::Initialize(void)
 		if (ok)
 		{
 			BootTrace("I2");
+			g_fmsx_uart_trace_serial = &m_Serial;
 			target = &m_Serial;
 		}
 #endif
@@ -1412,7 +1764,7 @@ TComboShutdownMode CComboKernel::Run(void)
 			}
 		}
 #endif
-	if (MSXBARE_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
+	if (MSXBARE_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked && DebugOverlayModeEnabled(m_DebugOverlayMode))
 	{
 		if (!kBootQuiet)
 		{
@@ -1456,15 +1808,17 @@ TComboShutdownMode CComboKernel::Run(void)
 		FALSE
 	#endif
 	);
-	m_PauseMenu.SetOverlayEnabled(
-		MSXBARE_ENABLE_DEBUG_OVERLAY ? m_DebugOverlayEnabled : FALSE,
+		m_PauseMenu.SetOverlayMode(
+		MSXBARE_ENABLE_DEBUG_OVERLAY ? m_DebugOverlayMode : ComboDebugOverlayOff,
 		MSXBARE_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
 	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
 	{
 		const unsigned max_scale = ComputeScaleMaxPercentForCurrentFrame(m_Screen.GetWidth(), m_Screen.GetHeight());
 		m_PauseMenu.SetMaxScalePercent(max_scale);
+		m_ScaleMaxFitEnabled = FALSE;
 		m_OverscanPercent = ClampScalePercent(m_OverscanPercent, max_scale);
 		m_PauseMenu.SetScalePercent(m_OverscanPercent);
+		m_PauseMenu.SetScaleMaxFitEnabled(FALSE);
 	}
 	SetUartTelemetryEnabled(m_UartTelemetryEnabled);
 	#if MSXBARE_ENABLE_FMSX
@@ -1493,6 +1847,24 @@ TComboShutdownMode CComboKernel::Run(void)
 		{
 			m_Logger.Write(FromKernel, LogNotice, "Boot step: first blit");
 			BlitFmsxFrame(TRUE);
+			{
+				CString line;
+				line.Format("PRES BOOT pre dirty=%u draw=%u vis=%u",
+					(unsigned) m_Screen.IsDirty(),
+					m_Screen.GetDrawPageIndex(),
+					m_Screen.GetVisiblePageIndex());
+				m_Logger.Write(FromKernel, LogNotice, line);
+			}
+			{
+				const boolean presented = m_Screen.PresentIfDirty(m_DCacheEnabled, TRUE);
+				CString line;
+				line.Format("PRES BOOT post ok=%u dirty=%u draw=%u vis=%u",
+					(unsigned) presented,
+					(unsigned) m_Screen.IsDirty(),
+					m_Screen.GetDrawPageIndex(),
+					m_Screen.GetVisiblePageIndex());
+				m_Logger.Write(FromKernel, LogNotice, line);
+			}
 			m_Logger.Write(FromKernel, LogNotice, "Boot step: blit OK");
 		}
 	#endif
@@ -1636,6 +2008,7 @@ TComboShutdownMode CComboKernel::Run(void)
 			m_PendingMenuAction = (unsigned) ComboMenuActionNone;
 			HandleMenuAction(deferred_action);
 		}
+		SyncRefreshRateStateFromRuntime();
 		if (MSXBARE_ENABLE_DEBUG_OVERLAY && !m_DebugOverlayUnlocked && m_FmsxReady)
 		{
 			const unsigned load_diag = fmsx_runtime_get_load_diag();
@@ -1643,7 +2016,7 @@ TComboShutdownMode CComboKernel::Run(void)
 			if (load_diag >= 2102u && load_diag < 9000u)
 			{
 				m_DebugOverlayUnlocked = TRUE;
-				m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, TRUE);
+				m_PauseMenu.SetOverlayMode(m_DebugOverlayMode, TRUE);
 				m_PauseMenu.RequestRedraw();
 				m_Logger.Write(FromKernel, LogNotice, "Debug overlay unlocked (post-StartMSX)");
 			}
@@ -1755,23 +2128,9 @@ TComboShutdownMode CComboKernel::Run(void)
 					}
 					stepped_fmsx = TRUE;
 					const EmulatorBackendRuntimeStatus runtime_status = emulator_backend_get_status();
-					const unsigned runtime_refresh_hz = ClampRefreshRateHz(fmsx_runtime_get_refresh_hz());
-					const u64 runtime_frame_interval_us = fmsx_runtime_get_frame_interval_us_exact();
 					m_FmsxFrames = runtime_status.frames;
 					m_FmsxLastError = runtime_status.last_error;
-
-					if (runtime_refresh_hz != m_RefreshRateHz)
-					{
-						m_RefreshRateHz = runtime_refresh_hz;
-						m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
-						m_FramePacingResetPending = TRUE;
-						m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
-					}
-					if (runtime_frame_interval_us != 0u && runtime_frame_interval_us != m_FrameIntervalUs)
-					{
-						m_FrameIntervalUs = runtime_frame_interval_us;
-						m_FramePacingResetPending = TRUE;
-					}
+					SyncRefreshRateStateFromRuntime();
 
 					if (m_FmsxFpsWindowStartUs == 0u)
 					{
@@ -1874,10 +2233,13 @@ TComboShutdownMode CComboKernel::Run(void)
 			const u16 *src_pixels = 0;
 			unsigned src_w = 0u;
 			unsigned src_h = 0u;
+			EmulatorBackendVideoPresentation presentation = {0};
 			(void) emulator_backend_video_frame(&src_pixels, &src_w, &src_h);
+			emulator_backend_get_video_presentation(&presentation);
 			if (src_pixels != 0 && src_w > 0u && src_h > 0u)
 			{
-				ResolveViewportBox(src_w, src_h, &m_FmsxBoxX, &m_FmsxBoxY, &m_FmsxBoxW, &m_FmsxBoxH);
+				ResolveViewportBox(src_w, src_h, &presentation,
+					&m_FmsxBoxX, &m_FmsxBoxY, &m_FmsxBoxW, &m_FmsxBoxH);
 			}
 			const unsigned snap_x = (m_FmsxBoxW > 0u) ? m_FmsxBoxX : 0u;
 			const unsigned snap_y = (m_FmsxBoxH > 0u) ? m_FmsxBoxY : 0u;
@@ -1916,7 +2278,7 @@ TComboShutdownMode CComboKernel::Run(void)
 				}
 			}
 		}
-		if (MSXBARE_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
+		if (MSXBARE_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked && DebugOverlayModeEnabled(m_DebugOverlayMode))
 		{
 			now_us = CTimer::GetClockTicks64();
 			if (m_LastOverlayUs == 0u || now_us - m_LastOverlayUs >= kDebugOverlayIntervalUs)
@@ -1959,6 +2321,30 @@ TComboShutdownMode CComboKernel::Run(void)
 				menu_anchor_x, menu_anchor_y, menu_anchor_w, menu_anchor_h);
 		}
 		m_Screen.Rotor(0, tick);
+		if (tick < 16u)
+		{
+			CString line;
+			line.Format("PRES LOOP pre t=%u dirty=%u draw=%u vis=%u",
+				tick,
+				(unsigned) m_Screen.IsDirty(),
+				m_Screen.GetDrawPageIndex(),
+				m_Screen.GetVisiblePageIndex());
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
+		{
+			const boolean presented = m_Screen.PresentIfDirty(m_DCacheEnabled, TRUE);
+			if (tick < 16u)
+			{
+				CString line;
+				line.Format("PRES LOOP post t=%u ok=%u dirty=%u draw=%u vis=%u",
+					tick,
+					(unsigned) presented,
+					(unsigned) m_Screen.IsDirty(),
+					m_Screen.GetDrawPageIndex(),
+					m_Screen.GetVisiblePageIndex());
+				m_Logger.Write(FromKernel, LogNotice, line);
+			}
+		}
 		m_Scheduler.Yield();
 	}
 
@@ -2707,6 +3093,7 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 	CString line;
 	TFmsxAudioStats audio_stats = { 0 };
 	TFmsxTimingDebug timing_stats = { 0 };
+	EmulatorBackendVideoPresentation presentation = { 0 };
 	auto trace_event_tag = [](unsigned event_type) -> const char *
 	{
 		switch (event_type)
@@ -2760,6 +3147,34 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 	active_boot_mode = fmsx_runtime_get_active_boot_mode();
 	active_model_profile = fmsx_runtime_get_active_model_profile();
 #endif
+	emulator_backend_get_video_presentation(&presentation);
+
+	if (ClampDebugOverlayMode(m_DebugOverlayMode) == ComboDebugOverlayMin)
+	{
+		const unsigned build_hash16 = BuildHash16();
+		const unsigned cpu_mhz = m_CPUThrottle.GetClockRate() / 1000000u;
+		const char *dfs_label = timing_stats.pal_video ? "PAL " : "NTSC";
+		const char *mode_label =
+			presentation.interlaced_mode ? "Interlaced"
+			: (presentation.hires_mode ? "Hires" : "Normal");
+
+		line.Format("\x1b[97m\x1b[49m\x1b[1;1HTXTDBG BUILD:%04X FREQ:%4uMHz                 ",
+			build_hash16 & 0xFFFFu,
+			cpu_mhz > 9999u ? 9999u : cpu_mhz);
+		WriteScreenText(line);
+
+		line.Format("\x1b[97m\x1b[49m\x1b[2;1HDFS:%s FPS:%02u.%u                                  ",
+			dfs_label,
+			(m_FmsxFpsX10 / 10u) > 99u ? 99u : (m_FmsxFpsX10 / 10u),
+			m_FmsxFpsX10 % 10u);
+		WriteScreenText(line);
+
+		line.Format("\x1b[97m\x1b[49m\x1b[3;1HScreen:%02u Mode:%-10s                           ",
+			timing_stats.scr_mode > 99u ? 99u : timing_stats.scr_mode,
+			mode_label);
+		WriteScreenText(line);
+		return;
+	}
 
 	const unsigned os_tick = tick % 1000u;
 	const unsigned build_hash16 = BuildHash16();
@@ -2961,6 +3376,7 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 	}
 
 void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
+									const EmulatorBackendVideoPresentation *presentation,
 									unsigned *out_x, unsigned *out_y,
 									unsigned *out_w, unsigned *out_h) const
 {
@@ -2970,33 +3386,42 @@ void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
 	unsigned box_h = m_Screen.GetHeight();
 	const unsigned screen_width = m_Screen.GetWidth();
 	const unsigned screen_height = m_Screen.GetHeight();
-	unsigned layout_src_height = NormalizeViewportSourceHeight(src_height);
 
 	if (screen_width > 0u && screen_height > 0u)
 	{
 		unsigned dst_width = screen_width;
 		unsigned dst_height = screen_height;
-		if (src_width > 0u && layout_src_height > 0u)
+		if (src_width > 0u && src_height > 0u)
 		{
-			const unsigned ar_num = m_WidescreenEnabled ? 16u : 4u;
-			const unsigned ar_den = m_WidescreenEnabled ? 9u : 3u;
-			const unsigned logical_src_w = ComputeLogicalSourceWidth(src_width);
-			const unsigned max_scale_percent =
-				ComputePixelScaleMaxPercent(screen_width, screen_height, logical_src_w, layout_src_height);
-			unsigned scale_percent = m_OverscanPercent;
-			if (!ScalePercentIsNone(scale_percent) && scale_percent < kScalePercentMin) scale_percent = kScalePercentMin;
-			if (scale_percent > max_scale_percent) scale_percent = max_scale_percent;
-			dst_height = (unsigned) (((u64) layout_src_height * (u64) scale_percent) / 100u);
-			if (dst_height == 0u) dst_height = 1u;
-			if (dst_height > screen_height) dst_height = screen_height;
-
-			/* Keep default geometry in 4:3. Only use 16:9 when widescreen is explicitly enabled. */
-			dst_width = (unsigned) (((u64) dst_height * (u64) ar_num) / (u64) ar_den);
-			if (dst_width == 0u) dst_width = 1u;
-			if (dst_width > screen_width)
+			const boolean hires_mode = src_width >= 512u ? TRUE : FALSE;
+			const unsigned box_base_w = kViewportBaseWidth;
+			const unsigned box_base_h = kViewportBaseHeight;
+			const unsigned max_scale =
+				ComputePixelScaleMaxPercent(screen_width, screen_height, box_base_w, box_base_h);
+			const unsigned scale_percent = ClampScalePercent(m_OverscanPercent, max_scale);
+			const unsigned scale_factor = ScaleFactorFromPercent(scale_percent);
+			const unsigned max_scale_factor = ComputeFixedMaxScaleFactor(screen_height);
+			(void) src_width;
+			(void) src_height;
+			if (m_WidescreenEnabled && !hires_mode)
 			{
-				dst_width = screen_width;
-				dst_height = (unsigned) (((u64) dst_width * (u64) ar_den) / (u64) ar_num);
+				const unsigned ar_num = 16u;
+				const unsigned ar_den = 9u;
+				dst_height = box_base_h * scale_factor;
+				dst_width = (unsigned) (((u64) dst_height * (u64) ar_num) / (u64) ar_den);
+				if (dst_width == 0u) dst_width = 1u;
+				if (dst_width > screen_width)
+				{
+					dst_width = screen_width;
+					dst_height = (unsigned) (((u64) dst_width * (u64) ar_den) / (u64) ar_num);
+				}
+			}
+			else
+			{
+				const unsigned effective_scale =
+					(scale_factor > max_scale_factor) ? max_scale_factor : scale_factor;
+				dst_width = box_base_w * effective_scale;
+				dst_height = box_base_h * effective_scale;
 			}
 		}
 
@@ -3017,10 +3442,36 @@ void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
 }
 
 void CComboKernel::ResolveViewportBox(unsigned src_width, unsigned src_height,
+									const EmulatorBackendVideoPresentation *presentation,
 									unsigned *out_x, unsigned *out_y,
 									unsigned *out_w, unsigned *out_h)
 {
-	ComputeViewportBox(src_width, src_height, out_x, out_y, out_w, out_h);
+	ComputeViewportBox(src_width, src_height, presentation, out_x, out_y, out_w, out_h);
+}
+
+void CComboKernel::ClearPresentationSurfaces(void)
+{
+	if (!m_ScreenReady)
+	{
+		return;
+	}
+
+	const unsigned screen_width = m_Screen.GetWidth();
+	const unsigned screen_height = m_Screen.GetHeight();
+	if (screen_width == 0u || screen_height == 0u)
+	{
+		return;
+	}
+
+	CBcmFrameBuffer *frame_buffer = m_Screen.GetFrameBuffer();
+	if (frame_buffer == 0 || frame_buffer->GetDepth() != 16)
+	{
+		FillRectScreen(&m_Screen, 0u, 0u, screen_width, screen_height, (TScreenColor) kLetterboxColor565);
+		return;
+	}
+
+	m_Screen.ClearAllPages((TScreenColor) kLetterboxColor565, m_DCacheEnabled);
+	m_Screen.ClearDirty();
 }
 
 void CComboKernel::BlitFmsxFrame(boolean force_redraw)
@@ -3051,7 +3502,8 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 	const u16 *crt_dim_lut = (scanline_mode == kScanlineModeCrt) ? EnsureCrtDimLutReady() : 0;
 	unsigned offset_x = 0u;
 	unsigned offset_y = 0u;
-	ResolveViewportBox(width, height, &offset_x, &offset_y, &dst_width, &dst_height);
+	ResolveViewportBox(width, height, 0, &offset_x, &offset_y, &dst_width, &dst_height);
+	const boolean hires_mode = width >= 512u ? TRUE : FALSE;
 	const unsigned old_box_x = m_FmsxBoxX;
 	const unsigned old_box_y = m_FmsxBoxY;
 	const unsigned old_box_w = m_FmsxBoxW;
@@ -3069,18 +3521,17 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 	CBcmFrameBuffer *frame_buffer = m_Screen.GetFrameBuffer();
 	if (frame_buffer != 0 && frame_buffer->GetDepth() == 16)
 	{
-		u16 *dst_base = (u16 *) (uintptr) frame_buffer->GetBuffer();
-		const unsigned pitch_pixels = frame_buffer->GetPitch() / sizeof(u16);
+		u16 *dst_base = m_Screen.GetDrawBuffer16();
+		const unsigned pitch_pixels = m_Screen.GetPitchPixels();
 		const unsigned scanline_mode = (m_ScanlineMode > kScanlineModeCrt) ? kScanlineModeCrt : m_ScanlineMode;
+		u16 *present_base = dst_base;
+		const unsigned present_pitch_pixels = pitch_pixels;
+		const unsigned present_offset_pixels = (offset_y * pitch_pixels) + offset_x;
 		if (force_redraw)
 		{
-			/* Full clear on forced redraw to avoid capturing stale menu pixels into snapshot. */
 			FillRect565(dst_base, pitch_pixels, screen_width, screen_height,
 				0u, 0u, screen_width, screen_height, kLetterboxColor565);
-			if (m_DCacheEnabled)
-			{
-				FlushDCacheRange(dst_base, screen_width * screen_height * (unsigned) sizeof(u16));
-			}
+			m_Screen.MarkDirtyRect(0u, 0u, screen_width, screen_height);
 		}
 		if (box_changed && old_box_w > 0u && old_box_h > 0u)
 		{
@@ -3096,12 +3547,7 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 			{
 				FillRect565(dst_base, pitch_pixels, screen_width, screen_height,
 					old_box_x, old_box_y, old_box_w, old_box_h, kLetterboxColor565);
-				if (m_DCacheEnabled)
-				{
-					u16 *flush_start = dst_base + (old_box_y * pitch_pixels) + old_box_x;
-					const unsigned flush_pixels = ((old_box_h - 1u) * pitch_pixels) + old_box_w;
-					FlushDCacheRange(flush_start, flush_pixels * (unsigned) sizeof(u16));
-				}
+				m_Screen.MarkDirtyRect(old_box_x, old_box_y, old_box_w, old_box_h);
 			}
 			else
 			{
@@ -3119,35 +3565,42 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 					old_box_x, iy0, left_w, mid_h, kLetterboxColor565);
 				FillRect565(dst_base, pitch_pixels, screen_width, screen_height,
 					ix1, iy0, right_w, mid_h, kLetterboxColor565);
-
-				if (m_DCacheEnabled)
+				if (top_h > 0u) m_Screen.MarkDirtyRect(old_box_x, old_box_y, old_box_w, top_h);
+				if (bottom_h > 0u) m_Screen.MarkDirtyRect(old_box_x, iy1, old_box_w, bottom_h);
+				if (left_w > 0u && mid_h > 0u) m_Screen.MarkDirtyRect(old_box_x, iy0, left_w, mid_h);
+				if (right_w > 0u && mid_h > 0u) m_Screen.MarkDirtyRect(ix1, iy0, right_w, mid_h);
+			}
+		}
+		const unsigned exact_scale_x =
+			(src_w > 0u && (dst_width % src_w) == 0u) ? (dst_width / src_w) : 0u;
+		const unsigned exact_scale_y =
+			(src_h > 0u && (dst_height % src_h) == 0u) ? (dst_height / src_h) : 0u;
+		const boolean exact_integer_physical =
+			(scanline_mode == kScanlineModeOff)
+			&& (src_x0 == 0u)
+			&& (src_y0 == 0u)
+			&& (exact_scale_x >= 2u)
+			&& (exact_scale_x == exact_scale_y)
+			&& (dst_width == (src_w * exact_scale_x))
+			&& (dst_height == (src_h * exact_scale_y));
+		if (exact_integer_physical)
+		{
+			const unsigned scale = exact_scale_x;
+			for (unsigned y = 0u; y < src_h; ++y)
+			{
+				const u16 *src_line = pixels + (y * width);
+				u16 *dst_line0 =
+					present_base + present_offset_pixels + ((y * scale) * present_pitch_pixels);
+				BlitLineExpandNxRgb565NoDim(dst_line0, src_line, src_w, scale, FALSE);
+				for (unsigned copy = 1u; copy < scale; ++copy)
 				{
-					if (top_h > 0u)
-					{
-						u16 *flush_start = dst_base + (old_box_y * pitch_pixels) + old_box_x;
-						const unsigned flush_pixels = ((top_h - 1u) * pitch_pixels) + old_box_w;
-						FlushDCacheRange(flush_start, flush_pixels * (unsigned) sizeof(u16));
-					}
-					if (bottom_h > 0u)
-					{
-						u16 *flush_start = dst_base + (iy1 * pitch_pixels) + old_box_x;
-						const unsigned flush_pixels = ((bottom_h - 1u) * pitch_pixels) + old_box_w;
-						FlushDCacheRange(flush_start, flush_pixels * (unsigned) sizeof(u16));
-					}
-					if (left_w > 0u && mid_h > 0u)
-					{
-						u16 *flush_start = dst_base + (iy0 * pitch_pixels) + old_box_x;
-						const unsigned flush_pixels = ((mid_h - 1u) * pitch_pixels) + left_w;
-						FlushDCacheRange(flush_start, flush_pixels * (unsigned) sizeof(u16));
-					}
-					if (right_w > 0u && mid_h > 0u)
-					{
-						u16 *flush_start = dst_base + (iy0 * pitch_pixels) + ix1;
-						const unsigned flush_pixels = ((mid_h - 1u) * pitch_pixels) + right_w;
-						FlushDCacheRange(flush_start, flush_pixels * (unsigned) sizeof(u16));
-					}
+					memcpy(dst_line0 + (copy * present_pitch_pixels),
+						dst_line0,
+						dst_width * sizeof(u16));
 				}
 			}
+			m_Screen.MarkDirtyRect(offset_x, offset_y, dst_width, dst_height);
+			return;
 		}
 		const boolean can_use_maps = (dst_width <= kBlitMapMaxAxis) && (dst_height <= kBlitMapMaxAxis);
 		if (can_use_maps)
@@ -3166,6 +3619,27 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 				{
 					m_BlitYMap[y] = (u16) (((u64) y * (u64) src_h) / (u64) dst_height);
 				}
+				m_BlitRunCount = 0u;
+				if (dst_width > 0u)
+				{
+					unsigned run_start = 0u;
+					unsigned run_src_x = m_BlitXMap[0];
+					for (unsigned x = 1u; x <= dst_width; ++x)
+					{
+						if (x == dst_width || m_BlitXMap[x] != run_src_x)
+						{
+							m_BlitRunSrcX[m_BlitRunCount] = (u16) run_src_x;
+							m_BlitRunDstX[m_BlitRunCount] = (u16) run_start;
+							m_BlitRunLen[m_BlitRunCount] = (u16) (x - run_start);
+							++m_BlitRunCount;
+							if (x < dst_width)
+							{
+								run_start = x;
+								run_src_x = m_BlitXMap[x];
+							}
+						}
+					}
+				}
 				m_BlitMapSrcW = src_w;
 				m_BlitMapSrcH = src_h;
 				m_BlitMapDstW = dst_width;
@@ -3174,19 +3648,27 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 			}
 
 			unsigned crt_cached_src_y = 0xFFFFFFFFu;
+			unsigned prev_src_rel_y = 0xFFFFFFFFu;
+			unsigned prev_dim_mode = 0xFFFFFFFFu;
+			boolean prev_line_valid = FALSE;
 			u16 crt_dim_line_cache[kBlitMapMaxAxis];
 			for (unsigned y = 0; y < dst_height; ++y)
 			{
 				const unsigned src_rel_y = m_BlitYMap[y];
 				const unsigned src_y = src_y0 + src_rel_y;
 				const u16 *src_line = pixels + (src_y * width);
-				u16 *dst_line = dst_base + ((offset_y + y) * pitch_pixels) + offset_x;
+				u16 *dst_line = present_base + present_offset_pixels + (y * present_pitch_pixels);
 				const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
 				const boolean dark_crt =
 					(scanline_mode == kScanlineModeCrt)
 					&& crt_dim_lut != 0
 					&& IsCrtDimmedHalfRow(y, src_rel_y, src_h, dst_height);
 				const unsigned dim_mode = dark_lcd ? 1u : (dark_crt ? 2u : 0u);
+				if (prev_line_valid && src_rel_y == prev_src_rel_y && dim_mode == prev_dim_mode)
+				{
+					memcpy(dst_line, dst_line - present_pitch_pixels, dst_width * sizeof(u16));
+					continue;
+				}
 				if (dark_crt && src_w <= kBlitMapMaxAxis)
 				{
 					if (src_y != crt_cached_src_y)
@@ -3197,37 +3679,53 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 						}
 						crt_cached_src_y = src_y;
 					}
-					BlitMappedLineRgb565NoDim(dst_line, crt_dim_line_cache, m_BlitXMap, dst_width, 0u, FALSE);
-					continue;
+					BlitMappedRunsRgb565(dst_line, crt_dim_line_cache,
+						m_BlitRunSrcX, m_BlitRunDstX, m_BlitRunLen, m_BlitRunCount,
+						0u, 0u, 0, FALSE);
 				}
-				if (dim_mode == 0u)
+				else if (dim_mode == 0u)
 				{
-					BlitMappedLineRgb565NoDim(dst_line, src_line, m_BlitXMap, dst_width, src_x0,
-						(scanline_mode == kScanlineModeCrt) ? TRUE : FALSE);
+					BlitMappedRunsRgb565(dst_line, src_line,
+						m_BlitRunSrcX, m_BlitRunDstX, m_BlitRunLen, m_BlitRunCount,
+						src_x0, 0u, 0, (scanline_mode == kScanlineModeCrt) ? TRUE : FALSE);
 				}
 				else
 				{
 					const u16 *dim_lut = (dim_mode == 2u) ? crt_dim_lut : 0;
-					BlitMappedLineRgb565(dst_line, src_line, m_BlitXMap, dst_width, src_x0, dim_mode, dim_lut,
-						(dim_mode == 2u) ? TRUE : FALSE);
+					BlitMappedRunsRgb565(dst_line, src_line,
+						m_BlitRunSrcX, m_BlitRunDstX, m_BlitRunLen, m_BlitRunCount,
+						src_x0, dim_mode, dim_lut, (dim_mode == 2u) ? TRUE : FALSE);
 				}
+				prev_src_rel_y = src_rel_y;
+				prev_dim_mode = dim_mode;
+				prev_line_valid = TRUE;
 			}
 		}
 		else
 		{
 			unsigned crt_cached_src_y = 0xFFFFFFFFu;
+			unsigned prev_src_rel_y = 0xFFFFFFFFu;
+			unsigned prev_dim_mode = 0xFFFFFFFFu;
+			boolean prev_line_valid = FALSE;
 			u16 crt_dim_line_cache[kBlitMapMaxAxis];
 			for (unsigned y = 0; y < dst_height; ++y)
 			{
-				const unsigned src_rel_y = (unsigned) (((u64) y * (u64) src_h) / (u64) dst_height);
+				const unsigned src_rel_y =
+					(unsigned) (((u64) y * (u64) src_h) / (u64) dst_height);
 				const unsigned src_y = src_y0 + src_rel_y;
 				const u16 *src_line = pixels + (src_y * width);
-				u16 *dst_line = dst_base + ((offset_y + y) * pitch_pixels) + offset_x;
+				u16 *dst_line = present_base + present_offset_pixels + (y * present_pitch_pixels);
 				const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
 				const boolean dark_crt =
 					(scanline_mode == kScanlineModeCrt)
 					&& crt_dim_lut != 0
 					&& IsCrtDimmedHalfRow(y, src_rel_y, src_h, dst_height);
+				const unsigned dim_mode = dark_lcd ? 1u : (dark_crt ? 2u : 0u);
+				if (prev_line_valid && src_rel_y == prev_src_rel_y && dim_mode == prev_dim_mode)
+				{
+					memcpy(dst_line, dst_line - present_pitch_pixels, dst_width * sizeof(u16));
+					continue;
+				}
 				if (dark_lcd)
 				{
 					for (unsigned x = 0; x < dst_width; ++x)
@@ -3273,16 +3771,13 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 							: src_line[src_x];
 					}
 				}
+				prev_src_rel_y = src_rel_y;
+				prev_dim_mode = dim_mode;
+				prev_line_valid = TRUE;
 			}
 			m_BlitMapValid = FALSE;
 		}
-
-		if (m_DCacheEnabled)
-		{
-			u16 *flush_start = dst_base + (offset_y * pitch_pixels) + offset_x;
-			const unsigned flush_pixels = ((dst_height - 1u) * pitch_pixels) + dst_width;
-			FlushDCacheRange(flush_start, flush_pixels * (unsigned) sizeof(u16));
-		}
+		m_Screen.MarkDirtyRect(offset_x, offset_y, dst_width, dst_height);
 		return;
 	}
 
@@ -3421,7 +3916,7 @@ void CComboKernel::ApplyRuntimeSettingsToFmsx(void)
 	{
 		return;
 	}
-	fmsx_runtime_set_overscan(m_OverscanPercent > kScalePercentMin ? TRUE : FALSE);
+	fmsx_runtime_set_overscan((m_OverscanPercent > kScalePercentMin) ? TRUE : FALSE);
 	fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 	fmsx_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
 	fmsx_runtime_set_boot_mode(m_BootMode);
@@ -3437,6 +3932,34 @@ void CComboKernel::ApplyRuntimeSettingsToFmsx(void)
 		m_SccDualCartEnabled = FALSE;
 	}
 	SyncKanjiRomStateFromRuntime();
+	SyncRefreshRateStateFromRuntime();
+#endif
+}
+
+void CComboKernel::SyncRefreshRateStateFromRuntime(void)
+{
+#if MSXBARE_ENABLE_FMSX
+	if (!m_FmsxReady || emulator_backend_selected_kind() != EMULATOR_BACKEND_KIND_FMSX)
+	{
+		return;
+	}
+
+	const unsigned runtime_refresh_hz = ClampRefreshRateHz(fmsx_runtime_get_refresh_hz());
+	const u64 runtime_frame_interval_us = fmsx_runtime_get_frame_interval_us_exact();
+
+	if (runtime_refresh_hz != m_RefreshRateHz)
+	{
+		m_RefreshRateHz = runtime_refresh_hz;
+		m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
+		m_FramePacingResetPending = TRUE;
+		m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
+	}
+
+	if (runtime_frame_interval_us != 0u && runtime_frame_interval_us != m_FrameIntervalUs)
+	{
+		m_FrameIntervalUs = runtime_frame_interval_us;
+		m_FramePacingResetPending = TRUE;
+	}
 #endif
 }
 
@@ -3465,7 +3988,7 @@ void CComboKernel::UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, un
 	m_SettingsSaveCode = code;
 	m_SettingsSaveAux = aux;
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
-	if (m_ScreenReady && m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
+	if (m_ScreenReady && m_DebugOverlayUnlocked && DebugOverlayModeEnabled(m_DebugOverlayMode))
 	{
 		DrawDebugOverlay((unsigned) (m_FmsxFrames & 0xFFFFFFFFu));
 	}
@@ -3477,7 +4000,7 @@ void CComboKernel::UpdateLoadDiagTelemetry(unsigned stage)
 #if MSXBARE_ENABLE_FMSX
 	fmsx_runtime_set_load_diag(stage);
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
-	if (m_ScreenReady && m_DebugOverlayUnlocked && m_DebugOverlayEnabled)
+	if (m_ScreenReady && m_DebugOverlayUnlocked && DebugOverlayModeEnabled(m_DebugOverlayMode))
 	{
 		DrawDebugOverlay((unsigned) (m_FmsxFrames & 0xFFFFFFFFu));
 	}
@@ -3606,33 +4129,44 @@ void CComboKernel::LoadSettingsFromStorage(void)
 				}
 				else if (SettingsKeyEquals(line, key_len, "scale"))
 				{
-				unsigned clamped = value;
+					unsigned clamped = value;
+					if (clamped == 500u)
+					{
+						clamped = kScalePercentHardMax;
+					}
 					if (clamped != kScalePercentNone && clamped < kScalePercentMin) clamped = kScalePercentMin;
 					if (clamped > kScalePercentHardMax) clamped = kScalePercentHardMax;
-				m_OverscanPercent = (clamped == kScalePercentNone)
-					? kScalePercentNone
-					: ((clamped / kScalePercentStep) * kScalePercentStep);
-			}
-			else if (SettingsKeyEquals(line, key_len, "overscan"))
-			{
-				/* Legacy migration: overscan 0..100 -> scale 250..450 (steps of 50). */
-				const unsigned legacy = value > 100u ? 100u : value;
-				unsigned migrated = kScalePercentMin + ((legacy / 25u) * kScalePercentStep);
-				if (migrated > kScalePercentHardMax) migrated = kScalePercentHardMax;
-				m_OverscanPercent = migrated;
-			}
-			else if (SettingsKeyEquals(line, key_len, "widescreen"))
-			{
-				m_WidescreenEnabled = value ? TRUE : FALSE;
-			}
-			else if (SettingsKeyEquals(line, key_len, "language"))
-			{
-				m_Language = combo_locale_clamp_language(value);
-			}
-			else if (SettingsKeyEquals(line, key_len, "scanline"))
-			{
-				m_ScanlineMode = value > 2u ? 2u : value;
-			}
+					m_OverscanPercent = (clamped == kScalePercentNone)
+						? kScalePercentNone
+						: ((clamped / kScalePercentStep) * kScalePercentStep);
+				}
+				else if (SettingsKeyEquals(line, key_len, "scale_max"))
+				{
+					if (value)
+					{
+						m_OverscanPercent = kScalePercentHardMax;
+					}
+				}
+				else if (SettingsKeyEquals(line, key_len, "overscan"))
+				{
+					/* Legacy migration: overscan 0..100 -> scale 250..450 (steps of 50). */
+					const unsigned legacy = value > 100u ? 100u : value;
+					unsigned migrated = kScalePercentMin + ((legacy / 25u) * kScalePercentStep);
+					if (migrated > kScalePercentHardMax) migrated = kScalePercentHardMax;
+					m_OverscanPercent = migrated;
+				}
+				else if (SettingsKeyEquals(line, key_len, "widescreen"))
+				{
+					m_WidescreenEnabled = value ? TRUE : FALSE;
+				}
+				else if (SettingsKeyEquals(line, key_len, "language"))
+				{
+					m_Language = combo_locale_clamp_language(value);
+				}
+				else if (SettingsKeyEquals(line, key_len, "scanline"))
+				{
+					m_ScanlineMode = value > 2u ? 2u : value;
+				}
 			else if (SettingsKeyEquals(line, key_len, "refresh"))
 			{
 				m_RefreshRateHz = ClampRefreshRateHz(value);
@@ -3663,7 +4197,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			}
 			else if (SettingsKeyEquals(line, key_len, "z80_turbo"))
 			{
-				m_Z80TurboMode = value > 2u ? 0u : value;
+				m_Z80TurboMode = value > 3u ? 0u : value;
 			}
 			else if (SettingsKeyEquals(line, key_len, "rensha"))
 			{
@@ -3692,10 +4226,10 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			else if (SettingsKeyEquals(line, key_len, "debugger"))
 			{
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
-				m_DebugOverlayEnabled = value ? TRUE : FALSE;
+				m_DebugOverlayMode = ClampDebugOverlayMode(value);
 #else
 				(void) value;
-				m_DebugOverlayEnabled = FALSE;
+				m_DebugOverlayMode = ComboDebugOverlayOff;
 #endif
 			}
 			else if (SettingsKeyEquals(line, key_len, "audio_mute"))
@@ -3740,6 +4274,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_RefreshRateHz = ClampRefreshRateHz(m_RefreshRateHz);
 	m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
 	m_PauseMenu.SetScalePercent(m_OverscanPercent);
+	m_PauseMenu.SetScaleMaxFitEnabled(m_ScaleMaxFitEnabled);
 	m_PauseMenu.SetLanguage(m_Language);
 	m_PauseMenu.SetResolutionMode(m_ResolutionMode);
 	m_PauseMenu.SetWidescreenEnabled(m_WidescreenEnabled);
@@ -3758,19 +4293,21 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
 	m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled,
 		has_cfg_cartb && cfg_cartb_path[0] ? FALSE : TRUE);
-	m_PauseMenu.SetOverlayEnabled(
-		MSXBARE_ENABLE_DEBUG_OVERLAY ? m_DebugOverlayEnabled : FALSE,
+	m_PauseMenu.SetOverlayMode(
+		MSXBARE_ENABLE_DEBUG_OVERLAY ? m_DebugOverlayMode : ComboDebugOverlayOff,
 		MSXBARE_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
 	m_PauseMenu.SetDebugLogEnabled(m_UartTelemetryEnabled);
 	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
 	{
 		const unsigned max_scale = ComputeScaleMaxPercentForCurrentFrame(m_Screen.GetWidth(), m_Screen.GetHeight());
 		m_PauseMenu.SetMaxScalePercent(max_scale);
+		m_ScaleMaxFitEnabled = FALSE;
 		m_OverscanPercent = ClampScalePercent(m_OverscanPercent, max_scale);
 		m_PauseMenu.SetScalePercent(m_OverscanPercent);
+		m_PauseMenu.SetScaleMaxFitEnabled(FALSE);
 	}
 #if MSXBARE_ENABLE_FMSX
-	fmsx_runtime_set_overscan(m_OverscanPercent > kScalePercentMin ? TRUE : FALSE);
+	fmsx_runtime_set_overscan((m_OverscanPercent > kScalePercentMin) ? TRUE : FALSE);
 	fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
 	fmsx_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 	fmsx_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
@@ -3872,7 +4409,7 @@ void CComboKernel::SaveSettingsToStorage(void)
 	APPEND_LINE_FMT("fm_music=%u\n", m_FmMusicEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("scc_plus=%u\n", m_SccCartEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("scc_dual=%u\n", m_SccDualCartEnabled ? 1u : 0u);
-	APPEND_LINE_FMT("debugger=%u\n", m_DebugOverlayEnabled ? 1u : 0u);
+	APPEND_LINE_FMT("debugger=%u\n", ClampDebugOverlayMode(m_DebugOverlayMode));
 	APPEND_LINE_FMT("audio_gain=%u\n", m_AudioOutputGainPct > 100u ? 100u : m_AudioOutputGainPct);
 	#if MSXBARE_ENABLE_FMSX
 		APPEND_LINE_TEXT("cart_a_path", fmsx_runtime_get_cartridge_path(0u));
@@ -4229,6 +4766,33 @@ boolean CComboKernel::EnsureStateIoBuffer(unsigned min_capacity)
 	}
 	m_StateIoBuffer = new_buffer;
 	m_StateIoBufferCapacity = min_capacity;
+	return TRUE;
+}
+
+boolean CComboKernel::EnsureFmsxPresentBuffer(unsigned min_pixels)
+{
+	static const unsigned kPresentBufferMaxPixels = kBlitMapMaxAxis * kBlitMapMaxAxis;
+
+	if (min_pixels == 0u || min_pixels > kPresentBufferMaxPixels)
+	{
+		return FALSE;
+	}
+	if (m_FmsxPresentBuffer != 0 && m_FmsxPresentBufferPixels >= min_pixels)
+	{
+		return TRUE;
+	}
+
+	u16 *new_buffer = new u16[min_pixels];
+	if (new_buffer == 0)
+	{
+		return FALSE;
+	}
+	if (m_FmsxPresentBuffer != 0)
+	{
+		delete[] m_FmsxPresentBuffer;
+	}
+	m_FmsxPresentBuffer = new_buffer;
+	m_FmsxPresentBufferPixels = min_pixels;
 	return TRUE;
 }
 
@@ -4778,9 +5342,10 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 
 	case ComboMenuActionOverscanChanged:
 		m_OverscanPercent = m_PauseMenu.GetScalePercent();
+		m_ScaleMaxFitEnabled = FALSE;
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX
-		fmsx_runtime_set_overscan(m_OverscanPercent > kScalePercentMin ? TRUE : FALSE);
+		fmsx_runtime_set_overscan((m_OverscanPercent > kScalePercentMin) ? TRUE : FALSE);
 		/* Scale changes can shrink/grow viewport; force deterministic full redraw + fresh snapshot. */
 		if (m_EmulationPaused && m_FmsxReady)
 		{
@@ -4793,11 +5358,11 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 			CString line;
 			if (ScalePercentIsNone(m_OverscanPercent))
 			{
-				line.Format("Settings: Scale NONE");
+				line.Format("Settings: Scale 1x");
 			}
 			else
 			{
-				line.Format("Settings: Scale %u.%ux", m_OverscanPercent / 100u, (m_OverscanPercent % 100u) / 10u);
+				line.Format("Settings: Scale %ux", ScaleFactorFromPercent(m_OverscanPercent));
 			}
 			m_Logger.Write(FromKernel, LogNotice, line);
 		}
@@ -4888,13 +5453,14 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		break;
 #else
 		m_RefreshRateHz = (m_RefreshRateHz == 50u) ? 60u : 50u;
+	#if MSXBARE_ENABLE_FMSX
+		fmsx_runtime_debug_force_refresh_hz(m_RefreshRateHz);
+		m_RefreshRateHz = ClampRefreshRateHz(fmsx_runtime_get_refresh_hz());
+	#endif
 		m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 		m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
 		m_FramePacingResetPending = TRUE;
 		RefreshSettingsUiAfterAction();
-	#if MSXBARE_ENABLE_FMSX
-		fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
-	#endif
 		m_Logger.Write(FromKernel, LogNotice, m_RefreshRateHz == 50u ? "Settings: Refresh PAL" : "Settings: Refresh NTSC");
 		break;
 #endif
@@ -4905,13 +5471,14 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		break;
 #else
 		m_RefreshRateHz = (m_RefreshRateHz == 50u) ? 60u : 50u;
+	#if MSXBARE_ENABLE_FMSX
+		fmsx_runtime_debug_force_refresh_hz(m_RefreshRateHz);
+		m_RefreshRateHz = ClampRefreshRateHz(fmsx_runtime_get_refresh_hz());
+	#endif
 		m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 		m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
 		m_FramePacingResetPending = TRUE;
 		RefreshSettingsUiAfterAction();
-	#if MSXBARE_ENABLE_FMSX
-		fmsx_runtime_set_refresh_hz(m_RefreshRateHz);
-	#endif
 		m_Logger.Write(FromKernel, LogNotice, m_RefreshRateHz == 50u ? "Settings: Refresh PAL" : "Settings: Refresh NTSC");
 		break;
 #endif
@@ -5159,9 +5726,13 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 
 	case ComboMenuActionToggleOverlay:
 	#if MSXBARE_ENABLE_DEBUG_OVERLAY
-		SetDebugOverlayEnabled(m_DebugOverlayEnabled ? FALSE : TRUE);
+		SetDebugOverlayMode(NextDebugOverlayMode(m_DebugOverlayMode));
 		RefreshSettingsUiAfterAction();
-		m_Logger.Write(FromKernel, LogNotice, m_DebugOverlayEnabled ? "Settings: Debugger ON" : "Settings: Debugger OFF");
+		{
+			CString line;
+			line.Format("Settings: Debugger %s", DebugOverlayModeLogLabel(m_DebugOverlayMode));
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
 	#else
 		m_Logger.Write(FromKernel, LogNotice, "Settings: Debugger indisponivel neste build");
 	#endif
@@ -5257,6 +5828,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 #endif
 
 	case ComboMenuActionSaveState:
+		ExitPauseForBackendAction();
 		RefreshSettingsUiAfterAction();
 		m_StateSavePending = TRUE;
 		UpdateSettingsSaveTelemetry(31u, 0u, 0u);
@@ -5264,6 +5836,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		break;
 
 	case ComboMenuActionLoadState:
+		ExitPauseForBackendAction();
 		RefreshSettingsUiAfterAction();
 		m_StateLoadPending = TRUE;
 		UpdateSettingsSaveTelemetry(41u, 0u, 0u);
@@ -5282,33 +5855,31 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 	}
 }
 
-void CComboKernel::SetDebugOverlayEnabled(boolean enabled)
+void CComboKernel::SetDebugOverlayMode(unsigned mode)
 {
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
-	const boolean was_enabled = m_DebugOverlayEnabled ? TRUE : FALSE;
-	m_DebugOverlayEnabled = enabled ? TRUE : FALSE;
-	if (!was_enabled && m_DebugOverlayEnabled)
+	const unsigned old_mode = ClampDebugOverlayMode(m_DebugOverlayMode);
+	const unsigned new_mode = ClampDebugOverlayMode(mode);
+	m_DebugOverlayMode = new_mode;
+	if (old_mode != new_mode)
 	{
-		m_OverscanPercent = kScalePercentNone;
-		m_PauseMenu.SetScalePercent(m_OverscanPercent);
-#if MSXBARE_ENABLE_FMSX
-		fmsx_runtime_set_overscan(FALSE);
+		ClearPresentationSurfaces();
+		m_PauseMenu.InvalidateViewportSnapshot();
 		if (m_EmulationPaused && m_FmsxReady)
 		{
 			m_PauseNeedsBackgroundRedraw = TRUE;
 			m_PauseNeedsFullViewportClear = TRUE;
 		}
 		m_ForceViewportFullClearNextFrame = TRUE;
-#endif
 	}
-	m_PauseMenu.SetOverlayEnabled(m_DebugOverlayEnabled, TRUE);
+	m_PauseMenu.SetOverlayMode(m_DebugOverlayMode, TRUE);
 	m_PauseMenu.RequestRedraw();
-	if (m_ScreenReady && m_DebugOverlayUnlocked && !m_DebugOverlayEnabled)
+	if (m_ScreenReady && m_DebugOverlayUnlocked)
 	{
 		ClearDebugOverlay();
 	}
 #else
-	(void) enabled;
+	(void) mode;
 #endif
 }
 
@@ -5546,8 +6117,12 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	if (key_state.f1_pressed && !m_LastF12Pressed)
 	{
 		#if MSXBARE_ENABLE_DEBUG_OVERLAY
-		SetDebugOverlayEnabled(m_DebugOverlayEnabled ? FALSE : TRUE);
-		m_Logger.Write(FromKernel, LogNotice, m_DebugOverlayEnabled ? "Overlay ON" : "Overlay OFF");
+		SetDebugOverlayMode(NextDebugOverlayMode(m_DebugOverlayMode));
+		{
+			CString line;
+			line.Format("Overlay %s", DebugOverlayModeLogLabel(m_DebugOverlayMode));
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
 		#endif
 	}
 	m_LastF12Pressed = key_state.f1_pressed;
@@ -5653,7 +6228,9 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	{
 		const unsigned max_scale = ComputeScaleMaxPercentForCurrentFrame(m_Screen.GetWidth(), m_Screen.GetHeight());
 		m_PauseMenu.SetMaxScalePercent(max_scale);
-		if (!ScalePercentIsNone(m_OverscanPercent) && m_OverscanPercent > max_scale)
+		m_ScaleMaxFitEnabled = FALSE;
+		if (!ScalePercentIsNone(m_OverscanPercent)
+			&& m_OverscanPercent > max_scale)
 		{
 			m_OverscanPercent = max_scale;
 			m_PauseMenu.SetScalePercent(m_OverscanPercent);

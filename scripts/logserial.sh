@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 LOG="/tmp/msx2p-boot-serial.log"
-DEV="/dev/cu.usbserial-12410"
+DEV="/dev/cu.usbserial-21230"
 BAUD="115200"
 
 if [ -f "$LOG" ]; then
