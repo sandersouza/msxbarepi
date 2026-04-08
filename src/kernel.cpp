@@ -56,7 +56,6 @@ static const unsigned kScalePercentStep = 50u;
 static const unsigned kScalePercentHardMax = 450u;
 static const unsigned kScanlineModeOff = 0u;
 static const unsigned kScanlineModeLcd = 1u;
-static const unsigned kScanlineModeCrt = 2u;
 static const unsigned kBootModeNorm = 0u;
 static const unsigned kBootModeFast = 1u;
 static const unsigned kBootModeGame = 2u;
@@ -85,7 +84,6 @@ static const u8 kJoyBridgeFireB = (u8) (1u << 5);
 static const boolean kBootQuiet = TRUE;
 /* Rensha modes are expressed in pulses per 10 frames (0.5, 1.0, 1.5). */
 static const unsigned kRenshaRateDen = 20u; /* 1/20 pulse per frame unit */
-static const unsigned kRgb565LutSize = 65536u;
 
 #ifndef MSXBARE_BUILD_OWNER
 #define MSXBARE_BUILD_OWNER ""
@@ -362,7 +360,6 @@ static boolean EffectiveOverscanEnabled(unsigned scale_percent)
 }
 
 static void ComputeViewportLayout(unsigned screen_width, unsigned screen_height,
-							 boolean widescreen_enabled,
 							 unsigned src_width, unsigned src_height,
 							 unsigned scale_percent,
 							 unsigned *out_box_x,
@@ -390,19 +387,9 @@ static void ComputeViewportLayout(unsigned screen_width, unsigned screen_height,
 		const unsigned box_base_h = kViewportBaseHeight;
 		const unsigned scale_factor = ScaleFactorFromPercent(scale_percent);
 
-		if (widescreen_enabled && !hires_mode)
-		{
-			const unsigned ar_num = 16u;
-			const unsigned ar_den = 9u;
-			full_h = box_base_h * scale_factor;
-			full_w = (unsigned) (((u64) full_h * (u64) ar_num) / (u64) ar_den);
-			if (full_w == 0u) full_w = 1u;
-		}
-		else
-		{
-			full_w = box_base_w * scale_factor;
-			full_h = box_base_h * scale_factor;
-		}
+		(void) hires_mode;
+		full_w = box_base_w * scale_factor;
+		full_h = box_base_h * scale_factor;
 
 		if (full_w == 0u) full_w = 1u;
 		if (full_h == 0u) full_h = 1u;
@@ -818,291 +805,6 @@ static boolean BootConfigKeyEquals(const char *line, unsigned key_len, const cha
 }
 
 
-static u16 *s_DimLut85 = 0;
-static boolean s_DimLut85Ready = FALSE;
-static const u16 kCrtBlackLift565 = 0x1082u;
-
-static u16 ApplyCrtBlackLevel565(u16 sample)
-{
-	return sample == 0u ? kCrtBlackLift565 : sample;
-}
-
-static const u16 *EnsureCrtDimLutReady(void)
-{
-	if (s_DimLut85Ready && s_DimLut85 != 0)
-	{
-		return s_DimLut85;
-	}
-
-	if (s_DimLut85 == 0)
-	{
-		s_DimLut85 = new u16[kRgb565LutSize];
-	}
-
-	if (s_DimLut85 == 0)
-	{
-		return 0;
-	}
-
-	for (unsigned sample = 0; sample < kRgb565LutSize; ++sample)
-	{
-		const u16 rgb = ApplyCrtBlackLevel565((u16) sample);
-		const unsigned r = (rgb >> 11) & 0x1Fu;
-		const unsigned g = (rgb >> 5) & 0x3Fu;
-		const unsigned b = rgb & 0x1Fu;
-		const unsigned r85 = (r * 85u) / 100u;
-		const unsigned g85 = (g * 85u) / 100u;
-		const unsigned b85 = (b * 85u) / 100u;
-		s_DimLut85[sample] = (u16) ((r85 << 11) | (g85 << 5) | b85);
-	}
-
-	s_DimLut85Ready = TRUE;
-	return s_DimLut85;
-}
-
-static void BlitMappedLineRgb565(u16 *dst_line,
-					 const u16 *src_line,
-					 const u16 *xmap,
-					 unsigned dst_width,
-					 unsigned src_x0,
-					 unsigned dim_mode,
-					 const u16 *dim_lut,
-					 boolean crt_black_lift)
-{
-	if (dst_line == 0 || src_line == 0 || xmap == 0 || dst_width == 0u)
-	{
-		return;
-	}
-
-	unsigned x = 0u;
-	unsigned prev_src_x = 0xFFFFFFFFu;
-	u16 prev_sample = 0u;
-
-	/* Align to 32-bit stores when possible (2 pixels per write). */
-	if ((((uintptr) dst_line) & 0x2u) != 0u)
-	{
-		const unsigned src_x = src_x0 + xmap[0];
-		u16 sample;
-		if (src_x == prev_src_x)
-		{
-			sample = prev_sample;
-		}
-		else
-		{
-			sample = src_line[src_x];
-			if (crt_black_lift)
-			{
-				sample = ApplyCrtBlackLevel565(sample);
-			}
-			if (dim_mode == 1u)
-			{
-				sample = (u16) ((sample & 0xF7DEu) >> 1);
-			}
-			else if (dim_mode == 2u && dim_lut != 0)
-			{
-				sample = dim_lut[sample];
-			}
-			prev_src_x = src_x;
-			prev_sample = sample;
-		}
-		dst_line[0] = sample;
-		x = 1u;
-	}
-
-	for (; x + 1u < dst_width; x += 2u)
-	{
-		const unsigned src_x0_mapped = src_x0 + xmap[x];
-		u16 s0;
-		if (src_x0_mapped == prev_src_x)
-		{
-			s0 = prev_sample;
-		}
-		else
-		{
-			s0 = src_line[src_x0_mapped];
-			if (crt_black_lift)
-			{
-				s0 = ApplyCrtBlackLevel565(s0);
-			}
-			if (dim_mode == 1u)
-			{
-				s0 = (u16) ((s0 & 0xF7DEu) >> 1);
-			}
-			else if (dim_mode == 2u)
-			{
-				s0 = dim_lut[s0];
-			}
-			prev_src_x = src_x0_mapped;
-			prev_sample = s0;
-		}
-		const unsigned src_x1_mapped = src_x0 + xmap[x + 1u];
-		u16 s1;
-		if (src_x1_mapped == prev_src_x)
-		{
-			s1 = prev_sample;
-		}
-		else
-		{
-			s1 = src_line[src_x1_mapped];
-			if (crt_black_lift)
-			{
-				s1 = ApplyCrtBlackLevel565(s1);
-			}
-			if (dim_mode == 1u)
-			{
-				s1 = (u16) ((s1 & 0xF7DEu) >> 1);
-			}
-			else if (dim_mode == 2u)
-			{
-				s1 = dim_lut[s1];
-			}
-			prev_src_x = src_x1_mapped;
-			prev_sample = s1;
-		}
-		*(u32 *) (void *) (dst_line + x) = (u32) s0 | ((u32) s1 << 16);
-	}
-
-	if (x < dst_width)
-	{
-		const unsigned src_x = src_x0 + xmap[x];
-		u16 sample;
-		if (src_x == prev_src_x)
-		{
-			sample = prev_sample;
-		}
-		else
-		{
-			sample = src_line[src_x];
-			if (crt_black_lift)
-			{
-				sample = ApplyCrtBlackLevel565(sample);
-			}
-			if (dim_mode == 1u)
-			{
-				sample = (u16) ((sample & 0xF7DEu) >> 1);
-			}
-			else if (dim_mode == 2u && dim_lut != 0)
-			{
-				sample = dim_lut[sample];
-			}
-			prev_src_x = src_x;
-			prev_sample = sample;
-		}
-		dst_line[x] = sample;
-	}
-}
-
-static void BlitMappedLineRgb565NoDim(u16 *dst_line,
-						  const u16 *src_line,
-						  const u16 *xmap,
-						  unsigned dst_width,
-						  unsigned src_x0,
-						  boolean crt_black_lift)
-{
-	if (dst_line == 0 || src_line == 0 || xmap == 0 || dst_width == 0u)
-	{
-		return;
-	}
-
-	unsigned x = 0u;
-	unsigned prev_src_x = 0xFFFFFFFFu;
-	u16 prev_sample = 0u;
-
-	/* Align to 32-bit stores when possible (2 pixels per write). */
-	if ((((uintptr) dst_line) & 0x2u) != 0u)
-	{
-		const unsigned src_x = src_x0 + xmap[0];
-		u16 sample;
-		if (src_x == prev_src_x)
-		{
-			sample = prev_sample;
-		}
-		else
-		{
-			sample = src_line[src_x];
-			sample = crt_black_lift ? ApplyCrtBlackLevel565(sample) : sample;
-			prev_src_x = src_x;
-			prev_sample = sample;
-		}
-		dst_line[0] = sample;
-		x = 1u;
-	}
-
-	for (; x + 1u < dst_width; x += 2u)
-	{
-		const unsigned src_x0_mapped = src_x0 + xmap[x];
-		u16 s0;
-		if (src_x0_mapped == prev_src_x)
-		{
-			s0 = prev_sample;
-		}
-		else
-		{
-			s0 = src_line[src_x0_mapped];
-			s0 = crt_black_lift ? ApplyCrtBlackLevel565(s0) : s0;
-			prev_src_x = src_x0_mapped;
-			prev_sample = s0;
-		}
-		const unsigned src_x1_mapped = src_x0 + xmap[x + 1u];
-		u16 s1;
-		if (src_x1_mapped == prev_src_x)
-		{
-			s1 = prev_sample;
-		}
-		else
-		{
-			s1 = src_line[src_x1_mapped];
-			s1 = crt_black_lift ? ApplyCrtBlackLevel565(s1) : s1;
-			prev_src_x = src_x1_mapped;
-			prev_sample = s1;
-		}
-		*(u32 *) (void *) (dst_line + x) = (u32) s0 | ((u32) s1 << 16);
-	}
-
-	if (x < dst_width)
-	{
-		const unsigned src_x = src_x0 + xmap[x];
-		u16 sample;
-		if (src_x == prev_src_x)
-		{
-			sample = prev_sample;
-		}
-		else
-		{
-			sample = src_line[src_x];
-			sample = crt_black_lift ? ApplyCrtBlackLevel565(sample) : sample;
-			prev_src_x = src_x;
-			prev_sample = sample;
-		}
-		dst_line[x] = sample;
-	}
-}
-
-static boolean IsCrtDimmedHalfRow(unsigned dst_y,
-						 unsigned src_y,
-						 unsigned src_h,
-						 unsigned dst_h)
-{
-	if (src_h == 0u || dst_h == 0u)
-	{
-		return FALSE;
-	}
-
-	const u64 start_num = (u64) src_y * (u64) dst_h;
-	const u64 end_num = (u64) (src_y + 1u) * (u64) dst_h;
-	const unsigned group_start = (unsigned) ((start_num + (u64) src_h - 1ull) / (u64) src_h);
-	const unsigned group_end = (unsigned) ((end_num + (u64) src_h - 1ull) / (u64) src_h);
-	const unsigned group_len = (group_end > group_start) ? (group_end - group_start) : 0u;
-
-	if (group_len <= 1u || dst_y < group_start || dst_y >= group_end)
-	{
-		return FALSE;
-	}
-
-	const unsigned dark_start = (group_len + 1u) / 2u;
-	return (dst_y - group_start) >= dark_start;
-}
-
 static void FlushDCacheRange(void *addr, unsigned bytes)
 {
 	if (addr == 0 || bytes == 0u)
@@ -1194,9 +896,7 @@ static void BlitMappedRunsRgb565(u16 *dst_line,
 						  const u16 *run_len,
 						  unsigned run_count,
 						  unsigned src_x0,
-						  unsigned dim_mode,
-						  const u16 *dim_lut,
-						  boolean crt_black_lift)
+						  unsigned dim_mode)
 {
 	if (dst_line == 0 || src_line == 0 || run_src_x == 0 || run_dst_x == 0 || run_len == 0)
 	{
@@ -1206,17 +906,9 @@ static void BlitMappedRunsRgb565(u16 *dst_line,
 	for (unsigned i = 0u; i < run_count; ++i)
 	{
 		u16 sample = src_line[src_x0 + run_src_x[i]];
-		if (crt_black_lift)
-		{
-			sample = ApplyCrtBlackLevel565(sample);
-		}
 		if (dim_mode == 1u)
 		{
 			sample = (u16) ((sample & 0xF7DEu) >> 1);
-		}
-		else if (dim_mode == 2u && dim_lut != 0)
-		{
-			sample = dim_lut[sample];
 		}
 		FillRun565(dst_line + run_dst_x[i], sample, run_len[i]);
 	}
@@ -1225,8 +917,7 @@ static void BlitMappedRunsRgb565(u16 *dst_line,
 static void BlitLineExpandNxRgb565NoDim(u16 *dst_line,
 							const u16 *src_line,
 							unsigned src_width,
-							unsigned scale,
-							boolean crt_black_lift)
+							unsigned scale)
 {
 	if (dst_line == 0 || src_line == 0 || src_width == 0u || scale == 0u)
 	{
@@ -1235,12 +926,7 @@ static void BlitLineExpandNxRgb565NoDim(u16 *dst_line,
 
 	for (unsigned x = 0u; x < src_width; ++x)
 	{
-		u16 sample = src_line[x];
-		if (crt_black_lift)
-		{
-			sample = ApplyCrtBlackLevel565(sample);
-		}
-		FillRun565(dst_line + (x * scale), sample, scale);
+		FillRun565(dst_line + (x * scale), src_line[x], scale);
 	}
 }
 
@@ -1481,7 +1167,6 @@ CComboKernel::CComboKernel(void)
 	m_ScaleMaxFitEnabled(FALSE),
 	m_Language(ComboLanguagePT),
 	m_ResolutionMode(kResolutionModeAuto),
-	m_WidescreenEnabled(FALSE),
 	m_ScanlineMode(kScanlineModeOff),
 	m_RefreshRateHz(60u),
 	m_DiskRomEnabled(MSXBARE_FEAT_DISK_ROM ? TRUE : FALSE),
@@ -1876,7 +1561,6 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetScalePercent(m_OverscanPercent);
 	m_PauseMenu.SetLanguage(m_Language);
 	m_PauseMenu.SetResolutionMode(m_ResolutionMode);
-	m_PauseMenu.SetWidescreenEnabled(m_WidescreenEnabled);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_RefreshRateHz = 60u;
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
@@ -2344,7 +2028,6 @@ TComboShutdownMode CComboKernel::Run(void)
 						screen_height,
 						m_DebugOverlayMode);
 				ComputeViewportLayout(screen_width, screen_height,
-					m_WidescreenEnabled,
 					src_w, src_h,
 					scale_percent,
 					&m_FmsxBoxX, &m_FmsxBoxY, &m_FmsxBoxW, &m_FmsxBoxH,
@@ -3483,7 +3166,6 @@ void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
 				screen_height,
 				m_DebugOverlayMode);
 		ComputeViewportLayout(screen_width, screen_height,
-			m_WidescreenEnabled,
 			src_width, src_height,
 			scale_percent,
 			&box_x, &box_y, &box_w, &box_h,
@@ -3557,8 +3239,7 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 	unsigned crop_x = 0u;
 	unsigned crop_y = 0u;
 
-	const unsigned scanline_mode = (m_ScanlineMode > kScanlineModeCrt) ? kScanlineModeCrt : m_ScanlineMode;
-	const u16 *crt_dim_lut = (scanline_mode == kScanlineModeCrt) ? EnsureCrtDimLutReady() : 0;
+	const unsigned scanline_mode = (m_ScanlineMode != kScanlineModeOff) ? kScanlineModeLcd : kScanlineModeOff;
 	unsigned offset_x = 0u;
 	unsigned offset_y = 0u;
 	{
@@ -3569,7 +3250,6 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 				screen_height,
 				m_DebugOverlayMode);
 		ComputeViewportLayout(screen_width, screen_height,
-			m_WidescreenEnabled,
 			width, height,
 			scale_percent,
 			&offset_x, &offset_y, &dst_width, &dst_height,
@@ -3596,7 +3276,7 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 	{
 		u16 *dst_base = m_Screen.GetDrawBuffer16();
 		const unsigned pitch_pixels = m_Screen.GetPitchPixels();
-		const unsigned scanline_mode = (m_ScanlineMode > kScanlineModeCrt) ? kScanlineModeCrt : m_ScanlineMode;
+		const unsigned scanline_mode = (m_ScanlineMode != kScanlineModeOff) ? kScanlineModeLcd : kScanlineModeOff;
 		u16 *present_base = dst_base;
 		const unsigned present_pitch_pixels = pitch_pixels;
 		const unsigned present_offset_pixels = (offset_y * pitch_pixels) + offset_x;
@@ -3675,7 +3355,7 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 				else
 				{
 					const u16 *src_line = pixels + (src_y * width) + src_x0;
-					BlitLineExpandNxRgb565NoDim(dst_line, src_line + (crop_x / scale), dst_width / scale + ((dst_width % scale) != 0u ? 1u : 0u), scale, FALSE);
+					BlitLineExpandNxRgb565NoDim(dst_line, src_line + (crop_x / scale), dst_width / scale + ((dst_width % scale) != 0u ? 1u : 0u), scale);
 				}
 				prev_src_y = src_y;
 			}
@@ -3727,11 +3407,9 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 				m_BlitMapValid = TRUE;
 			}
 
-			unsigned crt_cached_src_y = 0xFFFFFFFFu;
 			unsigned prev_src_rel_y = 0xFFFFFFFFu;
 			unsigned prev_dim_mode = 0xFFFFFFFFu;
 			boolean prev_line_valid = FALSE;
-			u16 crt_dim_line_cache[kBlitMapMaxAxis];
 			for (unsigned y = 0; y < dst_height; ++y)
 			{
 				const unsigned src_rel_y = m_BlitYMap[y];
@@ -3739,42 +3417,23 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 				const u16 *src_line = pixels + (src_y * width);
 				u16 *dst_line = present_base + present_offset_pixels + (y * present_pitch_pixels);
 				const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
-				const boolean dark_crt =
-					(scanline_mode == kScanlineModeCrt)
-					&& crt_dim_lut != 0
-					&& IsCrtDimmedHalfRow(y, src_rel_y, src_h, dst_height);
-				const unsigned dim_mode = dark_lcd ? 1u : (dark_crt ? 2u : 0u);
+				const unsigned dim_mode = dark_lcd ? 1u : 0u;
 				if (prev_line_valid && src_rel_y == prev_src_rel_y && dim_mode == prev_dim_mode)
 				{
 					memcpy(dst_line, dst_line - present_pitch_pixels, dst_width * sizeof(u16));
 					continue;
 				}
-				if (dark_crt && src_w <= kBlitMapMaxAxis)
-				{
-					if (src_y != crt_cached_src_y)
-					{
-						for (unsigned sx = 0; sx < src_w; ++sx)
-						{
-							crt_dim_line_cache[sx] = crt_dim_lut[src_line[src_x0 + sx]];
-						}
-						crt_cached_src_y = src_y;
-					}
-					BlitMappedRunsRgb565(dst_line, crt_dim_line_cache,
-						m_BlitRunSrcX, m_BlitRunDstX, m_BlitRunLen, m_BlitRunCount,
-						0u, 0u, 0, FALSE);
-				}
-				else if (dim_mode == 0u)
+				if (dim_mode == 0u)
 				{
 					BlitMappedRunsRgb565(dst_line, src_line,
 						m_BlitRunSrcX, m_BlitRunDstX, m_BlitRunLen, m_BlitRunCount,
-						src_x0, 0u, 0, (scanline_mode == kScanlineModeCrt) ? TRUE : FALSE);
+						src_x0, 0u);
 				}
 				else
 				{
-					const u16 *dim_lut = (dim_mode == 2u) ? crt_dim_lut : 0;
 					BlitMappedRunsRgb565(dst_line, src_line,
 						m_BlitRunSrcX, m_BlitRunDstX, m_BlitRunLen, m_BlitRunCount,
-						src_x0, dim_mode, dim_lut, (dim_mode == 2u) ? TRUE : FALSE);
+						src_x0, dim_mode);
 				}
 				prev_src_rel_y = src_rel_y;
 				prev_dim_mode = dim_mode;
@@ -3783,11 +3442,9 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 		}
 		else
 		{
-			unsigned crt_cached_src_y = 0xFFFFFFFFu;
 			unsigned prev_src_rel_y = 0xFFFFFFFFu;
 			unsigned prev_dim_mode = 0xFFFFFFFFu;
 			boolean prev_line_valid = FALSE;
-			u16 crt_dim_line_cache[kBlitMapMaxAxis];
 			for (unsigned y = 0; y < dst_height; ++y)
 			{
 				const unsigned src_rel_y =
@@ -3796,11 +3453,7 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 				const u16 *src_line = pixels + (src_y * width);
 				u16 *dst_line = present_base + present_offset_pixels + (y * present_pitch_pixels);
 				const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
-				const boolean dark_crt =
-					(scanline_mode == kScanlineModeCrt)
-					&& crt_dim_lut != 0
-					&& IsCrtDimmedHalfRow(y, src_rel_y, src_h, dst_height);
-				const unsigned dim_mode = dark_lcd ? 1u : (dark_crt ? 2u : 0u);
+				const unsigned dim_mode = dark_lcd ? 1u : 0u;
 				if (prev_line_valid && src_rel_y == prev_src_rel_y && dim_mode == prev_dim_mode)
 				{
 					memcpy(dst_line, dst_line - present_pitch_pixels, dst_width * sizeof(u16));
@@ -3814,41 +3467,12 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 							dst_line[x] = (u16) ((src_line[src_x] & 0xF7DEu) >> 1);
 						}
 				}
-				else if (dark_crt)
-				{
-					if (src_w <= kBlitMapMaxAxis)
-					{
-						if (src_y != crt_cached_src_y)
-						{
-							for (unsigned sx = 0; sx < src_w; ++sx)
-							{
-								crt_dim_line_cache[sx] = crt_dim_lut[src_line[src_x0 + sx]];
-							}
-							crt_cached_src_y = src_y;
-						}
-						for (unsigned x = 0; x < dst_width; ++x)
-						{
-							const unsigned src_x = (unsigned) (((u64) (x + crop_x) * (u64) src_w) / (u64) full_dst_width);
-							dst_line[x] = crt_dim_line_cache[src_x];
-						}
-					}
-					else
-					{
-						for (unsigned x = 0; x < dst_width; ++x)
-						{
-							const unsigned src_x = src_x0 + (unsigned) (((u64) (x + crop_x) * (u64) src_w) / (u64) full_dst_width);
-							dst_line[x] = crt_dim_lut[src_line[src_x]];
-						}
-					}
-				}
 				else
 				{
 					for (unsigned x = 0; x < dst_width; ++x)
 					{
 						const unsigned src_x = src_x0 + (unsigned) (((u64) (x + crop_x) * (u64) src_w) / (u64) full_dst_width);
-						dst_line[x] = (scanline_mode == kScanlineModeCrt)
-							? ApplyCrtBlackLevel565(src_line[src_x])
-							: src_line[src_x];
+						dst_line[x] = src_line[src_x];
 					}
 				}
 				prev_src_rel_y = src_rel_y;
@@ -3899,25 +3523,13 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 		const unsigned src_y = src_y0 + src_rel_y;
 		const u16 *line = pixels + (src_y * width);
 		const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
-		const boolean dark_crt =
-			(scanline_mode == kScanlineModeCrt)
-			&& crt_dim_lut != 0
-			&& IsCrtDimmedHalfRow(y, src_rel_y, src_h, dst_height);
 		for (unsigned x = 0; x < dst_width; ++x)
 		{
 			const unsigned src_x = src_x0 + (unsigned) (((u64) x * (u64) src_w) / (u64) dst_width);
 			u16 sample = line[src_x];
-			if (scanline_mode == kScanlineModeCrt)
-			{
-				sample = ApplyCrtBlackLevel565(sample);
-			}
 			if (dark_lcd)
 			{
 				sample = (u16) ((sample & 0xF7DEu) >> 1);
-			}
-			else if (dark_crt)
-			{
-				sample = crt_dim_lut[sample];
 			}
 			m_Screen.SetPixel(offset_x + x, offset_y + y, (TScreenColor) sample);
 		}
@@ -4253,17 +3865,13 @@ void CComboKernel::LoadSettingsFromStorage(void)
 					if (migrated > kScalePercentHardMax) migrated = kScalePercentHardMax;
 					m_OverscanPercent = migrated;
 				}
-				else if (SettingsKeyEquals(line, key_len, "widescreen"))
-				{
-					m_WidescreenEnabled = value ? TRUE : FALSE;
-				}
 				else if (SettingsKeyEquals(line, key_len, "language"))
 				{
 					m_Language = combo_locale_clamp_language(value);
 				}
 				else if (SettingsKeyEquals(line, key_len, "scanline"))
 				{
-					m_ScanlineMode = value > 2u ? 2u : value;
+					m_ScanlineMode = value != 0u ? kScanlineModeLcd : kScanlineModeOff;
 				}
 			else if (SettingsKeyEquals(line, key_len, "refresh"))
 			{
@@ -4409,7 +4017,6 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetScaleMaxFitEnabled(m_ScaleMaxFitEnabled);
 	m_PauseMenu.SetLanguage(m_Language);
 	m_PauseMenu.SetResolutionMode(m_ResolutionMode);
-	m_PauseMenu.SetWidescreenEnabled(m_WidescreenEnabled);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 	m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
@@ -4539,7 +4146,6 @@ void CComboKernel::SaveSettingsToStorage(void)
 		APPEND_LINE_FMT("scale=%u\n", ScaleFactorFromPercent(m_OverscanPercent));
 		APPEND_LINE_FMT("language=%u\n", m_Language);
 		APPEND_LINE_FMT("resolution=%u\n", m_ResolutionMode);
-		APPEND_LINE_FMT("widescreen=%u\n", m_WidescreenEnabled ? 1u : 0u);
 		APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
 	APPEND_LINE_FMT("refresh=%u\n", ClampRefreshRateHz(m_RefreshRateHz));
 	APPEND_LINE_FMT("disk_rom=%u\n", m_DiskRomEnabled ? 1u : 0u);
@@ -5563,48 +5169,31 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		}
 		break;
 
-	case ComboMenuActionToggleWidescreen:
-		m_WidescreenEnabled = m_WidescreenEnabled ? FALSE : TRUE;
-		m_PauseMenu.SetWidescreenEnabled(m_WidescreenEnabled);
-		RefreshSettingsUiAfterAction();
-		/* Widescreen ON/OFF changes viewport geometry; force full framebuffer clear on next blit. */
-		m_ForceViewportFullClearNextFrame = TRUE;
-		m_Logger.Write(FromKernel, LogNotice, m_WidescreenEnabled ? "Settings: Widescreen ON" : "Settings: Widescreen OFF");
-		break;
-
 	case ComboMenuActionCycleScanlines:
-		m_ScanlineMode = (m_ScanlineMode + 1u) % 3u;
+		m_ScanlineMode = (m_ScanlineMode == kScanlineModeOff) ? kScanlineModeLcd : kScanlineModeOff;
 		m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 		RefreshSettingsUiAfterAction();
 		if (m_ScanlineMode == kScanlineModeOff)
 		{
-			m_Logger.Write(FromKernel, LogNotice, "Settings: Scanlines DES");
-		}
-		else if (m_ScanlineMode == kScanlineModeLcd)
-		{
-			m_Logger.Write(FromKernel, LogNotice, "Settings: Scanlines LCD");
+			m_Logger.Write(FromKernel, LogNotice, "Settings: Scanlines OFF");
 		}
 		else
 		{
-			m_Logger.Write(FromKernel, LogNotice, "Settings: Scanlines CRT");
+			m_Logger.Write(FromKernel, LogNotice, "Settings: Scanlines ON");
 		}
 		break;
 
 	case ComboMenuActionCycleScanlinesPrev:
-		m_ScanlineMode = (m_ScanlineMode == 0u) ? 2u : (m_ScanlineMode - 1u);
+		m_ScanlineMode = (m_ScanlineMode == kScanlineModeOff) ? kScanlineModeLcd : kScanlineModeOff;
 		m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 		RefreshSettingsUiAfterAction();
 		if (m_ScanlineMode == kScanlineModeOff)
 		{
-			m_Logger.Write(FromKernel, LogNotice, "Settings: Scanlines DES");
-		}
-		else if (m_ScanlineMode == kScanlineModeLcd)
-		{
-			m_Logger.Write(FromKernel, LogNotice, "Settings: Scanlines LCD");
+			m_Logger.Write(FromKernel, LogNotice, "Settings: Scanlines OFF");
 		}
 		else
 		{
-			m_Logger.Write(FromKernel, LogNotice, "Settings: Scanlines CRT");
+			m_Logger.Write(FromKernel, LogNotice, "Settings: Scanlines ON");
 		}
 		break;
 
@@ -6510,7 +6099,6 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	}
 	const boolean video_affecting_action =
 		(menu_action == ComboMenuActionOverscanChanged)
-		|| (menu_action == ComboMenuActionToggleWidescreen)
 		|| (menu_action == ComboMenuActionCycleScanlines)
 		|| (menu_action == ComboMenuActionCycleScanlinesPrev);
 	if (m_PauseMenu.ConsumeBackgroundRestoreRequest())

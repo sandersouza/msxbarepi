@@ -45,7 +45,6 @@ typedef struct {
     const char *settings_language;
     const char *settings_resolution;
     const char *settings_scale;
-    const char *settings_widescreen;
     const char *settings_scanlines;
     const char *settings_refresh;
     const char *settings_disk_rom;
@@ -77,9 +76,6 @@ typedef struct {
     const char *flag_dual;
     const char *flag_none;
     const char *flag_na;
-    const char *scan_des;
-    const char *scan_lcd;
-    const char *scan_crt;
     const char *refresh_ntsc;
     const char *refresh_pal;
     const char *resolution_auto;

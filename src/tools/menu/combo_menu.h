@@ -23,7 +23,6 @@ public:
     unsigned GetResolutionMode(void) const;
     unsigned GetScalePercent(void) const;
     boolean IsScaleMaxFitEnabled(void) const;
-    void SetWidescreenEnabled(boolean enabled);
     void SetScanlineMode(unsigned mode);
     void SetRefreshRateHz(unsigned hz);
     unsigned GetRefreshRateHz(void) const;
@@ -126,7 +125,6 @@ private:
     unsigned m_MaxScalePercent;
     unsigned m_Language;
     unsigned m_ResolutionMode;
-    boolean m_WidescreenEnabled;
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;
     boolean m_DiskRomEnabled;
@@ -192,7 +190,6 @@ private:
     unsigned m_LastDrawnMaxScalePercent;
     unsigned m_LastDrawnLanguage;
     unsigned m_LastDrawnResolutionMode;
-    boolean m_LastDrawnWidescreen;
     unsigned m_LastDrawnScanlineMode;
     unsigned m_LastDrawnRefreshRateHz;
     boolean m_LastDrawnDiskRomEnabled;

@@ -4,12 +4,13 @@ Ponto de entrada rapido para contexto operacional do projeto.
 
 - Contexto completo e historico de handoff da branch atual: [docs/handoff/70-suporte-joysticks-usb-mapeamento-atari-msx.md](docs/handoff/70-suporte-joysticks-usb-mapeamento-atari-msx.md)
 - Guardrail ativo: nem `git commit` local nem `git push` devem acontecer durante cortes experimentais; ambos so voltam quando o usuario declarar explicitamente que a issue ativa ficou estavel.
-- Branch ativa da rodada: `70-suporte-joysticks-usb-mapeamento-atari-msx`
+- Branch ativa da rodada: `main`
 - Estado atual da rodada:
   - a umbrella `#82` ja foi mergeada em `main`
-  - a issue ativa agora e a `#70`
+  - a `#70` foi mergeada em `main` pelo PR `#246` e fechada
+  - rodada atual em `main`: remocao do antigo modo `Scanline CRT`, mantendo apenas `Scanlines OFF/ON` com a logica LCD
   - o worktree local contem o suporte funcional de joystick USB, o submenu `JOYPAD MAPPING`, a navegacao do menu pausado por joystick, a nova politica de `Scale` no menu `Debug`, a persistencia/carga do `joy_map_*` pelo `.cfg`, o retorno do `3x` em `720p` e o alinhamento do snapshot do menu ao mesmo crop do blit principal
-  - a rodada foi declarada estavel pelo usuario e esta pronta para consolidacao em PR
+  - a branch remota `70-suporte-joysticks-usb-mapeamento-atari-msx` foi removida
 - Corte tecnico atual:
   - wrapper local `src/tools/usb_hid_gamepad.*`
   - attach de `upad1` via Circle `usbgamepad`
@@ -31,9 +32,9 @@ Ponto de entrada rapido para contexto operacional do projeto.
   - o screenshot de fundo do menu pausado agora usa a mesma geometria logica do viewport (`full_dst + crop`) em vez de reamostrar direto para a altura visivel, eliminando a pequena mudanca de escala ao abrir o menu em `720p/3x`
   - `Save to disk` grava os `joy_map_*` a partir do mapa atual do menu, e o boot recarrega esse mapa em `BT4`
 - Build local validada:
-  - `BUILD_BID=202604090240-issue70-menu-snapshot-crop`
-  - `BUILD_ID=9EAC`
-  - `BUILD_HASH=a3b9655-67643449b62fdd393766ab58ef09ceca01a7f186`
+  - `BUILD_BID=202604082350-main-scanline-lcd-only`
+  - `BUILD_ID=A196`
+  - `BUILD_HASH=ab0cc84-ed04f526b5f324996def535ed9f492b12e95262f`
 - Atualizacao incremental da `#238`: o reteste em campo mostrou que o `1F9B` corrigiu o diagnostico da tecida dupla, mas introduziu uma regressao especifica do `DEBUG`: a mailbox compacta de `HIRES` passou a usar a altura fisica dobrada do frame, o que esticou a imagem verticalmente e derrubou o FPS medio para ~29.4. O corte local atual limita essa mudanca ao presenter normal e restaura, so para o box de `DEBUG`, a geometria logica do frame (`logical_width/logical_height`) enquanto o blit continua lendo o buffer fisico completo. Build local validada: `BUILD_BID=202604081130-issue238-hires-debug-logical-box`, `BUILD_ID=69E2`, `BUILD_HASH=35411b2-47d574d199f84c7c87622570d18b69e8fbe3149c`. Sem `commit`, sem `push`.
 - Atualizacao incremental da `#238`: a investigacao de `HIRES` por metadata/presenter foi descartada como ramo experimental ruim. O presenter em `src/kernel.cpp` voltou ao contrato estavel de viewport/blit do branch, ignorando o plumbing local de `EmulatorBackendVideoPresentation` no path ativo. Isso remove a regressao de `HIRES` verticalmente esticado e a queda geral de FPS introduzida pelos builds `1F9B/69E2`. Build local validada: `BUILD_BID=202604081215-issue238-presenter-rollback-stable`, `BUILD_ID=4742`, `BUILD_HASH=35411b2-c6f9c244c5cf5d4546b3313eecf626cc3523ace3`. Sem `commit`, sem `push`.
 - Atualizacao incremental da `#238`: depois do ganho de FPS recuperado pelo reaproveitamento de linhas verticais repetidas, o presenter recebeu um segundo corte de performance, agora no custo horizontal. Em `src/kernel.cpp`, `BlitMappedLineRgb565()` e `BlitMappedLineRgb565NoDim()` passaram a reutilizar o sample ja processado quando o `xmap` repete a mesma `src_x`, evitando reler e redimencionar o mesmo pixel varias vezes na mesma scanline. O objetivo e espremer performance extra, especialmente em `HIRES`, sem mexer um pixel da imagem. Build local validada: `BUILD_BID=202604062015-issue238-blit-xmap-sample-reuse`, `BUILD_ID=AFAF`, `BUILD_HASH=35411b2-d626e9ee1cfd42edaff198525136a4ea54a68c90`. Sem `commit`, sem `push`.

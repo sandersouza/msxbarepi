@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 70-suporte-joysticks-usb-mapeamento-atari-msx
 
-Ultima atualizacao: 09/04/2026 (03:05 -03)
+Ultima atualizacao: 08/04/2026 (23:20 -03)
 
 ## Objetivo da branch
 
@@ -14,13 +14,14 @@ Atacar a issue [#70](https://github.com/sandersouza/msxbarepi/issues/70):
 ## Estado atual
 
 - branch criada a partir de `main` ja com o merge da umbrella `#82`
-- issue remota `#70` pronta para `PR`
+- issue remota `#70` fechada apos merge do PR `#246`
 - joystick USB ja funcional em hardware
 - submenu local `JOYPAD MAPPING` implementado no `F12`
 - navegacao do menu pausado por joystick USB implementada
 - `Scale` saiu de `Settings` e foi movido para `Debug`
 - estado atual declarado estavel pelo usuario
-- pronto para `commit`, `push` e `PR` para `main`
+- PR `#246` mergeado em `main`
+- branch remota removida
 
 ## Corte local atual
 
@@ -50,6 +51,7 @@ Atacar a issue [#70](https://github.com/sandersouza/msxbarepi/issues/70):
 - ao capturar um novo controle dentro de `JOYPAD MAPPING`, o slot atual ja e promovido para o mapa efetivo antes de avancar ao proximo
 - `Save to disk` agora persiste os `joy_map_*` a partir do mapa atual do menu, sem depender do estado interno do device em runtime
 - `START` do gamepad conhecido agora atua como atalho global de pausa, equivalente ao `F12`
+- `Scanlines` foi simplificado para `OFF/ON`; o antigo modo `CRT` e toda a logica associada de blit/screenshot foram removidos, mantendo apenas o caminho LCD
 - no menu pausado:
   - `button 0`/`A` = seletor
   - `button 1`/`B` = `ESC`
@@ -107,10 +109,10 @@ Atacar a issue [#70](https://github.com/sandersouza/msxbarepi/issues/70):
 
 ## Build local validada
 
-- `BUILD_BID=202604090240-issue70-menu-snapshot-crop`
-- `BUILD_ID=9EAC`
-- `BUILD_HASH=a3b9655-67643449b62fdd393766ab58ef09ceca01a7f186`
-- artefato: `artifacts/kernel8-issue70.img`
+- `BUILD_BID=202604082350-main-scanline-lcd-only`
+- `BUILD_ID=A196`
+- `BUILD_HASH=ab0cc84-ed04f526b5f324996def535ed9f492b12e95262f`
+- artefato: `artifacts/kernel8-default.img`
 
 ## Referencias iniciais
 
@@ -134,4 +136,5 @@ Atacar a issue [#70](https://github.com/sandersouza/msxbarepi/issues/70):
 2. Navegacao do menu por joystick confirmada.
 3. `JOYPAD MAPPING` com captura continua e persistencia em `.cfg` confirmado.
 4. Ajuste de viewport em `720p/3x` confirmado sem mudanca de escala ao abrir o menu.
-5. Proxima rodada fica para setup/mapeamento avancado de botoes e perfis por pad.
+5. PR `#246` mergeado em `main` e issue `#70` fechada.
+6. Proxima rodada fica para setup/mapeamento avancado de botoes e perfis por pad.

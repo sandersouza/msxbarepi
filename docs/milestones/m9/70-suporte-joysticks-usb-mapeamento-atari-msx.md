@@ -2,10 +2,10 @@
 
 - URL: https://github.com/sandersouza/msxbarepi/issues/70
 - Milestone: Hardware e Periféricos Físicos (m9)
-- Estado remoto: OPEN
+- Estado remoto: CLOSED
 - Prioridade: P1
 - Labels: `priority:P1`, `type:feature`, `area:input`, `area:usb-hid`
-- Estado local atual: EM REVIEW
+- Estado local atual: DONE
 - Branch ativa: `70-suporte-joysticks-usb-mapeamento-atari-msx`
 - Corte local atual:
   - suporte funcional inicial a `upad1` confirmado
@@ -22,4 +22,7 @@
   - `START` do gamepad conhecido passa a atuar como pausa (`F12`)
   - em `720p`, `Scale = 3x` volta a existir tambem no modo manual, com crop vertical central em vez de achatamento
   - o snapshot do menu pausado em `720p/3x` agora usa a mesma geometria logica do blit principal (`768x729` com crop vertical central), evitando a pequena mudanca de escala ao abrir o menu
+  - `Scanlines` foi reduzido a `OFF/ON`; o antigo modo `CRT` foi removido do menu, do `.cfg` e do renderer
   - rodada declarada estavel e pronta para PR
+  - PR `#246` mergeado em `main` e branch remota removida
+  - build local desta rodada: `BUILD_BID=202604082350-main-scanline-lcd-only`, `BUILD_ID=A196`

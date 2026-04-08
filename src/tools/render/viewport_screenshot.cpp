@@ -11,7 +11,6 @@ static unsigned g_ViewportScreenshotW = 0u;
 static unsigned g_ViewportScreenshotH = 0u;
 static boolean g_ViewportScreenshotValid = FALSE;
 static boolean g_ViewportScreenshotAllocTried = FALSE;
-static const u16 kCrtBlackLift565 = 0x1082u;
 
 #if DEPTH == 32
 static TScreenColor ConvertRgb565ToScreenColor(u16 v)
@@ -49,48 +48,6 @@ static u16 DimRgb565Half(u16 sample)
 {
     const u16 rgb = (u16) (sample & 0xF7DEu);
     return (u16) (rgb >> 1);
-}
-
-static u16 ApplyCrtBlackLevel565(u16 sample)
-{
-    return sample == 0u ? kCrtBlackLift565 : sample;
-}
-
-static u16 DimRgb56585(u16 sample)
-{
-    sample = ApplyCrtBlackLevel565(sample);
-    const unsigned r = (unsigned) ((sample >> 11) & 0x1Fu);
-    const unsigned g = (unsigned) ((sample >> 5) & 0x3Fu);
-    const unsigned b = (unsigned) (sample & 0x1Fu);
-    const unsigned r85 = (r * 85u + 50u) / 100u;
-    const unsigned g85 = (g * 85u + 50u) / 100u;
-    const unsigned b85 = (b * 85u + 50u) / 100u;
-    return (u16) ((r85 << 11) | (g85 << 5) | b85);
-}
-
-static boolean IsCrtDimmedHalfRow(unsigned dst_y,
-                                  unsigned src_y,
-                                  unsigned src_h,
-                                  unsigned dst_h)
-{
-    if (src_h == 0u || dst_h == 0u)
-    {
-        return FALSE;
-    }
-
-    const u64 start_num = (u64) src_y * (u64) dst_h;
-    const u64 end_num = (u64) (src_y + 1u) * (u64) dst_h;
-    const unsigned group_start = (unsigned) ((start_num + (u64) src_h - 1ull) / (u64) src_h);
-    const unsigned group_end = (unsigned) ((end_num + (u64) src_h - 1ull) / (u64) src_h);
-    const unsigned group_len = (group_end > group_start) ? (group_end - group_start) : 0u;
-
-    if (group_len <= 1u || dst_y < group_start || dst_y >= group_end)
-    {
-        return FALSE;
-    }
-
-    const unsigned dark_start = (group_len + 1u) / 2u;
-    return (dst_y - group_start) >= dark_start;
 }
 
 boolean combo_viewport_screenshot_capture(CGfxTextBoxRenderer *renderer,
@@ -195,24 +152,14 @@ boolean combo_viewport_screenshot_capture_from_emulator(const u16 *src_pixels,
         const u16 *src_row = src_pixels + (src_y * src_w);
         TScreenColor *dst_row = g_ViewportScreenshotBuffer + (y * dst_w);
         const boolean dark_lcd = (scanline_mode == 1u) && ((y & 1u) != 0u);
-        const boolean dark_crt =
-            (scanline_mode == 2u) && IsCrtDimmedHalfRow(y, src_y, src_h, dst_h);
         for (unsigned x = 0u; x < dst_w; ++x)
         {
             const unsigned src_x =
                 (unsigned) (((u64) (x + crop_x) * (u64) src_w) / (u64) full_dst_w);
             u16 sample = src_row[src_x];
-            if (scanline_mode == 2u)
-            {
-                sample = ApplyCrtBlackLevel565(sample);
-            }
             if (dark_lcd)
             {
                 sample = DimRgb565Half(sample);
-            }
-            else if (dark_crt)
-            {
-                sample = DimRgb56585(sample);
             }
             dst_row[x] = ConvertRgb565ToScreenColor(sample);
         }

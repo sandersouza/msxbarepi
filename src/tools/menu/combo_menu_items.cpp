@@ -374,7 +374,6 @@ const TComboMenuItem *combo_menu_load_disk_items_get(unsigned language,
 
 const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
                                                      unsigned resolution_mode,
-                                                     boolean widescreen_enabled,
                                                      unsigned scanline_mode,
                                                      unsigned refresh_rate_hz,
                                                      boolean disk_rom_enabled,
@@ -397,7 +396,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     static TComboMenuItem settings_items[32];
     static char language_label[32];
     static char resolution_label[32];
-    static char widescreen_label[32];
     static char scanline_label[32];
     static char boot_label[32];
     static char machine_label[32];
@@ -418,7 +416,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
 
     language = combo_locale_clamp_language(language);
     if (resolution_mode > 3u) resolution_mode = 0u;
-    if (scanline_mode > 2u) scanline_mode = 2u;
+    if (scanline_mode > 1u) scanline_mode = 1u;
     machine_profile = machine_profile_clamp(machine_profile);
     if (rammapper_kb != 256u && rammapper_kb != 512u && rammapper_kb != 1024u) rammapper_kb = 256u;
     if (megaram_kb != 0u && megaram_kb != 256u && megaram_kb != 512u && megaram_kb != 1024u) megaram_kb = 0u;
@@ -437,9 +435,8 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
                    resolution_mode == 0u ? locale->resolution_auto
                    : (resolution_mode == 1u ? locale->resolution_1080
                    : (resolution_mode == 2u ? locale->resolution_720 : locale->resolution_768)));
-    BuildLabelFlag(widescreen_label, sizeof(widescreen_label), locale->settings_widescreen, widescreen_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(scanline_label, sizeof(scanline_label), locale->settings_scanlines,
-                   scanline_mode == 0u ? locale->scan_des : (scanline_mode == 1u ? locale->scan_lcd : locale->scan_crt));
+                   scanline_mode == 0u ? locale->flag_off : locale->flag_on);
     BuildLabelFlag(boot_label, sizeof(boot_label), locale->settings_boot_mode,
                    boot_mode == 0u ? "NORM" : (boot_mode == 1u ? "FAST" : "GAME"));
     BuildLabelFlag(machine_label, sizeof(machine_label), locale->settings_machine,
@@ -496,7 +493,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     ADD_SETTING_ITEM(language_label, ComboMenuActionCycleLanguage, ComboMenuRedrawMenuOnly, TRUE);
     ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
     ADD_SETTING_ITEM(resolution_label, ComboMenuActionCycleResolution, ComboMenuRedrawMenuOnly, TRUE);
-    ADD_SETTING_ITEM(widescreen_label, ComboMenuActionToggleWidescreen, ComboMenuRedrawMenuAndViewport, TRUE);
     ADD_SETTING_ITEM(scanline_label, ComboMenuActionCycleScanlines, ComboMenuRedrawMenuAndViewport, TRUE);
     if (MSXBARE_FEAT_FMPAC || MSXBARE_FEAT_SCC)
     {

@@ -69,13 +69,15 @@ Objetivo: painel legivel no framebuffer HDMI com MMU/cache ativo, sem depender d
 - O painel pode usar a largura horizontal inteira da linha quando isso ajudar a ficar contido até a `linha 15`.
 - Emulador segue rodando ao fundo.
 - O item `Scale` agora vive no menu `Debug`, nao mais em `Settings`.
+- `Scanlines` agora e binario no runtime e no `.cfg`: `OFF/ON`.
+- O estado `ON` usa apenas a logica LCD atual; o antigo modo `CRT` foi removido.
 - Com `Debugger = OFF`, o viewport ignora a escala manual e usa sempre o maximo fixo permitido pela resolucao atual:
   - `720p/768p = 3x`
   - `1080p = 4x`
 - Com `Debugger = MIN/MAX`, o viewport volta a usar o fator manual de `Scale`.
 - `Standard`: usa `logical_src_w x normalized_src_h` multiplicado pelo fator de `Scale`.
 - `HIRES` (`>=512` colunas): usa largura logica normal da mailbox e o mesmo fator de `Scale`.
-- `Widescreen [ON]`: mantem `16:9` apenas para modos nao-`HIRES`, mas continua respeitando o fator manual de `Scale`.
+- `Widescreen`: removido do runtime e do menu; o viewport agora segue sempre a mailbox fixa do emulador.
 
 Regras validadas em hardware:
 

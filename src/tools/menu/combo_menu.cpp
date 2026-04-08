@@ -765,7 +765,6 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_MaxScalePercent(450u),
     m_Language(ComboLanguageEN),
     m_ResolutionMode(0u),
-    m_WidescreenEnabled(FALSE),
     m_ScanlineMode(0u),
     m_RefreshRateHz(60u),
     m_DiskRomEnabled(TRUE),
@@ -830,7 +829,6 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnMaxScalePercent(0u),
     m_LastDrawnLanguage(ComboLanguageEN),
     m_LastDrawnResolutionMode(0u),
-    m_LastDrawnWidescreen(FALSE),
     m_LastDrawnScanlineMode(0u),
     m_LastDrawnRefreshRateHz(60u),
     m_LastDrawnDiskRomEnabled(TRUE),
@@ -975,7 +973,6 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnMaxScalePercent = m_MaxScalePercent;
     m_LastDrawnLanguage = m_Language;
     m_LastDrawnResolutionMode = m_ResolutionMode;
-    m_LastDrawnWidescreen = m_WidescreenEnabled;
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
     m_LastDrawnDiskRomEnabled = m_DiskRomEnabled;
@@ -1130,20 +1127,11 @@ boolean CComboPauseMenu::IsScaleMaxFitEnabled(void) const
     return FALSE;
 }
 
-void CComboPauseMenu::SetWidescreenEnabled(boolean enabled)
-{
-    if (m_WidescreenEnabled != enabled)
-    {
-        m_WidescreenEnabled = enabled;
-        m_ForceRedraw = TRUE;
-    }
-}
-
 void CComboPauseMenu::SetScanlineMode(unsigned mode)
 {
-    if (mode > 2u)
+    if (mode > 1u)
     {
-        mode = 2u;
+        mode = 1u;
     }
 
     if (m_ScanlineMode != mode)
@@ -1797,7 +1785,6 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
         return combo_menu_settings_items_get(
             m_Language,
             m_ResolutionMode,
-            m_WidescreenEnabled,
             m_ScanlineMode,
             m_RefreshRateHz,
             m_DiskRomEnabled,
@@ -2859,8 +2846,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             }
             handled_settings_input = enter_edge || left_step || right_step;
         }
-        else if ((items[m_Selected].action == ComboMenuActionToggleWidescreen)
-              || (items[m_Selected].action == ComboMenuActionToggleDiskRom)
+        else if ((items[m_Selected].action == ComboMenuActionToggleDiskRom)
               || (items[m_Selected].action == ComboMenuActionToggleKanjiRom)
               || (items[m_Selected].action == ComboMenuActionCycleOverlay)
               || (items[m_Selected].action == ComboMenuActionToggleDebugLog))
@@ -3212,7 +3198,6 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnMaxScalePercent == m_MaxScalePercent
      && m_LastDrawnLanguage == m_Language
      && m_LastDrawnResolutionMode == m_ResolutionMode
-     && m_LastDrawnWidescreen == m_WidescreenEnabled
      && m_LastDrawnScanlineMode == m_ScanlineMode
      && m_LastDrawnRefreshRateHz == m_RefreshRateHz
      && m_LastDrawnDiskRomEnabled == m_DiskRomEnabled
@@ -3524,7 +3509,6 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnMaxScalePercent = m_MaxScalePercent;
     m_LastDrawnLanguage = m_Language;
     m_LastDrawnResolutionMode = m_ResolutionMode;
-    m_LastDrawnWidescreen = m_WidescreenEnabled;
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
     m_LastDrawnDiskRomEnabled = m_DiskRomEnabled;

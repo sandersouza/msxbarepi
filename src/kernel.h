@@ -234,7 +234,6 @@ private:
     boolean m_ScaleMaxFitEnabled;
     unsigned m_Language;
     unsigned m_ResolutionMode;
-    boolean m_WidescreenEnabled;
     unsigned m_ScanlineMode;
     unsigned m_RefreshRateHz;
     boolean m_DiskRomEnabled;
