@@ -1,5 +1,5 @@
 ---
-description: "Use quando atualizar contexto de handoff, milestones/issues locais, ou documentacao tecnica em docs/. Cobre sincronizacao entre codigo, docs/milestones, AGENTS.md e CONTEXT.md."
+description: "Use quando atualizar contexto de handoff, milestones/issues locais, ou documentacao tecnica em docs/. Cobre sincronizacao entre codigo, docs/milestones, docs/issues, AGENTS.md e CONTEXT.md."
 name: "MSXBarePi Docs Sync"
 applyTo:
   - "docs/**"
@@ -22,11 +22,12 @@ applyTo:
 ## Milestones e issues locais
 
 - Seguir `docs/github-project-management.md` como fonte de verdade para workflow.
-- Manter `docs/milestones/` sincronizado com remoto no mesmo ciclo de criacao/atualizacao.
+- Manter `docs/milestones/` e `docs/issues/` sincronizados com remoto no mesmo ciclo de criacao/atualizacao.
 - Em criacao de milestone/issue, preparar primeiro o espelho local (`README.md`, `CHALLENGES.md`, arquivo da issue) e usar esse material como fonte para publicacao remota.
 - Cada milestone remota deve ter pasta local com `README.md` contendo `Milestone remota: #<numero>`.
 - Cada pasta de milestone deve ter `CHALLENGES.md` com desafios por issue, solucao adotada e encaminhamentos.
-- Cada issue da milestone deve ter arquivo local `<numero>-<slug>.md` (inclusive issues fechadas, para historico).
+- Cada issue vinculada a milestone deve ter arquivo local `docs/milestones/m<numero>/<numero>-<slug>.md`.
+- Cada issue avulsa/standalone sem milestone deve ter arquivo local `docs/issues/<numero>-<slug>.md`.
 
 ## Qualidade da documentacao
 

@@ -27,6 +27,8 @@ make DEBUG=1 OWNER="beta@exemplo.com" BUILD_BID="BTID:202603041405-07bf64e-83b0c
 make DEBUG=0
 ```
 - Em `DEBUG=0`, o kernel nao deve emitir log UART:
+  - os headers reais `<circle/logger.h>` e `<circle/serial.h>` nao sao carregados;
+  - o renderer `src/tools/debug/combo_debug_overlay.cpp` nao entra no link final;
   - `CSerialDevice` nao e inicializado para logging;
   - `CLogger` aponta para `CNullDevice`;
   - traces UART especificos de debug ficam desarmados.
@@ -45,8 +47,6 @@ make DEBUG=0
 - `F6`: mute/unmute `Layer 1` (PSG + ruido).
 - `F7`: mute/unmute `Layer 2` (FM-PAC).
 - `F8`: mute/unmute `Layer 3` (Konami SCC+).
-- `F10`: mantém o toggle de `UART Log` reservado para futuras fases de debug, mas a fase atual nao emite mais telemetria periódica de performance.
-  - O baseline atual da UART fica reduzido aos marcadores de boot (`BT0..BT12`) e a eventos pontuais/criticos.
 - `F9`: sem uso na build atual.
 
 ## Tag de build na tela
@@ -143,8 +143,6 @@ Diretriz visual (overlay e menu):
   - `Audio Gain` (0..9)
 - Em `DEBUG=1`, `Settings` tambem mostra:
   - `Debugger [MAX/MIN/OFF]`
-  - `UART Log [ON/OFF]`
-- `UART Log` usa o mesmo estado operacional da tecla `F10`.
 
 ## Overlay: linhas e labels
 - Modo `MIN`:
@@ -279,15 +277,17 @@ Diretriz visual (overlay e menu):
     - `THR:<hex>`: máscara crua de `PROPTAG_GET_THROTTLED`, incluindo bits atuais e ocorridos.
 - A trilha UART experimental de audio do `SMANBOW2` (`SCC EVT` / `AUD EVT`) foi congelada para futuro na issue `#220`.
   - O codigo de instrumentacao foi preservado para reativacao futura.
-  - `F10` permanece como chave reservada para reativacao futura de telemetria direcionada.
-  - O fluxo antigo de snapshot manual/telemetry view por `F9/F10` foi removido.
+  - O fluxo antigo de snapshot manual/telemetry view por hotkeys foi removido.
   - No estado atual, a UART fica propositalmente enxuta e nao emite logs periódicos de performance.
 - Os contadores de audio e pacing continuam visiveis no overlay (`AUD1` e `SYS`) para consulta local sem depender da UART.
 
 ## Arquitetura (modular)
 - Renderer da debug layer desacoplado em objeto plugavel:
-  - `src/combo_debug_overlay.h`
-  - `src/combo_debug_overlay.cpp`
+  - `src/tools/debug/combo_debug_overlay.h`
+  - `src/tools/debug/combo_debug_overlay.cpp`
+- Gating de build/runtime:
+  - `src/tools/debug/debug_runtime_gate.h`
+  - o overlay e os headers reais de UART/logger so entram quando `DEBUG=1`
 - O kernel coleta metricas e entrega um snapshot (`TComboDebugOverlayData`) ao renderer.
 - Escrita de texto eh injetada por callback (`SetWriter`), sem acoplamento direto do renderer ao `CScreenDevice`.
 
@@ -295,10 +295,10 @@ Diretriz visual (overlay e menu):
 - Para testar audio por chip:
   1. habilite overlay (`F11`);
   2. observe `AUD1`, `SYS` e `AC1`;
-  3. use `F6/F7/F8` para isolamento por camada e `F10` para silenciar a UART.
+  3. use `F6/F7/F8` para isolamento por camada.
 - Em investigacoes de SD/boot, priorize `SYS`, `TM` e correlacione com logs do kernel.
 
 ## Referencias
-- Implementacao principal: `src/combo_debug_overlay.cpp`
+- Implementacao principal: `src/tools/debug/combo_debug_overlay.cpp`
 - Integracao de runtime/menu: `src/kernel.cpp`
 - Render helper/framebuffer: `src/framebuffer.c`

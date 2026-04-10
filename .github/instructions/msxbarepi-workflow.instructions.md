@@ -61,7 +61,7 @@ applyTo: "**"
 
 - Toda mudanca relevante de codigo deve incluir atualizacao minima em `docs/` quando aplicavel.
 - Manter contexto de handoff atualizado em `docs/handoff/<nome-da-branch>.md` e consistencia do ponteiro em `CONTEXT.md`.
-- Refletir regras de gestao de milestone/issue de `docs/github-project-management.md` e manter espelho local em `docs/milestones/` sincronizado.
+- Refletir regras de gestao de milestone/issue de `docs/github-project-management.md` e manter espelho local em `docs/milestones/` ou `docs/issues/` sincronizado conforme o tipo da issue.
 - Usar commits pequenos e focados, sem reescrever historico da `main`.
 
 ## Formato de resposta para comandos de terminal

@@ -1,13 +1,14 @@
 #ifndef MSXBARE_CIRCLE_MSXBARE_KERNEL_H
 #define MSXBARE_CIRCLE_MSXBARE_KERNEL_H
 
+#include "combo_screen_device.h"
+#include "backend/runtime/runtime.h"
+#include "tools/usb_hid_keyboard.h"
+#include "tools/usb_hid_gamepad.h"
 #include "gfx_textbox.h"
 #include "combo_menu.h"
-#include "combo_screen_device.h"
 #include "media_catalog.h"
-#include "emulator_backend.h"
-#include "tools/usb_hid_gamepad.h"
-#include "tools/usb_hid_keyboard.h"
+#include "tools/debug/debug_runtime_gate.h"
 
 #include <circle/actled.h>
 #include <circle/cputhrottle.h>
@@ -15,10 +16,8 @@
 #include <circle/exceptionhandler.h>
 #include <circle/interrupt.h>
 #include <circle/koptions.h>
-#include <circle/logger.h>
 #include <circle/nulldevice.h>
 #include <circle/sched/scheduler.h>
-#include <circle/serial.h>
 #include <circle/sound/soundbasedevice.h>
 #include <circle/timer.h>
 #include <circle/types.h>
@@ -47,7 +46,7 @@ private:
     void RefillAudioQueue(void);
     void PrimeAudioSilenceBeforeReset(void);
     boolean PerformMenuHardReset(unsigned requested_diag, unsigned success_diag, unsigned fail_diag);
-    void InitializeAudioOutput(boolean fmsx_audio_enabled);
+    void InitializeAudioOutput(boolean backend_audio_enabled);
     void GenerateSamples(s16 *buffer, unsigned frames);
     void DrawDebugOverlay(unsigned tick);
     void ClearDebugOverlay(void);
@@ -66,17 +65,17 @@ private:
     void LogKmgTraceUart(void);
     void ResetUartPerfTelemetry(void);
     void ResolveViewportBox(unsigned src_width, unsigned src_height,
-                            const EmulatorBackendVideoPresentation *presentation,
+                            const BackendVideoPresentation *presentation,
                             unsigned *out_x, unsigned *out_y,
                             unsigned *out_w, unsigned *out_h);
     void ComputeViewportBox(unsigned src_width, unsigned src_height,
-                            const EmulatorBackendVideoPresentation *presentation,
+                            const BackendVideoPresentation *presentation,
                             unsigned *out_x, unsigned *out_y,
                             unsigned *out_w, unsigned *out_h) const;
     void ClearPresentationSurfaces(void);
-    void BlitFmsxFrame(boolean force_redraw);
+    void BlitBackendFrame(boolean force_redraw);
     void HandleMenuAction(TComboMenuAction action);
-    void ApplyRuntimeSettingsToFmsx(void);
+    void ApplyRuntimeSettingsToBackend(void);
     void SyncRefreshRateStateFromRuntime(void);
     void SyncKanjiRomStateFromRuntime(void);
     void RefreshSettingsUiAfterAction(void);
@@ -94,7 +93,7 @@ private:
     void LoadSettingsFromStorage(void);
     void SaveSettingsToStorage(void);
     boolean EnsureStateIoBuffer(unsigned min_capacity);
-    boolean EnsureFmsxPresentBuffer(unsigned min_pixels);
+    boolean EnsureBackendPresentBuffer(unsigned min_pixels);
     boolean EnsureStateStorageDirectory(void);
     void SaveEmulatorStateToStorage(void);
     void LoadEmulatorStateFromStorage(void);
@@ -162,7 +161,6 @@ private:
     boolean m_LastF6Pressed;
     boolean m_LastF7Pressed;
     boolean m_LastF8Pressed;
-    boolean m_LastF10Pressed;
     boolean m_LastFmGainUpPressed;
     boolean m_LastFmGainDownPressed;
     boolean m_LastPauseWasInSettings;
@@ -172,27 +170,27 @@ private:
     boolean m_PauseNeedsFullViewportClear;
     boolean m_ForceViewportFullClearNextFrame;
     boolean m_PauseRenderSuppressed;
-    boolean m_FmsxEnabled;
-    boolean m_FmsxReady;
+    boolean m_BackendEnabled;
+    boolean m_BackendReady;
     const char *m_EmulatorBackendName;
     unsigned m_BackendInitFailCode;
-    unsigned long m_FmsxFrames;
-    int m_FmsxLastError;
-    int m_FmsxLastPC;
-    unsigned m_FmsxPcRepeatCount;
-    boolean m_FmsxPcLoopLogged;
-    unsigned m_FmsxVideoSeq;
-    unsigned m_FmsxVdpTraceSeq;
-    unsigned m_FmsxVdpTraceDropped;
-    unsigned m_FmsxSccTraceSeq;
-    unsigned m_FmsxSccTraceDropped;
-    unsigned m_FmsxAudioPortTraceSeq;
-    unsigned m_FmsxAudioPortTraceDropped;
-    unsigned m_FmsxKmgTraceSeq;
-    unsigned m_FmsxKmgTraceDropped;
+    unsigned long m_BackendFrames;
+    int m_BackendLastError;
+    int m_BackendLastPC;
+    unsigned m_BackendPcRepeatCount;
+    boolean m_BackendPcLoopLogged;
+    unsigned m_BackendVideoSeq;
+    unsigned m_BackendVdpTraceSeq;
+    unsigned m_BackendVdpTraceDropped;
+    unsigned m_BackendSccTraceSeq;
+    unsigned m_BackendSccTraceDropped;
+    unsigned m_BackendAudioPortTraceSeq;
+    unsigned m_BackendAudioPortTraceDropped;
+    unsigned m_BackendKmgTraceSeq;
+    unsigned m_BackendKmgTraceDropped;
     u64 m_LastAudioQueueLogUs;
     u64 m_LastVideoPacingLogUs;
-    u64 m_FmsxFpsWindowStartUs;
+    u64 m_BackendFpsWindowStartUs;
     u64 m_LastPauseToggleUs;
     u64 m_LastMenuInputPollUs;
     u64 m_LastOverlayUs;
@@ -213,20 +211,20 @@ private:
     unsigned m_LastVideoModeLogicalWidth;
     unsigned m_LastVideoModeLogicalHeight;
     unsigned m_HiresHostTraceFramesRemaining;
-    unsigned long m_FmsxFpsWindowStartFrames;
-    unsigned m_FmsxFpsX10;
+    unsigned long m_BackendFpsWindowStartFrames;
+    unsigned m_BackendFpsX10;
     unsigned m_FramePacingErrAvgUs;
     unsigned m_FramePacingErrMaxUs;
-    unsigned m_FmsxBlankFrames;
+    unsigned m_BackendBlankFrames;
     boolean m_LastVideoModeLogValid;
     boolean m_LastVideoModeHires;
     boolean m_LastVideoModeInterlaced;
     unsigned m_DebugOverlayLineLengths[20];
     unsigned m_InitramfsFiles;
-    unsigned m_FmsxBoxX;
-    unsigned m_FmsxBoxY;
-    unsigned m_FmsxBoxW;
-    unsigned m_FmsxBoxH;
+    unsigned m_BackendBoxX;
+    unsigned m_BackendBoxY;
+    unsigned m_BackendBoxW;
+    unsigned m_BackendBoxH;
     unsigned m_BlitMapSrcW;
     unsigned m_BlitMapSrcH;
     unsigned m_BlitMapDstW;
@@ -239,7 +237,7 @@ private:
     u16 m_BlitRunSrcX[kBlitMapMaxAxis];
     u16 m_BlitRunDstX[kBlitMapMaxAxis];
     u16 m_BlitRunLen[kBlitMapMaxAxis];
-    TGameMasterCatalog m_GameMasterCatalog;
+    BackendCheatCatalog m_GameMasterCatalog;
     CComboPauseMenu m_PauseMenu;
     unsigned m_OverscanPercent;
     boolean m_ScaleMaxFitEnabled;
@@ -271,7 +269,7 @@ private:
     boolean m_SccDualCartEnabled;
     u64 m_FrameIntervalUs;
     boolean m_FramePacingResetPending;
-    boolean m_FmsxFallbackPattern;
+    boolean m_BackendFallbackPattern;
     boolean m_TestToneEnabled;
     boolean m_MmuEnabled;
     boolean m_DCacheEnabled;
@@ -293,11 +291,11 @@ private:
     unsigned m_SettingsSaveCode;
     unsigned m_SettingsSaveAux;
     u64 m_BootStartUs;
-    unsigned m_BootToFmsxMs;
+    unsigned m_BootToBackendMs;
     u8 *m_StateIoBuffer;
     unsigned m_StateIoBufferCapacity;
-    u16 *m_FmsxPresentBuffer;
-    unsigned m_FmsxPresentBufferPixels;
+    u16 *m_BackendPresentBuffer;
+    unsigned m_BackendPresentBufferPixels;
 
     static CComboKernel *s_Instance;
 };

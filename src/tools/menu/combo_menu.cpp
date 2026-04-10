@@ -1,7 +1,7 @@
 #include "combo_menu.h"
 #include "combo_locale.h"
 #include "viewport_screenshot.h"
-#include "fmsx_runtime.h"
+#include "backend/runtime/runtime.h"
 #include <string.h>
 
 #if DEPTH == 32
@@ -400,7 +400,7 @@ typedef struct
     boolean is_enum;
     uint16_t values[16];
     unsigned value_count;
-} TGameMasterSelectorInfo;
+} TBackendCheatSelectorInfo;
 
 static int ComboIsDigit(char ch)
 {
@@ -471,7 +471,7 @@ static boolean ComboExtractParenthesizedSuffix(const char *title, char *dst, uns
     return TRUE;
 }
 
-static boolean ComboParseRangeSelector(const char *text, TGameMasterSelectorInfo *info)
+static boolean ComboParseRangeSelector(const char *text, TBackendCheatSelectorInfo *info)
 {
     unsigned min_value = 0u;
     unsigned max_value = 0u;
@@ -519,7 +519,7 @@ static boolean ComboParseRangeSelector(const char *text, TGameMasterSelectorInfo
     return info->value_count > 0u ? TRUE : FALSE;
 }
 
-static boolean ComboParseEnumSelector(const char *text, TGameMasterSelectorInfo *info)
+static boolean ComboParseEnumSelector(const char *text, TBackendCheatSelectorInfo *info)
 {
     const char *cursor = text;
 
@@ -570,7 +570,7 @@ static boolean ComboParseEnumSelector(const char *text, TGameMasterSelectorInfo 
     return info->active;
 }
 
-static boolean ComboDescribeGameMasterSelector(const TGameMasterCheat *cheat, TGameMasterSelectorInfo *info)
+static boolean ComboDescribeGameMasterSelector(const BackendCheat *cheat, TBackendCheatSelectorInfo *info)
 {
     char suffix[64];
 
@@ -601,11 +601,11 @@ static boolean ComboDescribeGameMasterSelector(const TGameMasterCheat *cheat, TG
     return FALSE;
 }
 
-static boolean ComboGameMasterCheatCurrentValue(const TGameMasterCatalog *catalog,
-                                                const TGameMasterCheat *cheat,
+static boolean ComboGameMasterCheatCurrentValue(const BackendCheatCatalog *catalog,
+                                                const BackendCheat *cheat,
                                                 uint16_t *value)
 {
-    const TGameMasterPoke *poke = 0;
+    const BackendCheatPoke *poke = 0;
 
     if (catalog == 0 || cheat == 0 || value == 0 || cheat->poke_count != 1u)
     {
@@ -619,12 +619,12 @@ static boolean ComboGameMasterCheatCurrentValue(const TGameMasterCatalog *catalo
     poke = &catalog->pokes[cheat->poke_first];
     if (poke->size_bits == 16u)
     {
-        return fmsx_runtime_peek16(poke->address, value);
+        return backend_runtime_peek16(poke->address, value);
     }
     if (poke->size_bits == 8u)
     {
         uint8_t value8 = 0u;
-        if (!fmsx_runtime_peek8(poke->address, &value8))
+        if (!backend_runtime_peek8(poke->address, &value8))
         {
             return FALSE;
         }
@@ -634,7 +634,7 @@ static boolean ComboGameMasterCheatCurrentValue(const TGameMasterCatalog *catalo
     return FALSE;
 }
 
-static int ComboSelectorFindValue(const TGameMasterSelectorInfo *info, uint16_t value)
+static int ComboSelectorFindValue(const TBackendCheatSelectorInfo *info, uint16_t value)
 {
     if (info == 0 || !info->active)
     {
@@ -650,7 +650,7 @@ static int ComboSelectorFindValue(const TGameMasterSelectorInfo *info, uint16_t 
     return -1;
 }
 
-static uint16_t ComboSelectorStepValue(const TGameMasterSelectorInfo *info,
+static uint16_t ComboSelectorStepValue(const TBackendCheatSelectorInfo *info,
                                        uint16_t current_value,
                                        boolean current_valid,
                                        int direction)
@@ -787,7 +787,6 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_SccDualCartAvailable(TRUE),
     m_OverlayMode(ComboDebugOverlayOff),
     m_OverlayAvailable(FALSE),
-    m_DebugLogEnabled(FALSE),
     m_AudioGainPercent(50u),
     m_LoadRomSlot1Name{0},
     m_LoadRomSlot2Name{0},
@@ -846,7 +845,6 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnSccDualCartAvailable(TRUE),
     m_LastDrawnOverlayMode(ComboDebugOverlayOff),
     m_LastDrawnOverlayAvailable(FALSE),
-    m_LastDrawnDebugLogEnabled(FALSE),
     m_LastDrawnAudioGainPercent(50u),
     m_LastDrawnLoadRomSlot1Name{0},
     m_LastDrawnLoadRomSlot2Name{0},
@@ -988,7 +986,6 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnSccDualCartAvailable = m_SccDualCartAvailable;
     m_LastDrawnOverlayMode = m_OverlayMode;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
-    m_LastDrawnDebugLogEnabled = m_DebugLogEnabled;
     m_LastDrawnAudioGainPercent = m_AudioGainPercent;
     m_LastDrawnBrowserTop = 0xFFFFFFFFu;
     m_LastDrawnBrowserCount = 0xFFFFFFFFu;
@@ -1388,16 +1385,6 @@ void CComboPauseMenu::SetOverlayMode(unsigned mode, boolean available)
     }
 }
 
-void CComboPauseMenu::SetDebugLogEnabled(boolean enabled)
-{
-    enabled = enabled ? TRUE : FALSE;
-    if (m_DebugLogEnabled != enabled)
-    {
-        m_DebugLogEnabled = enabled;
-        m_ForceRedraw = TRUE;
-    }
-}
-
 void CComboPauseMenu::SetAudioGainPercent(unsigned percent)
 {
     if (percent > 100u)
@@ -1585,7 +1572,7 @@ void CComboPauseMenu::OpenFileBrowser(unsigned mode, unsigned slot_index, const 
     m_BrowserWarmupRedraws = 1u;
 }
 
-void CComboPauseMenu::OpenGameMaster(TGameMasterCatalog *catalog, unsigned load_status, unsigned error_line)
+void CComboPauseMenu::OpenGameMaster(BackendCheatCatalog *catalog, unsigned load_status, unsigned error_line)
 {
     ResetGameMasterState();
     m_GameMasterLoadStatus = load_status;
@@ -1715,7 +1702,7 @@ boolean CComboPauseMenu::ConsumeBackgroundRestoreRequest(void)
     return pending;
 }
 
-const TGameMasterGame *CComboPauseMenu::GetSelectedGameMasterGame(void) const
+const BackendCheatGame *CComboPauseMenu::GetSelectedGameMasterGame(void) const
 {
     if (m_GameMasterLoadStatus != (unsigned) GameMasterLoadOk
         || m_GameMasterCatalog == 0
@@ -1729,7 +1716,7 @@ const TGameMasterGame *CComboPauseMenu::GetSelectedGameMasterGame(void) const
 
 unsigned CComboPauseMenu::GetSelectedGameMasterCheatCount(void) const
 {
-    const TGameMasterGame *game = GetSelectedGameMasterGame();
+    const BackendCheatGame *game = GetSelectedGameMasterGame();
     return game != 0 ? game->cheat_count : 0u;
 }
 
@@ -1800,7 +1787,6 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_SccDualCartAvailable,
             m_OverlayMode,
             m_OverlayAvailable,
-            m_DebugLogEnabled,
             m_AudioGainPercent,
             count);
     }
@@ -1836,7 +1822,6 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_KanjiRomAvailable,
             m_OverlayMode,
             m_OverlayAvailable,
-            m_DebugLogEnabled,
             count);
     }
     if (m_View == MenuViewLoadRom)
@@ -1855,7 +1840,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             locale = combo_locale_get(ComboLanguageEN);
         }
 
-        const TGameMasterGame *game = GetSelectedGameMasterGame();
+        const BackendCheatGame *game = GetSelectedGameMasterGame();
         if (game == 0 || game->cheat_count == 0u)
         {
             CopySmallText(m_GameMasterCheatItemLabels[0], sizeof(m_GameMasterCheatItemLabels[0]), locale->game_master_no_cheats);
@@ -1890,11 +1875,11 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
         for (unsigned i = 0u; i < visible; ++i)
         {
             const unsigned cheat_abs = game->cheat_first + m_GameMasterCheatTop + i;
-            const TGameMasterCheat *cheat = &m_GameMasterCatalog->cheats[cheat_abs];
+            const BackendCheat *cheat = &m_GameMasterCatalog->cheats[cheat_abs];
             const char *cheat_title = cheat->title;
             const char *status_flag = locale->flag_off;
             char selector_flag[16];
-            TGameMasterSelectorInfo selector;
+            TBackendCheatSelectorInfo selector;
             uint16_t current_value = 0u;
             const boolean selector_active = ComboDescribeGameMasterSelector(cheat, &selector);
 #if MSXBARE_ENABLE_FMSX
@@ -1907,7 +1892,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             }
             else if (cheat->poke_count > 0u
                 && cheat->poke_first + cheat->poke_count <= (unsigned) m_GameMasterCatalog->poke_count
-                && fmsx_runtime_is_game_master_cheat_active(&m_GameMasterCatalog->pokes[cheat->poke_first],
+                && backend_runtime_is_game_master_cheat_active(&m_GameMasterCatalog->pokes[cheat->poke_first],
                                                             (unsigned) cheat->poke_count))
             {
                 status_flag = locale->flag_on;
@@ -2273,7 +2258,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
 
     if (m_View == MenuViewGameMasterCheats)
     {
-        const TGameMasterGame *game = GetSelectedGameMasterGame();
+        const BackendCheatGame *game = GetSelectedGameMasterGame();
         const unsigned cheat_count = game != 0 ? game->cheat_count : 0u;
         const unsigned visible_window = cheat_count < CComboFileBrowser::kVisibleRows
             ? cheat_count
@@ -2324,7 +2309,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             }
             if (jump_letter >= 'A' && jump_letter <= 'Z')
             {
-                const char *cheat_titles[GAMEMASTER_MAX_CHEATS];
+                const char *cheat_titles[BACKEND_CHEAT_MAX_CHEATS];
                 unsigned local_count = cheat_count;
                 for (unsigned i = 0u; i < local_count; ++i)
                 {
@@ -2342,8 +2327,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             if (left_edge || right_edge || enter_edge)
             {
                 const unsigned cheat_abs = game->cheat_first + m_GameMasterCheatSelected;
-                const TGameMasterCheat *cheat = &m_GameMasterCatalog->cheats[cheat_abs];
-                TGameMasterSelectorInfo selector;
+                const BackendCheat *cheat = &m_GameMasterCatalog->cheats[cheat_abs];
+                TBackendCheatSelectorInfo selector;
                 uint16_t current_value = 0u;
                 const boolean selector_active = ComboDescribeGameMasterSelector(cheat, &selector);
 
@@ -2550,8 +2535,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                 const int load_status = (m_GameMasterCatalog != 0)
                     ? (ComboBuildTitleFromPath(selected_path, title, sizeof(title)),
                        ComboBuildRomIdFromPath(selected_path, rom_id, sizeof(rom_id)),
-                       fmsx_runtime_reset_game_master_session(),
-                       game_master_catalog_load_mcf(m_GameMasterCatalog, selected_path, title, rom_id))
+                       backend_runtime_reset_game_master_session(),
+                       backend_cheat_catalog_load_mcf(m_GameMasterCatalog, selected_path, title, rom_id))
                     : (int) GameMasterLoadSyntaxError;
                 if (load_status == (int) GameMasterLoadOk && m_GameMasterCatalog != 0)
                 {
@@ -2848,8 +2833,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         }
         else if ((items[m_Selected].action == ComboMenuActionToggleDiskRom)
               || (items[m_Selected].action == ComboMenuActionToggleKanjiRom)
-              || (items[m_Selected].action == ComboMenuActionCycleOverlay)
-              || (items[m_Selected].action == ComboMenuActionToggleDebugLog))
+              || (items[m_Selected].action == ComboMenuActionCycleOverlay))
         {
             if (items[m_Selected].action == ComboMenuActionCycleOverlay)
             {
@@ -3215,7 +3199,6 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnSccDualCartAvailable == m_SccDualCartAvailable
      && m_LastDrawnOverlayMode == m_OverlayMode
      && m_LastDrawnOverlayAvailable == m_OverlayAvailable
-     && m_LastDrawnDebugLogEnabled == m_DebugLogEnabled
      && m_LastDrawnAudioGainPercent == m_AudioGainPercent
      && ComboTextEquals(m_LastDrawnLoadRomSlot1Name, m_LoadRomSlot1Name)
      && ComboTextEquals(m_LastDrawnLoadRomSlot2Name, m_LoadRomSlot2Name)
@@ -3526,7 +3509,6 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnSccDualCartAvailable = m_SccDualCartAvailable;
     m_LastDrawnOverlayMode = m_OverlayMode;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
-    m_LastDrawnDebugLogEnabled = m_DebugLogEnabled;
     m_LastDrawnAudioGainPercent = m_AudioGainPercent;
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), m_LoadRomSlot1Name);
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), m_LoadRomSlot2Name);

@@ -3,7 +3,7 @@
 
 #include <circle/device.h>
 #include <circle/devicenameservice.h>
-#include <circle/logger.h>
+#include "debug/debug_runtime_gate.h"
 #include <circle/types.h>
 #include <circle/usb/usbgamepad.h>
 

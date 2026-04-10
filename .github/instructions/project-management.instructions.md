@@ -1,9 +1,10 @@
 ---
-description: "Use para regras de gestao de issues/milestones/branches/PRs e sincronizacao do espelho local em docs/milestones."
+description: "Use para regras de gestao de issues/milestones/branches/PRs e sincronizacao do espelho local em docs/milestones e docs/issues."
 name: "MSXBarePi Project Management"
 applyTo:
   - "docs/github-project-management.md"
   - "docs/milestones/**"
+  - "docs/issues/**"
   - "AGENTS.md"
   - "CONTEXT.md"
   - "docs/handoff/**"
@@ -59,8 +60,9 @@ applyTo:
 
 ## Espelho local de milestones/issues
 
-- Manter `docs/milestones/` sincronizado com remoto.
+- Manter `docs/milestones/` e `docs/issues/` sincronizados com remoto.
 - Criar primeiro o espelho local da milestone/issue e so depois subir a milestone/issue remota ao GitHub.
 - Cada milestone remota deve ter pasta local com `README.md` e campo `Milestone remota: #<numero>`.
 - Cada pasta de milestone deve conter `CHALLENGES.md` com desafios/solucao/encaminhamento por issue.
-- Cada issue da milestone deve ter arquivo `<numero>-<slug>.md`, inclusive fechadas para historico.
+- Cada issue vinculada a milestone deve ficar em `docs/milestones/m<numero>/<numero>-<slug>.md`, inclusive fechadas para historico.
+- Cada issue avulsa/standalone sem milestone deve ficar em `docs/issues/<numero>-<slug>.md`, inclusive fechadas para historico.

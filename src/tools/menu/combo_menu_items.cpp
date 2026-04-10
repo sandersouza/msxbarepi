@@ -1,6 +1,6 @@
 #include "combo_menu_items.h"
 #include "combo_locale.h"
-#include "machine_profile_catalog.h"
+#include "backend/runtime/runtime.h"
 
 #ifndef MSXBARE_FEAT_SCC
 #define MSXBARE_FEAT_SCC 1
@@ -93,7 +93,7 @@ static boolean MenuProfileSupported(unsigned profile)
 
 static unsigned MenuSupportedProfileCount(void)
 {
-    const unsigned count = machine_profile_count();
+    const unsigned count = backend_machine_profile_count();
     unsigned supported = 0u;
     for (unsigned i = 0u; i < count; ++i)
     {
@@ -389,7 +389,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
                                                      boolean scc_dual_cart_available,
                                                      unsigned overlay_mode,
                                                      boolean overlay_available,
-                                                     boolean debug_log_enabled,
                                                      unsigned audio_gain_percent,
                                                      unsigned *count)
 {
@@ -417,7 +416,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     language = combo_locale_clamp_language(language);
     if (resolution_mode > 3u) resolution_mode = 0u;
     if (scanline_mode > 1u) scanline_mode = 1u;
-    machine_profile = machine_profile_clamp(machine_profile);
+    machine_profile = backend_machine_profile_clamp(machine_profile);
     if (rammapper_kb != 256u && rammapper_kb != 512u && rammapper_kb != 1024u) rammapper_kb = 256u;
     if (megaram_kb != 0u && megaram_kb != 256u && megaram_kb != 512u && megaram_kb != 1024u) megaram_kb = 0u;
     if (z80_turbo_mode > 2u) z80_turbo_mode = 0u;
@@ -428,7 +427,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     (void) disk_rom_enabled;
     (void) overlay_mode;
     (void) overlay_available;
-    (void) debug_log_enabled;
 
     BuildLabelFlag(language_label, sizeof(language_label), locale->settings_language, combo_locale_language_code(language));
     BuildLabelFlag(resolution_label, sizeof(resolution_label), locale->settings_resolution,
@@ -440,7 +438,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     BuildLabelFlag(boot_label, sizeof(boot_label), locale->settings_boot_mode,
                    boot_mode == 0u ? "NORM" : (boot_mode == 1u ? "FAST" : "GAME"));
     BuildLabelFlag(machine_label, sizeof(machine_label), locale->settings_machine,
-                   machine_profile_label(machine_profile));
+                   backend_machine_profile_label(machine_profile));
     {
         const char *mapper_flag = locale->flag_na;
         if (machine_profile != 0u)
@@ -619,7 +617,6 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned scale_percent,
                                                  boolean kanji_rom_available,
                                                  unsigned overlay_mode,
                                                  boolean overlay_available,
-                                                 boolean debug_log_enabled,
                                                  unsigned *count)
 {
     static TComboMenuItem debug_items[9];
@@ -628,7 +625,6 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned scale_percent,
     static char disk_rom_label[32];
     static char kanji_rom_label[32];
     static char overlay_label[32];
-    static char debug_log_label[32];
 
     const TComboLocaleStrings *locale = combo_locale_get(language);
     if (locale == 0)
@@ -654,8 +650,6 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned scale_percent,
 
     BuildLabelFlag(overlay_label, sizeof(overlay_label), locale->settings_debugger,
                    MenuOverlayModeFlag(locale, overlay_mode));
-    BuildLabelFlag(debug_log_label, sizeof(debug_log_label), locale->settings_sd_log,
-                   debug_log_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(disk_rom_label, sizeof(disk_rom_label), locale->settings_disk_rom,
                    disk_rom_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(kanji_rom_label, sizeof(kanji_rom_label), locale->settings_kanji_rom,
@@ -677,7 +671,6 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned scale_percent,
         ADD_DEBUG_ITEM(overlay_label, ComboMenuActionCycleOverlay, overlay_available ? TRUE : FALSE);
         ADD_DEBUG_ITEM(scale_label, ComboMenuActionOverscanChanged,
             (overlay_available && overlay_mode != ComboDebugOverlayOff) ? TRUE : FALSE);
-        ADD_DEBUG_ITEM(debug_log_label, ComboMenuActionToggleDebugLog, TRUE);
         ADD_DEBUG_ITEM(disk_rom_label, ComboMenuActionToggleDiskRom, TRUE);
         ADD_DEBUG_ITEM(kanji_rom_label, ComboMenuActionToggleKanjiRom, TRUE);
         ADD_DEBUG_ITEM(refresh_label, ComboMenuActionCycleRefreshRate, TRUE);

@@ -2,7 +2,7 @@
 #define MSXBARE_USB_HID_KEYBOARD_H
 
 #include <circle/devicenameservice.h>
-#include <circle/logger.h>
+#include "debug/debug_runtime_gate.h"
 #include <circle/types.h>
 #include <circle/usb/usbkeyboard.h>
 #include "input/usb_hid_input_queue.h"

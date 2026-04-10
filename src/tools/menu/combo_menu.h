@@ -1,7 +1,7 @@
 #ifndef MSXBARE_CIRCLE_MSXBARE_MENU_H
 #define MSXBARE_CIRCLE_MSXBARE_MENU_H
 
-#include "gamemaster_catalog.h"
+#include "backend/runtime/runtime.h"
 #include "gfx_textbox.h"
 #include "combo_file_browser.h"
 #include "combo_menu_items.h"
@@ -49,7 +49,6 @@ public:
     void SetSccCartEnabled(boolean enabled);
     void SetSccDualCartState(boolean enabled, boolean available);
     void SetOverlayMode(unsigned mode, boolean available);
-    void SetDebugLogEnabled(boolean enabled);
     void SetAudioGainPercent(unsigned percent);
     void SetLoadRomSlotNames(const char *slot1_name, const char *slot2_name);
     void SetLoadDiskDriveNames(const char *drive1_name, const char *drive2_name);
@@ -62,7 +61,7 @@ public:
                                           boolean *has_value_override,
                                           uint16_t *value_override);
     void OpenFileBrowser(unsigned mode, unsigned slot_index, const char *path);
-    void OpenGameMaster(TGameMasterCatalog *catalog, unsigned load_status, unsigned error_line);
+    void OpenGameMaster(BackendCheatCatalog *catalog, unsigned load_status, unsigned error_line);
     unsigned GetAudioGainPercent(void) const;
     boolean IsInSettings(void) const;
     boolean IsCapturingJoystickMap(void) const;
@@ -109,7 +108,7 @@ private:
     unsigned FindNextSelectable(unsigned from) const;
     unsigned FindActionIndex(TComboMenuAction action) const;
     void ResetGameMasterState(void);
-    const TGameMasterGame *GetSelectedGameMasterGame(void) const;
+    const BackendCheatGame *GetSelectedGameMasterGame(void) const;
     unsigned GetSelectedGameMasterCheatCount(void) const;
     void SyncGameMasterCheatWindow(void);
 
@@ -147,7 +146,6 @@ private:
     boolean m_SccDualCartAvailable;
     unsigned m_OverlayMode;
     boolean m_OverlayAvailable;
-    boolean m_DebugLogEnabled;
     unsigned m_AudioGainPercent;
     char m_LoadRomSlot1Name[17];
     char m_LoadRomSlot2Name[17];
@@ -169,7 +167,7 @@ private:
     boolean m_HasPendingDiskBrowserOpen;
     unsigned m_PendingDiskBrowserDrive;
     char m_PendingDiskBrowserPath[192];
-    TGameMasterCatalog *m_GameMasterCatalog;
+    BackendCheatCatalog *m_GameMasterCatalog;
     unsigned m_GameMasterLoadStatus;
     unsigned m_GameMasterErrorLine;
     unsigned m_GameMasterSelectedGame;
@@ -207,7 +205,6 @@ private:
     boolean m_LastDrawnSccDualCartAvailable;
     unsigned m_LastDrawnOverlayMode;
     boolean m_LastDrawnOverlayAvailable;
-    boolean m_LastDrawnDebugLogEnabled;
     unsigned m_LastDrawnAudioGainPercent;
     char m_LastDrawnLoadRomSlot1Name[17];
     char m_LastDrawnLoadRomSlot2Name[17];

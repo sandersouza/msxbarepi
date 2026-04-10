@@ -1,9 +1,12 @@
 # GitHub Project Management
 
 ## Objetivo
-Padronizar a gestão do projeto no GitHub (Issues, Milestones, Branches e PRs) e manter espelho local em `docs/milestones/` sincronizado com o remoto.
+Padronizar a gestão do projeto no GitHub (Issues, Milestones, Branches e PRs) e manter o espelho local sincronizado com o remoto em:
 
-Data de referência desta versão: 5 de março de 2026.
+- `docs/milestones/` para issues vinculadas a milestones
+- `docs/issues/` para issues avulsas/standalone sem milestone
+
+Data de referência desta versão: 10 de abril de 2026.
 
 ## Integração MCP (GitHub)
 - Guia de implementação/configuração do MCP no Codex: [`docs/github-mcp-setup.md`](./github-mcp-setup.md)
@@ -13,7 +16,8 @@ Data de referência desta versão: 5 de março de 2026.
 - Descrições de milestones e issues devem ser claras, objetivas, conter checklist de progresso (sub-tasks).
 - Toda issue deve ter `DoR` (Definition of Ready) e `DoD` (Definition of Done) explícitos; quando ainda houver descoberta pendente, registrar `DoR/DoD` como sugestão inicial.
 - As descrições, comentários e textos em geral, precisam ser em formato markdown compatível com o GitHub, utilizando recursos como links, imagens, tabelas e formatação para melhor clareza.
-- Criar primeiro o espelho local (`docs/milestones/...`) e usar esses `.md` como fonte da milestone/issue remota; publicar no GitHub vem depois.
+- Criar primeiro o espelho local e usar esses `.md` como fonte da milestone/issue remota; publicar no GitHub vem depois.
+- Para issue vinculada a milestone, usar `docs/milestones/...`; para issue avulsa sem milestone, usar `docs/issues/...`.
 - Evitar comandos longos inline no terminal para criar issues; preferir corpo oriundo de arquivo `.md` previamente preparado.
 - Criar branch de issue somente quando formos atuar nela.
 - Toda branch criada para trabalho deve ser criada/vinculada pela issue de origem via `gh issue develop`.
@@ -58,14 +62,25 @@ Data de referência desta versão: 5 de março de 2026.
 - Branch de release: `release/<versao>` (obrigatório; não usar branch de release fora do prefixo `release/`)
 - Estrutura local:
   - `docs/milestones/m<numero-da-milestone>/`
+  - `docs/issues/`
   - Arquivo por issue: `<numero>-<slug>.md`
 - Exemplo:
   - `docs/milestones/m1/21-debug-overlay-hdmi.md`
   - `docs/milestones/m1/22-debug-audio-hdmi-passthru.md`
   - `docs/milestones/m2/fmsx-bootstrap-status.md`
+  - `docs/issues/248-backend-framework-modular-por-familia-msx.md`
+
+## Espelho local por tipo de issue
+
+- Issue com milestone: manter o arquivo local dentro de `docs/milestones/m<numero>/`.
+- Issue avulsa/standalone sem milestone: manter o arquivo local em `docs/issues/`.
+- Criar primeiro o espelho local adequado e usar esse arquivo como fonte da issue remota.
+- Quando uma issue sair de standalone para uma milestone, mover o espelho local para a pasta da milestone no mesmo ciclo de sincronizacao.
 
 ## Fluxo padrão por issue
-1. Preparar/atualizar primeiro o espelho local da milestone/issue em `docs/milestones/`.
+1. Preparar/atualizar primeiro o espelho local da issue no caminho adequado:
+   - `docs/milestones/` quando a issue estiver vinculada a milestone
+   - `docs/issues/` quando a issue for avulsa/standalone
 2. Publicar ou atualizar a issue remota usando o conteúdo do `.md` local, preferindo GitHub MCP; usar `gh` CLI apenas como fallback e, nesse caso, apontando para arquivo (`--body-file`) em vez de comandos longos inline.
 3. Selecionar issue alvo no GitHub.
 4. Criar branch somente nesse momento:
@@ -145,10 +160,11 @@ gh api repos/sandersouza/msxbarepi/milestones --paginate
 git fetch --prune
 ```
 - Sincronização local:
-  - Criar/atualizar arquivos em `docs/milestones/m*/` para cada issue remota aberta.
+  - Criar/atualizar arquivos em `docs/milestones/m*/` para cada issue remota aberta vinculada a milestone.
+  - Criar/atualizar arquivos em `docs/issues/` para cada issue remota aberta que esteja fora de milestone.
   - Garantir que cada pasta de milestone tenha `README.md` e `CHALLENGES.md`.
   - Atualizar o `CHALLENGES.md` ao concluir, estabilizar ou postergar uma issue.
-  - Ajustar estado local quando issue fechar/mudar milestone.
+  - Ajustar estado local quando issue fechar, mudar milestone ou deixar de ser standalone.
 - Sincronização remota:
   - Manter checklist e status técnico na issue (não só local).
 - Sincronização de branches:
