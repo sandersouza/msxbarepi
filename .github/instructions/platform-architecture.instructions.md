@@ -40,19 +40,27 @@ applyTo:
 
 ## Ordem oficial de boot
 
-- `BT0`: `UART + Logger`
 - `BT1`: `Interrupt + Timer`
-- `BT2`: `SD/eMMC driver`
-- `BT3`: `FatFs mount`
-- `BT4`: carga e aplicacao de `msxbarepi.cfg`
-- `BT5`: `NormalizeSettingsForBuild()`
-- `BT6`: `initramfs`
-- `BT7`: aplicacao da config no runtime
-- `BT8`: `screen`
-- `BT9`: `emulator_backend_init()`
-- `BT10`: debug overlay pronto
-- `BT11`: `USB Host`
-- `BT12`: entrada no loop principal
+- `BT2`: `screen`
+- `BT3`: `audio`
+- `BT4`: `SD/eMMC driver`
+- `BT5`: `FatFs mount`
+- `BT6`: carga e aplicacao de `msxbarepi.cfg`
+- `BT7`: `NormalizeSettingsForBuild()`
+- `BT8`: `initramfs` `boot-minimal`
+- `BT9`: aplicacao da config no runtime
+- `BT10`: `emulator backend`
+- `BT11`: `UART + Logger` (somente `DEBUG=1`)
+- `BT12`: debug overlay pronto (somente `DEBUG=1`)
+- `BT13`: `USB Host`
+- `BT14`: entrada no loop principal
+
+## Politica de fastboot
+
+- Priorizar `screen` e `audio` antes do backend.
+- Carregar o `msxbarepi.cfg` cedo, antes do `backend init`, para evitar reboot/reset corretivo.
+- Em `DEBUG=1`, inicializar `UART + Logger` e o overlay somente apos o backend.
+- Adiar o restante do `initramfs` e outras tarefas nao criticas para o loop principal, sempre depois da primeira tentativa de inicializacao do `USB Host`.
 
 ## Fluxo oficial de configuracao
 

@@ -14,6 +14,8 @@ Documento canonico para debug HDMI/runtime. O conteudo do antigo guia de templat
 ```bash
 make DEBUG=1
 ```
+- Em `DEBUG=1`, o fastboot atual adia `UART + Logger` e a ativacao do overlay ate depois do bootstrap do backend.
+- No boot, o modo inicial do overlay e sempre `OFF`; depois da carga do `msxbarepi.cfg`, o runtime assume o valor persistido em `debugger=`.
 - Forma simplificada para pacote (tambem habilita debug no kernel):
 ```bash
 DEBUG=1 OWNER="beta@exemplo.com" make package
@@ -114,6 +116,7 @@ Diretriz visual (overlay e menu):
   - framebuffer visivel
   - staging/present buffer
 - O mesmo criterio agora vale para qualquer troca entre `MAX`, `MIN` e `OFF`, nao apenas ligar/desligar o overlay.
+- A troca de modo faz esse wipe de forma imediata, antes do novo layout do overlay voltar a desenhar, para nao deixar residuos do modo anterior.
 - Selecao visual: inversao de cores, faixa com margem lateral, itens centralizados.
 - Navegacao: `Up/Down` com auto-repeat por hold nas listas do menu.
 - Em `Settings` e `Debug`, `Left/Right` tambem repetem por hold para ciclar valores.

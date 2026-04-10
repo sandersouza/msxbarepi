@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 249-backend-framework-modular-por-familia-msx
 
-Ultima atualizacao: 10/04/2026 (14:27 -03)
+Ultima atualizacao: 10/04/2026 (15:56 -03)
 
 ## Objetivo da branch
 
@@ -43,12 +43,28 @@ Executar a issue `#249`, consolidando a arquitetura de backend modular por famil
 - O renderer do overlay (`src/tools/debug/combo_debug_overlay.cpp`) so entra no link final quando `DEBUG=1`.
 - O atalho `F10` foi removido do kernel e o item `UART Log` saiu do menu de pause/debug.
 - O caminho residual de telemetria UART ficou desarmado por padrao (`m_UartTelemetryEnabled = FALSE`) e sem controle exposto em UI/hotkey.
+- O boot do kernel foi reordenado para fastboot:
+  - `screen` e audio HDMI sobem antes do backend
+  - `msxbarepi.cfg` continua sendo carregado antes do `backend init`
+  - `UART + Logger` e o debug overlay so entram depois do backend em `DEBUG=1`
+  - `USB HID` vem antes das tarefas diferidas
+  - o restante do `initramfs` ficou diferido para o loop principal
+- `Initialize()` voltou a ser bootstrap minimo:
+  - logger em `CNullDevice`
+  - `Interrupt + Timer`
+  - sem serial e sem `SD/eMMC`
+- `RefillAudioQueue()` agora preenche silencio enquanto o backend ainda nao estiver pronto, permitindo subir HDMI audio antes do runtime do emulador.
+- A troca de `DEBUG OVERLAY` entre `MAX/MIN/OFF` agora faz wipe global imediato da tela:
+  - zera `m_DebugOverlayLineLengths`
+  - limpa framebuffer completo
+  - emite `ESC[2J`
+  - apresenta o clear antes do novo layout desenhar
+- O modo inicial do overlay no boot agora e sempre `OFF`; em build `DEBUG=1`, o valor persistido em `msxbarepi.cfg` so passa a valer depois da carga do arquivo.
 
 ## Validacao local
 
-- `make`: OK
-- `make DEBUG=0`: OK
 - `make DEBUG=1`: OK
+- `make DEBUG=0`: OK
 - `make EMULATOR_BACKEND=fmsx`: OK
 - `make BACKEND_FAMILY=msx BACKEND_DEFAULT=msx.fmsx`: OK
 - `make backend-module`: OK
@@ -59,4 +75,7 @@ Executar a issue `#249`, consolidando a arquitetura de backend modular por famil
 
 - Nao houve `commit` nem `push`.
 - O modulo continua gerado em `artifacts/backend/msx/msx.fmsx.mod.elf`.
+- Os builds `DEBUG=1` e `DEBUG=0` desta rodada foram refeitos em sequencia limpa; uma tentativa paralela anterior corrompeu temporariamente as libs do Circle e foi descartada.
+- Ajuste fino desta sub-iteracao validado novamente em `make DEBUG=1` e `make DEBUG=0`.
+- Regra do overlay iniciar em `OFF` no boot validada em build local.
 - O proximo cleanup arquitetural relevante continua sendo reduzir os aliases MSX ainda presentes em `src/backend/runtime/runtime.h` e parar de vazar tipos `TFmsx*` no contrato publico de `src/backend/msx/backend.h`.

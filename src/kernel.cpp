@@ -1126,7 +1126,7 @@ CComboKernel::CComboKernel(void)
 	m_UsbReady(FALSE),
 	m_JoyBridgeBits(0),
 	m_JoyMappedBits(ComboKeyboardJoyMask()),
-	m_DebugOverlayMode(MSXBARE_ENABLE_DEBUG_OVERLAY ? ComboDebugOverlayMax : ComboDebugOverlayOff),
+	m_DebugOverlayMode(ComboDebugOverlayOff),
 	m_DebugOverlayUnlocked(TRUE),
 	m_ScreenReady(FALSE),
 	m_EmulationPaused(FALSE),
@@ -1349,21 +1349,7 @@ boolean CComboKernel::Initialize(void)
 
 	if (ok)
 	{
-		CDevice *target = &m_NullLog;
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
-		ok = m_Serial.Initialize(115200);
-		if (ok)
-		{
-			BootTrace("I2");
-			g_backend_uart_trace_serial = &m_Serial;
-			target = &m_Serial;
-		}
-#endif
-		ok = m_Logger.Initialize(target);
-		if (ok)
-		{
-			BootPhase(m_Logger, "BT0", "UART + Logger... OK");
-		}
+		ok = m_Logger.Initialize(&m_NullLog);
 	}
 
 	if (ok) ok = m_Interrupt.Initialize();
@@ -1384,21 +1370,107 @@ boolean CComboKernel::Initialize(void)
 			this);
 		LogCpuClockStatus("BT1");
 	}
-	if (ok)
-	{
-		if (!m_EMMC.Initialize())
-		{
-			BootPhaseWarn(m_Logger, "BT2", "SD/eMMC driver... FAIL");
-			m_Logger.Write(FromKernel, LogWarning, "SD storage init failed; settings persistence disabled");
-		}
-		else
-		{
-			m_SettingsStorageReady = TRUE;
-			BootPhase(m_Logger, "BT2", "SD/eMMC driver... OK");
-		}
-	}
 
 	return ok;
+}
+
+boolean CComboKernel::InitializeSettingsStorage(void)
+{
+	if (m_SettingsStorageReady)
+	{
+		return TRUE;
+	}
+
+	if (!m_EMMC.Initialize())
+	{
+		BootPhaseWarn(m_Logger, "BT4", "SD/eMMC driver... FAIL");
+		m_Logger.Write(FromKernel, LogWarning, "SD storage init failed; settings persistence disabled");
+		return FALSE;
+	}
+
+	m_SettingsStorageReady = TRUE;
+	BootPhase(m_Logger, "BT4", "SD/eMMC driver... OK");
+	return TRUE;
+}
+
+void CComboKernel::InitializeDebugRuntime(void)
+{
+#if !MSXBARE_ENABLE_DEBUG_OVERLAY
+	return;
+#else
+	if (g_backend_uart_trace_serial != 0)
+	{
+		return;
+	}
+
+	if (!m_Serial.Initialize(115200))
+	{
+		BootPhaseWarn(m_Logger, "BT11", "UART + Logger... FAIL");
+		return;
+	}
+
+	g_backend_uart_trace_serial = &m_Serial;
+	(void) m_Logger.Initialize(&m_Serial);
+	BootPhase(m_Logger, "BT11", "UART + Logger... OK");
+	m_Logger.Write(FromKernel, LogNotice, "Compile time: " __DATE__ " " __TIME__);
+	m_Logger.Write(FromKernel, LogNotice, "Combo standalone: HDMI audio + USB keyboard");
+	{
+		CString mem_line;
+		mem_line.Format("MMU/Caches M:%u C:%u I:%u", m_MmuEnabled ? 1u : 0u, m_DCacheEnabled ? 1u : 0u, m_ICacheEnabled ? 1u : 0u);
+		m_Logger.Write(FromKernel, LogNotice, mem_line);
+	}
+	{
+		const BackendInfo backend_info = backend_runtime_get_info();
+		const char *selected_backend_id = backend_info.selected_backend_id != 0
+			? backend_info.selected_backend_id
+			: backend_runtime_selected_backend_id();
+		CString backend_line;
+		backend_line.Format("Emulator backend: %s [%s]",
+			m_EmulatorBackendName != 0 ? m_EmulatorBackendName : "unknown",
+			selected_backend_id != 0 ? selected_backend_id : "default");
+		m_Logger.Write(FromKernel, LogNotice, backend_line);
+		if (backend_info.requested_backend_id != 0
+			&& backend_info.requested_backend_id[0] != '\0'
+			&& !backend_info.requested_backend_found
+			&& backend_info.selected_backend_id != 0)
+		{
+			CString fallback_line;
+			fallback_line.Format("Backend fallback: requested=%s -> selected=%s",
+				backend_info.requested_backend_id,
+				backend_info.selected_backend_id);
+			m_Logger.Write(FromKernel, LogWarning, fallback_line);
+		}
+	}
+	{
+		CString initramfs_line;
+		initramfs_line.Format("initramfs files: %u", m_InitramfsFiles);
+		m_Logger.Write(FromKernel, LogNotice, initramfs_line);
+	}
+	{
+		CString boot_line;
+		boot_line.Format("Fastboot to backend: %ums", m_BootToBackendMs);
+		m_Logger.Write(FromKernel, LogNotice, boot_line);
+	}
+	LogCpuClockStatus("BT11");
+#endif
+}
+
+void CComboKernel::ProcessDeferredBootTasks(void)
+{
+#if MSXBARE_ENABLE_FMSX
+	if (m_InitramfsDeferredMountPending)
+	{
+		const unsigned mounted_more = backend_runtime_initramfs_mount_remaining();
+		m_InitramfsFiles += mounted_more;
+		m_InitramfsDeferredMountPending = FALSE;
+		if (mounted_more > 0u)
+		{
+			CString line;
+			line.Format("Boot deferred: initramfs remaining +%u => %u", mounted_more, m_InitramfsFiles);
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
+	}
+#endif
 }
 
 TComboShutdownMode CComboKernel::Run(void)
@@ -1409,83 +1481,69 @@ TComboShutdownMode CComboKernel::Run(void)
 	}
 	m_BootStartUs = CTimer::GetClockTicks64();
 	m_BootToBackendMs = 0u;
-	m_Logger.Write(FromKernel, LogNotice, "Compile time: " __DATE__ " " __TIME__);
-	m_Logger.Write(FromKernel, LogNotice, "Combo standalone: HDMI audio + USB keyboard");
 	u64 sctlr_el1 = 0;
 	asm volatile ("mrs %0, sctlr_el1" : "=r" (sctlr_el1));
 	m_MmuEnabled = (sctlr_el1 & (1u << 0)) ? TRUE : FALSE;
 	m_DCacheEnabled = (sctlr_el1 & (1u << 2)) ? TRUE : FALSE;
 	m_ICacheEnabled = (sctlr_el1 & (1u << 12)) ? TRUE : FALSE;
-	CString mem_line;
-	mem_line.Format("MMU/Caches M:%u C:%u I:%u", m_MmuEnabled ? 1u : 0u, m_DCacheEnabled ? 1u : 0u, m_ICacheEnabled ? 1u : 0u);
-	m_Logger.Write(FromKernel, LogNotice, mem_line);
-	{
-		const BackendInfo backend_info = backend_runtime_get_info();
-		const char *backend_id = backend_runtime_selected_backend_id();
-		m_EmulatorBackendName = backend_info.active_backend_name;
-		m_BackendInitFailCode = (backend_info.init_error_code > 0) ? (unsigned) backend_info.init_error_code : 0u;
-		CString backend_line;
-		backend_line.Format("Emulator backend: %s [%s]",
-			m_EmulatorBackendName != 0 ? m_EmulatorBackendName : "unknown",
-			backend_id != 0 ? backend_id : "default");
-		m_Logger.Write(FromKernel, LogNotice, backend_line);
-	}
-	const boolean backend_has_machine = backend_runtime_is_capability_available(BACKEND_CAP_MACHINE);
-	const boolean backend_has_media = backend_runtime_is_capability_available(BACKEND_CAP_MEDIA);
 	const boolean backend_audio_enabled = m_BackendEnabled ? TRUE : FALSE;
-	if (!(m_TestToneEnabled || backend_audio_enabled))
+
+	if (!m_Screen.Initialize())
 	{
-		m_Logger.Write(FromKernel, LogNotice, "Audio OFF");
+		BootPhaseWarn(m_Logger, "BT2", "screen... FAIL");
+		m_Logger.Write(FromKernel, LogPanic, "Screen init failed");
+		return ComboShutdownHalt;
+	}
+	m_ScreenReady = TRUE;
+	BootPhase(m_Logger, "BT2", "screen... OK");
+
+	if (m_TestToneEnabled || backend_audio_enabled)
+	{
+		InitializeAudioOutput(backend_audio_enabled);
+		BootPhase(m_Logger, "BT3", "audio... OK");
 	}
 	else
 	{
-		m_Logger.Write(FromKernel, LogNotice, "Audio init deferred until first emulator frames");
+		BootPhase(m_Logger, "BT3", "audio... OFF");
 	}
 
-	if (m_SettingsStorageReady)
+	if (InitializeSettingsStorage())
 	{
 		/* Must be applied before backend init so boot/runtime settings take effect on first boot. */
 		if (f_mount(&m_SettingsFileSystem, kSettingsDrive, 1) == FR_OK)
 		{
-			BootPhase(m_Logger, "BT3", "FATFS mount... OK");
+			BootPhase(m_Logger, "BT5", "FATFS mount... OK");
 			LoadSettingsFromStorage();
 		}
 		else
 		{
 			m_SettingsStorageReady = FALSE;
-			BootPhaseWarn(m_Logger, "BT3", "FATFS mount... FAIL");
+			BootPhaseWarn(m_Logger, "BT5", "FATFS mount... FAIL");
 			m_Logger.Write(FromKernel, LogWarning, "Settings mount failed on SD:; persistence disabled");
 		}
 	}
 	else
 	{
-		BootPhaseWarn(m_Logger, "BT3", "FATFS mount... SKIP");
+		BootPhaseWarn(m_Logger, "BT5", "FATFS mount... SKIP");
 	}
 	NormalizeSettingsForBuild();
-	BootPhase(m_Logger, "BT5", "Normalize settings... OK");
+	BootPhase(m_Logger, "BT7", "Normalize settings... OK");
 #if MSXBARE_ENABLE_FMSX
 	if (m_BackendEnabled)
 	{
+		const boolean backend_has_machine = backend_runtime_is_capability_available(BACKEND_CAP_MACHINE);
+		const boolean backend_has_media = backend_runtime_is_capability_available(BACKEND_CAP_MEDIA);
 		if (!kBootQuiet)
 		{
 			BootTrace("R1");
 		}
-		unsigned mounted_files = 0;
-		mounted_files = backend_runtime_initramfs_mount_boot_minimal();
-		{
-			const unsigned later_files = backend_runtime_initramfs_mount_remaining();
-			mounted_files += later_files;
-			m_InitramfsDeferredMountPending = FALSE;
-		}
+		m_InitramfsFiles = backend_runtime_initramfs_mount_boot_minimal();
+		m_InitramfsDeferredMountPending = TRUE;
 		if (!kBootQuiet)
 		{
 			BootTrace("R2");
 		}
-		m_InitramfsFiles = mounted_files;
-		CString initramfs_line;
-		initramfs_line.Format("initramfs files: %u", mounted_files);
-		m_Logger.Write(FromKernel, LogNotice, initramfs_line);
-		BootPhase(m_Logger, "BT6", "initramfs... OK");
+		BootPhase(m_Logger, "BT8", "initramfs boot-minimal... OK");
 
 		if (!kBootQuiet)
 		{
@@ -1510,34 +1568,12 @@ TComboShutdownMode CComboKernel::Run(void)
 				m_SccDualCartEnabled = FALSE;
 			}
 		}
-		BootPhase(m_Logger, "BT7", "runtime config... OK");
-		m_Logger.Write(FromKernel, LogNotice, "Boot step: init screen");
-		if (!m_Screen.Initialize())
-		{
-			BootPhaseWarn(m_Logger, "BT8", "screen... FAIL");
-			m_Logger.Write(FromKernel, LogPanic, "Screen init failed");
-			return ComboShutdownHalt;
-		}
-		m_Logger.Write(FromKernel, LogNotice, "Screen ready");
-		m_Logger.Write(FromKernel, LogNotice, "Boot step: screen OK");
-		BootPhase(m_Logger, "BT8", "screen... OK");
-		m_ScreenReady = TRUE;
+		BootPhase(m_Logger, "BT9", "runtime config... OK");
 		m_BackendReady = backend_runtime_init();
 		{
 			const BackendInfo backend_info = backend_runtime_get_info();
 			m_EmulatorBackendName = backend_info.active_backend_name;
 			m_BackendInitFailCode = (backend_info.init_error_code > 0) ? (unsigned) backend_info.init_error_code : 0u;
-			if (backend_info.requested_backend_id != 0
-				&& backend_info.requested_backend_id[0] != '\0'
-				&& !backend_info.requested_backend_found
-				&& backend_info.selected_backend_id != 0)
-			{
-				CString fallback_line;
-				fallback_line.Format("Backend fallback: requested=%s -> selected=%s",
-					backend_info.requested_backend_id,
-					backend_info.selected_backend_id);
-				m_Logger.Write(FromKernel, LogWarning, fallback_line);
-			}
 		}
 		{
 			const u64 boot_elapsed_us = CTimer::GetClockTicks64() - m_BootStartUs;
@@ -1555,7 +1591,7 @@ TComboShutdownMode CComboKernel::Run(void)
 				m_EmulatorBackendName != 0 ? m_EmulatorBackendName : "backend",
 				m_BackendInitFailCode);
 			m_Logger.Write(FromKernel, LogWarning, line);
-			BootPhaseWarn(m_Logger, "BT9", "emulator backend... FAIL");
+			BootPhaseWarn(m_Logger, "BT10", "emulator backend... FAIL");
 		}
 		else
 		{
@@ -1567,15 +1603,15 @@ TComboShutdownMode CComboKernel::Run(void)
 			line.Format("%s bootstrap OK (frame-step)",
 				m_EmulatorBackendName != 0 ? m_EmulatorBackendName : "backend");
 			m_Logger.Write(FromKernel, LogNotice, line);
-			BootPhase(m_Logger, "BT9", "emulator backend... OK");
+			BootPhase(m_Logger, "BT10", "emulator backend... OK");
 
 			/* Defensive restore exists only on the current media-capable path for now. */
-				if (backend_has_media)
-				{
+			if (backend_has_media)
+			{
 #if MSXBARE_FEAT_LOAD_DISK
-					for (unsigned drive = 0u; drive < 2u; ++drive)
-					{
-						const char *persisted_path = backend_runtime_get_disk_path(drive);
+				for (unsigned drive = 0u; drive < 2u; ++drive)
+				{
+					const char *persisted_path = backend_runtime_get_disk_path(drive);
 					const char *mounted_name = backend_runtime_get_disk_name(drive);
 					if (persisted_path != 0 && persisted_path[0] != '\0'
 					 && (mounted_name == 0 || mounted_name[0] == '\0'))
@@ -1591,19 +1627,20 @@ TComboShutdownMode CComboKernel::Run(void)
 							CString restore_line;
 							restore_line.Format("Boot media restore failed: DSK DRIVE%u <= %s", drive + 1u, persisted_path);
 							m_Logger.Write(FromKernel, LogWarning, restore_line);
-							}
 						}
 					}
-#endif
 				}
+#endif
 			}
 		}
+	}
 #endif
+	InitializeDebugRuntime();
 	if (MSXBARE_ENABLE_DEBUG_OVERLAY && m_DebugOverlayUnlocked && DebugOverlayModeEnabled(m_DebugOverlayMode))
 	{
 		if (!kBootQuiet)
 		{
-			WriteScreenText("\x1b[2J\x1b[H\x1b[?25l");
+			WriteScreenText("\x1b[2J\x1b[H\x1b[0m\x1b[?25l");
 		}
 	}
 	else
@@ -1611,13 +1648,13 @@ TComboShutdownMode CComboKernel::Run(void)
 		WriteScreenText("\x1b[?25l");
 	}
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
-	BootPhase(m_Logger, "BT10", "debug overlay... READY");
+	BootPhase(m_Logger, "BT12", "debug overlay... READY");
 	m_Logger.Write(FromKernel, LogNotice, "Overlay: F11 | Pause: F12");
 #else
-	BootPhase(m_Logger, "BT10", "debug overlay... OFF");
+	BootPhase(m_Logger, "BT12", "debug overlay... OFF");
 #endif
 #if MSXBARE_ENABLE_FMSX
-	if (m_BackendReady && backend_has_machine)
+	if (m_BackendReady && backend_runtime_is_capability_available(BACKEND_CAP_MACHINE))
 	{
 		m_FmLayerGainPct = backend_runtime_get_fm_layer_gain_pct();
 	}
@@ -1676,13 +1713,13 @@ TComboShutdownMode CComboKernel::Run(void)
 				m_UsbReady = TRUE;
 				m_Logger.Write(FromKernel, LogNotice, "USB host ready");
 				m_Logger.Write(FromKernel, LogNotice, "Attach USB keyboard/gamepad");
-				BootPhase(m_Logger, "BT11", "USB Host... OK");
+				BootPhase(m_Logger, "BT13", "USB Host... OK");
 			}
 			else
 			{
 				m_Logger.Write(FromKernel, LogWarning, "USB host init failed; retrying");
 				m_UsbInitRetryTick = 300u;
-				BootPhaseWarn(m_Logger, "BT11", "USB Host... RETRY");
+				BootPhaseWarn(m_Logger, "BT13", "USB Host... RETRY");
 			}
 		}
 		/* Force first visible frame to use current viewport policy (avoid transient wide boot frame). */
@@ -1696,7 +1733,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	#endif
 
 	m_Logger.Write(FromKernel, LogNotice, "Boot step: main loop");
-	BootPhase(m_Logger, "BT12", "main loop... OK");
+	BootPhase(m_Logger, "BT14", "main loop... OK");
 	u64 next_frame_us = CTimer::GetClockTicks64();
 	for (unsigned tick = 0; ; ++tick)
 	{
@@ -1813,6 +1850,8 @@ TComboShutdownMode CComboKernel::Run(void)
 		{
 			UpdateJoystickFromRaw(m_LastKeyboardModifiers, m_LastKeyboardRawKeys);
 		}
+
+		ProcessDeferredBootTasks();
 
 		if (m_SettingsSavePending)
 		{
@@ -2302,6 +2341,10 @@ void CComboKernel::RefillAudioQueue(void)
 		else if (m_TestToneEnabled)
 		{
 			GenerateSamples(buffer, write_frames);
+		}
+		else if (!m_BackendEnabled || !m_BackendReady)
+		{
+			memset(buffer, 0, write_frames * 2u * sizeof(s16));
 		}
 		else
 		{
@@ -3661,7 +3704,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	if (stat_result == FR_NO_FILE)
 	{
 		UpdateLoadDiagTelemetry(5102u); /* CFG not found */
-		BootPhaseWarn(m_Logger, "BT4", "msxbarepi.cfg... DEFAULTS");
+		BootPhaseWarn(m_Logger, "BT6", "msxbarepi.cfg... DEFAULTS");
 		m_Logger.Write(FromKernel, LogNotice, "Settings file not found; using defaults");
 		return;
 	}
@@ -3669,7 +3712,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	{
 		UpdateLoadDiagTelemetry(5190u + (ClampFatFsCode(stat_result) % 10u)); /* CFG stat fail */
 		LogSdOpResult(m_Logger, "CFG:STAT", stat_result, settings_path, TRUE);
-		BootPhaseWarn(m_Logger, "BT4", "msxbarepi.cfg... FALLBACK");
+		BootPhaseWarn(m_Logger, "BT6", "msxbarepi.cfg... FALLBACK");
 		m_Logger.Write(FromKernel, LogWarning, "Settings stat failed; using defaults");
 		return;
 	}
@@ -3681,7 +3724,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	{
 		UpdateLoadDiagTelemetry(5290u + (ClampFatFsCode(open_result) % 10u)); /* CFG open fail */
 		LogSdOpResult(m_Logger, "CFG:OPEN", open_result, settings_path, TRUE);
-		BootPhaseWarn(m_Logger, "BT4", "msxbarepi.cfg... FALLBACK");
+		BootPhaseWarn(m_Logger, "BT6", "msxbarepi.cfg... FALLBACK");
 		m_Logger.Write(FromKernel, LogWarning, "Settings open failed; using defaults");
 		return;
 	}
@@ -3698,7 +3741,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 		{
 			LogSdOpResult(m_Logger, "CFG:READ", read_result, settings_path, TRUE);
 		}
-		BootPhaseWarn(m_Logger, "BT4", "msxbarepi.cfg... FALLBACK");
+		BootPhaseWarn(m_Logger, "BT6", "msxbarepi.cfg... FALLBACK");
 		m_Logger.Write(FromKernel, LogWarning, "Settings read failed; using defaults");
 		return;
 	}
@@ -3708,7 +3751,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	/* Corruption guard: only parse files written by SaveSettingsToStorage(). */
 	if (strstr(buffer, "#END") == 0)
 	{
-		BootPhaseWarn(m_Logger, "BT4", "msxbarepi.cfg... FALLBACK");
+		BootPhaseWarn(m_Logger, "BT6", "msxbarepi.cfg... FALLBACK");
 		m_Logger.Write(FromKernel, LogWarning, "Settings file invalid/corrupt; using defaults");
 		return;
 	}
@@ -4036,7 +4079,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	CString line_log;
 	line_log.Format("Settings loaded from %s", settings_path);
 	m_Logger.Write(FromKernel, LogNotice, line_log);
-	BootPhase(m_Logger, "BT4", "msxbarepi.cfg... OK");
+	BootPhase(m_Logger, "BT6", "msxbarepi.cfg... OK");
 }
 
 void CComboKernel::SaveSettingsToStorage(void)
@@ -5578,7 +5621,15 @@ void CComboKernel::SetDebugOverlayMode(unsigned mode)
 		ClearPresentationSurfaces();
 		if (m_ScreenReady)
 		{
+			const unsigned screen_width = m_Screen.GetWidth();
+			const unsigned screen_height = m_Screen.GetHeight();
+			memset(m_DebugOverlayLineLengths, 0, sizeof(m_DebugOverlayLineLengths));
 			WriteScreenText("\x1b[2J\x1b[H\x1b[?25l");
+			if (screen_width > 0u && screen_height > 0u)
+			{
+				m_Screen.MarkDirtyRect(0u, 0u, screen_width, screen_height);
+				(void) m_Screen.PresentIfDirty(m_DCacheEnabled, TRUE);
+			}
 		}
 		m_PauseMenu.InvalidateViewportSnapshot();
 		if (m_EmulationPaused && m_BackendReady)

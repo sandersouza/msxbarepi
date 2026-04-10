@@ -90,6 +90,9 @@ private:
     void UpdateLoadDiagTelemetry(unsigned stage);
     unsigned LoadResolutionModeFromBootConfig(void);
     void PersistResolutionModeToBootConfig(unsigned mode);
+    boolean InitializeSettingsStorage(void);
+    void InitializeDebugRuntime(void);
+    void ProcessDeferredBootTasks(void);
     void LoadSettingsFromStorage(void);
     void SaveSettingsToStorage(void);
     boolean EnsureStateIoBuffer(unsigned min_capacity);
