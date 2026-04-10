@@ -27,6 +27,7 @@ extern int FmsxVDPRenderVScrollOverride;
 extern uint8_t FmsxVDPLineOddPageLatched;
 extern uint8_t FmsxVDPLineFlipEvenOddLatched;
 extern uint8_t FmsxVDPLineInterlaceOnLatched;
+extern uint8_t FmsxVDPLineInterlaceOddFieldLatched;
 extern uint8_t FmsxVDPLineR18Latched;
 
 #define FMSX_SCREEN_ON (FmsxVDPScreenOnLatched)
@@ -51,6 +52,11 @@ INLINE int FmsxDisplayInterlacedModeLatched(void)
 INLINE int FmsxDisplayOddPageLatched(void)
 {
   return FmsxVDPLineFlipEvenOddLatched ? (int)(FmsxVDPLineOddPageLatched & 0x01u) : 0;
+}
+
+INLINE int FmsxDisplayInterlaceOddFieldLatched(void)
+{
+  return FmsxVDPLineInterlaceOddFieldLatched ? 1 : 0;
 }
 
 INLINE int FmsxDisplayVAdjustLatched(void)
@@ -264,7 +270,7 @@ uint16_t *RefreshBorder(uint8_t Y,uint16_t C)
   int H,L,A;
   const int lineHiResMode = FmsxDisplayHiResModeLatched();
   const int lineInterlacedMode = FmsxDisplayInterlacedModeLatched();
-  const int lineOddPage = FmsxDisplayOddPageLatched();
+  const int lineFieldOdd = FmsxDisplayInterlaceOddFieldLatched();
 
   /* First line number in the buffer */
   if(!Y) FirstLine=(ScanLines212?0:10)+BORDER+FmsxDisplayVAdjustLatched();
@@ -288,23 +294,21 @@ uint16_t *RefreshBorder(uint8_t Y,uint16_t C)
         {
           if (lineInterlacedMode)
           {
-            if (lineOddPage)
-            { // even lines are black
-              P[A]=0;
-              P[A-WIDTH]=C;
+            if (lineFieldOdd)
+            { // odd field: preserve even field, refresh only odd physical lines
+              P[A]=C;
             }
             else
-            { // odd lines are black
-              P[A]=C;
-              P[A-WIDTH]=0;
+            { // even field: preserve odd field, refresh only even physical lines
+              P[A-WIDTH]=C;
             }
           }
           else // progressive: only touch this frame's lines
           {
-            if (lineOddPage)
-              P[A-WIDTH]=C;
-            else
+            if (lineFieldOdd)
               P[A]=C;
+            else
+              P[A-WIDTH]=C;
           }
         }
       }
@@ -312,18 +316,12 @@ uint16_t *RefreshBorder(uint8_t Y,uint16_t C)
     /* Start of the line */
     P+=(WIDTH*(FirstLine+Y))<<1;
 
-    if (lineOddPage)
+    if (lineFieldOdd)
     {
-      if (lineInterlacedMode)
-        // erase previous frame's line
-        for(A=(WIDTH<<1)-1,H=WIDTH;H>0;H--,A--) P[A]=0;
+      P+=WIDTH; // odd field maps to odd physical scanlines
     }
     else
     {
-      if (lineInterlacedMode)
-        // erase previous frame's line
-        for(H=WIDTH-1;H>=0;H--) P[H]=0;
-      P+=WIDTH; // interlace offset
     }
   }
   else // standard mode
@@ -349,9 +347,6 @@ uint16_t *RefreshBorder(uint8_t Y,uint16_t C)
       {
         for(A=((WIDTH*L)<<1)-1,H=WIDTH;H>0;H--,A--)
         {
-          if (lineInterlacedMode)
-            // erase previous frame's line
-            P[A]=0;
           P[A+WIDTH]=C;
         }
       }

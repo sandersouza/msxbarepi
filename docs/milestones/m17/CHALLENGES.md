@@ -106,6 +106,12 @@ Registro de desafios enfrentados por issue, decisão adotada e status da soluç�
 - Status: Futuro
 - Referência: [243-bug-hires-interlaced-lentidao-1080p-scale-4x.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/243-bug-hires-interlaced-lentidao-1080p-scale-4x.md)
 
+### #247 — HIRES/interlaced flicka entre página correta e frame verticalmente esticado
+- Desafio: em vez de alternar entre campos `odd/even` corretos, o modo `HIRES/interlaced` passa a flickar entre um quadro com geometria correta e outro verticalmente esticado, como se duas screens incompatíveis estivessem alternando.
+- Solução adotada: abrir follow-up `minor` dedicado ao bug funcional de composição/apresentação do modo interlaced, mantendo separado o resíduo de performance já registrado na `#243`.
+- Status: Futuro
+- Referência: [247-bug-hires-interlaced-flicker-paginas-erradas.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/247-bug-hires-interlaced-flicker-paginas-erradas.md)
+
 ### #224 — Knightmare Gold: falha na detecção de MSX2+
 - Desafio: `Knightmare Gold` detectava `HighSpeed VDP`, `128KB of videoRAM` e `SCC+`, mas ainda caia no menu com `MODE MSX2` e `SCROLL ORIGINAL`, sem liberar o caminho esperado de `SCROLL SMOOTH`.
 - Solução adotada: a trilha foi integrada ao fluxo normal da branch `#187`, adicionando o bloco Panasonic/S1985 no runtime fMSX, trace `KMG EVT` via kernel UART e a opcao de diagnostico `Refresh [NTSC/PAL]` apenas em `DEBUG=1`, abaixo de `Disk ROM`, sem quebrar o chaveamento legitimo por `R#9` do VDP.

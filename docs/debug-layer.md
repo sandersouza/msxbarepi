@@ -40,6 +40,7 @@ make DEBUG=0
   - `MAX`: overlay completo atual.
   - `MIN`: overlay compacto de 3 linhas.
   - `OFF`: overlay desligado.
+  - toda alternancia entre esses modos limpa a tela inteira antes da nova fase, para nao deixar vestigios visuais entre `MAX/MIN/OFF`.
 - `F12`: pausa/retoma emulacao (menu de pausa).
 - `F6`: mute/unmute `Layer 1` (PSG + ruido).
 - `F7`: mute/unmute `Layer 2` (FM-PAC).
@@ -112,6 +113,7 @@ Diretriz visual (overlay e menu):
 - Ao ativar ou desativar o overlay de debug, o kernel agora limpa a tela inteira antes da nova apresentacao:
   - framebuffer visivel
   - staging/present buffer
+- O mesmo criterio agora vale para qualquer troca entre `MAX`, `MIN` e `OFF`, nao apenas ligar/desligar o overlay.
 - Selecao visual: inversao de cores, faixa com margem lateral, itens centralizados.
 - Navegacao: `Up/Down` com auto-repeat por hold nas listas do menu.
 - Em `Settings` e `Debug`, `Left/Right` tambem repetem por hold para ciclar valores.
@@ -147,8 +149,9 @@ Diretriz visual (overlay e menu):
 ## Overlay: linhas e labels
 - Modo `MIN`:
   - `Linha 1`: `TXTDBG BUILD:XXXX CPU FREQ:<MHz>`
-  - `Linha 2`: `DFS:NTSC|PAL FPS:<fps>`
+  - `Linha 2`: `DFS:NTSC|PAL FPS:<fps> F:<frame>`
   - `Linha 3`: `Screen:<scr_mode> Mode:Normal|Hires|Interlaced`
+  - a limpeza do overlay agora e feita por comprimento real de cada linha renderizada; ao atualizar ou desligar o painel, o kernel limpa apenas a quantidade de caracteres previamente desenhada em cada linha, sem preencher colunas extras com espacos
 - `TXTDBG`: estado geral (MMU/cache/pause).
   - `BUILD`: hash de 16 bits calculado a partir de `MSXBARE_BUILD_BID` para rastreio visual da build em teste.
   - `OS`: contador com largura fixa `000..999` (modulo 1000) para evitar jitter visual na linha.

@@ -32,6 +32,9 @@ applyTo:
 - Tratar UART como canal oficial de telemetria detalhada para depuracao de memoria/estado quando o overlay HDMI nao for suficiente ou puder mascarar o problema.
 - Limitar cada linha do overlay HDMI a no maximo 64 caracteres visiveis para nao sobrepor a area do mailbox do emulador.
 - Ao adicionar nova linha no overlay, atualizar a rotina de limpeza (`ClearDebugOverlay`) no mesmo ciclo para limpar explicitamente a nova linha quando o debug for desativado.
+- No preset `DEBUG [MIN]`, a linha compacta de `FPS` deve carregar tambem o contador de `frame` atual quando isso ajudar a correlacionar o estado exibido com logs UART.
+- A limpeza/reescrita do overlay deve usar o comprimento real previamente renderizado em cada linha; nao limpar com padding fixo maior que o conteudo visivel.
+- Toda alternancia entre modos do `DEBUG OVERLAY` (`MAX/MIN/OFF`) deve limpar a tela inteira antes da nova fase, incluindo framebuffer visivel e superfícies auxiliares, para nao deixar vestigios entre os modos.
 
 ## Baseline visual
 

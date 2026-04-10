@@ -32,6 +32,7 @@ extern uint8_t FmsxVDPLineR26Latched;
 extern uint8_t FmsxVDPLineR27Latched;
 extern uint8_t FmsxVDPLineR18Latched;
 extern uint8_t FmsxVDPLineOddPageLatched;
+extern uint8_t FmsxVDPLineInterlaceOddFieldLatched;
 extern uint8_t FmsxVDPLineColorSpritesLatched[384];
 extern uint8_t FmsxVDPLineColorSpritesRender[384];
 extern uint8_t FmsxVDPLineColorSpritesValid;
@@ -128,12 +129,46 @@ static uint8_t *V9958BitmapLinePtrWideLatched(uint8_t Y)
   return VRAM+Pos;
 }
 
+static uint8_t *V9958BitmapLinePtrWideScreen7Latched(uint8_t Y)
+{
+  unsigned size;
+  unsigned addr;
+  unsigned base;
+  unsigned line_addr;
+  unsigned odd_mask;
+
+  size = (unsigned)(VRAMPages << 14);
+  if(size == 0u) return VRAM;
+
+  /*
+   * blueMSX keeps SCREEN 7 page selection tied to the full R#2 << 10 base and
+   * only resolves EO/odd-page at the final line address mask. The generic
+   * fMSX-derived ChrTab/ChrTabM path masks R#2 too early, which is harmless in
+   * the boot-logo SCREEN 6 path but can desynchronize one field/page pair in
+   * HIRES/interlaced SCREEN 7.
+   */
+  base = (((unsigned)FmsxVDPLineR2Latched) << 10);
+  if(MODEL(MSX_MSX2P) && (FmsxVDPLineR25Latched & 0x01u))
+    base &= ~(1u << 15);
+
+  base |= (1u << 10) - 1u;
+  odd_mask = FmsxVDPLineOddPageLatched ? ~(1u << 15) : ~0u;
+  line_addr = ((unsigned)(Y + FMSX_RENDER_VSCROLL) << 7);
+  addr = base & odd_mask & (0xFFFF8000u | line_addr);
+  addr %= size;
+
+  return VRAM + addr;
+}
+
 static void V9958WideBitmapPages(uint8_t Y,unsigned VirtualWidth,uint8_t **Page0,uint8_t **Page1)
 {
   uint8_t *Base;
   uint8_t *Next;
 
-  Base=V9958BitmapLinePtrWideLatched(Y);
+  if((ScrMode==7u) && FmsxVDPLineInterlaceOnLatched)
+    Base=V9958BitmapLinePtrWideScreen7Latched(Y);
+  else
+    Base=V9958BitmapLinePtrWideLatched(Y);
   Next=V9958ScrollPagePtr(Base,0x8000);
 
   *Page0=Base;
@@ -166,7 +201,7 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
   int H,L,A;
   const int lineHiResMode = FmsxDisplayHiResModeLatched();
   const int lineInterlacedMode = FmsxDisplayInterlacedModeLatched();
-  const int lineOddPage = FmsxDisplayOddPageLatched();
+  const int lineFieldOdd = FmsxDisplayInterlaceOddFieldLatched();
 
   /* First line number in the buffer */
   if(!Y) FirstLine=(ScanLines212?0:10)+BORDER+FmsxDisplayVAdjustLatched();
@@ -190,23 +225,21 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
         {
           if (lineInterlacedMode)
           {
-            if (lineOddPage)
-            { // even lines are black
-              P[A]=0;
-              P[A-(WIDTH<<1)]=C;
+            if (lineFieldOdd)
+            { // odd field: preserve even field, refresh only odd physical lines
+              P[A]=C;
             }
             else
-            { // odd lines are black
-              P[A]=C;
-              P[A-(WIDTH<<1)]=0;
+            { // even field: preserve odd field, refresh only even physical lines
+              P[A-(WIDTH<<1)]=C;
             }
           }
           else // progressive: only touch this frame's lines
           {
-            if (lineOddPage)
-              P[A-(WIDTH<<1)]=C;
-            else
+            if (lineFieldOdd)
               P[A]=C;
+            else
+              P[A-(WIDTH<<1)]=C;
           }
         }
       }
@@ -214,18 +247,12 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
     /* Start of the line */
     P+=(WIDTH*(FirstLine+Y))<<2;
 
-    if (lineOddPage)
+    if (lineFieldOdd)
     {
-      if (lineInterlacedMode)
-        // erase previous frame's line
-        for(A=(WIDTH<<2)-1,H=WIDTH<<1;H>0;H--,A--) P[A]=0;
+      P+=WIDTH<<1; // odd field maps to odd physical scanlines
     }
     else
     {
-      if (lineInterlacedMode)
-        // erase previous frame's line
-        for(H=(WIDTH<<2)-1;H>=0;H--) P[H]=0;
-      P+=WIDTH<<1; // interlace offset
     }
   }
   else // standard mode
@@ -252,9 +279,6 @@ uint16_t *RefreshBorder512(uint8_t Y,uint16_t C)
       {
         for(A=((WIDTH*L)<<2)-1,H=WIDTH<<1;H>0;H--,A--)
         {
-          if (lineInterlacedMode)
-            // erase previous frame's line
-            P[A]=0;
           P[A+(WIDTH<<1)]=C;
         }
       }
@@ -481,6 +505,7 @@ void RefreshLine7(uint8_t Y)
     V9958WideBitmapPages(Y,VirtualWidth,&T0,&T1);
     Plane0=T0;
     Plane1=V9958VRAMOffsetPtr(T0,(int)V9958InterleavedPlaneOffset());
+    fmsx_debug_capture_screen7_wide_source(Y,Plane0,Plane1);
     for(PIdx=0;PIdx<128;PIdx++)
     {
       BgRaw[(PIdx<<2)+0]=Plane0[PIdx]>>4;
@@ -565,6 +590,7 @@ void RefreshLine7WideRange(uint8_t Y,unsigned X0,unsigned X1)
   V9958WideBitmapPages(Y,VirtualWidth,&T0,&T1);
   Plane0=T0;
   Plane1=V9958VRAMOffsetPtr(T0,(int)V9958InterleavedPlaneOffset());
+  fmsx_debug_capture_screen7_wide_source(Y,Plane0,Plane1);
   for(PIdx=0;PIdx<128;PIdx++)
   {
     BgRaw[(PIdx<<2)+0]=Plane0[PIdx]>>4;

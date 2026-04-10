@@ -23,7 +23,49 @@ typedef struct {
     unsigned hires_mode;
     unsigned interlaced_mode;
     unsigned woven_hires;
+    unsigned field_parity_odd;
 } TFmsxVideoPresentation;
+
+typedef struct {
+    unsigned screen_mode;
+    unsigned reg2;
+    unsigned reg9;
+    unsigned reg18;
+    unsigned reg25;
+    unsigned reg26;
+    unsigned reg27;
+    unsigned status2;
+    unsigned frame_number;
+    unsigned last_scanline;
+    unsigned live_height;
+    unsigned buffer_width;
+    unsigned buffer_height;
+    unsigned logical_width;
+    unsigned logical_height;
+    unsigned hires_mode;
+    unsigned interlaced_mode;
+    unsigned woven_hires;
+    unsigned live_interlace_on;
+    unsigned live_flip_even_odd;
+    unsigned display_page;
+    unsigned render_page;
+    unsigned latched_odd_page;
+    unsigned latched_interlace_odd_field;
+    unsigned chr_base_offset;
+    unsigned chr_plane1_offset;
+    unsigned actual_sample_y;
+    unsigned actual_base_offset;
+    unsigned actual_plane1_offset;
+    uint32_t actual_base_hash;
+    uint32_t actual_plane1_hash;
+    uint32_t physical_even_hash;
+    uint32_t physical_odd_hash;
+    uint32_t physical_even_frame_hash;
+    uint32_t physical_odd_frame_hash;
+    unsigned height_branch;
+    unsigned latched_hires_eval;
+    unsigned latched_interlaced_eval;
+} TFmsxVideoHostDebug;
 
 typedef struct {
     unsigned write_calls;
@@ -47,6 +89,27 @@ typedef struct {
     unsigned last_render_batch;
     unsigned max_render_batch;
 } TFmsxAudioStats;
+
+typedef struct {
+    uint32_t frame_number;
+    unsigned sample_count;
+    unsigned master_switch;
+    unsigned bus_active_mask;
+    unsigned fm_backend_nukeykt;
+    unsigned psg_peak;
+    unsigned fm_peak;
+    unsigned scc_primary_peak;
+    unsigned scc_secondary_peak;
+    unsigned main_peak;
+} TFmsxAudioMixDebug;
+
+typedef struct {
+    uint32_t frame_number;
+    unsigned psg_mask;
+    unsigned fm_mask;
+    unsigned scc_primary_mask;
+    unsigned scc_secondary_mask;
+} TFmsxAudioChannelDebug;
 
 typedef struct {
     unsigned last_hid;
@@ -78,7 +141,7 @@ typedef struct {
 #define FMSX_VDP_TRACE_CAPACITY 1024u
 #define FMSX_SMANBOW_AUDIO_TRACE_ENABLED 0
 #define FMSX_SCC_TRACE_CAPACITY 4096u
-#define FMSX_AUDIO_PORT_TRACE_CAPACITY 1024u
+#define FMSX_AUDIO_PORT_TRACE_CAPACITY 4096u
 #define FMSX_KMG_TRACE_CAPACITY 64u
 
 typedef enum {
@@ -491,8 +554,12 @@ unsigned fmsx_runtime_get_load_diag(void);
 TFmsxRuntimeStatus fmsx_runtime_get_status(void);
 unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsigned *height);
 void fmsx_runtime_get_video_presentation(TFmsxVideoPresentation *presentation);
+void fmsx_runtime_get_video_host_debug(TFmsxVideoHostDebug *debug);
 unsigned fmsx_audio_pull_samples(int16_t *dst, unsigned max_samples);
 void fmsx_audio_get_stats(TFmsxAudioStats *stats);
+void fmsx_runtime_get_audio_mix_debug(TFmsxAudioMixDebug *stats);
+void fmsx_runtime_get_audio_channel_debug(TFmsxAudioChannelDebug *stats);
+void fmsx_runtime_reset_audio_mix_debug_window(void);
 void fmsx_keyboard_get_debug(TFmsxKeyboardDebug *stats);
 void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats);
 void fmsx_runtime_get_vdp_trace_view(TFmsxVDPTraceView *view);

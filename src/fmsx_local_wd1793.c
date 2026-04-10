@@ -3,6 +3,10 @@
 #include "libretro.h"
 extern retro_log_printf_t log_cb;
 
+/* Baremetal disables legacy libretro callback logging in local core files. */
+#undef log_cb
+#define log_cb ((retro_log_printf_t)0)
+
 #include <string.h>
 
 /** Reset1793() **********************************************/
