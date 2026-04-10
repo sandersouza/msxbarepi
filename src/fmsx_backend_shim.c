@@ -44,6 +44,7 @@ void fmsx_backend_shim_get_video_presentation(EmulatorBackendVideoPresentation *
         presentation->hires_mode = fmsx_presentation.hires_mode ? TRUE : FALSE;
         presentation->interlaced_mode = fmsx_presentation.interlaced_mode ? TRUE : FALSE;
         presentation->woven_hires = fmsx_presentation.woven_hires ? TRUE : FALSE;
+        presentation->field_parity_odd = fmsx_presentation.field_parity_odd ? TRUE : FALSE;
     }
 }
 

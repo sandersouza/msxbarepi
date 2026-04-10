@@ -122,6 +122,7 @@ void emulator_backend_get_video_presentation(EmulatorBackendVideoPresentation *p
         presentation->hires_mode = FALSE;
         presentation->interlaced_mode = FALSE;
         presentation->woven_hires = FALSE;
+        presentation->field_parity_odd = FALSE;
     }
 
     switch (kSelectedBackend)

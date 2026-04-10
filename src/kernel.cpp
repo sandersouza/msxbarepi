@@ -412,6 +412,35 @@ static void ComputeViewportLayout(unsigned screen_width, unsigned screen_height,
 	if (out_crop_y != 0) *out_crop_y = crop_y;
 }
 
+static unsigned MapWovenHiResPhysicalY(unsigned full_y,
+									   unsigned full_dst_height,
+									   unsigned logical_src_height,
+									   unsigned physical_src_height,
+									   boolean current_field_odd)
+{
+	if (full_dst_height == 0u || logical_src_height == 0u || physical_src_height == 0u)
+	{
+		return 0u;
+	}
+
+	const unsigned logical_y =
+		(unsigned) (((u64) full_y * (u64) logical_src_height) / (u64) full_dst_height);
+	const unsigned clamped_logical_y =
+		logical_y >= logical_src_height ? (logical_src_height - 1u) : logical_y;
+	const unsigned group_start =
+		(unsigned) (((u64) clamped_logical_y * (u64) full_dst_height) / (u64) logical_src_height);
+	const unsigned group_end =
+		(unsigned) (((u64) (clamped_logical_y + 1u) * (u64) full_dst_height) / (u64) logical_src_height);
+	const unsigned group_rows = group_end > group_start ? (group_end - group_start) : 1u;
+	const unsigned local_row = full_y > group_start ? (full_y - group_start) : 0u;
+	const unsigned field_odd = current_field_odd
+		? (((local_row << 1) < group_rows) ? 1u : 0u)
+		: (((local_row << 1) >= group_rows) ? 1u : 0u);
+	const unsigned physical_y = (clamped_logical_y << 1) | field_odd;
+
+	return physical_y < physical_src_height ? physical_y : (physical_src_height - 1u);
+}
+
 static char Port99OpTag(unsigned op)
 {
 	switch (op)
@@ -694,6 +723,12 @@ static void LogSdOpResult(CLogger &logger, const char *op, FRESULT code, const c
 		line.Format("SD %s fr=%u", op != 0 ? op : "OP", ClampFatFsCode(code));
 	}
 	logger.Write(FromKernel, warning ? LogWarning : LogNotice, line);
+}
+
+static const char *VideoModeLabelFromPresentation(const EmulatorBackendVideoPresentation &presentation)
+{
+	return presentation.interlaced_mode ? "Interlaced"
+		: (presentation.hires_mode ? "Hires" : "Normal");
 }
 
 static void ParseTextValueLine(const char *value_start, const char *value_end, char *dst, unsigned dst_size)
@@ -1145,11 +1180,18 @@ CComboKernel::CComboKernel(void)
 	m_UartVideoStepUsPeak(0u),
 	m_UartVideoBlitUsLast(0u),
 	m_UartVideoBlitUsPeak(0u),
+	m_LastVideoModeScreen(0u),
+	m_LastVideoModeLogicalWidth(0u),
+	m_LastVideoModeLogicalHeight(0u),
+	m_HiresHostTraceFramesRemaining(0u),
 	m_FmsxFpsWindowStartFrames(0),
 	m_FmsxFpsX10(0),
 	m_FramePacingErrAvgUs(0u),
 	m_FramePacingErrMaxUs(0u),
 	m_FmsxBlankFrames(0),
+	m_LastVideoModeLogValid(FALSE),
+	m_LastVideoModeHires(FALSE),
+	m_LastVideoModeInterlaced(FALSE),
 	m_InitramfsFiles(0),
 	m_FmsxBoxX(0),
 	m_FmsxBoxY(0),
@@ -1223,6 +1265,7 @@ CComboKernel::CComboKernel(void)
 {
 	s_Instance = this;
 	m_ActLED.Blink(5);
+	memset(m_DebugOverlayLineLengths, 0, sizeof(m_DebugOverlayLineLengths));
 	NormalizeSettingsForBuild();
 	ResetUartPerfTelemetry();
 }
@@ -2421,112 +2464,22 @@ void CComboKernel::ResetUartPerfTelemetry(void)
 
 void CComboKernel::LogAudioQueueUart(void)
 {
-#if !MSXBARE_ENABLE_FMSX || !MSXBARE_ENABLE_DEBUG_OVERLAY
 	return;
-#else
-	if (!m_UartTelemetryEnabled || m_Sound == 0)
-	{
-		return;
-	}
-
-	const u64 now_us = CTimer::GetClockTicks64();
-	if (m_LastAudioQueueLogUs != 0u && (now_us - m_LastAudioQueueLogUs) < kUartPerfLogIntervalUs)
-	{
-		return;
-	}
-
-	TFmsxAudioStats audio_stats = {0};
-	fmsx_audio_get_stats(&audio_stats);
-	const unsigned queue_size = m_Sound->GetQueueSizeFrames();
-	const unsigned queue_avail = m_Sound->GetQueueFramesAvail();
-	const unsigned queue_min = (m_UartAudioQueueAvailMin == 0xFFFFFFFFu) ? queue_avail : m_UartAudioQueueAvailMin;
-
-	CString line;
-	line.Format("AUDQ Q:%u/%u/%u L:%u R:%u/%u P:%u/%u D:%u T:%u U:%u/%u A:%u/%u",
-		queue_avail > 9999u ? 9999u : queue_avail,
-		queue_min > 9999u ? 9999u : queue_min,
-		queue_size > 9999u ? 9999u : queue_size,
-		m_UartAudioLowWaterHits > 999u ? 999u : m_UartAudioLowWaterHits,
-		audio_stats.ring_level > 9999u ? 9999u : audio_stats.ring_level,
-		audio_stats.ring_peak > 9999u ? 9999u : audio_stats.ring_peak,
-		audio_stats.last_pull_returned > 9999u ? 9999u : audio_stats.last_pull_returned,
-		audio_stats.last_pull_requested > 9999u ? 9999u : audio_stats.last_pull_requested,
-		audio_stats.drop_count > 999u ? 999u : audio_stats.drop_count,
-		audio_stats.trim_samples > 9999u ? 9999u : audio_stats.trim_samples,
-		audio_stats.short_pulls > 999u ? 999u : audio_stats.short_pulls,
-		audio_stats.underrun_samples > 9999u ? 9999u : audio_stats.underrun_samples,
-		m_UartAudioRefillUsLast > 9999u ? 9999u : m_UartAudioRefillUsLast,
-		m_UartAudioRefillUsPeak > 9999u ? 9999u : m_UartAudioRefillUsPeak);
-	m_Logger.Write(FromKernel, LogNotice, line);
-
-	m_LastAudioQueueLogUs = now_us;
-	m_UartAudioQueueAvailMin = 0xFFFFFFFFu;
-	m_UartAudioLowWaterHits = 0u;
-	m_UartAudioRefillUsPeak = 0u;
-#endif
 }
 
 void CComboKernel::LogVideoPacingUart(void)
 {
-#if !MSXBARE_ENABLE_FMSX || !MSXBARE_ENABLE_DEBUG_OVERLAY
 	return;
-#else
-	if (!m_UartTelemetryEnabled)
-	{
-		return;
-	}
+}
 
-	const u64 now_us = CTimer::GetClockTicks64();
-	if (m_LastVideoPacingLogUs != 0u && (now_us - m_LastVideoPacingLogUs) < kUartPerfLogIntervalUs)
-	{
-		return;
-	}
+void CComboKernel::LogVideoModeTransitionUart(void)
+{
+	return;
+}
 
-	CString line;
-	line.Format("VIDP F:%u.%u C:%u/%u X:%u L:%u/%u P:%u/%u S:%u/%u B:%u/%u",
-		(m_FmsxFpsX10 / 10u) > 99u ? 99u : (m_FmsxFpsX10 / 10u),
-		m_FmsxFpsX10 % 10u,
-		m_UartVideoCatchupLast > 99u ? 99u : m_UartVideoCatchupLast,
-		m_UartVideoCatchupPeak > 99u ? 99u : m_UartVideoCatchupPeak,
-		m_UartVideoCatchupCapCount > 999u ? 999u : m_UartVideoCatchupCapCount,
-		m_UartVideoLateUsLast > 9999u ? 9999u : m_UartVideoLateUsLast,
-		m_UartVideoLateUsPeak > 9999u ? 9999u : m_UartVideoLateUsPeak,
-		m_FramePacingErrAvgUs > 9999u ? 9999u : m_FramePacingErrAvgUs,
-		m_FramePacingErrMaxUs > 9999u ? 9999u : m_FramePacingErrMaxUs,
-		m_UartVideoStepUsLast > 9999u ? 9999u : m_UartVideoStepUsLast,
-		m_UartVideoStepUsPeak > 9999u ? 9999u : m_UartVideoStepUsPeak,
-		m_UartVideoBlitUsLast > 9999u ? 9999u : m_UartVideoBlitUsLast,
-		m_UartVideoBlitUsPeak > 9999u ? 9999u : m_UartVideoBlitUsPeak);
-	m_Logger.Write(FromKernel, LogNotice, line);
-	LogCpuClockStatus("F10");
-
-	if (emulator_backend_selected_kind() == EMULATOR_BACKEND_KIND_FMSX)
-	{
-		TFmsxFramePerfStats frame_perf = {0};
-		fmsx_runtime_get_frame_perf_stats(&frame_perf);
-		line.Format("VRTM ST:%u FR:%u SL:%u/%u Z:%u/%u A:%u/%u N:%u/%u M:%u",
-			frame_perf.last_steps > 99u ? 99u : frame_perf.last_steps,
-			frame_perf.last_frames_done > 99u ? 99u : frame_perf.last_frames_done,
-			frame_perf.last_slices > 9999u ? 9999u : frame_perf.last_slices,
-			frame_perf.peak_slices > 9999u ? 9999u : frame_perf.peak_slices,
-			frame_perf.last_z80_us > 9999u ? 9999u : frame_perf.last_z80_us,
-			frame_perf.peak_z80_us > 9999u ? 9999u : frame_perf.peak_z80_us,
-			frame_perf.last_audio_us > 9999u ? 9999u : frame_perf.last_audio_us,
-			frame_perf.peak_audio_us > 9999u ? 9999u : frame_perf.peak_audio_us,
-			frame_perf.last_audio_samples > 9999u ? 9999u : frame_perf.last_audio_samples,
-			frame_perf.peak_audio_samples > 9999u ? 9999u : frame_perf.peak_audio_samples,
-			frame_perf.frame_miss_count > 999u ? 999u : frame_perf.frame_miss_count);
-		m_Logger.Write(FromKernel, LogNotice, line);
-		fmsx_runtime_reset_frame_perf_stats_window();
-	}
-
-	m_LastVideoPacingLogUs = now_us;
-	m_UartVideoCatchupPeak = 0u;
-	m_UartVideoCatchupCapCount = 0u;
-	m_UartVideoLateUsPeak = 0u;
-	m_UartVideoStepUsPeak = 0u;
-	m_UartVideoBlitUsPeak = 0u;
-#endif
+void CComboKernel::LogVideoHiresHostDebugUart(void)
+{
+	return;
 }
 
 void CComboKernel::KeyPressedHandler(const char *text)
@@ -2639,7 +2592,7 @@ void CComboKernel::LogVdpTraceUart(void)
 
 void CComboKernel::LogSccTraceUart(void)
 {
-#if !MSXBARE_ENABLE_FMSX || !MSXBARE_ENABLE_DEBUG_OVERLAY || !FMSX_SMANBOW_AUDIO_TRACE_ENABLED
+#if !MSXBARE_ENABLE_FMSX || !MSXBARE_ENABLE_DEBUG_OVERLAY
 	return;
 #else
 	if (!m_UartTelemetryEnabled)
@@ -2727,84 +2680,7 @@ void CComboKernel::LogSccTraceUart(void)
 
 void CComboKernel::LogAudioPortTraceUart(void)
 {
-#if !MSXBARE_ENABLE_FMSX || !MSXBARE_ENABLE_DEBUG_OVERLAY || !FMSX_SMANBOW_AUDIO_TRACE_ENABLED
 	return;
-#else
-	if (!m_UartTelemetryEnabled)
-	{
-		return;
-	}
-
-	TFmsxAudioPortTraceView trace_view = { 0, 0u, 0u, 0u, 0u };
-	auto chip_tag = [](unsigned chip) -> const char *
-	{
-		switch (chip)
-		{
-		case FMSX_AUDIO_PORT_TRACE_PSG: return "PSG";
-		case FMSX_AUDIO_PORT_TRACE_FM:  return "FM";
-		default:                        return "--";
-		}
-	};
-	auto op_tag = [](unsigned op) -> const char *
-	{
-		switch (op)
-		{
-		case FMSX_AUDIO_PORT_TRACE_CTRL: return "C";
-		case FMSX_AUDIO_PORT_TRACE_DATA: return "D";
-		default:                         return "-";
-		}
-	};
-	auto trace_window_tag = [](unsigned window) -> const char *
-	{
-		switch (window)
-		{
-		case FMSX_VDP_TRACE_TITLE:       return "TI";
-		case FMSX_VDP_TRACE_SAVE_SELECT: return "SV";
-		case FMSX_VDP_TRACE_STARDATE:    return "SD";
-		default:                         return "--";
-		}
-	};
-
-	fmsx_runtime_get_audio_port_trace_view(&trace_view);
-	if (trace_view.dropped != m_FmsxAudioPortTraceDropped)
-	{
-		CString drop_line;
-		drop_line.Format("AUD DROP count=%u", trace_view.dropped);
-		m_Logger.Write(FromKernel, LogWarning, drop_line);
-		m_FmsxAudioPortTraceDropped = trace_view.dropped;
-	}
-	if (trace_view.events == 0 || trace_view.count == 0u || trace_view.capacity == 0u)
-	{
-		return;
-	}
-
-	const unsigned start =
-		(trace_view.head + trace_view.capacity - trace_view.count) % trace_view.capacity;
-	for (unsigned i = 0u; i < trace_view.count; ++i)
-	{
-		const TFmsxAudioPortTraceEvent &event =
-			trace_view.events[(start + i) % trace_view.capacity];
-		if (event.seq <= m_FmsxAudioPortTraceSeq)
-		{
-			continue;
-		}
-
-		CString line;
-		line.Format("AUD EVT #%lu Q=%u W=%s C=%s O=%s R=%02X N=%u V=%02X/%02X PC=%04X",
-			(unsigned long) event.seq,
-			(unsigned) event.session,
-			trace_window_tag((unsigned) event.capture_window),
-			chip_tag((unsigned) event.chip),
-			op_tag((unsigned) event.op),
-			(unsigned) event.reg,
-			(unsigned) event.count,
-			(unsigned) event.value_first,
-			(unsigned) event.value_last,
-			(unsigned) event.pc);
-		m_Logger.Write(FromKernel, LogNotice, line);
-		m_FmsxAudioPortTraceSeq = event.seq;
-	}
-#endif
 }
 
 void CComboKernel::LogKmgTraceUart(void)
@@ -2924,31 +2800,30 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		const unsigned build_hash16 = BuildHash16();
 		const unsigned cpu_mhz = m_CPUThrottle.GetClockRate() / 1000000u;
 		const char *dfs_label = timing_stats.pal_video ? "PAL " : "NTSC";
-		const char *mode_label =
-			presentation.interlaced_mode ? "Interlaced"
-			: (presentation.hires_mode ? "Hires" : "Normal");
+		const char *mode_label = VideoModeLabelFromPresentation(presentation);
 
-		line.Format("\x1b[97m\x1b[49m\x1b[1;1HTXTDBG BUILD:%04X FREQ:%4uMHz                 ",
+		line.Format("TXTDBG BUILD:%04X FREQ:%4uMHz",
 			build_hash16 & 0xFFFFu,
 			cpu_mhz > 9999u ? 9999u : cpu_mhz);
-		WriteScreenText(line);
+		WriteDebugOverlayLine(1u, line);
 
-		line.Format("\x1b[97m\x1b[49m\x1b[2;1HDFS:%s FPS:%02u.%u                                  ",
+		line.Format("DFS:%s FPS:%02u.%u F:%lu",
 			dfs_label,
 			(m_FmsxFpsX10 / 10u) > 99u ? 99u : (m_FmsxFpsX10 / 10u),
-			m_FmsxFpsX10 % 10u);
-		WriteScreenText(line);
+			m_FmsxFpsX10 % 10u,
+			m_FmsxFrames);
+		WriteDebugOverlayLine(2u, line);
 
-		line.Format("\x1b[97m\x1b[49m\x1b[3;1HScreen:%02u Mode:%-10s                           ",
+		line.Format("Screen:%02u Mode:%s",
 			timing_stats.scr_mode > 99u ? 99u : timing_stats.scr_mode,
 			mode_label);
-		WriteScreenText(line);
+		WriteDebugOverlayLine(3u, line);
 		return;
 	}
 
 	const unsigned os_tick = tick % 1000u;
 	const unsigned build_hash16 = BuildHash16();
-	line.Format("\x1b[97m\x1b[49m\x1b[1;1HTXTDBG BUILD:%04X OS:%03u M:%u C:%u I:%u PAU:%u BK:%.7s R:%u K:%u S:%u H:%u/%u LD:%04u BT:%04u",
+	line.Format("TXTDBG BUILD:%04X OS:%03u M:%u C:%u I:%u PAU:%u BK:%.7s R:%u K:%u S:%u H:%u/%u LD:%04u BT:%04u",
 		build_hash16 & 0xFFFFu,
 		os_tick,
 		m_MmuEnabled ? 1u : 0u,
@@ -2963,9 +2838,9 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		m_SoundStartFailures > 99u ? 99u : m_SoundStartFailures,
 		load_diag > 9999u ? 9999u : load_diag,
 		m_BootToFmsxMs > 9999u ? 9999u : m_BootToFmsxMs);
-	WriteScreenText(line);
+	WriteDebugOverlayLine(1u, line);
 
-	line.Format("\x1b[97m\x1b[49m\x1b[2;1HAUD1 Q:%06u E:%06u O:%05u T:%05u U:%04u/%04u B:%04u/%04u P:%04u/%04u R:%04u/%04u V:%02u.%u",
+	line.Format("AUD1 Q:%06u E:%06u O:%05u T:%05u U:%04u/%04u B:%04u/%04u P:%04u/%04u R:%04u/%04u V:%02u.%u",
 		m_AudioWriteOps,
 		m_AudioDropOps,
 		audio_stats.overwrite_samples % 100000u,
@@ -2980,9 +2855,9 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		audio_stats.ring_peak > 9999u ? 9999u : audio_stats.ring_peak,
 		(m_FmsxFpsX10 / 10u) > 99u ? 99u : (m_FmsxFpsX10 / 10u),
 		m_FmsxFpsX10 % 10u);
-	WriteScreenText(line);
+	WriteDebugOverlayLine(2u, line);
 
-	line.Format("\x1b[97m\x1b[49m\x1b[3;1HSYS BJ:%02X MJ:%02X F:%06lu PC:%04X R:%04u L:%04u D:%03u/%04u JP:%03u/%03u SV:%02u C:%03u A:%04u CA:%u CB:%u BM:%u MP:%u RM:%4u MR:%4u IN:%03u",
+	line.Format("SYS BJ:%02X MJ:%02X F:%06lu PC:%04X R:%04u L:%04u D:%03u/%04u JP:%03u/%03u SV:%02u C:%03u A:%04u CA:%u CB:%u BM:%u MP:%u RM:%4u MR:%4u IN:%03u",
 		(unsigned) m_JoyBridgeBits,
 		(unsigned) m_JoyMappedBits,
 		m_FmsxFrames,
@@ -3003,10 +2878,10 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		fmsx_runtime_get_rammapper_kb(),
 		fmsx_runtime_get_megaram_kb(),
 		m_InitramfsFiles > 999u ? 999u : m_InitramfsFiles);
-	WriteScreenText(line);
+	WriteDebugOverlayLine(3u, line);
 
 	m_FmLayerGainPct = fmsx_runtime_get_fm_layer_gain_pct();
-	line.Format("\x1b[97m\x1b[49m\x1b[4;1HAC1 FM:%u/%u FG:%03u SCC:%u/%u AG:%u AE:%03u L1:%u L2:%u L3:%u P7:%02X MS:%05X",
+	line.Format("AC1 FM:%u/%u FG:%03u SCC:%u/%u AG:%u AE:%03u L1:%u L2:%u L3:%u P7:%02X MS:%05X",
 		m_FmMusicEnabled ? 1u : 0u,
 		fmsx_runtime_get_audio_layer_muted(2u) ? 0u : 1u,
 		m_FmLayerGainPct > 999u ? 999u : m_FmLayerGainPct,
@@ -3019,9 +2894,9 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		fmsx_runtime_get_audio_layer_muted(3u) ? 1u : 0u,
 		fmsx_runtime_get_psg_mixer_reg7() & 0xFFu,
 		fmsx_runtime_get_master_switch() & 0xFFFFFu);
-	WriteScreenText(line);
+	WriteDebugOverlayLine(4u, line);
 
-	line.Format("\x1b[97m\x1b[49m\x1b[5;1HTM HP:%05u VP:%05u IP:%05u SL:%03u %s L212:%u T:%03u%% | SM:%02u R2:%02X R25:%02X R26:%02X R27:%02X HS:%03u MP:%u DP:%u EP:%u I1:%u F1:%u",
+	line.Format("TM HP:%05u VP:%05u IP:%05u SL:%03u %s L212:%u T:%03u%% | SM:%02u R2:%02X R25:%02X R26:%02X R27:%02X HS:%03u MP:%u DP:%u EP:%u I1:%u F1:%u",
 		timing_stats.h_period > 99999u ? 99999u : timing_stats.h_period,
 		timing_stats.v_period > 99999u ? 99999u : timing_stats.v_period,
 		timing_stats.i_period > 99999u ? 99999u : timing_stats.i_period,
@@ -3040,9 +2915,9 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		timing_stats.render_page > 3u ? 3u : timing_stats.render_page,
 		timing_stats.ie1_enabled ? 1u : 0u,
 		timing_stats.ie1_flag ? 1u : 0u);
-	WriteScreenText(line);
+	WriteDebugOverlayLine(5u, line);
 
-		line.Format("\x1b[97m\x1b[49m\x1b[6;1HTM C:%X CE:%u TR:%u CS:%03u CP:%03u KB:%u/%u/%u/%u P1:%u-%u D:%u/%u S:%u | I1:%03u/%03u IA:%03u IH:%03u KJ:%u KR:%03u KW:%03u R1:%02X R7:%02X SO:%u",
+		line.Format("TM C:%X CE:%u TR:%u CS:%03u CP:%03u KB:%u/%u/%u/%u P1:%u-%u D:%u/%u S:%u | I1:%03u/%03u IA:%03u IH:%03u KJ:%u KR:%03u KW:%03u R1:%02X R7:%02X SO:%u",
 			timing_stats.vdp_cmd & 0x0Fu,
 			timing_stats.vdp_ce ? 1u : 0u,
 			timing_stats.vdp_tr ? 1u : 0u,
@@ -3067,9 +2942,9 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 			timing_stats.reg1 & 0xFFu,
 			timing_stats.reg7 & 0xFFu,
 			timing_stats.screen_on ? 1u : 0u);
-		WriteScreenText(line);
+		WriteDebugOverlayLine(6u, line);
 
-		line.Format("\x1b[97m\x1b[49m\x1b[7;1HTM I0:%u S0:%u HR:%u VR:%u LP:%u TL:%03u TD:%+04d EO:%u RP:%u | KQ:%03u/%03u KD:%03u KC:%03u/%03u/%03u KR:%03u KP:%03u",
+		line.Format("TM I0:%u S0:%u HR:%u VR:%u LP:%u TL:%03u TD:%+04d EO:%u RP:%u | KQ:%03u/%03u KD:%03u KC:%03u/%03u/%03u KR:%03u KP:%03u",
 			timing_stats.ie0_enabled ? 1u : 0u,
 			timing_stats.vblank_flag ? 1u : 0u,
 			timing_stats.status2_hr ? 1u : 0u,
@@ -3087,9 +2962,9 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 			timing_stats.kbd_candidate_discarded > 999u ? 999u : timing_stats.kbd_candidate_discarded,
 			timing_stats.kbd_immediate_releases > 999u ? 999u : timing_stats.kbd_immediate_releases,
 			timing_stats.kbd_immediate_gameplay_presses > 999u ? 999u : timing_stats.kbd_immediate_gameplay_presses);
-		WriteScreenText(line);
+		WriteDebugOverlayLine(7u, line);
 
-		line.Format("\x1b[97m\x1b[49m\x1b[8;1HTM 6A 9:%04u 15:%04u 18:%04u 19:%04u 25:%04u 26:%04u 27:%04u | 6B EV:%s W:%s P9:%04X SL:%03u LP:%u B:%03u/%03u R1:%02X S2:%02X SR:%X/%02X 99:%c/%u/%X/%02X/%02X",
+		line.Format("TM 6A 9:%04u 15:%04u 18:%04u 19:%04u 25:%04u 26:%04u 27:%04u | 6B EV:%s W:%s P9:%04X SL:%03u LP:%u B:%03u/%03u R1:%02X S2:%02X SR:%X/%02X 99:%c/%u/%X/%02X/%02X",
 			timing_stats.vdp_r9_writes > 9999u ? 9999u : timing_stats.vdp_r9_writes,
 			timing_stats.vdp_r15_writes > 9999u ? 9999u : timing_stats.vdp_r15_writes,
 			timing_stats.vdp_r18_writes > 9999u ? 9999u : timing_stats.vdp_r18_writes,
@@ -3113,9 +2988,9 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 			timing_stats.last_port99_r15 & 0x0Fu,
 			timing_stats.last_port99_alatch & 0xFFu,
 			timing_stats.last_port99_value & 0xFFu);
-		WriteScreenText(line);
+		WriteDebugOverlayLine(8u, line);
 
-			line.Format("\x1b[97m\x1b[49m\x1b[9;1HTM 6C A8:%02X EW:%u C:%u T:%02X/%u B:%02X/%02X/%02X/%02X F:%s S:%u M:%u A:%04X O:%05X V:%02X/%02X | 6D R17:%02X 9B:%02X>%02X>%02X V:%02X S:%02X/%02X P9:%04u",
+			line.Format("TM 6C A8:%02X EW:%u C:%u T:%02X/%u B:%02X/%02X/%02X/%02X F:%s S:%u M:%u A:%04X O:%05X V:%02X/%02X | 6D R17:%02X 9B:%02X>%02X>%02X V:%02X S:%02X/%02X P9:%04u",
 				timing_stats.slot_reg & 0xFFu,
 				timing_stats.p1_write_enabled ? 1u : 0u,
 			timing_stats.cart_slot_p1 & 0xFFu,
@@ -3140,7 +3015,7 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 				timing_stats.status8 & 0xFFu,
 				timing_stats.status9 & 0xFFu,
 				timing_stats.vdp_port9b_writes > 9999u ? 9999u : timing_stats.vdp_port9b_writes);
-			WriteScreenText(line);
+			WriteDebugOverlayLine(9u, line);
 
 		WriteScreenText("\x1b[0m");
 	}
@@ -3217,7 +3092,9 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 	const u16 *pixels = 0;
 	unsigned width = 0;
 	unsigned height = 0;
+	EmulatorBackendVideoPresentation presentation = { 0 };
 	const unsigned sequence = emulator_backend_video_frame(&pixels, &width, &height);
+	emulator_backend_get_video_presentation(&presentation);
 
 	if ((!force_redraw && sequence == m_FmsxVideoSeq) || pixels == 0 || width == 0 || height == 0)
 	{
@@ -3238,6 +3115,12 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 	unsigned full_dst_height = 0u;
 	unsigned crop_x = 0u;
 	unsigned crop_y = 0u;
+	const boolean woven_hires =
+		(presentation.woven_hires != 0u)
+		&& (presentation.logical_height > 0u)
+		&& (height == (presentation.logical_height << 1));
+	const unsigned logical_src_height =
+		woven_hires ? presentation.logical_height : height;
 
 	const unsigned scanline_mode = (m_ScanlineMode != kScanlineModeOff) ? kScanlineModeLcd : kScanlineModeOff;
 	unsigned offset_x = 0u;
@@ -3329,6 +3212,7 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 		const unsigned exact_scale_y =
 			(src_h > 0u && full_dst_height > 0u && (full_dst_height % src_h) == 0u) ? (full_dst_height / src_h) : 0u;
 		const boolean exact_integer_physical =
+			!woven_hires &&
 			(scanline_mode == kScanlineModeOff)
 			&& (src_x0 == 0u)
 			&& (src_y0 == 0u)
@@ -3365,6 +3249,10 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 		const boolean can_use_maps = (dst_width <= kBlitMapMaxAxis) && (dst_height <= kBlitMapMaxAxis);
 		if (can_use_maps)
 		{
+			if (woven_hires)
+			{
+				m_BlitMapValid = FALSE;
+			}
 			if (!m_BlitMapValid
 			 || m_BlitMapSrcW != src_w
 			 || m_BlitMapSrcH != src_h
@@ -3377,7 +3265,19 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 				}
 				for (unsigned y = 0; y < dst_height; ++y)
 				{
-					m_BlitYMap[y] = (u16) (((u64) (y + crop_y) * (u64) src_h) / (u64) full_dst_height);
+					if (woven_hires)
+					{
+						m_BlitYMap[y] = (u16) MapWovenHiResPhysicalY(
+							y + crop_y,
+							full_dst_height,
+							logical_src_height,
+							src_h,
+							presentation.field_parity_odd);
+					}
+					else
+					{
+						m_BlitYMap[y] = (u16) (((u64) (y + crop_y) * (u64) src_h) / (u64) full_dst_height);
+					}
 				}
 				m_BlitRunCount = 0u;
 				if (dst_width > 0u)
@@ -3447,8 +3347,14 @@ void CComboKernel::BlitFmsxFrame(boolean force_redraw)
 			boolean prev_line_valid = FALSE;
 			for (unsigned y = 0; y < dst_height; ++y)
 			{
-				const unsigned src_rel_y =
-					(unsigned) (((u64) (y + crop_y) * (u64) src_h) / (u64) full_dst_height);
+				const unsigned src_rel_y = woven_hires
+					? MapWovenHiResPhysicalY(
+						y + crop_y,
+						full_dst_height,
+						logical_src_height,
+						src_h,
+						presentation.field_parity_odd)
+					: (unsigned) (((u64) (y + crop_y) * (u64) src_h) / (u64) full_dst_height);
 				const unsigned src_y = src_y0 + src_rel_y;
 				const u16 *src_line = pixels + (src_y * width);
 				u16 *dst_line = present_base + present_offset_pixels + (y * present_pitch_pixels);
@@ -5639,6 +5545,10 @@ void CComboKernel::SetDebugOverlayMode(unsigned mode)
 	if (old_mode != new_mode)
 	{
 		ClearPresentationSurfaces();
+		if (m_ScreenReady)
+		{
+			WriteScreenText("\x1b[2J\x1b[H\x1b[?25l");
+		}
 		m_PauseMenu.InvalidateViewportSnapshot();
 		if (m_EmulationPaused && m_FmsxReady)
 		{
@@ -5681,6 +5591,7 @@ void CComboKernel::SetUartTelemetryEnabled(boolean enabled)
 #if MSXBARE_ENABLE_FMSX
 	/* UART perf telemetry is intentionally quiesced in this phase. */
 	fmsx_runtime_set_frame_perf_telemetry_enabled(FALSE);
+	fmsx_runtime_reset_audio_mix_debug_window();
 #endif
 	m_PauseMenu.SetDebugLogEnabled(m_UartTelemetryEnabled);
 	m_PauseMenu.RequestRedraw();
@@ -5693,27 +5604,39 @@ void CComboKernel::ClearDebugOverlay(void)
 		return;
 	}
 
-	WriteScreenText("\x1b[1;1H                                                                                                                                ");
-	WriteScreenText("\x1b[2;1H                                                                                                                                ");
-	WriteScreenText("\x1b[3;1H                                                                                                                                ");
-	WriteScreenText("\x1b[4;1H                                                                                                                                ");
-	WriteScreenText("\x1b[5;1H                                                                                                                                ");
-	WriteScreenText("\x1b[6;1H                                                                                                                                ");
-	WriteScreenText("\x1b[7;1H                                                                                                                                ");
-	WriteScreenText("\x1b[8;1H                                                                                                                                ");
-	WriteScreenText("\x1b[9;1H                                                                                                                                ");
-	WriteScreenText("\x1b[10;1H                                                                                                                               ");
-	WriteScreenText("\x1b[11;1H                                                                                                                               ");
-	WriteScreenText("\x1b[12;1H                                                                                                                               ");
-	WriteScreenText("\x1b[13;1H                                                                                                                               ");
-	WriteScreenText("\x1b[14;1H                                                                                                                               ");
-	WriteScreenText("\x1b[15;1H                                                                                                                               ");
-	WriteScreenText("\x1b[16;1H                                                                                                                               ");
-	WriteScreenText("\x1b[17;1H                                                                                                                               ");
-	WriteScreenText("\x1b[18;1H                                                                                                                               ");
-	WriteScreenText("\x1b[19;1H                                                                                                                               ");
-	WriteScreenText("\x1b[20;1H                                                                                                                               ");
+	for (unsigned row = 1u; row <= 20u; ++row)
+	{
+		WriteDebugOverlayLine(row, 0);
+	}
 	WriteScreenText("\x1b[0m");
+}
+
+void CComboKernel::WriteDebugOverlayLine(unsigned row, const char *text)
+{
+	if (!m_ScreenReady || row == 0u || row > 20u)
+	{
+		return;
+	}
+
+	const unsigned index = row - 1u;
+	const unsigned old_len = m_DebugOverlayLineLengths[index];
+	const unsigned new_len = text != 0 ? (unsigned) strlen(text) : 0u;
+
+	if (old_len > 0u)
+	{
+		CString clear;
+		clear.Format("\x1b[97m\x1b[49m\x1b[%u;1H%*s", row, (int) old_len, "");
+		WriteScreenText(clear);
+	}
+
+	if (new_len > 0u)
+	{
+		CString line;
+		line.Format("\x1b[97m\x1b[49m\x1b[%u;1H%s", row, text);
+		WriteScreenText(line);
+	}
+
+	m_DebugOverlayLineLengths[index] = new_len;
 }
 
 void CComboKernel::WriteScreenText(const char *text)

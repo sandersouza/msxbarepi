@@ -4,6 +4,7 @@
 #include "../third_party/fmsx/Z80/Z80.h"
 #include "Sound.h"
 #include "fmsx_audio_layout.h"
+#include "fmsx_local_scc_render.h"
 #include "fmsx_compat/stdio.h"
 #include "fmsx_virtual_fs.h"
 #include "fmsx_initramfs.h"
@@ -117,6 +118,7 @@ extern int fmsx_vdp_get_ie1_target_delta(void);
 extern uint8_t fmsx_vdp_get_effective_odd_page(void);
 extern uint8_t fmsx_vdp_get_render_page(void);
 extern void fmsx_video_get_presentation(TFmsxVideoPresentation *presentation);
+extern void fmsx_video_get_host_debug(TFmsxVideoHostDebug *debug);
 extern void fmsx_vdp_trace_get_view(const TFmsxVDPTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
 extern void fmsx_kmg_trace_get_view(const TFmsxKmgTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
 extern void fmsx_scc_trace_get_view(const TFmsxSCCTraceEvent **events, unsigned *capacity, unsigned *count, unsigned *head, unsigned *dropped);
@@ -163,6 +165,8 @@ extern unsigned FmsxTurboPercent;
 extern int g_fmsx_quit_after_vblank;
 extern void fmsx_audio_begin_frame_render_accounting(void);
 extern unsigned fmsx_audio_end_frame_render_accounting(void);
+extern void fmsx_audio_mix_get_debug(TFmsxAudioMixDebug *stats);
+extern void fmsx_audio_mix_reset_debug_window(void);
 extern void fmsx_runtime_keyboard_reset_pipeline(void);
 extern uint64_t msxbare_monotonic_time_us(void);
 
@@ -2579,6 +2583,85 @@ void fmsx_runtime_get_kmg_trace_view(TFmsxKmgTraceView *view)
     fmsx_kmg_trace_get_view(&view->events, &view->capacity, &view->count, &view->head, &view->dropped);
 }
 
+void fmsx_runtime_get_audio_mix_debug(TFmsxAudioMixDebug *stats)
+{
+    if (stats == 0)
+    {
+        return;
+    }
+
+    memset(stats, 0, sizeof(*stats));
+    fmsx_audio_mix_get_debug(stats);
+}
+
+void fmsx_runtime_get_audio_channel_debug(TFmsxAudioChannelDebug *stats)
+{
+    unsigned channel;
+    TFmsxLocalSccRenderState *scc_primary;
+    TFmsxLocalSccRenderState *scc_secondary;
+
+    if (stats == 0)
+    {
+        return;
+    }
+
+    memset(stats, 0, sizeof(*stats));
+    stats->frame_number = FmsxVDPFrameCounter;
+
+    for (channel = 0u; channel < 3u; ++channel)
+    {
+        const unsigned amp = (unsigned) PSG.R[8u + channel];
+        const boolean tone_on = ((PSG.R[7] & (1u << channel)) == 0u) ? TRUE : FALSE;
+        const boolean noise_on = ((PSG.R[7] & (1u << (channel + 3u))) == 0u) ? TRUE : FALSE;
+        const boolean audible = ((amp & 0x0Fu) != 0u || (amp & 0x10u) != 0u) ? TRUE : FALSE;
+
+        if (audible && tone_on)
+        {
+            stats->psg_mask |= (1u << channel);
+        }
+        if (audible && noise_on)
+        {
+            stats->psg_mask |= (1u << (channel + 3u));
+        }
+    }
+
+    for (channel = 0u; channel < YM2413_CHANNELS; ++channel)
+    {
+        if (OPLL.Freq[channel] > 0 && OPLL.Volume[channel] > 0)
+        {
+            stats->fm_mask |= (1u << channel);
+        }
+    }
+
+    scc_primary = fmsx_scc_get_render_state(FMSX_SCC_CHIP_PRIMARY);
+    scc_secondary = fmsx_scc_get_render_state(FMSX_SCC_CHIP_SECONDARY);
+    for (channel = 0u; channel < SCC_CHANNELS; ++channel)
+    {
+        if (scc_primary != 0
+            && ((scc_primary->Enable >> channel) & 1u)
+            && ((scc_primary->VolumeNibble[channel] & 0x0Fu) != 0u
+                || (scc_primary->NextVolumeNibble[channel] & 0x0Fu) != 0u
+                || scc_primary->DaVolume[channel] != 0))
+        {
+            stats->scc_primary_mask |= (1u << channel);
+        }
+
+        if (scc_secondary != 0
+            && ((scc_secondary->Enable >> channel) & 1u)
+            && ((scc_secondary->VolumeNibble[channel] & 0x0Fu) != 0u
+                || (scc_secondary->NextVolumeNibble[channel] & 0x0Fu) != 0u
+                || scc_secondary->DaVolume[channel] != 0))
+        {
+            stats->scc_secondary_mask |= (1u << channel);
+        }
+    }
+}
+
+void fmsx_runtime_reset_audio_mix_debug_window(void)
+{
+    fmsx_audio_mix_reset_debug_window();
+}
+
 unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsigned *height)
 {
     if (g_boot_video_gate_frames_remaining > 0u)
@@ -2614,4 +2697,14 @@ void fmsx_runtime_get_video_presentation(TFmsxVideoPresentation *presentation)
     }
 
     fmsx_video_get_presentation(presentation);
+}
+
+void fmsx_runtime_get_video_host_debug(TFmsxVideoHostDebug *debug)
+{
+    if (debug == 0)
+    {
+        return;
+    }
+
+    fmsx_video_get_host_debug(debug);
 }

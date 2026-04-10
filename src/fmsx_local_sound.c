@@ -25,6 +25,7 @@
 #include <string.h>
 
 extern AY8910 PSG;
+extern uint32_t FmsxVDPFrameCounter;
 
 #if defined(_WIN32)
 #include <direct.h>
@@ -128,6 +129,81 @@ static fmsx_bus_voicing_t g_BusVoicing[MIX_BUS_COUNT] =
   { MSXBARE_FMSX_BUS_UNITY_GAIN_PCT, MSXBARE_FMSX_SCC_HARMAN_SHELF_EXTRA_PCT,  0 },
   { MSXBARE_FMSX_SCC2_GAIN_PCT, MSXBARE_FMSX_SCC2_HARMAN_SHELF_EXTRA_PCT, 0 }
 };
+
+static TFmsxAudioMixDebug g_AudioMixDebug = { 0 };
+
+static unsigned fmsx_mix_peak_abs(const int *buf,unsigned count)
+{
+  unsigned i;
+  unsigned peak = 0u;
+
+  if(!buf || !count) return 0u;
+
+  for(i=0u; i<count; ++i)
+  {
+    const int sample = buf[i];
+    const unsigned abs_sample = sample >= 0 ? (unsigned)sample : (unsigned)(-sample);
+    if(abs_sample > peak) peak = abs_sample;
+  }
+
+  return peak;
+}
+
+static void fmsx_audio_mix_account_bus(unsigned bus_index,const int *buf,unsigned samples)
+{
+  unsigned peak;
+
+  if(!buf || !samples) return;
+
+  peak = fmsx_mix_peak_abs(buf,samples);
+  g_AudioMixDebug.frame_number = FmsxVDPFrameCounter;
+  g_AudioMixDebug.master_switch = (unsigned)MasterSwitch & ((1u<<SND_CHANNELS)-1u);
+  g_AudioMixDebug.fm_backend_nukeykt = OPTION(MSX_NUKEYKT) ? 1u : 0u;
+
+  if(peak)
+  {
+    g_AudioMixDebug.bus_active_mask |= (1u << bus_index);
+  }
+
+  switch(bus_index)
+  {
+    case MIX_BUS_PSG:
+      if(peak > g_AudioMixDebug.psg_peak) g_AudioMixDebug.psg_peak = peak;
+      break;
+    case MIX_BUS_FM:
+      if(peak > g_AudioMixDebug.fm_peak) g_AudioMixDebug.fm_peak = peak;
+      break;
+    case MIX_BUS_SCC_PRIMARY:
+      if(peak > g_AudioMixDebug.scc_primary_peak) g_AudioMixDebug.scc_primary_peak = peak;
+      break;
+    case MIX_BUS_SCC_SECONDARY:
+      if(peak > g_AudioMixDebug.scc_secondary_peak) g_AudioMixDebug.scc_secondary_peak = peak;
+      break;
+    default:
+      break;
+  }
+}
+
+static void fmsx_audio_mix_account_main(const int *buf,unsigned samples)
+{
+  const unsigned peak = fmsx_mix_peak_abs(buf,samples);
+  g_AudioMixDebug.frame_number = FmsxVDPFrameCounter;
+  g_AudioMixDebug.sample_count += samples;
+  g_AudioMixDebug.master_switch = (unsigned)MasterSwitch & ((1u<<SND_CHANNELS)-1u);
+  g_AudioMixDebug.fm_backend_nukeykt = OPTION(MSX_NUKEYKT) ? 1u : 0u;
+  if(peak > g_AudioMixDebug.main_peak) g_AudioMixDebug.main_peak = peak;
+}
+
+void fmsx_audio_mix_get_debug(TFmsxAudioMixDebug *stats)
+{
+  if(!stats) return;
+  *stats = g_AudioMixDebug;
+}
+
+void fmsx_audio_mix_reset_debug_window(void)
+{
+  memset(&g_AudioMixDebug,0,sizeof(g_AudioMixDebug));
+}
 
 static int fmsx_render_adjust_scc_wave_sample(signed char wav,uint8_t volume_nibble)
 {
@@ -946,10 +1022,16 @@ static void RenderAudio(int *Wave,unsigned int Samples)
     Samples
   );
 
+  fmsx_audio_mix_account_bus(MIX_BUS_PSG,PsgWave,Samples);
+  if(!OPTION(MSX_NUKEYKT)) fmsx_audio_mix_account_bus(MIX_BUS_FM,FmWave,Samples);
+  fmsx_audio_mix_account_bus(MIX_BUS_SCC_PRIMARY,SccPrimaryWave,Samples);
+  fmsx_audio_mix_account_bus(MIX_BUS_SCC_SECONDARY,SccSecondaryWave,Samples);
+
   MixBusIntoMain(Wave,PsgWave,Samples,&g_BusVoicing[MIX_BUS_PSG]);
   MixBusIntoMain(Wave,FmWave,Samples,&g_BusVoicing[MIX_BUS_FM]);
   MixBusIntoMain(Wave,SccPrimaryWave,Samples,&g_BusVoicing[MIX_BUS_SCC_PRIMARY]);
   MixBusIntoMain(Wave,SccSecondaryWave,Samples,&g_BusVoicing[MIX_BUS_SCC_SECONDARY]);
+  if(!OPTION(MSX_NUKEYKT)) fmsx_audio_mix_account_main(Wave,Samples);
 }
 
 /** PlayAudio() **********************************************/
@@ -1037,7 +1119,9 @@ unsigned int RenderAndPlayAudio(unsigned int Samples)
         frac=R-idx;
         FmNukeWave[K]=(int)(.5+128.0*(OPLL_NukeYKT.samples[idx]*(1.0-frac) + OPLL_NukeYKT.samples[idx+1]*frac));
       }
+      fmsx_audio_mix_account_bus(MIX_BUS_FM,FmNukeWave,J);
       MixBusIntoMain(Buf,FmNukeWave,J,&g_BusVoicing[MIX_BUS_FM]);
+      fmsx_audio_mix_account_main(Buf,J);
     }
 
     if(PlayAudio(Buf,J)<J) { I+=J;break; }

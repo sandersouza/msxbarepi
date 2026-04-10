@@ -27,6 +27,7 @@ typedef struct {
     boolean hires_mode;
     boolean interlaced_mode;
     boolean woven_hires;
+    boolean field_parity_odd;
 } EmulatorBackendVideoPresentation;
 
 typedef struct {

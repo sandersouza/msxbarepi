@@ -45,6 +45,14 @@ extern void msxbare_uart_write(const char *text);
 extern void fmsx_runtime_notify_media_probe(void);
 extern int g_fmsx_fmpac_enabled;
 extern unsigned g_fmsx_megaram_kb;
+
+/*
+ * Baremetal diagnostics must go through the Circle logger in kernel.cpp.
+ * Leaving legacy libretro callback logs alive here can crash the core when a
+ * stale/corrupted function pointer is hit from the hot path.
+ */
+#undef log_cb
+#define log_cb ((retro_log_printf_t)0)
 /* 0=line192 (legacy), 1=post-VBlank, 2=full-frame boundary */
 int g_fmsx_quit_after_vblank = 1;
 
@@ -308,6 +316,7 @@ uint8_t FmsxVDPLineR9Latched = 0;     /* R#9 snapshot for current scanline */
 uint8_t FmsxVDPLineOddPageLatched = 0;/* EO-derived display page for current scanline */
 uint8_t FmsxVDPLineFlipEvenOddLatched = 0; /* R#9 bit2 snapshot for current scanline */
 uint8_t FmsxVDPLineInterlaceOnLatched = 0; /* R#9 bit3 snapshot for current scanline */
+uint8_t FmsxVDPLineInterlaceOddFieldLatched = 1u; /* field parity used by HIRES weave (1=odd/lower, 0=even/upper) */
 uint8_t FmsxVDPLineColorSpritesLatched[384]; /* SCREEN 6/7 sprite line prepared for the next scanline, with 32px margins */
 uint8_t FmsxVDPLineColorSpritesRender[384];  /* SCREEN 6/7 sprite line consumed by the current scanline, with 32px margins */
 uint8_t FmsxVDPLineColorSpritesValid = 0;    /* next-line sprite line ready */
@@ -408,6 +417,12 @@ static unsigned g_fmsx_audio_port_trace_count = 0;
 static unsigned g_fmsx_audio_port_trace_dropped = 0;
 static uint32_t g_fmsx_audio_port_trace_seq = 0;
 static uint8_t g_fmsx_audio_port_trace_active_valid = 0;
+#ifndef MSXBARE_AUDIO_TRACE_TARGET_FRAME
+#define MSXBARE_AUDIO_TRACE_TARGET_FRAME 5680u
+#endif
+#ifndef MSXBARE_AUDIO_TRACE_TARGET_WINDOW
+#define MSXBARE_AUDIO_TRACE_TARGET_WINDOW 32u
+#endif
 #endif
 uint32_t FmsxVDPPort99ReadCount = 0;  /* Reads from VDP status port 99h */
 uint32_t FmsxVDPPort99WriteCount = 0; /* Writes to VDP address/control port 99h */
@@ -771,10 +786,13 @@ static uint8_t fmsx_vdp_status1_live(void);
 static uint8_t fmsx_vdp_ie1_target_line(void);
 static int fmsx_vdp_ie1_target_delta(void);
 static uint8_t fmsx_vdp_effective_odd_page(void);
+static uint8_t fmsx_vdp_effective_interlace_odd_field(void);
 static int fmsx_vdp_active_vdp_ticks(void);
 static unsigned fmsx_vdp_line_ticks_now(void);
 static void fmsx_vdp_trace_bootlogo_regwrite(uint8_t reg,uint8_t value,uint8_t old_value,uint8_t source_port);
 static int fmsx_vdp_hscroll_active256_local(void);
+static uint8_t fmsx_vdp_r2_shift(uint8_t ScreenMode);
+static uint8_t fmsx_vdp_r2_base_with_reg25(uint8_t ScreenMode,uint8_t Reg2,uint8_t Reg25);
 void RefreshLine4PlainRange(uint8_t Y,unsigned X0,unsigned X1);
 void RefreshLine6WideRange(uint8_t Y,unsigned X0,unsigned X1);
 void RefreshLine7WideRange(uint8_t Y,unsigned X0,unsigned X1);
@@ -2114,22 +2132,32 @@ static void fmsx_vdp_render_screen4_partial(uint8_t scanline,unsigned end_column
 
 static void fmsx_vdp_capture_screen67_render_state_now(void)
 {
+  uint8_t J,R2Base;
+
   if(FmsxVDPLineScreen67StateValid) return;
 
   /*
    * blueMSX SCREEN 6/7 captures scroll/page state on the first refresh call
    * of the line (X == -1), not at the raw scanline boundary. If the BIOS
-   * updates R#2/R#25/R#26/R#27 before that first refresh, the current line
-   * already uses the new state. Mirror that lazily here.
+   * updates R#2/R#9/R#18/R#25/R#26/R#27 before that first refresh, the current
+   * line already uses the new state. Mirror that lazily here with a coherent
+   * snapshot, so scroll/page source and field parity never come from different
+   * line epochs.
    */
-  FmsxVDPLineChrTabLatched=ChrTab;
-  FmsxVDPLineChrTabMLatched=ChrTabM;
   FmsxVDPLineR2Latched=VDP[2];
+  FmsxVDPLineR9Latched=VDP[9];
   FmsxVDPLineR25Latched=VDP[25];
   FmsxVDPLineR26Latched=VDP[26];
   FmsxVDPLineR27Latched=VDP[27];
   FmsxVDPLineR18Latched=VDP[18];
+  J=fmsx_vdp_r2_shift(ScrMode);
+  R2Base=fmsx_vdp_r2_base_with_reg25(ScrMode,FmsxVDPLineR2Latched,FmsxVDPLineR25Latched);
+  FmsxVDPLineChrTabLatched=VRAM+((int)R2Base<<J);
+  FmsxVDPLineChrTabMLatched=ChrTabM;
+  FmsxVDPLineFlipEvenOddLatched=(VDP[9]&0x04u)? 1u:0u;
+  FmsxVDPLineInterlaceOnLatched=(VDP[9]&0x08u)? 1u:0u;
   FmsxVDPLineOddPageLatched=fmsx_vdp_effective_odd_page();
+  FmsxVDPLineInterlaceOddFieldLatched=fmsx_vdp_effective_interlace_odd_field();
   FmsxVDPLineVScrollLatched=VDP[23];
   FmsxVDPLineScreen67StateValid=1u;
 }
@@ -2320,6 +2348,20 @@ static uint8_t fmsx_vdp_effective_odd_page(void)
    * Bit1=0 selects the alternate ("odd") page when EO is enabled.
    */
   return (VDPStatus[2]&0x02u)? 0u:1u;
+}
+
+static uint8_t fmsx_vdp_effective_interlace_odd_field(void)
+{
+  /*
+   * blueMSX distinguishes field parity from bitmap page selection:
+   * - vdpIsOddPage() selects the VRAM page when EO is active
+   * - frameBufferSetInterlace() selects the visible field parity
+   *
+   * Keep the same split locally. In HIRES_PROGRESSIVE the renderer weaves the
+   * current field into either the upper or lower physical line, so it must use
+   * the field parity, not the EO-gated VRAM page bit.
+   */
+  return ((VDPStatus[2] & 0x02u) && (VDP[9] & 0x04u) && (VRAMPages >= 8)) ? 0u : 1u;
 }
 
 static void fmsx_vdp_set_write_context(uint8_t source_port)
@@ -2667,19 +2709,14 @@ static void fmsx_audio_port_trace_push_direct(uint8_t chip,uint8_t op,uint8_t re
 static void fmsx_audio_port_trace_log(uint8_t chip,uint8_t op,uint8_t reg,uint8_t value)
 {
   const uint8_t capture_window = fmsx_vdp_trace_window();
-
-  if(!(fmsx_rom_type_is_manbow2(ROMType[0]) || fmsx_rom_type_is_manbow2(ROMType[1]))) return;
-  if(!g_fmsx_scc_trace_started || g_fmsx_scc_trace_capture_done) return;
-  if(g_fmsx_scc_trace_seen_slot_flow
-  && (capture_window==FMSX_VDP_TRACE_NONE)
-  && (g_fmsx_scc_trace_session>0u)) return;
+  const uint8_t session = g_fmsx_scc_trace_session_open ? g_fmsx_scc_trace_session : 0u;
 
   fmsx_audio_port_trace_flush_frame_boundary();
 
   if(op==FMSX_AUDIO_PORT_TRACE_CTRL)
   {
     fmsx_audio_port_trace_commit_active();
-    fmsx_audio_port_trace_push_direct(chip,op,reg,value,capture_window,g_fmsx_scc_trace_session);
+    fmsx_audio_port_trace_push_direct(chip,op,reg,value,capture_window,session);
     return;
   }
 
@@ -2690,7 +2727,7 @@ static void fmsx_audio_port_trace_log(uint8_t chip,uint8_t op,uint8_t reg,uint8_
   && g_fmsx_audio_port_trace_active.op==op
   && g_fmsx_audio_port_trace_active.reg==reg
   && g_fmsx_audio_port_trace_active.capture_window==capture_window
-  && g_fmsx_audio_port_trace_active.session==g_fmsx_scc_trace_session
+  && g_fmsx_audio_port_trace_active.session==session
   && g_fmsx_audio_port_trace_active.count<0xFFFFu)
   {
     g_fmsx_audio_port_trace_active.value_last = value;
@@ -2699,7 +2736,7 @@ static void fmsx_audio_port_trace_log(uint8_t chip,uint8_t op,uint8_t reg,uint8_
   }
 
   fmsx_audio_port_trace_commit_active();
-  fmsx_audio_port_trace_begin_active(FmsxVDPFrameCounter,CPU.PC.W,chip,op,reg,value,capture_window,g_fmsx_scc_trace_session);
+  fmsx_audio_port_trace_begin_active(FmsxVDPFrameCounter,CPU.PC.W,chip,op,reg,value,capture_window,session);
 }
 
 static void fmsx_scc_trace_log(uint8_t slot,uint8_t ps,uint8_t ss,uint8_t mapper,uint16_t addr,uint8_t value)
@@ -5393,7 +5430,7 @@ static uint8_t fmsx_vdp_r2_shift(uint8_t ScreenMode)
   return (ScreenMode>6)&&(ScreenMode!=MAXSCREEN+1)? 11:10;
 }
 
-static uint8_t fmsx_vdp_r2_base(uint8_t ScreenMode,uint8_t Reg2)
+static uint8_t fmsx_vdp_r2_base_with_reg25(uint8_t ScreenMode,uint8_t Reg2,uint8_t Reg25)
 {
   uint8_t R2Base;
 
@@ -5402,11 +5439,16 @@ static uint8_t fmsx_vdp_r2_base(uint8_t ScreenMode,uint8_t Reg2)
   /* In bitmap modes, R2 bit5 becomes the display-page selector when
    * multi-page horizontal scroll is enabled and must not skew the base.
    */
-  if(MODEL(MSX_MSX2P) && (VDP[25]&0x01) && (Reg2&0x20)
+  if(MODEL(MSX_MSX2P) && (Reg25&0x01) && (Reg2&0x20)
   && (((ScreenMode>=5)&&(ScreenMode<=8))||((ScreenMode>=10)&&(ScreenMode<=12))))
     R2Base&=~0x20;
 
   return R2Base;
+}
+
+static uint8_t fmsx_vdp_r2_base(uint8_t ScreenMode,uint8_t Reg2)
+{
+  return fmsx_vdp_r2_base_with_reg25(ScreenMode,Reg2,VDP[25]);
 }
 
 /** SetScreen() **********************************************/
@@ -5711,7 +5753,6 @@ uint16_t LoopZ80(Z80 *R)
 
       FmsxVDPFrameCounter++;
       VDPStatus[2]^=0x02;
-
       /* Drawing now... */
       Drawing=1;
 
@@ -5777,11 +5818,12 @@ uint16_t LoopZ80(Z80 *R)
     FmsxVDPLineR26Latched=VDP[26];
     FmsxVDPLineR27Latched=VDP[27];
     FmsxVDPLineR18Latched=VDP[18];
-    FmsxVDPLineR9Latched=VDP[9];
-    FmsxVDPLineFlipEvenOddLatched=(VDP[9]&0x04u)? 1u:0u;
-    FmsxVDPLineInterlaceOnLatched=(VDP[9]&0x08u)? 1u:0u;
-    FmsxVDPLineOddPageLatched=fmsx_vdp_effective_odd_page();
-    FmsxVDPLineVScrollLatched=VDP[23];
+  FmsxVDPLineR9Latched=VDP[9];
+  FmsxVDPLineFlipEvenOddLatched=(VDP[9]&0x04u)? 1u:0u;
+  FmsxVDPLineInterlaceOnLatched=(VDP[9]&0x08u)? 1u:0u;
+  FmsxVDPLineOddPageLatched=fmsx_vdp_effective_odd_page();
+  FmsxVDPLineInterlaceOddFieldLatched=fmsx_vdp_effective_interlace_odd_field();
+  FmsxVDPLineVScrollLatched=VDP[23];
     FmsxVDPDrawingLatched=Drawing;
     FmsxVDPUCountLatched=UCount;
 

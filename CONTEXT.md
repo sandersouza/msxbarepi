@@ -2,39 +2,131 @@
 
 Ponto de entrada rapido para contexto operacional do projeto.
 
-- Contexto completo e historico de handoff da branch atual: [docs/handoff/70-suporte-joysticks-usb-mapeamento-atari-msx.md](docs/handoff/70-suporte-joysticks-usb-mapeamento-atari-msx.md)
+- Contexto completo e historico de handoff da branch atual: [docs/handoff/247-hires-interlaced-flicker-paginas-erradas.md](docs/handoff/247-hires-interlaced-flicker-paginas-erradas.md)
 - Guardrail ativo: nem `git commit` local nem `git push` devem acontecer durante cortes experimentais; ambos so voltam quando o usuario declarar explicitamente que a issue ativa ficou estavel.
-- Branch ativa da rodada: `main`
+- Branch ativa da rodada: `247-hires-interlaced-flicker-paginas-erradas`
+- Atualizacao 2026-04-09 (20:35 -03):
+  - a rodada de investigacao de audio/video por UART foi encerrada sem continuar aberta no runtime normal
+  - `AUDQ`, `AUDM`, `AUDC`, `AUD EVT`, `VDPM`, `VDPH` e `VIDP` saem do loop principal
+  - o trace de portas de audio no core local volta a ficar desligado em compile-time (`FMSX_SMANBOW_AUDIO_TRACE_ENABLED=0`)
+  - o problema de canais faltando no `UNKNOWN REALITY` fica explicitamente adiado para outra rodada
+  - build local validada: `BUILD_BID=202604092035-issue247-remove-av-uart`, `BUILD_ID=35B6`, artefato `artifacts/kernel8-issue247.img`, `sha1 3cbe6fad9b552653793c65c8f58cad9d767797d7`
+- Atualizacao 2026-04-09 (19:10 -03):
+  - a rodada `DFDC` provou que o problema remanescente do `AUD EVT` nao era mais compilacao: `AUDC` saiu, mas `AUD EVT` ficou zerado no arquivo inteiro
+  - o corte local atual move o filtro de frame para o kernel:
+    - o ring de writes `FM/PSG` passa a gravar continuamente em `DEBUG=1`
+    - `LogAudioPortTraceUart()` imprime apenas eventos cuja `F:` cai na janela investigada
+  - isso permite recuperar writes que ocorreram pouco antes da mudanca de mascara `FM 077 -> 1F7 -> 1FF`
+  - build local validada: `BUILD_BID=202604091910-issue247-audevt-ring-window`, `BUILD_ID=69FF`, artefato `artifacts/kernel8-issue247.img`, `sha1 f156a4aea13a31502f9e847df733af97be955b1f`
+- Atualizacao 2026-04-09 (18:45 -03):
+  - o trace `AUD EVT` de registradores `FM/PSG` estava inteiro compilado fora por `FMSX_SMANBOW_AUDIO_TRACE_ENABLED=0`
+  - o corte local atual liga esse trace automaticamente em `DEBUG=1`, amplia o buffer para `4096` eventos e aperta a janela de captura para `F:5680 +/- 32`
+  - build local validada: `BUILD_BID=202604091845-issue247-audevt-enable`, `BUILD_ID=DFDC`, artefato `artifacts/kernel8-issue247.img`, `sha1 e76368e736e5990f150148a3fe6928deade8371a`
+- Atualizacao 2026-04-09 (18:05 -03):
+  - a trilha de audio do `UNKNOWN REALITY` foi refinada para o ponto certo: o usuario percebe falta de 1 ou 2 canais perto de `F:5680`, nao perda total de `FM/PSG/SCC`
+  - o corte local atual adiciona:
+    - `F:<frame>` em `AUDQ/AUDM`
+    - `AUDC` com mascara de canais ativos (`AY/FM/SCC1/SCC2`)
+    - `AUD EVT` de portas `FM/PSG` capturado apenas em `F:5680 +/- 64`
+  - objetivo do proximo round: decidir se os canais faltantes deixam de receber write ou se o write existe e some no render/mix
+- Atualizacao 2026-04-09 (17:33 -03):
+  - a telemetria nova de audio (`AUDQ/AUDM`) compilou, mas nao apareceu em campo por um erro simples no kernel
+  - `LogAudioQueueUart()` e `LogVideoPacingUart()` existiam, porem nao estavam ligados no loop principal
+  - correcao local em `src/kernel.cpp`: os dois agora sao chamados logo apos `emulator_backend_step_frame()`, no mesmo ponto onde `VDPM/VDPH` ja funcionavam
+  - build local validada: `BUILD_BID=202604091955-issue247-audm-loop-hook`, artefato `artifacts/kernel8-issue247.img`
+- Atualizacao 2026-04-09 (17:28 -03):
+  - a rodada atual saiu momentaneamente do video para fechar uma duvida de audio no `UNKNOWN REALITY`: se o mixer local realmente esta produzindo `PSG + FM + SCC1 + SCC2` na primeira parte da musica
+  - a leitura estatica do codigo confirmou que o mixer estrutural soma os quatro buses e que `MasterSwitch` continua cobrindo `AY8910`, `YM2413` e `SCC`
+  - o corte local atual adiciona telemetria de mix por janela:
+    - `psg_peak`
+    - `fm_peak`
+    - `scc_primary_peak`
+    - `scc_secondary_peak`
+    - `main_peak`
+    - `bus_active_mask`
+    - `master_switch`
+    - backend FM ativo (`BLU` vs `NUK`)
+  - o kernel agora emite `AUDM ...` pela UART no mesmo cadence de `AUDQ`, e reseta a janela ao togglar `F10`
+  - build local validada: `BUILD_BID=202604091930-issue247-audm-bus-peaks`, `Compile time: Apr  9 2026 17:27:43`, artefato `artifacts/kernel8-issue247.img`, `sha1 e1620777976dcd0288c781de6a248ee7f992b549`
+- Atualizacao 2026-04-09 (23:40 -03):
+  - depois que o `HIRES/interlaced` ficou visualmente correto, o `UNKNOWN REALITY` passou a derrubar o Raspberry Pi na saida do modo por volta de `F:12520`
+  - o dump do UART fechou a causa offline:
+    - `LR=0xB03BC`
+    - mapeado no ELF da build em campo para `LoopZ80()` em `src/fmsx_local/MSX.c:5917`
+    - o ponto exato era um `blr` para `log_cb`
+  - isso mostrou que o crash nao vinha do switch de modo do VDP, e sim de telemetria legada `libretro` ainda viva no core local
+  - o corte local atual neutraliza `log_cb` em compile-time nos arquivos locais:
+    - `src/fmsx_local/MSX.c`
+    - `src/fmsx_local/Z80.c`
+    - `src/fmsx_local/V9938.c`
+    - `src/fmsx_local_wd1793.c`
+  - o runtime baremetal continua usando apenas o logger oficial do Circle em `src/kernel.cpp`
+  - build local validada: `BUILD_BID=202604092335-issue247-disable-logcb-hotpath`, `BUILD_ID=6A29`, artefato `artifacts/kernel8-issue247.img`, `sha1 307e907b73d1c7783ab2ee3c692d243fbedda5be`
+- Atualizacao 2026-04-09 (23:05 -03):
+  - a leitura consolidada da UART manteve `Screen:07`, `BH/LH` estaveis e `AB/A1`, `H0/H1`, `FE/FO` alternando como esperado entre `FP:0` e `FP:1`
+  - isso removeu de vez pagina, modo e altura do host como hipoteses dominantes
+  - o padrao visual reportado pelo usuario ficou mais especifico: uma `FP` parece correta, a outra ainda aparece com linhas intercaladas
+  - o corte local atual move a correcao para o contrato `host -> kernel`:
+    - `TFmsxVideoPresentation` / `EmulatorBackendVideoPresentation` agora carregam `field_parity_odd`
+    - `src/fmsx_host_stubs.c` publica essa paridade a partir de `FmsxVDPLineInterlaceOddFieldLatched`
+    - `src/kernel.cpp` faz `MapWovenHiResPhysicalY()` usar essa paridade, em vez de assumir `even-first` fixo em `woven_hires`
+  - build local validada: `BUILD_BID=202604091955-issue247-woven-field-priority`, `BUILD_ID=BFE0`, artefato `artifacts/kernel8-issue247.img`, `sha1 5f153388b69a523b53ae387865483ac81bc2cf41`
+- Atualizacao 2026-04-09 (22:05 -03):
+  - a UART da rodada mais recente fechou que o problema remanescente do `UNKNOWN REALITY` nao esta mais em selecao de pagina nem em geometria do host
+  - `AB/A1` e `H0/H1` alternam entre `FP:0` e `FP:1`, e `FE/FO` divergem no frame inteiro
+  - isso afunilou o bug para a fase vertical do blit do kernel: o buffer `HIRES woven` estava sendo escalado como `456` linhas fisicas independentes
+  - o corte local atual move a correcao para `src/kernel.cpp`:
+    - novo helper `MapWovenHiResPhysicalY()`
+    - `BlitFmsxFrame()` agora consulta `EmulatorBackendVideoPresentation`
+    - quando `woven_hires == 1`, o `y-map` usa `logical_height` para preservar o par `linha logica -> sublinhas fisicas even/odd`
+    - o fast path fisico inteiro fica desligado para `woven_hires`
+  - build local validada: `BUILD_BID=202604091930-issue247-woven-yphase`, artefato `artifacts/kernel8-issue247.img`, `sha1 dcfeb42e1fa5960b657d792ce8c86a89f8575251`
+- Atualizacao 2026-04-09 (20:15 -03):
+  - a geometria do host para `HIRES` segue estavel; o bug remanescente continua restrito ao conteudo em `Screen 7 / HIRES / interlaced`
+  - o round anterior manteve o mesmo sintoma visual: uma das `FP` continua com intervalos entre as linhas
+  - o logger `VDPH` anterior ainda olhava `ChrTab` generico (`CB/P1`), o que nao basta mais para o helper especial do `Screen 7`
+  - o corte local desta rodada passa a capturar o path real do renderer:
+    - `AB/A1`: base real de `plane0/plane1`
+    - `H0/H1`: hashes FNV dos primeiros `64` bytes de `plane0/plane1`
+    - `PE/PO`: hashes do buffer tecido final nas linhas fisicas par/impar
+  - a releitura do UART mostrou que `AB/A1` e `H0/H1` realmente alternam entre campos, mas `PE/PO` ficaram iguais na linha amostral
+  - o corte seguinte ampliou o logger para o frame inteiro:
+    - `FE/FO`: hashes do frame hi-res inteiro por paridade fisica
+  - isso reduz o proximo round a uma pergunta objetiva:
+    - o campo ruim esta lendo o par de paginas errado
+    - ou o weave fisico final esta sendo preservado/escrito errado
+  - build local validada: `BUILD_BID=202604092030-issue247-screen7-parity-frame-hash`, `HEAD=af38697`, `CROSS=aarch64-elf-`
 - Estado atual da rodada:
-  - a umbrella `#82` ja foi mergeada em `main`
-  - a `#70` foi mergeada em `main` pelo PR `#246` e fechada
-  - rodada atual em `main`: remocao do antigo modo `Scanline CRT`, mantendo apenas `Scanlines OFF/ON` com a logica LCD
-  - o worktree local contem o suporte funcional de joystick USB, o submenu `JOYPAD MAPPING`, a navegacao do menu pausado por joystick, a nova politica de `Scale` no menu `Debug`, a persistencia/carga do `joy_map_*` pelo `.cfg`, o retorno do `3x` em `720p` e o alinhamento do snapshot do menu ao mesmo crop do blit principal
-  - a branch remota `70-suporte-joysticks-usb-mapeamento-atari-msx` foi removida
+  - a branch foi aberta a partir de `main` para tratar a issue avulsa `#247`
+  - o sintoma-alvo foi confirmado no demo `UNKNOWN REALITY`
+  - a comparacao historica mostrou que o `UNKNOWN REALITY` ja funcionou antes da trilha de `frame snapshot`
+  - o estudo offline do `disk1` reforcou que a cena usa um modo hi-res estavel com swap/copia de paginas VRAM, nao uma alternancia literal entre `Screen 7` e `Screen 8`
+  - a UART `VDPM` ja provou que a cena problematica continua em `Screen:07`; o que alterna frame a frame e a altura exportada (`L:272x228` <-> `L:272x114`)
+  - o corte ativo desta branch deixa de perseguir troca de screen mode e passa a fixar a altura fisica do buffer `HIRES_PROGRESSIVE` em `HEIGHT<<1`
+  - a telemetria ativa da rodada continua usando o logger do Circle no `kernel` com `VDPM ...`, e ganha `VDPH ...` por `16` frames apos `HIRES-ON` para expor `R9/S2/EO/IL/LS/BH/LH/WH`
+  - o ultimo reteste em campo, em `Scale 4x`, deixou o `HIRES/interlaced` quase visualmente correto, mas a UART continuou provando alternancia de altura (`272x228` <-> `272x114`)
+  - a contradicao util segue sendo host-side: `WH:1` com `BH/LH` alternando entre `456/228` e `228/114`
+  - a UART nova fechou o ponto exato: os quadros ruins estao caindo no branch `BR:0` do host, enquanto os bons ficam em `BR:1`
+  - o corte local atual removeu o branch especial `g_frame_number == 0u` de `set_image_buffer_size()`, deixando `HIRES` sempre fixo em `HEIGHT<<1`
+  - com isso, o modo deixou de alternar entre quadro normal e quadro verticalmente esticado
+  - o sintoma restante agora e mais fino: linhas intercaladas do `HIRES/interlaced` ficam levemente desencaixadas na horizontal
+  - o usuario confirmou que esse desencaixe aparece em qualquer tamanho de viewport, nao apenas em `Scale 4x`
+  - a hipotese ativa desta rodada deixa de ser viewport/scaler e passa a ser composicao do `Screen 7` wide
+  - a ultima hipotese de hscroll unscaled foi descartada por regressao imediata no boot logo do `MSX2+`
+  - a nova leitura de campo ficou mais forte: `FP:0 IL:1` parece coerente, `FP:1 IL:1` mostra linhas com intervalo
+  - isso desloca a investigacao para a preservacao do campo oposto no buffer hi-res tecido
+  - o corte local atual faz `RefreshBorder()` e `RefreshBorder512()` deixarem de zerar a linha fisica do campo oposto durante `lineInterlacedMode`
+  - o `DEBUG [MIN]` agora mostra `F:<frame>` na linha do `FPS`, e a limpeza do overlay passou a usar o comprimento real de cada linha renderizada
+  - toda alternancia `DEBUG OVERLAY MAX/MIN/OFF` agora limpa a tela inteira antes da nova fase, para nao deixar vestigios
 - Corte tecnico atual:
-  - wrapper local `src/tools/usb_hid_gamepad.*`
-  - attach de `upad1` via Circle `usbgamepad`
-  - mapeamento fixo Atari/MSX para pads conhecidos
-  - fallback generico por `hat/axes/buttons`
-  - combinacao do gamepad USB com o bridge atual do teclado antes do push ao backend
-  - submenu `JOYPAD MAPPING` em `Settings`, abaixo de `Rensha`
-  - item de menu renderizado como `Joypad mapping [->]`, com o sufixo alinhado a direita
-  - captura continua ciclica de controle do gamepad para `UP/DOWN/LEFT/RIGHT/Button1/Button2`, sem depender de `ENTER` por item
-  - o loop pausado do menu continua sendo processado mesmo sem nova borda de teclado, para que a captura do joystick nao dependa de tecla auxiliar
-  - menu pausado navegavel por joystick USB: `button 0`/`A` = seletor, `button 1`/`B` = `ESC`, direcional/hat/analogico esquerdo = setas
-  - `START` do gamepad conhecido atua como pausa global (`F12`)
-  - `JOYPAD MAPPING` so abre pelo seletor (`button 0` / `ENTER`), nunca por direcao
-  - cada captura no `JOYPAD MAPPING` promove imediatamente o slot para o mapa efetivo
-  - `Scale` saiu de `Settings` e foi movido para `Debug`
-  - com `Debugger = OFF`, o viewport usa automaticamente o maior fator permitido pela resolucao atual (`3x` em `720/768p`, `4x` em `1080p`)
-  - com `Debugger = MIN/MAX`, o `Scale` manual volta a valer no viewport
-  - em `720p`, `Scale = 3x` tambem volta a existir no modo manual; quando a altura excede a tela, o presenter faz crop vertical central em vez de achatamento
-  - o screenshot de fundo do menu pausado agora usa a mesma geometria logica do viewport (`full_dst + crop`) em vez de reamostrar direto para a altura visivel, eliminando a pequena mudanca de escala ao abrir o menu em `720p/3x`
-  - `Save to disk` grava os `joy_map_*` a partir do mapa atual do menu, e o boot recarrega esse mapa em `BT4`
+  - `src/fmsx_host_stubs.c` permanece no contrato vivo do estado bom da `#238`
+  - `src/fmsx_local/MSX.c` preserva a separacao entre:
+    - `FmsxVDPLineOddPageLatched` para pagina bitmap/VRAM
+    - `FmsxVDPLineInterlaceOddFieldLatched` para a paridade fisica do campo
+  - `src/fmsx_local/Common.h` e `src/fmsx_local/Wide.h` agora tecem `odd field` nas linhas fisicas impares, em vez da metade superior/par
+  - `src/kernel.cpp` agora observa transicoes reais de `Screen/Mode` pelo mesmo caminho do overlay e escreve `VDPM BOOT/HIRES-ON/HIRES-OFF/MODE` na UART
 - Build local validada:
-  - `BUILD_BID=202604082350-main-scanline-lcd-only`
-  - `BUILD_ID=A196`
-  - `BUILD_HASH=ab0cc84-ed04f526b5f324996def535ed9f492b12e95262f`
+  - `BUILD_BID=202604091955-issue247-preserve-opposite-field`
 - Atualizacao incremental da `#238`: o reteste em campo mostrou que o `1F9B` corrigiu o diagnostico da tecida dupla, mas introduziu uma regressao especifica do `DEBUG`: a mailbox compacta de `HIRES` passou a usar a altura fisica dobrada do frame, o que esticou a imagem verticalmente e derrubou o FPS medio para ~29.4. O corte local atual limita essa mudanca ao presenter normal e restaura, so para o box de `DEBUG`, a geometria logica do frame (`logical_width/logical_height`) enquanto o blit continua lendo o buffer fisico completo. Build local validada: `BUILD_BID=202604081130-issue238-hires-debug-logical-box`, `BUILD_ID=69E2`, `BUILD_HASH=35411b2-47d574d199f84c7c87622570d18b69e8fbe3149c`. Sem `commit`, sem `push`.
 - Atualizacao incremental da `#238`: a investigacao de `HIRES` por metadata/presenter foi descartada como ramo experimental ruim. O presenter em `src/kernel.cpp` voltou ao contrato estavel de viewport/blit do branch, ignorando o plumbing local de `EmulatorBackendVideoPresentation` no path ativo. Isso remove a regressao de `HIRES` verticalmente esticado e a queda geral de FPS introduzida pelos builds `1F9B/69E2`. Build local validada: `BUILD_BID=202604081215-issue238-presenter-rollback-stable`, `BUILD_ID=4742`, `BUILD_HASH=35411b2-c6f9c244c5cf5d4546b3313eecf626cc3523ace3`. Sem `commit`, sem `push`.
 - Atualizacao incremental da `#238`: depois do ganho de FPS recuperado pelo reaproveitamento de linhas verticais repetidas, o presenter recebeu um segundo corte de performance, agora no custo horizontal. Em `src/kernel.cpp`, `BlitMappedLineRgb565()` e `BlitMappedLineRgb565NoDim()` passaram a reutilizar o sample ja processado quando o `xmap` repete a mesma `src_x`, evitando reler e redimencionar o mesmo pixel varias vezes na mesma scanline. O objetivo e espremer performance extra, especialmente em `HIRES`, sem mexer um pixel da imagem. Build local validada: `BUILD_BID=202604062015-issue238-blit-xmap-sample-reuse`, `BUILD_ID=AFAF`, `BUILD_HASH=35411b2-d626e9ee1cfd42edaff198525136a4ea54a68c90`. Sem `commit`, sem `push`.

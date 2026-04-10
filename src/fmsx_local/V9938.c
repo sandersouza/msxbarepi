@@ -34,6 +34,10 @@ extern void fmsx_vdp_trace_command_transition(uint8_t active);
 extern uint64_t fmsx_vdp_cpu_cycles_now(void);
 extern int HPeriod;
 
+/* Baremetal disables legacy libretro callback logging in local core files. */
+#undef log_cb
+#define log_cb ((retro_log_printf_t)0)
+
 /*************************************************************/
 /** Other useful defines                                    **/
 /*************************************************************/

@@ -37,11 +37,15 @@ extern uint32_t FmsxVDPRegLastWriteFrame[64];
 extern uint8_t FmsxVDPRegLastWritePort[64];
 extern uint8_t FmsxVDPRegLastWriteOld[64];
 extern uint8_t FmsxVDPRegLastWriteNew[64];
+extern uint8_t *FmsxVDPLineChrTabLatched;
+extern uint8_t FmsxVDPLineR2Latched;
 extern uint8_t FmsxVDPLineR9Latched;
+extern uint8_t FmsxVDPLineR18Latched;
 extern uint8_t FmsxVDPLineR25Latched;
 extern uint8_t FmsxVDPLineR26Latched;
 extern uint8_t FmsxVDPLineR27Latched;
-
+extern uint8_t FmsxVDPLineOddPageLatched;
+extern uint8_t FmsxVDPLineInterlaceOddFieldLatched;
 #define BORDER 8
 #define WIDTH  (256 + (BORDER << 1))
 #define HEIGHT (212 + (BORDER << 1))
@@ -85,6 +89,11 @@ static unsigned g_image_logical_height = HEIGHT;
 static unsigned g_image_hires_mode = 0u;
 static unsigned g_image_interlaced_mode = 0u;
 static unsigned g_image_woven_hires = 0u;
+static unsigned g_image_field_parity_odd = 0u;
+static unsigned g_image_height_branch = 0u;
+static unsigned g_image_latched_hires_eval = 0u;
+static unsigned g_image_latched_interlaced_eval = 0u;
+static unsigned g_image_live_height = HEIGHT;
 static volatile unsigned g_video_seq = 0;
 static unsigned g_bootlogo_trace_frames = 0;
 static unsigned g_bootlogo_trace_seen = 0;
@@ -125,6 +134,11 @@ static uint16_t g_bootlogo_trace_last_log_pc26 = 0u;
 static uint16_t g_bootlogo_trace_last_log_pc27 = 0u;
 static uint8_t g_bootlogo_trace_last_log_port26 = 0u;
 static uint8_t g_bootlogo_trace_last_log_port27 = 0u;
+static unsigned g_screen7_wide_sample_y = 96u;
+static unsigned g_screen7_wide_actual_base_offset = 0u;
+static unsigned g_screen7_wide_actual_plane1_offset = 0u;
+static uint32_t g_screen7_wide_actual_base_hash = 0u;
+static uint32_t g_screen7_wide_actual_plane1_hash = 0u;
 extern uint32_t FmsxVDPFrameCounter;
 extern unsigned long long msxbare_monotonic_time_us(void);
 
@@ -133,6 +147,156 @@ static uint16_t BPal[256];
 static uint16_t XPal0;
 static int PaletteFrozen = 0;
 static int g_video_tables_ready = 0;
+
+static uint32_t fmsx_debug_hash_bytes(const uint8_t *data,unsigned count)
+{
+    uint32_t hash = 2166136261u;
+    unsigned i;
+
+    if (data == 0)
+    {
+        return 0u;
+    }
+
+    for (i = 0u; i < count; ++i)
+    {
+        hash ^= (uint32_t)data[i];
+        hash *= 16777619u;
+    }
+
+    return hash;
+}
+
+static uint32_t fmsx_debug_hash_pixels565(const uint16_t *data,unsigned count)
+{
+    uint32_t hash = 2166136261u;
+    unsigned i;
+
+    if (data == 0)
+    {
+        return 0u;
+    }
+
+    for (i = 0u; i < count; ++i)
+    {
+        const uint32_t value = (uint32_t)data[i];
+        hash ^= (value & 0xFFu);
+        hash *= 16777619u;
+        hash ^= (value >> 8) & 0xFFu;
+        hash *= 16777619u;
+    }
+
+    return hash;
+}
+
+static void fmsx_debug_capture_screen7_wide_source(uint8_t Y,const uint8_t *base,const uint8_t *plane1)
+{
+    const unsigned vram_size = (unsigned)(VRAMPages << 14);
+
+    if ((ScrMode != 7u) || !HiResMode || (Y != (uint8_t)g_screen7_wide_sample_y) || base == 0 || plane1 == 0)
+    {
+        return;
+    }
+
+    if (vram_size == 0u)
+    {
+        g_screen7_wide_actual_base_offset = 0u;
+        g_screen7_wide_actual_plane1_offset = 0u;
+    }
+    else
+    {
+        g_screen7_wide_actual_base_offset = (unsigned)(base - VRAM) % vram_size;
+        g_screen7_wide_actual_plane1_offset = (unsigned)(plane1 - VRAM) % vram_size;
+    }
+
+    g_screen7_wide_actual_base_hash = fmsx_debug_hash_bytes(base,64u);
+    g_screen7_wide_actual_plane1_hash = fmsx_debug_hash_bytes(plane1,64u);
+}
+
+static uint32_t fmsx_debug_hash_woven_parity_line(unsigned logical_y,unsigned field_odd)
+{
+    const unsigned physical_y = (logical_y << 1) | (field_odd ? 1u : 0u);
+    const unsigned width = g_image_buffer_width;
+    const unsigned height = g_image_buffer_height;
+    unsigned x0 = 0u;
+    unsigned count = width;
+    const uint16_t *line;
+
+    if (width == 0u || height == 0u || physical_y >= height)
+    {
+        return 0u;
+    }
+
+    if (width >= (WIDTH << 1))
+    {
+        x0 = ((WIDTH - 256u) < width) ? (WIDTH - 256u) : 0u;
+        count = width - x0;
+    }
+
+    if (count > 512u)
+    {
+        count = 512u;
+    }
+
+    line = g_image_buffer + (physical_y * width) + x0;
+    return fmsx_debug_hash_pixels565(line,count);
+}
+
+static uint32_t fmsx_debug_hash_woven_parity_frame(unsigned field_odd)
+{
+    uint32_t hash = 2166136261u;
+    const unsigned width = g_image_buffer_width;
+    const unsigned height = g_image_buffer_height;
+    unsigned logical_height = g_image_logical_height;
+    unsigned x0 = 0u;
+    unsigned count = width;
+    unsigned y;
+
+    if (width == 0u || height == 0u)
+    {
+        return 0u;
+    }
+
+    if (width >= (WIDTH << 1))
+    {
+        x0 = ((WIDTH - 256u) < width) ? (WIDTH - 256u) : 0u;
+        count = width - x0;
+    }
+
+    if (count > 512u)
+    {
+        count = 512u;
+    }
+
+    if (logical_height == 0u || logical_height > (height >> 1))
+    {
+        logical_height = height >> 1;
+    }
+
+    for (y = 0u; y < logical_height; ++y)
+    {
+        const unsigned physical_y = (y << 1) | (field_odd ? 1u : 0u);
+        const uint16_t *line;
+        unsigned i;
+
+        if (physical_y >= height)
+        {
+            break;
+        }
+
+        line = g_image_buffer + (physical_y * width) + x0;
+        for (i = 0u; i < count; ++i)
+        {
+            const uint32_t value = (uint32_t)line[i];
+            hash ^= (value & 0xFFu);
+            hash *= 16777619u;
+            hash ^= (value >> 8) & 0xFFu;
+            hash *= 16777619u;
+        }
+    }
+
+    return hash;
+}
 
 #define XBuf g_image_buffer
 #define WBuf g_image_buffer
@@ -1298,10 +1462,16 @@ static void set_image_buffer_size(uint8_t screen_mode)
     const unsigned physical_width = ((screen_mode == 6) || (screen_mode == 7) || (screen_mode == MAXSCREEN + 1))
         ? (WIDTH << 1)
         : WIDTH;
-    g_image_buffer_height = (LastScanline < HEIGHT || !OverscanMode) ? HEIGHT : (unsigned) (LastScanline + 1);
-    g_image_hires_mode = HiResMode ? 1u : 0u;
-    g_image_interlaced_mode = InterlacedMode ? 1u : 0u;
-    g_image_woven_hires = (HiResMode && !InterlacedMode) ? 1u : 0u;
+    const unsigned live_height = (LastScanline < HEIGHT || !OverscanMode) ? HEIGHT : (unsigned) (LastScanline + 1);
+    const unsigned hires_eval = HiResMode ? 1u : 0u;
+    const unsigned interlaced_eval = InterlacedMode ? 1u : 0u;
+    g_image_hires_mode = hires_eval;
+    g_image_interlaced_mode = interlaced_eval;
+    g_image_woven_hires = (hires_eval && !interlaced_eval) ? 1u : 0u;
+    g_image_field_parity_odd = (unsigned) (FmsxVDPLineInterlaceOddFieldLatched ? 1u : 0u);
+    g_image_latched_hires_eval = hires_eval;
+    g_image_latched_interlaced_eval = interlaced_eval;
+    g_image_live_height = live_height;
     g_image_logical_width = (physical_width >= 512u) ? (physical_width >> 1) : physical_width;
 
     if ((screen_mode == 6) || (screen_mode == 7) || (screen_mode == MAXSCREEN + 1))
@@ -1313,18 +1483,87 @@ static void set_image_buffer_size(uint8_t screen_mode)
         g_image_buffer_width = WIDTH;
     }
 
-    if (g_frame_number == 0u)
+    if (hires_eval)
     {
-        g_image_buffer_height = HEIGHT;
+        /*
+         * HIRES_PROGRESSIVE exposes a woven buffer that is physically fixed at
+         * HEIGHT<<1. LastScanline can still oscillate with field cadence, but
+         * exporting that live value reintroduces the exact "correct frame" vs
+         * "vertically stretched frame" alternation seen in UNKNOWN REALITY.
+         */
+        g_image_buffer_height = HEIGHT << 1;
+        g_image_height_branch = 1u;
     }
-    else if (HiResMode)
+    else
     {
-        g_image_buffer_height <<= 1;
+        g_image_buffer_height = live_height;
+        g_image_height_branch = 2u;
     }
 
     g_image_logical_height = g_image_woven_hires && g_image_buffer_height > 1u
         ? (g_image_buffer_height >> 1)
         : g_image_buffer_height;
+}
+
+void fmsx_video_get_host_debug(TFmsxVideoHostDebug *debug)
+{
+    const unsigned vram_size = (unsigned) (VRAMPages << 14);
+    const unsigned chr_base_offset =
+        FmsxVDPLineChrTabLatched != 0
+            ? (unsigned) (FmsxVDPLineChrTabLatched - VRAM)
+            : 0u;
+    const unsigned chr_plane1_offset =
+        (vram_size > 0u)
+            ? (chr_base_offset + ((VRAMPages >= 8) ? 0x10000u : 0u)) % vram_size
+            : chr_base_offset;
+    const unsigned sample_y =
+        g_screen7_wide_sample_y < (g_image_logical_height ? g_image_logical_height : HEIGHT)
+            ? g_screen7_wide_sample_y
+            : 0u;
+
+    if (debug == 0)
+    {
+        return;
+    }
+
+    debug->screen_mode = (unsigned) ScrMode;
+    debug->reg2 = (unsigned) FmsxVDPLineR2Latched;
+    debug->reg9 = (unsigned) VDP[9];
+    debug->reg18 = (unsigned) FmsxVDPLineR18Latched;
+    debug->reg25 = (unsigned) FmsxVDPLineR25Latched;
+    debug->reg26 = (unsigned) FmsxVDPLineR26Latched;
+    debug->reg27 = (unsigned) FmsxVDPLineR27Latched;
+    debug->status2 = (unsigned) VDPStatus[2];
+    debug->frame_number = g_frame_number;
+    debug->last_scanline = (LastScanline >= 0) ? (unsigned) LastScanline : 0u;
+    debug->live_height = g_image_live_height;
+    debug->buffer_width = g_image_buffer_width;
+    debug->buffer_height = g_image_buffer_height;
+    debug->logical_width = g_image_logical_width;
+    debug->logical_height = g_image_logical_height;
+    debug->hires_mode = g_image_hires_mode;
+    debug->interlaced_mode = g_image_interlaced_mode;
+    debug->woven_hires = g_image_woven_hires;
+    debug->live_interlace_on = InterlaceON ? 1u : 0u;
+    debug->live_flip_even_odd = FlipEvenOdd ? 1u : 0u;
+    debug->display_page = (unsigned) ((FmsxVDPLineR2Latched >> 5) & 0x01u);
+    debug->render_page = (unsigned) (((FmsxVDPLineR2Latched >> 5) & 0x01u) ^ (FmsxVDPLineOddPageLatched & 0x01u));
+    debug->latched_odd_page = (unsigned) (FmsxVDPLineOddPageLatched & 0x01u);
+    debug->latched_interlace_odd_field = (unsigned) (FmsxVDPLineInterlaceOddFieldLatched ? 1u : 0u);
+    debug->chr_base_offset = chr_base_offset;
+    debug->chr_plane1_offset = chr_plane1_offset;
+    debug->actual_sample_y = sample_y;
+    debug->actual_base_offset = g_screen7_wide_actual_base_offset;
+    debug->actual_plane1_offset = g_screen7_wide_actual_plane1_offset;
+    debug->actual_base_hash = g_screen7_wide_actual_base_hash;
+    debug->actual_plane1_hash = g_screen7_wide_actual_plane1_hash;
+    debug->physical_even_hash = fmsx_debug_hash_woven_parity_line(sample_y,0u);
+    debug->physical_odd_hash = fmsx_debug_hash_woven_parity_line(sample_y,1u);
+    debug->physical_even_frame_hash = fmsx_debug_hash_woven_parity_frame(0u);
+    debug->physical_odd_frame_hash = fmsx_debug_hash_woven_parity_frame(1u);
+    debug->height_branch = g_image_height_branch;
+    debug->latched_hires_eval = g_image_latched_hires_eval;
+    debug->latched_interlaced_eval = g_image_latched_interlaced_eval;
 }
 
 unsigned fmsx_video_get_latest(const u16 **pixels, unsigned *width, unsigned *height)
@@ -1357,6 +1596,7 @@ void fmsx_video_get_presentation(TFmsxVideoPresentation *presentation)
     presentation->hires_mode = g_image_hires_mode;
     presentation->interlaced_mode = g_image_interlaced_mode;
     presentation->woven_hires = g_image_woven_hires;
+    presentation->field_parity_odd = g_image_field_parity_odd;
 }
 
 void fmsx_runtime_set_joystick_bits(u8 bridge_bits)

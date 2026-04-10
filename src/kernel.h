@@ -51,6 +51,7 @@ private:
     void GenerateSamples(s16 *buffer, unsigned frames);
     void DrawDebugOverlay(unsigned tick);
     void ClearDebugOverlay(void);
+    void WriteDebugOverlayLine(unsigned row, const char *text);
     void BootTrace(const char *tag);
     void WriteScreenText(const char *text);
     void LogVdpTraceUart(void);
@@ -58,6 +59,8 @@ private:
     void LogAudioPortTraceUart(void);
     void LogAudioQueueUart(void);
     void LogVideoPacingUart(void);
+    void LogVideoModeTransitionUart(void);
+    void LogVideoHiresHostDebugUart(void);
     void LogCpuClockStatus(const char *phase);
     void HandleSystemThrottled(TSystemThrottledState state);
     void LogKmgTraceUart(void);
@@ -206,11 +209,19 @@ private:
     unsigned m_UartVideoStepUsPeak;
     unsigned m_UartVideoBlitUsLast;
     unsigned m_UartVideoBlitUsPeak;
+    unsigned m_LastVideoModeScreen;
+    unsigned m_LastVideoModeLogicalWidth;
+    unsigned m_LastVideoModeLogicalHeight;
+    unsigned m_HiresHostTraceFramesRemaining;
     unsigned long m_FmsxFpsWindowStartFrames;
     unsigned m_FmsxFpsX10;
     unsigned m_FramePacingErrAvgUs;
     unsigned m_FramePacingErrMaxUs;
     unsigned m_FmsxBlankFrames;
+    boolean m_LastVideoModeLogValid;
+    boolean m_LastVideoModeHires;
+    boolean m_LastVideoModeInterlaced;
+    unsigned m_DebugOverlayLineLengths[20];
     unsigned m_InitramfsFiles;
     unsigned m_FmsxBoxX;
     unsigned m_FmsxBoxY;
