@@ -1,0 +1,209 @@
+#ifndef MSXBARE_BACKEND_RUNTIME_RUNTIME_H
+#define MSXBARE_BACKEND_RUNTIME_RUNTIME_H
+
+#include "../core/module.h"
+
+#if defined(MSXBARE_BACKEND_FAMILY_MSX)
+
+#include "../msx/backend.h"
+#include "../msx/gamemaster_catalog.h"
+#include "../msx/machine_profile_catalog.h"
+#include "../msx/modules/fmsx/fmsx_initramfs.h"
+
+typedef TGameMasterLoadStatus BackendCheatLoadStatus;
+typedef TGameMasterPoke BackendCheatPoke;
+typedef TGameMasterCheat BackendCheat;
+typedef TGameMasterGame BackendCheatGame;
+typedef TGameMasterCatalog BackendCheatCatalog;
+typedef TMachineProfileSpec BackendMachineProfileSpec;
+
+typedef MsxBackendVideoHostDebug BackendVideoHostDebug;
+typedef MsxBackendAudioStats BackendAudioStats;
+typedef MsxBackendAudioMixDebug BackendAudioMixDebug;
+typedef MsxBackendAudioChannelDebug BackendAudioChannelDebug;
+typedef MsxBackendKeyboardDebug BackendKeyboardDebug;
+typedef MsxBackendTimingDebug BackendTimingDebug;
+typedef TFmsxVDPTraceEvent BackendVdpTraceEvent;
+typedef MsxBackendVdpTraceView BackendVdpTraceView;
+typedef TFmsxSCCTraceEvent BackendSccTraceEvent;
+typedef MsxBackendSccTraceView BackendSccTraceView;
+typedef TFmsxAudioPortTraceEvent BackendAudioPortTraceEvent;
+typedef MsxBackendAudioPortTraceView BackendAudioPortTraceView;
+typedef TFmsxKmgTraceEvent BackendKmgTraceEvent;
+typedef MsxBackendKmgTraceView BackendKmgTraceView;
+
+enum {
+    BACKEND_CAP_STATE = MSX_BACKEND_CAP_STATE,
+    BACKEND_CAP_MACHINE = MSX_BACKEND_CAP_MACHINE,
+    BACKEND_CAP_MEDIA = MSX_BACKEND_CAP_MEDIA,
+    BACKEND_CAP_CHEAT = MSX_BACKEND_CAP_CHEAT,
+    BACKEND_CAP_DEBUG = MSX_BACKEND_CAP_DEBUG
+};
+
+enum {
+    BACKEND_MACHINE_PROFILE_0 = MSX_BACKEND_MODEL_PROFILE_MSX1,
+    BACKEND_MACHINE_PROFILE_1 = MSX_BACKEND_MODEL_PROFILE_MSX2,
+    BACKEND_MACHINE_PROFILE_2 = MSX_BACKEND_MODEL_PROFILE_MSX2P
+};
+
+enum {
+    BACKEND_VDP_TRACE_NONE = FMSX_VDP_TRACE_NONE,
+    BACKEND_VDP_TRACE_TITLE = FMSX_VDP_TRACE_TITLE,
+    BACKEND_VDP_TRACE_SAVE_SELECT = FMSX_VDP_TRACE_SAVE_SELECT,
+    BACKEND_VDP_TRACE_STARDATE = FMSX_VDP_TRACE_STARDATE,
+    BACKEND_VDP_TRACE_KMG = FMSX_VDP_TRACE_KMG
+};
+
+enum {
+    BACKEND_VDP_EVENT_NONE = FMSX_VDP_EVENT_NONE,
+    BACKEND_VDP_EVENT_IE0_FIRE = FMSX_VDP_EVENT_IE0_FIRE,
+    BACKEND_VDP_EVENT_IE1_ARM = FMSX_VDP_EVENT_IE1_ARM,
+    BACKEND_VDP_EVENT_IE1_FIRE = FMSX_VDP_EVENT_IE1_FIRE,
+    BACKEND_VDP_EVENT_R19_WRITE = FMSX_VDP_EVENT_R19_WRITE,
+    BACKEND_VDP_EVENT_R23_WRITE = FMSX_VDP_EVENT_R23_WRITE,
+    BACKEND_VDP_EVENT_S1_READ = FMSX_VDP_EVENT_S1_READ,
+    BACKEND_VDP_EVENT_S2_READ = FMSX_VDP_EVENT_S2_READ,
+    BACKEND_VDP_EVENT_CMD_START = FMSX_VDP_EVENT_CMD_START,
+    BACKEND_VDP_EVENT_CMD_END = FMSX_VDP_EVENT_CMD_END,
+    BACKEND_VDP_EVENT_PORT98_WRITE = FMSX_VDP_EVENT_PORT98_WRITE,
+    BACKEND_VDP_EVENT_PORT99_ADDR = FMSX_VDP_EVENT_PORT99_ADDR,
+    BACKEND_VDP_EVENT_PORT99_REG = FMSX_VDP_EVENT_PORT99_REG
+};
+
+enum {
+    BACKEND_SCC_TRACE_NONE = FMSX_SCC_TRACE_NONE,
+    BACKEND_SCC_TRACE_WAVE = FMSX_SCC_TRACE_WAVE,
+    BACKEND_SCC_TRACE_FREQ = FMSX_SCC_TRACE_FREQ,
+    BACKEND_SCC_TRACE_VOLUME = FMSX_SCC_TRACE_VOLUME,
+    BACKEND_SCC_TRACE_ENABLE = FMSX_SCC_TRACE_ENABLE,
+    BACKEND_SCC_TRACE_DEFORM = FMSX_SCC_TRACE_DEFORM
+};
+
+#define BACKEND_CHEAT_CATALOG_PATH GAMEMASTER_CATALOG_PATH
+#define BACKEND_CHEATS_ROOT GAMEMASTER_CHEATS_ROOT
+#define BACKEND_CHEAT_MAX_GAMES GAMEMASTER_MAX_GAMES
+#define BACKEND_CHEAT_MAX_CHEATS GAMEMASTER_MAX_CHEATS
+#define BACKEND_CHEAT_MAX_POKES GAMEMASTER_MAX_POKES
+
+#define backend_runtime_family_id msx_backend_family_id
+#define backend_runtime_default_id msx_backend_default_id
+#define backend_runtime_set_requested_backend_id msx_backend_set_requested_backend_id
+#define backend_runtime_requested_backend_id msx_backend_requested_backend_id
+#define backend_runtime_selected_backend_id msx_backend_selected_backend_id
+#define backend_runtime_is_capability_available msx_backend_is_capability_available
+
+#define backend_runtime_init msx_backend_init
+#define backend_runtime_reset msx_backend_reset
+#define backend_runtime_step_frame msx_backend_step_frame
+#define backend_runtime_shutdown msx_backend_shutdown
+#define backend_runtime_video_frame msx_backend_video_frame
+#define backend_runtime_get_video_presentation msx_backend_get_video_presentation
+#define backend_runtime_audio_pull msx_backend_audio_pull
+#define backend_runtime_input_push_joystick msx_backend_input_push_joystick
+#define backend_runtime_input_push_keyboard msx_backend_input_push_keyboard
+#define backend_runtime_media_load_cartridge msx_backend_media_load_cartridge
+#define backend_runtime_media_load_disk msx_backend_media_load_disk
+#define backend_runtime_get_status msx_backend_get_status
+#define backend_runtime_get_info msx_backend_get_info
+
+#define backend_runtime_reboot_basic msx_backend_reboot_basic
+#define backend_runtime_menu_reset msx_backend_menu_reset
+#define backend_runtime_save_state msx_backend_save_state
+#define backend_runtime_load_state msx_backend_load_state
+
+#define backend_runtime_set_overscan msx_backend_set_overscan
+#define backend_runtime_set_refresh_hz msx_backend_set_refresh_hz
+#define backend_runtime_debug_force_refresh_hz msx_backend_debug_force_refresh_hz
+#define backend_runtime_get_refresh_hz msx_backend_get_refresh_hz
+#define backend_runtime_get_frame_interval_us_exact msx_backend_get_frame_interval_us_exact
+#define backend_runtime_set_disk_rom_enabled msx_backend_set_disk_rom_enabled
+#define backend_runtime_get_disk_rom_enabled msx_backend_get_disk_rom_enabled
+#define backend_runtime_set_kanji_rom_enabled msx_backend_set_kanji_rom_enabled
+#define backend_runtime_get_kanji_rom_enabled msx_backend_get_kanji_rom_enabled
+#define backend_runtime_get_kanji_rom_available msx_backend_get_kanji_rom_available
+#define backend_runtime_set_boot_mode msx_backend_set_boot_mode
+#define backend_runtime_get_boot_mode msx_backend_get_boot_mode
+#define backend_runtime_get_active_boot_mode msx_backend_get_active_boot_mode
+#define backend_runtime_set_model_profile msx_backend_set_model_profile
+#define backend_runtime_get_model_profile msx_backend_get_model_profile
+#define backend_runtime_get_active_model_profile msx_backend_get_active_model_profile
+#define backend_runtime_set_rammapper_kb msx_backend_set_rammapper_kb
+#define backend_runtime_get_rammapper_kb msx_backend_get_rammapper_kb
+#define backend_runtime_set_megaram_kb msx_backend_set_megaram_kb
+#define backend_runtime_get_megaram_kb msx_backend_get_megaram_kb
+#define backend_runtime_set_z80_turbo_mode msx_backend_set_z80_turbo_mode
+#define backend_runtime_get_z80_turbo_mode msx_backend_get_z80_turbo_mode
+#define backend_runtime_set_fm_music_enabled msx_backend_set_fm_music_enabled
+#define backend_runtime_get_fm_music_enabled msx_backend_get_fm_music_enabled
+#define backend_runtime_set_scc_plus_enabled msx_backend_set_scc_plus_enabled
+#define backend_runtime_get_scc_plus_enabled msx_backend_get_scc_plus_enabled
+#define backend_runtime_set_scc_dual_cart_enabled msx_backend_set_scc_dual_cart_enabled
+#define backend_runtime_get_scc_dual_cart_enabled msx_backend_get_scc_dual_cart_enabled
+#define backend_runtime_get_scc_dual_cart_available msx_backend_get_scc_dual_cart_available
+#define backend_runtime_set_fm_layer_gain_pct msx_backend_set_fm_layer_gain_pct
+#define backend_runtime_get_fm_layer_gain_pct msx_backend_get_fm_layer_gain_pct
+#define backend_runtime_set_audio_layer_muted msx_backend_set_audio_layer_muted
+#define backend_runtime_get_audio_layer_muted msx_backend_get_audio_layer_muted
+#define backend_runtime_get_psg_mixer_reg7 msx_backend_get_psg_mixer_reg7
+#define backend_runtime_get_master_switch msx_backend_get_master_switch
+#define backend_runtime_set_frame_perf_telemetry_enabled msx_backend_set_frame_perf_telemetry_enabled
+#define backend_runtime_reset_audio_mix_debug_window msx_backend_reset_audio_mix_debug_window
+
+#define backend_runtime_get_cartridge_name msx_backend_get_cartridge_name
+#define backend_runtime_get_disk_name msx_backend_get_disk_name
+#define backend_runtime_get_cartridge_path msx_backend_get_cartridge_path
+#define backend_runtime_get_disk_path msx_backend_get_disk_path
+#define backend_runtime_set_cartridge_path msx_backend_set_cartridge_path
+#define backend_runtime_set_disk_path msx_backend_set_disk_path
+#define backend_runtime_unload_cartridge msx_backend_unload_cartridge
+#define backend_runtime_unload_disk msx_backend_unload_disk
+
+#define backend_runtime_reset_cheat_session msx_backend_reset_game_master_session
+#define backend_runtime_set_cheat_enabled msx_backend_set_game_master_cheat_enabled
+#define backend_runtime_set_cheat_value msx_backend_set_game_master_cheat_value
+#define backend_runtime_is_cheat_active msx_backend_is_game_master_cheat_active
+#define backend_runtime_reset_game_master_session msx_backend_reset_game_master_session
+#define backend_runtime_set_game_master_cheat_enabled msx_backend_set_game_master_cheat_enabled
+#define backend_runtime_set_game_master_cheat_value msx_backend_set_game_master_cheat_value
+#define backend_runtime_is_game_master_cheat_active msx_backend_is_game_master_cheat_active
+#define backend_runtime_peek8 msx_backend_peek8
+#define backend_runtime_peek16 msx_backend_peek16
+
+#define backend_runtime_set_load_diag msx_backend_set_load_diag
+#define backend_runtime_get_load_diag msx_backend_get_load_diag
+#define backend_runtime_get_video_host_debug msx_backend_get_video_host_debug
+#define backend_runtime_get_audio_stats msx_backend_get_audio_stats
+#define backend_runtime_get_audio_mix_debug msx_backend_get_audio_mix_debug
+#define backend_runtime_get_audio_channel_debug msx_backend_get_audio_channel_debug
+#define backend_runtime_get_keyboard_debug msx_backend_get_keyboard_debug
+#define backend_runtime_get_timing_debug msx_backend_get_timing_debug
+#define backend_runtime_get_vdp_trace_view msx_backend_get_vdp_trace_view
+#define backend_runtime_get_scc_trace_view msx_backend_get_scc_trace_view
+#define backend_runtime_get_audio_port_trace_view msx_backend_get_audio_port_trace_view
+#define backend_runtime_get_kmg_trace_view msx_backend_get_kmg_trace_view
+
+#define backend_runtime_initramfs_mount fmsx_initramfs_mount
+#define backend_runtime_initramfs_mount_boot_minimal fmsx_initramfs_mount_boot_minimal
+#define backend_runtime_initramfs_mount_remaining fmsx_initramfs_mount_remaining
+#define backend_runtime_initramfs_files_mounted fmsx_initramfs_files_mounted
+
+#define backend_cheat_catalog_reset game_master_catalog_reset
+#define backend_cheat_catalog_load game_master_catalog_load
+#define backend_cheat_catalog_load_default game_master_catalog_load_default
+#define backend_cheat_catalog_load_mcf game_master_catalog_load_mcf
+#define backend_cheat_catalog_status_name game_master_catalog_status_name
+
+#define backend_machine_profile_count machine_profile_count
+#define backend_machine_profile_clamp machine_profile_clamp
+#define backend_machine_profile_get machine_profile_get
+#define backend_machine_profile_default machine_profile_default
+#define backend_machine_profile_label machine_profile_label
+#define backend_machine_profile_is_msx2_family machine_profile_is_msx2_family
+
+#else
+
+#error "Unsupported backend family adapter"
+
+#endif
+
+#endif

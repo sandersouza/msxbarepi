@@ -10,10 +10,11 @@ Registrar, em uma unica arte, como a carga do `msxbarepi` sai do firmware do Ras
 
 1. O firmware do Raspberry Pi le os arquivos da particao FAT do SD e entrega o controle para `kernel8.img`.
 2. O bootstrap do Circle sobe o ambiente baremetal AArch64 e entra em `main()`, que instancia `CComboKernel`.
-3. O kernel sobe `UART + Logger`, `Interrupt + Timer` e o driver `SD/eMMC` antes de tocar o runtime do emulador.
-4. Com o SD pronto, o projeto monta `FatFs`, le `msxbarepi.cfg`, normaliza os settings e monta o `initramfs` (`msx.cpio`) com ROMs e midias de boot.
-5. So depois disso o `CScreenDevice` e o framebuffer HDMI entram no ar e o adapter de backend inicializa o `fMSX`.
-6. O loop principal faz `step_frame`, blit do frame para o framebuffer, aplica scanline/viewport, desenha overlay/menu apos o blit e mistura audio/input no mesmo ciclo.
+3. O kernel sobe `Interrupt + Timer` e prioriza `screen` + audio HDMI antes do backend, para reduzir latencia visual/auditiva do fastboot.
+4. Com video e audio prontos, o projeto sobe `SD/eMMC`, monta `FatFs`, le `msxbarepi.cfg` e normaliza os settings antes do init do backend.
+5. O boot monta apenas o `initramfs` minimo de boot, aplica a configuracao no runtime e inicializa o backend selecionado.
+6. Em `DEBUG=1`, `UART + Logger` e o debug overlay so entram depois do backend; em seguida o kernel inicializa `USB HID`.
+7. O loop principal faz `step_frame`, blit do frame para o framebuffer, aplica scanline/viewport, desenha overlay/menu apos o blit e completa tarefas diferidas, incluindo o restante do `initramfs`.
 
 ## Fontes tecnicas usadas
 
@@ -21,12 +22,13 @@ Registrar, em uma unica arte, como a carga do `msxbarepi` sai do firmware do Ras
 - `Makefile`
 - `src/main.cpp`
 - `src/kernel.cpp`
-- `src/emulator_backend.c`
-- `src/fmsx_backend_shim.c`
-- `src/fmsx_initramfs.cpp`
+- `src/backend/runtime/runtime.h`
+- `src/backend/msx/backend.c`
+- `src/backend/msx/modules/fmsx/fmsx_initramfs.cpp`
 
 ## Observacoes de modelagem
 
-- O diagrama mostra `BT4` como bloco proprio porque a carga de `msxbarepi.cfg` e um gate funcional do boot, mesmo acontecendo dentro de `LoadSettingsFromStorage()`.
-- `BT9` passa pelo adapter de `src/emulator_backend.c` para deixar explicito que o runtime do projeto nao depende diretamente de um unico core, embora hoje o default seja `fmsx`.
-- A parte de video foi desenhada com a ordem real do kernel: o frame do backend e blitado primeiro e so depois entram overlay e menu, preservando a legibilidade em HDMI.
+- `BT6` continua sendo um gate funcional do boot porque o `msxbarepi.cfg` precisa ser aplicado antes do init do backend.
+- O kernel nao inclui mais um backend publico MSX diretamente; ele fala com a adaptacao neutra em `src/backend/runtime/runtime.h`.
+- O fastboot atual monta apenas o `initramfs` minimo antes do backend; o restante entra diferido no loop principal, depois da fase de `USB HID`.
+- O SVG do fluxograma ainda precisa ser regenerado para refletir essa ordem nova de fastboot.

@@ -6,7 +6,9 @@ BUILD_DIR := build
 FB_WIDTH ?= 1024
 FB_HEIGHT ?= 768
 DEBUG := 1
-EMULATOR_BACKEND ?= fmsx
+BACKEND_FAMILY ?= msx
+BACKEND_DEFAULT ?= msx.fmsx
+EMULATOR_BACKEND ?=
 MSXBARE_CARTA_ONLY ?= 0
 MSXBARE_SIZE_OPT ?= 1
 OWNER ?=
@@ -97,7 +99,7 @@ CIRCLE_REQUIRED_LIBS := \
 	third_party/circle/addon/fatfs/libfatfs.a
 CIRCLE_MAKE_FLAGS := PREFIX64=$(CROSS)
 
-.PHONY: all default clean help guard-third-party circle-configure circle-configure-force circle-libs circle sdcard sdcard-update initramfs package menuconfig syncconfig config-header
+.PHONY: all default backend-module clean help guard-third-party circle-configure circle-configure-force circle-libs circle sdcard sdcard-update initramfs package menuconfig syncconfig config-header
 
 all: default
 
@@ -108,6 +110,8 @@ default: config-header circle-libs
 	$(MAKE) -C src $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 \
 		EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' \
 		DEBUG=$(DEBUG_BOOL) \
+		BACKEND_FAMILY=$(BACKEND_FAMILY) \
+		BACKEND_DEFAULT=$(BACKEND_DEFAULT) \
 		EMULATOR_BACKEND=$(EMULATOR_BACKEND) \
 		MSXBARE_KERNEL_MAX_SIZE=$(CIRCLE_KERNEL_MAX_SIZE) \
 		MSXBARE_CARTA_ONLY=$(MSXBARE_CARTA_ONLY) \
@@ -145,6 +149,35 @@ default: config-header circle-libs
 		echo "Artefato issue estavel: $$issue_artifact"; \
 	fi
 	@echo "Artefato default estavel: $(DEFAULT_ARTIFACT)"
+
+backend-module: config-header
+	@mkdir -p artifacts
+	$(MAKE) -C src $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 \
+		EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' \
+		DEBUG=$(DEBUG_BOOL) \
+		BACKEND_FAMILY=$(BACKEND_FAMILY) \
+		BACKEND_DEFAULT=$(BACKEND_DEFAULT) \
+		EMULATOR_BACKEND=$(EMULATOR_BACKEND) \
+		MSXBARE_KERNEL_MAX_SIZE=$(CIRCLE_KERNEL_MAX_SIZE) \
+		MSXBARE_CARTA_ONLY=$(MSXBARE_CARTA_ONLY) \
+		MSXBARE_SIZE_OPT=$(MSXBARE_SIZE_OPT) \
+		MSXBARE_BUILD_BID="$(BUILD_BID)" \
+		MSXBARE_BUILD_OWNER="$(EFFECTIVE_OWNER)" \
+		MSXBARE_FEAT_SCC=$(MSXBARE_FEAT_SCC) \
+		MSXBARE_FEAT_FMPAC=$(MSXBARE_FEAT_FMPAC) \
+		MSXBARE_FEAT_DISK_ROM=$(MSXBARE_FEAT_DISK_ROM) \
+		MSXBARE_FEAT_MEGARAM=$(MSXBARE_FEAT_MEGARAM) \
+		MSXBARE_FEAT_MSX2=$(MSXBARE_FEAT_MSX2) \
+		MSXBARE_BOOT_SCREEN=$(MSXBARE_BOOT_SCREEN) \
+		MSXBARE_FEAT_MSX2P=$(MSXBARE_FEAT_MSX2P) \
+		MSXBARE_FEAT_LOAD_ROM=$(MSXBARE_FEAT_LOAD_ROM) \
+		MSXBARE_FEAT_LOAD_DISK=$(MSXBARE_FEAT_LOAD_DISK) \
+		MSXBARE_ONE_ROM_MODE=$(MSXBARE_ONE_ROM_MODE) \
+		MSXBARE_ONE_ROM_PATH="$(MSXBARE_ONE_ROM_PATH)" \
+		MSXBARE_PATREON_TAG="$(EFFECTIVE_OWNER)" \
+		MSXBARE_BOOT_MODE_DEFAULT_ENUM=$(MSXBARE_BOOT_MODE_DEFAULT_ENUM) \
+		MSXBARE_BOOT_MODE_LOCKED=$(MSXBARE_BOOT_MODE_LOCKED) \
+		backend-module
 
 guard-third-party:
 	bash $(THIRD_PARTY_GUARD)
@@ -281,7 +314,7 @@ package: default initramfs
 	./scripts/prepare-sd.sh
 
 help:
-	@echo "Targets: all (default), clean, sdcard, sdcard-update, initramfs, package, help, logserial"
+	@echo "Targets: all (default), backend-module, clean, sdcard, sdcard-update, initramfs, package, help, logserial"
 	@echo "Circle: default so gera se faltar algo; rebuild forcado apenas com 'make circle'"
 	@echo "clean: limpa build local, artifacts de kernel e objetos/libs em subdirs do Circle"
 	@echo "Configuracao: make menuconfig (gera .config + build/config.mk)"
@@ -297,6 +330,8 @@ help:
 	@echo "Override: make CROSS=aarch64-elf-"
 	@echo "Use flags principais: DEBUG=0|1 OWNER=<nome> FIRMWARE_DIR=<dir>"
 	@echo "Owner/tag efetivo: OWNER vence; se vazio, usa MSXBARE_PATREON_TAG (menuconfig)"
-	@echo "Backend do emulador: EMULATOR_BACKEND=fmsx|bluemsx (default: fmsx)"
+	@echo "Backend por familia: BACKEND_FAMILY=msx BACKEND_DEFAULT=msx.fmsx|msx.bluemsx"
+	@echo "Alias legado: EMULATOR_BACKEND=fmsx|bluemsx"
+	@echo "Modulo loadable: make backend-module -> artifacts/backend/msx/msx.fmsx.mod.elf"
 	@echo "Boot mode selecionavel em runtime: Settings -> Boot Mode [NORM/FAST/GAME]"
 	@echo "Bypass temporario (nao recomendado): ALLOW_DIRTY_THIRD_PARTY=1 make"

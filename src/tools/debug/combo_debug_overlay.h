@@ -31,17 +31,17 @@ typedef struct
     unsigned audio_gain_ui;
     unsigned fps_x10;
     unsigned last_hid;
-    unsigned last_msx;
+    unsigned last_runtime;
 
     unsigned joy_bridge;
     unsigned joy_mapped;
-    unsigned fmsx_ready;
-    int fmsx_last_error;
+    unsigned backend_ready;
+    int backend_last_error;
     unsigned initramfs_files;
 
-    unsigned long fmsx_frames;
-    unsigned fmsx_last_pc;
-    unsigned fmsx_pc_repeat_count;
+    unsigned long backend_frames;
+    unsigned backend_last_pc;
+    unsigned backend_pc_repeat_count;
     unsigned ring_level;
     unsigned pacing_err_avg;
     unsigned pacing_err_max;
@@ -50,7 +50,7 @@ typedef struct
     unsigned save_code;
     unsigned save_aux;
     unsigned load_diag;
-    unsigned boot_to_fmsx_ms;
+    unsigned boot_to_backend_ms;
 
     unsigned mapper_a;
     unsigned mapper_b;

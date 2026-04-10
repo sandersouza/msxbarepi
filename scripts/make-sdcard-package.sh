@@ -7,7 +7,7 @@ PACKAGE_KERNEL_IMG="${PACKAGE_KERNEL_IMG:-${PROJECT_ROOT}/artifacts/kernel8-defa
 PACKAGE_CONFIG_TXT="${PACKAGE_CONFIG_TXT:-${PROJECT_ROOT}/sdcard/config.txt}"
 PACKAGE_CMDLINE_TXT="${PACKAGE_CMDLINE_TXT:-${PROJECT_ROOT}/sdcard/cmdline.txt}"
 PACKAGE_INITRAMFS_IMG="${PACKAGE_INITRAMFS_IMG:-${PROJECT_ROOT}/sdcard/msx.cpio}"
-PACKAGE_SETTINGS_CFG="${PACKAGE_SETTINGS_CFG:-${PROJECT_ROOT}/sdcard/MSXBARE.CFG}"
+PACKAGE_SETTINGS_CFG="${PACKAGE_SETTINGS_CFG:-${PROJECT_ROOT}/sdcard/msxbarepi.cfg}"
 PACKAGE_FIRMWARE_DIR="${PACKAGE_FIRMWARE_DIR:-${PROJECT_ROOT}/rpi-firmware/}"
 PACKAGE_COPY_GAMES_TO_ROOT="${PACKAGE_COPY_GAMES_TO_ROOT:-0}"
 PACKAGE_GAMES_SRC_DIR="${PACKAGE_GAMES_SRC_DIR:-${PROJECT_ROOT}/roms/games}"
@@ -35,26 +35,35 @@ ensure_settings_cfg() {
   echo "[INFO] Arquivo de configuracao nao encontrado; gerando default: ${PACKAGE_SETTINGS_CFG}"
   mkdir -p "$(dirname "$PACKAGE_SETTINGS_CFG")"
   cat > "$PACKAGE_SETTINGS_CFG" <<'EOF'
-scale=250
-resolution=0
-language=0
-widescreen=0
+backend_id=msx.fmsx
+scale=2
+language=1
+resolution=2
 scanline=0
 refresh=60
 disk_rom=1
+kanji_rom=1
 boot_mode=0
 machine=0
+rammapper_kb=256
+megaram_kb=0
 z80_turbo=0
 rensha=0
-scc_cart=0
+joy_map_up=16385
+joy_map_down=20481
+joy_map_left=16384
+joy_map_right=20480
+joy_map_button1=8192
+joy_map_button2=8193
 fm_music=0
+scc_plus=1
+scc_dual=0
 debugger=0
-audio_mute=0
 audio_gain=100
-cart_a_path=EMPTY
-cart_b_path=EMPTY
-disk_a_path=EMPTY
-disk_b_path=EMPTY
+cart_a_path=
+cart_b_path=
+disk_a_path=
+disk_b_path=
 #END
 EOF
 }
@@ -94,7 +103,7 @@ cp "$PACKAGE_KERNEL_IMG" "${PACKAGE_STAGE_DIR}/kernel8.img"
 cp "$PACKAGE_CONFIG_TXT" "${PACKAGE_STAGE_DIR}/config.txt"
 cp "$PACKAGE_CMDLINE_TXT" "${PACKAGE_STAGE_DIR}/cmdline.txt"
 cp "$PACKAGE_INITRAMFS_IMG" "${PACKAGE_STAGE_DIR}/msx.cpio"
-cp "$PACKAGE_SETTINGS_CFG" "${PACKAGE_STAGE_DIR}/MSXBARE.CFG"
+cp "$PACKAGE_SETTINGS_CFG" "${PACKAGE_STAGE_DIR}/msxbarepi.cfg"
 
 for fw in $required_fw_files; do
   cp "${PACKAGE_FIRMWARE_DIR}/${fw}" "${PACKAGE_STAGE_DIR}/${fw}"

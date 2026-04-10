@@ -93,20 +93,20 @@ void CComboDebugOverlay::Render(const TComboDebugOverlayData &d)
     line.Format("\x1b[97m\x1b[49m\x1b[4;1HEV2 P:%04u C:%05u G:%03u V:%02u.%u KH:%02X KM:%02X ",
         d.audio_peak, d.clip_max, d.audio_gain_ui,
         (d.fps_x10 / 10u) > 99u ? 99u : (d.fps_x10 / 10u), d.fps_x10 % 10u,
-        d.last_hid & 0xFFu, d.last_msx & 0xFFu);
+        d.last_hid & 0xFFu, d.last_runtime & 0xFFu);
     Write(line);
 
     line.Format("\x1b[97m\x1b[49m\x1b[5;1HJY1 BJ:%02X MJ:%02X R:%u E:%d I:%03u          ",
-        d.joy_bridge, d.joy_mapped, d.fmsx_ready, d.fmsx_last_error, d.initramfs_files);
+        d.joy_bridge, d.joy_mapped, d.backend_ready, d.backend_last_error, d.initramfs_files);
     Write(line);
 
     line.Format("\x1b[97m\x1b[49m\x1b[6;1HJY2 F:%06lu PC:%04X R:%04u L:%04u JP:%03u/%03u      ",
-        d.fmsx_frames, d.fmsx_last_pc & 0xFFFFu, d.fmsx_pc_repeat_count,
+        d.backend_frames, d.backend_last_pc & 0xFFFFu, d.backend_pc_repeat_count,
         d.ring_level, d.pacing_err_avg, d.pacing_err_max);
     Write(line);
 
     line.Format("\x1b[97m\x1b[49m\x1b[7;1HSD1 SV:%02u C:%03u A:%04u LD:%04u BT:%04u         ",
-        d.save_stage, d.save_code, d.save_aux, d.load_diag, d.boot_to_fmsx_ms);
+        d.save_stage, d.save_code, d.save_aux, d.load_diag, d.boot_to_backend_ms);
     Write(line);
 
     line.Format("\x1b[97m\x1b[49m\x1b[8;1HSD2 MA:%02u MB:%02u CA:%u CB:%u BM:%u MP:%u      ",

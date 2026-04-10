@@ -50,7 +50,6 @@ extern const TComboLocaleStrings g_ComboLocaleEN = {
     "FM-PAC",
     "Konami SCC+",
     "Debugger",
-    "UART Log",
     "Audio Gain",
     "Save to disk",
     "Joystick UP",

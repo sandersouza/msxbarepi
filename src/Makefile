@@ -2,7 +2,9 @@ CIRCLEHOME = ../third_party/circle
 STDLIB_SUPPORT = 1
 
 DEBUG ?= 0
-EMULATOR_BACKEND ?= fmsx
+BACKEND_FAMILY ?= msx
+BACKEND_DEFAULT ?= msx.fmsx
+EMULATOR_BACKEND ?=
 MSXBARE_CARTA_ONLY ?= 0
 MSXBARE_SIZE_OPT ?= 1
 MSXBARE_BUILD_BID ?=
@@ -46,12 +48,28 @@ CPPFLAGS += -DMSXBARE_BOOT_MODE_LOCKED=$(MSXBARE_BOOT_MODE_LOCKED)
 CPPFLAGS += -include ../build/config_build.h
 
 ifeq ($(EMULATOR_BACKEND),bluemsx)
-CPPFLAGS += -DMSXBARE_EMULATOR_BACKEND_BLUEMSX=1
+BACKEND_DEFAULT := msx.bluemsx
 else ifeq ($(EMULATOR_BACKEND),fmsx)
-CPPFLAGS += -DMSXBARE_EMULATOR_BACKEND_BLUEMSX=0
-else
+BACKEND_DEFAULT := msx.fmsx
+else ifneq ($(EMULATOR_BACKEND),)
 $(error EMULATOR_BACKEND invalido: $(EMULATOR_BACKEND). Use fmsx ou bluemsx)
 endif
+
+ifeq ($(BACKEND_FAMILY),msx)
+CPPFLAGS += -DMSXBARE_BACKEND_FAMILY_MSX=1
+CFLAGS += -DMSXBARE_BACKEND_FAMILY_MSX=1
+CXXFLAGS += -DMSXBARE_BACKEND_FAMILY_MSX=1
+else
+$(error BACKEND_FAMILY invalida: $(BACKEND_FAMILY). Use msx)
+endif
+
+ifneq ($(BACKEND_DEFAULT),msx.fmsx)
+ifneq ($(BACKEND_DEFAULT),msx.bluemsx)
+$(error BACKEND_DEFAULT invalido: $(BACKEND_DEFAULT). Use msx.fmsx ou msx.bluemsx)
+endif
+endif
+
+CPPFLAGS += '-DMSXBARE_BACKEND_DEFAULT="$(BACKEND_DEFAULT)"'
 
 CFLAGS += -w
 CXXFLAGS += -w
@@ -63,11 +81,19 @@ CFLAGS += -DFMSX_BAREMETAL_CARTA_ONLY
 endif
 CFLAGS += -DSKIP_STDIO_REDEFINES
 BLUEMSX_INCLUDE_DIRS := -I../third_party/bluemsx/blueMSX/Src/Common -I../third_party/bluemsx/blueMSX/Src/Utils -I../third_party/bluemsx/blueMSX/Src/SoundChips
-CFLAGS += -I ./fmsx_compat -I ../third_party/fmsx -I ../third_party/fmsx/fMSX -I ../third_party/fmsx/EMULib -I ../third_party/fmsx/Z80
+MSX_BACKEND_DIR := backend/msx
+FMSX_MODULE_DIR := $(MSX_BACKEND_DIR)/modules/fmsx
+FMSX_INCLUDE_DIRS := -I./$(MSX_BACKEND_DIR) -I./$(FMSX_MODULE_DIR) -I./$(FMSX_MODULE_DIR)/fmsx_compat -I../third_party/fmsx -I../third_party/fmsx/fMSX -I../third_party/fmsx/EMULib -I../third_party/fmsx/Z80 -I../third_party/fmsx/NukeYKT -I../third_party/fmsx/libretro-common/compat -I../third_party/fmsx/libretro-common/encodings -I../third_party/fmsx/libretro-common/streams -I../third_party/fmsx/libretro-common/string
+LOCAL_INCLUDE_DIRS := -I. -I./tools/locale -I./tools/debug -I./tools/menu -I./tools/file_browser -I./tools/render -I./tools/input -I./tools/media -I./tools
+CPPFLAGS += $(FMSX_INCLUDE_DIRS)
 CPPFLAGS += $(BLUEMSX_INCLUDE_DIRS)
-CPPFLAGS += -I. -I./tools/locale -I./tools/debug -I./tools/menu -I./tools/file_browser -I./tools/render -I./tools/input -I./tools/media -I./tools
+CPPFLAGS += $(LOCAL_INCLUDE_DIRS)
+CFLAGS += $(FMSX_INCLUDE_DIRS)
+CFLAGS += $(LOCAL_INCLUDE_DIRS)
 CFLAGS += $(BLUEMSX_INCLUDE_DIRS)
 CXXFLAGS += $(BLUEMSX_INCLUDE_DIRS)
+CXXFLAGS += $(FMSX_INCLUDE_DIRS)
+CXXFLAGS += $(LOCAL_INCLUDE_DIRS)
 
 ifeq ($(MSXBARE_SIZE_OPT),1)
 CFLAGS += -Os -ffunction-sections -fdata-sections
@@ -75,27 +101,37 @@ CXXFLAGS += -Os -ffunction-sections -fdata-sections
 LDFLAGS += --gc-sections
 endif
 
-OBJS = main.o kernel.o combo_screen_device.o tools/input/keyboard_input.o tools/input/usb_hid_input_queue.o tools/usb_hid_gamepad.o tools/usb_hid_keyboard.o tools/render/gfx_textbox.o tools/render/viewport_screenshot.o tools/menu/combo_menu.o tools/menu/combo_menu_items.o tools/media/media_catalog.o tools/file_browser/combo_file_browser.o tools/debug/combo_debug_overlay.o
+OBJS = main.o kernel.o combo_screen_device.o tools/input/keyboard_input.o tools/input/usb_hid_input_queue.o tools/usb_hid_gamepad.o tools/usb_hid_keyboard.o tools/render/gfx_textbox.o tools/render/viewport_screenshot.o tools/menu/combo_menu.o tools/menu/combo_menu_items.o tools/media/media_catalog.o tools/file_browser/combo_file_browser.o
+ifeq ($(DEBUG),1)
+OBJS += tools/debug/combo_debug_overlay.o
+endif
 OBJS += tools/locale/combo_locale.o tools/locale/combo_locale_pt.o tools/locale/combo_locale_en.o tools/locale/combo_locale_es.o
-OBJS += machine_profile_catalog.o
-OBJS += emulator_backend.o fmsx_backend_shim.o bluemsx_backend.o
+OBJS += backend/core/registry.o backend/msx/backend.o
+OBJS += backend/msx/gamemaster_catalog.o backend/msx/machine_profile_catalog.o
+OBJS += backend/msx/modules/fmsx/module.o backend/msx/modules/bluemsx/module.o
 
 # Rules.mk clean handles current dir globs; include nested tool objects/deps.
 EXTRACLEAN += tools/*.o tools/*.d tools/*/*.o tools/*/*.d
+EXTRACLEAN += backend/*.o backend/*.d backend/*/*.o backend/*/*.d backend/*/*/*.o backend/*/*/*.d backend/*/*/*/*.o backend/*/*/*/*.d
 
-OBJS += fmsx_runtime.o fmsx_host_stubs.o fmsx_compat_stubs.o fmsx_libc_shim.o
-OBJS += fmsx_math_shim.o
-OBJS += bluemsx_savestate_stubs.o fmsx_upstream_bluemsx_openym2413_2.o fmsx_local_ym2413_bluemsx.o
-OBJS += gamemaster_catalog.o
-OBJS += fmsx_virtual_fs.o fmsx_initramfs.o
-OBJS += fmsx_carts_sha_fallback.o
-OBJS += fmsx_embedded_initramfs.o
-OBJS += fmsx_embedded_roms.o
-OBJS += fmsx_upstream_msx.o fmsx_upstream_v9938.o fmsx_upstream_z80.o
-OBJS += fmsx_local_sound.o fmsx_upstream_sha1.o
-OBJS += fmsx_upstream_fdidisk.o
-OBJS += fmsx_upstream_i8255.o fmsx_local_ym2413.o fmsx_upstream_ay8910.o fmsx_local_scc.o fmsx_upstream_wd1793.o
-OBJS += fmsx_upstream_opll.o fmsx_upstream_wrapnukeykt.o
+FMSX_RUNTIME_OBJS = $(FMSX_MODULE_DIR)/fmsx_runtime.o $(FMSX_MODULE_DIR)/fmsx_host_stubs.o $(FMSX_MODULE_DIR)/fmsx_compat_stubs.o $(FMSX_MODULE_DIR)/fmsx_libc_shim.o
+FMSX_RUNTIME_OBJS += $(FMSX_MODULE_DIR)/fmsx_math_shim.o
+FMSX_RUNTIME_OBJS += $(FMSX_MODULE_DIR)/bluemsx_savestate_stubs.o $(FMSX_MODULE_DIR)/fmsx_upstream_bluemsx_openym2413_2.o $(FMSX_MODULE_DIR)/fmsx_local_ym2413_bluemsx.o
+FMSX_RUNTIME_OBJS += $(FMSX_MODULE_DIR)/fmsx_virtual_fs.o $(FMSX_MODULE_DIR)/fmsx_initramfs.o
+FMSX_RUNTIME_OBJS += $(FMSX_MODULE_DIR)/fmsx_carts_sha_fallback.o
+FMSX_RUNTIME_OBJS += $(FMSX_MODULE_DIR)/fmsx_embedded_initramfs.o
+FMSX_RUNTIME_OBJS += $(FMSX_MODULE_DIR)/fmsx_embedded_roms.o
+FMSX_RUNTIME_OBJS += $(FMSX_MODULE_DIR)/fmsx_upstream_msx.o $(FMSX_MODULE_DIR)/fmsx_upstream_v9938.o $(FMSX_MODULE_DIR)/fmsx_upstream_z80.o
+FMSX_RUNTIME_OBJS += $(FMSX_MODULE_DIR)/fmsx_local_sound.o $(FMSX_MODULE_DIR)/fmsx_upstream_sha1.o
+FMSX_RUNTIME_OBJS += $(FMSX_MODULE_DIR)/fmsx_upstream_fdidisk.o
+FMSX_RUNTIME_OBJS += $(FMSX_MODULE_DIR)/fmsx_upstream_i8255.o $(FMSX_MODULE_DIR)/fmsx_local_ym2413.o $(FMSX_MODULE_DIR)/fmsx_upstream_ay8910.o $(FMSX_MODULE_DIR)/fmsx_local_scc.o $(FMSX_MODULE_DIR)/fmsx_upstream_wd1793.o
+FMSX_RUNTIME_OBJS += $(FMSX_MODULE_DIR)/fmsx_upstream_opll.o $(FMSX_MODULE_DIR)/fmsx_upstream_wrapnukeykt.o
+
+OBJS += $(FMSX_RUNTIME_OBJS)
+
+BACKEND_MODULE_FMSX_OBJS = $(FMSX_MODULE_DIR)/loadable_manifest.o $(FMSX_MODULE_DIR)/module.o
+BACKEND_MODULE_FMSX_OBJS += backend/msx/gamemaster_catalog.o backend/msx/machine_profile_catalog.o
+BACKEND_MODULE_FMSX_OBJS += $(FMSX_RUNTIME_OBJS)
 
 LIBS = $(CIRCLEHOME)/lib/sound/libsound.a \
 	   $(CIRCLEHOME)/lib/sched/libsched.a \
@@ -113,5 +149,11 @@ $(CIRCLEHOME)/addon/SDCard/libsdcard.a:
 
 $(CIRCLEHOME)/addon/fatfs/libfatfs.a:
 	$(MAKE) -C $(CIRCLEHOME)/addon/fatfs PREFIX64=$(PREFIX64) EXTRAINCLUDE=-I$(CURDIR)/fatfs_compat
+
+.PHONY: backend-module
+
+backend-module: $(BACKEND_MODULE_FMSX_OBJS)
+	@mkdir -p ../artifacts/backend/msx
+	$(LD) -r -o ../artifacts/backend/msx/msx.fmsx.mod.elf $(BACKEND_MODULE_FMSX_OBJS)
 
 -include $(DEPS)
