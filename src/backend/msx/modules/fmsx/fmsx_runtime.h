@@ -20,10 +20,12 @@ typedef struct {
 typedef struct {
     unsigned logical_width;
     unsigned logical_height;
+    unsigned pitch_pixels;
     unsigned hires_mode;
     unsigned interlaced_mode;
     unsigned woven_hires;
     unsigned field_parity_odd;
+    unsigned disable_scanline_postfx;
 } TFmsxVideoPresentation;
 
 typedef struct {
@@ -499,6 +501,8 @@ boolean fmsx_runtime_get_disk_rom_enabled(void);
 void fmsx_runtime_set_kanji_rom_enabled(boolean enabled);
 boolean fmsx_runtime_get_kanji_rom_enabled(void);
 boolean fmsx_runtime_get_kanji_rom_available(void);
+void fmsx_runtime_set_gfx9000_enabled(boolean enabled);
+boolean fmsx_runtime_get_gfx9000_enabled(void);
 void fmsx_runtime_set_boot_mode(unsigned mode);
 unsigned fmsx_runtime_get_boot_mode(void);
 unsigned fmsx_runtime_get_active_boot_mode(void);

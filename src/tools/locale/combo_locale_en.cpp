@@ -37,6 +37,7 @@ extern const TComboLocaleStrings g_ComboLocaleEN = {
     "Resolution",
     "Scale",
     "Scanline",
+    "GFX9000",
     "Standard",
     "Disk ROM",
     "Kanji ROM",

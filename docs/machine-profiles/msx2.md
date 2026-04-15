@@ -13,13 +13,16 @@
 - `MSX2.ROM`
 - `MSX2EXT.ROM` (ou aliases compatíveis)
 - `DISK.ROM`
+- `MSXDOS2.ROM` (opcional, mas necessária para boot em MSX-DOS 2 em vez de Disk BASIC 1.0)
 
 ## Workflow de boot
 
 1. Runtime aplica perfil `MSX2` (`machine=1`).
 2. BIOS principal + SUBROM são carregadas no mapa do modelo.
 3. `DISK.ROM` é mapeada quando `disk_rom=1`.
-4. `TM3` deve refletir estado de disco em `D:e/l`.
+4. Se `MSXDOS2.ROM` estiver disponível, o runtime arma o cartucho DOS2 no boot.
+5. Com `DRIVEA.DSK` presente desde o initramfs inicial, o boot pode entrar direto no MSX-DOS 2.
+6. `TM3` deve refletir estado de disco em `D:e/l`.
 
 ## Defaults de runtime (catálogo)
 

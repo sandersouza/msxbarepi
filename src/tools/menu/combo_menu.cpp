@@ -766,6 +766,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_Language(ComboLanguageEN),
     m_ResolutionMode(0u),
     m_ScanlineMode(0u),
+    m_Gfx9000Enabled(FALSE),
     m_RefreshRateHz(60u),
     m_DiskRomEnabled(TRUE),
     m_KanjiRomEnabled(TRUE),
@@ -829,6 +830,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnLanguage(ComboLanguageEN),
     m_LastDrawnResolutionMode(0u),
     m_LastDrawnScanlineMode(0u),
+    m_LastDrawnGfx9000Enabled(FALSE),
     m_LastDrawnRefreshRateHz(60u),
     m_LastDrawnDiskRomEnabled(TRUE),
     m_LastDrawnKanjiRomEnabled(TRUE),
@@ -972,6 +974,7 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnLanguage = m_Language;
     m_LastDrawnResolutionMode = m_ResolutionMode;
     m_LastDrawnScanlineMode = m_ScanlineMode;
+    m_LastDrawnGfx9000Enabled = m_Gfx9000Enabled;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
     m_LastDrawnDiskRomEnabled = m_DiskRomEnabled;
     m_LastDrawnKanjiRomEnabled = m_KanjiRomEnabled;
@@ -1134,6 +1137,16 @@ void CComboPauseMenu::SetScanlineMode(unsigned mode)
     if (m_ScanlineMode != mode)
     {
         m_ScanlineMode = mode;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+void CComboPauseMenu::SetGfx9000Enabled(boolean enabled)
+{
+    enabled = enabled ? TRUE : FALSE;
+    if (m_Gfx9000Enabled != enabled)
+    {
+        m_Gfx9000Enabled = enabled;
         m_ForceRedraw = TRUE;
     }
 }
@@ -1773,6 +1786,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
             m_Language,
             m_ResolutionMode,
             m_ScanlineMode,
+            m_Gfx9000Enabled,
             m_RefreshRateHz,
             m_DiskRomEnabled,
             m_BootMode,
@@ -2768,6 +2782,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             handled_settings_input = enter_edge || left_step || right_step;
         }
         else if ((items[m_Selected].action == ComboMenuActionToggleFmMusic)
+              || (items[m_Selected].action == ComboMenuActionToggleGfx9000)
               || (items[m_Selected].action == ComboMenuActionToggleSccCart))
         {
             if (enter_edge || left_step || right_step)
@@ -3183,6 +3198,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnLanguage == m_Language
      && m_LastDrawnResolutionMode == m_ResolutionMode
      && m_LastDrawnScanlineMode == m_ScanlineMode
+     && m_LastDrawnGfx9000Enabled == m_Gfx9000Enabled
      && m_LastDrawnRefreshRateHz == m_RefreshRateHz
      && m_LastDrawnDiskRomEnabled == m_DiskRomEnabled
      && m_LastDrawnKanjiRomEnabled == m_KanjiRomEnabled
@@ -3493,6 +3509,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnLanguage = m_Language;
     m_LastDrawnResolutionMode = m_ResolutionMode;
     m_LastDrawnScanlineMode = m_ScanlineMode;
+    m_LastDrawnGfx9000Enabled = m_Gfx9000Enabled;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
     m_LastDrawnDiskRomEnabled = m_DiskRomEnabled;
     m_LastDrawnKanjiRomEnabled = m_KanjiRomEnabled;

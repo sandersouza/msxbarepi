@@ -14,6 +14,7 @@ MSXBARE_SIZE_OPT ?= 1
 OWNER ?=
 MSXBARE_PATREON_TAG ?=
 MSXBARE_FEAT_SCC ?= 1
+MSXBARE_FEAT_GFX9000 ?= 1
 MSXBARE_FEAT_FMPAC ?= 1
 MSXBARE_FEAT_DISK_ROM ?= 1
 MSXBARE_FEAT_MEGARAM ?= 1
@@ -98,6 +99,8 @@ CIRCLE_REQUIRED_LIBS := \
 	third_party/circle/addon/SDCard/libsdcard.a \
 	third_party/circle/addon/fatfs/libfatfs.a
 CIRCLE_MAKE_FLAGS := PREFIX64=$(CROSS)
+CIRCLE_CONFIG_STAMP := $(BUILD_DIR)/circle-build.stamp
+CIRCLE_ASM_COMMAND := AS='$(CROSS)gcc $(CIRCLE_EXTRAINCLUDE)'
 
 .PHONY: all default backend-module clean help guard-third-party circle-configure circle-configure-force circle-libs circle sdcard sdcard-update initramfs package menuconfig syncconfig config-header
 
@@ -106,7 +109,7 @@ all: default
 default: config-header circle-libs
 	@mkdir -p artifacts
 	@mkdir -p artifacts build/src
-	$(MAKE) -C src $(CIRCLE_MAKE_FLAGS) clean >/dev/null
+	$(MAKE) -C src $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 clean >/dev/null
 	$(MAKE) -C src $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 \
 		EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' \
 		DEBUG=$(DEBUG_BOOL) \
@@ -119,6 +122,7 @@ default: config-header circle-libs
 		MSXBARE_BUILD_BID="$(BUILD_BID)" \
 		MSXBARE_BUILD_OWNER="$(EFFECTIVE_OWNER)" \
 		MSXBARE_FEAT_SCC=$(MSXBARE_FEAT_SCC) \
+		MSXBARE_FEAT_GFX9000=$(MSXBARE_FEAT_GFX9000) \
 		MSXBARE_FEAT_FMPAC=$(MSXBARE_FEAT_FMPAC) \
 		MSXBARE_FEAT_DISK_ROM=$(MSXBARE_FEAT_DISK_ROM) \
 		MSXBARE_FEAT_MEGARAM=$(MSXBARE_FEAT_MEGARAM) \
@@ -139,7 +143,7 @@ default: config-header circle-libs
 	fi; \
 	cp "$$img" build/src/kernel8.img; \
 	cp build/src/kernel8.img $(BOOTSTRAP_ARTIFACT)
-	$(MAKE) -C src $(CIRCLE_MAKE_FLAGS) clean >/dev/null
+	$(MAKE) -C src $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 clean >/dev/null
 	cp $(BOOTSTRAP_ARTIFACT) $(DEFAULT_ARTIFACT)
 	@issue_branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true); \
 	issue_id=$$(printf "%s" "$$issue_branch" | sed -n 's/^\([0-9][0-9]*\)-.*/\1/p'); \
@@ -164,6 +168,7 @@ backend-module: config-header
 		MSXBARE_BUILD_BID="$(BUILD_BID)" \
 		MSXBARE_BUILD_OWNER="$(EFFECTIVE_OWNER)" \
 		MSXBARE_FEAT_SCC=$(MSXBARE_FEAT_SCC) \
+		MSXBARE_FEAT_GFX9000=$(MSXBARE_FEAT_GFX9000) \
 		MSXBARE_FEAT_FMPAC=$(MSXBARE_FEAT_FMPAC) \
 		MSXBARE_FEAT_DISK_ROM=$(MSXBARE_FEAT_DISK_ROM) \
 		MSXBARE_FEAT_MEGARAM=$(MSXBARE_FEAT_MEGARAM) \
@@ -193,45 +198,68 @@ circle-configure-force: guard-third-party
 	cd third_party/circle && ./configure -r 3 -p $(CROSS) -f
 
 circle-libs: circle-configure
-	@missing=0; \
+	@mkdir -p $(BUILD_DIR); \
+	config_state='CROSS=$(CROSS)\nEXTRAINCLUDE=$(CIRCLE_EXTRAINCLUDE)\nAS=$(CROSS)gcc $(CIRCLE_EXTRAINCLUDE)\nFATFS=$(FATFS_COMPAT_INCLUDE)'; \
+	rebuild=0; \
+	if [ ! -f "$(CIRCLE_CONFIG_STAMP)" ]; then \
+		rebuild=1; \
+	elif ! printf '%b\n' "$$config_state" | cmp -s - "$(CIRCLE_CONFIG_STAMP)"; then \
+		rebuild=1; \
+	fi; \
+	missing=0; \
 	for lib in $(CIRCLE_REQUIRED_LIBS); do \
 		if [ ! -f "$$lib" ]; then \
 		echo "Circle faltando: $$lib"; \
 			missing=1; \
 		fi; \
 	done; \
-	if [ "$$missing" -eq 0 ]; then \
+	if [ "$$missing" -eq 0 ] && [ "$$rebuild" -eq 0 ]; then \
 		echo "Circle OK: libs presentes (use 'make circle' para rebuild forcado)"; \
 	else \
-		echo "Gerando Circle (libs ausentes)..."; \
-		$(MAKE) -C third_party/circle/lib $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
-		$(MAKE) -C third_party/circle/lib/sound $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
-		$(MAKE) -C third_party/circle/lib/sched $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
-		$(MAKE) -C third_party/circle/lib/usb $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
-		$(MAKE) -C third_party/circle/lib/input $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
-		$(MAKE) -C third_party/circle/lib/fs $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
-		$(MAKE) -C third_party/circle/addon/SDCard $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
-		$(MAKE) -C third_party/circle/addon/fatfs $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE) $(FATFS_COMPAT_INCLUDE)' >/dev/null; \
+		if [ "$$rebuild" -eq 1 ]; then \
+			echo "Circle mudou de configuracao; rebuild forcado..."; \
+			$(MAKE) -C third_party/circle/lib $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) clean >/dev/null; \
+			$(MAKE) -C third_party/circle/lib/sound $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) clean >/dev/null; \
+			$(MAKE) -C third_party/circle/lib/sched $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) clean >/dev/null; \
+			$(MAKE) -C third_party/circle/lib/usb $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) clean >/dev/null; \
+			$(MAKE) -C third_party/circle/lib/input $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) clean >/dev/null; \
+			$(MAKE) -C third_party/circle/lib/fs $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) clean >/dev/null; \
+			$(MAKE) -C third_party/circle/addon/SDCard $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) clean >/dev/null; \
+			$(MAKE) -C third_party/circle/addon/fatfs $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) clean >/dev/null; \
+		else \
+			echo "Gerando Circle (libs ausentes)..."; \
+		fi; \
+		$(MAKE) -C third_party/circle/lib $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
+		$(MAKE) -C third_party/circle/lib/sound $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
+		$(MAKE) -C third_party/circle/lib/sched $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
+		$(MAKE) -C third_party/circle/lib/usb $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
+		$(MAKE) -C third_party/circle/lib/input $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
+		$(MAKE) -C third_party/circle/lib/fs $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
+		$(MAKE) -C third_party/circle/addon/SDCard $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null; \
+		$(MAKE) -C third_party/circle/addon/fatfs $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE) $(FATFS_COMPAT_INCLUDE)' >/dev/null; \
+		printf '%b\n' "$$config_state" > "$(CIRCLE_CONFIG_STAMP)"; \
 	fi
 
 circle: circle-configure-force
 	@echo "Rebuild forcado do Circle..."
-	$(MAKE) -C third_party/circle/lib $(CIRCLE_MAKE_FLAGS) clean >/dev/null
-	$(MAKE) -C third_party/circle/lib/sound $(CIRCLE_MAKE_FLAGS) clean >/dev/null
-	$(MAKE) -C third_party/circle/lib/sched $(CIRCLE_MAKE_FLAGS) clean >/dev/null
-	$(MAKE) -C third_party/circle/lib/usb $(CIRCLE_MAKE_FLAGS) clean >/dev/null
-	$(MAKE) -C third_party/circle/lib/input $(CIRCLE_MAKE_FLAGS) clean >/dev/null
-	$(MAKE) -C third_party/circle/lib/fs $(CIRCLE_MAKE_FLAGS) clean >/dev/null
-	$(MAKE) -C third_party/circle/addon/SDCard $(CIRCLE_MAKE_FLAGS) clean >/dev/null
-	$(MAKE) -C third_party/circle/addon/fatfs $(CIRCLE_MAKE_FLAGS) clean >/dev/null
-	$(MAKE) -C third_party/circle/lib $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
-	$(MAKE) -C third_party/circle/lib/sound $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
-	$(MAKE) -C third_party/circle/lib/sched $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
-	$(MAKE) -C third_party/circle/lib/usb $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
-	$(MAKE) -C third_party/circle/lib/input $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
-	$(MAKE) -C third_party/circle/lib/fs $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
-	$(MAKE) -C third_party/circle/addon/SDCard $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
-	$(MAKE) -C third_party/circle/addon/fatfs $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE) $(FATFS_COMPAT_INCLUDE)' >/dev/null
+	@mkdir -p $(BUILD_DIR)
+	$(MAKE) -C third_party/circle/lib $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) clean >/dev/null
+	$(MAKE) -C third_party/circle/lib/sound $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) clean >/dev/null
+	$(MAKE) -C third_party/circle/lib/sched $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) clean >/dev/null
+	$(MAKE) -C third_party/circle/lib/usb $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) clean >/dev/null
+	$(MAKE) -C third_party/circle/lib/input $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) clean >/dev/null
+	$(MAKE) -C third_party/circle/lib/fs $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) clean >/dev/null
+	$(MAKE) -C third_party/circle/addon/SDCard $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) clean >/dev/null
+	$(MAKE) -C third_party/circle/addon/fatfs $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) clean >/dev/null
+	$(MAKE) -C third_party/circle/lib $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/lib/sound $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/lib/sched $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/lib/usb $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/lib/input $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/lib/fs $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/addon/SDCard $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' >/dev/null
+	$(MAKE) -C third_party/circle/addon/fatfs $(CIRCLE_MAKE_FLAGS) $(CIRCLE_ASM_COMMAND) CHECK_DEPS=0 EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE) $(FATFS_COMPAT_INCLUDE)' >/dev/null
+	@printf '%b\n' 'CROSS=$(CROSS)\nEXTRAINCLUDE=$(CIRCLE_EXTRAINCLUDE)\nAS=$(CROSS)gcc $(CIRCLE_EXTRAINCLUDE)\nFATFS=$(FATFS_COMPAT_INCLUDE)' > "$(CIRCLE_CONFIG_STAMP)"
 	@echo "Circle rebuild concluido."
 
 menuconfig:
@@ -243,6 +271,7 @@ syncconfig:
 config-header:
 	@mkdir -p $(BUILD_DIR)
 	MSXBARE_FEAT_SCC="$(MSXBARE_FEAT_SCC)" \
+	MSXBARE_FEAT_GFX9000="$(MSXBARE_FEAT_GFX9000)" \
 	MSXBARE_FEAT_FMPAC="$(MSXBARE_FEAT_FMPAC)" \
 	MSXBARE_FEAT_DISK_ROM="$(MSXBARE_FEAT_DISK_ROM)" \
 	MSXBARE_FEAT_MEGARAM="$(MSXBARE_FEAT_MEGARAM)" \
@@ -261,7 +290,7 @@ config-header:
 
 clean:
 	@if [ -f third_party/circle/Config.mk ]; then \
-		$(MAKE) -C src $(CIRCLE_MAKE_FLAGS) clean >/dev/null || true; \
+		$(MAKE) -C src $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 clean >/dev/null || true; \
 		$(MAKE) -C third_party/circle/lib $(CIRCLE_MAKE_FLAGS) clean >/dev/null || true; \
 		$(MAKE) -C third_party/circle/lib/sound $(CIRCLE_MAKE_FLAGS) clean >/dev/null || true; \
 		$(MAKE) -C third_party/circle/lib/sched $(CIRCLE_MAKE_FLAGS) clean >/dev/null || true; \

@@ -46,6 +46,7 @@ typedef struct {
     const char *settings_resolution;
     const char *settings_scale;
     const char *settings_scanlines;
+    const char *settings_gfx9000;
     const char *settings_refresh;
     const char *settings_disk_rom;
     const char *settings_kanji_rom;

@@ -41,6 +41,14 @@ kconfig_string() {
   printf '%s' "$line"
 }
 
+ensure_missing_kconfig_defaults() {
+  [ -f "$CONFIG_KCONFIG_FILE" ] || return 0
+
+  if ! grep -Eq '^(CONFIG_MSXBARE_FEAT_GFX9000=y|# CONFIG_MSXBARE_FEAT_GFX9000 is not set)$' "$CONFIG_KCONFIG_FILE" 2>/dev/null; then
+    printf 'CONFIG_MSXBARE_FEAT_GFX9000=y\n' >> "$CONFIG_KCONFIG_FILE"
+  fi
+}
+
 ensure_default_kconfig() {
   cat > "$CONFIG_KCONFIG_FILE" <<'KCONF'
 # Auto-generated baseline config for MSX BarePI
@@ -55,6 +63,7 @@ CONFIG_MSXBARE_FEAT_MSX2P=y
 # CONFIG_MSXBARE_ONE_ROM_MODE is not set
 CONFIG_MSXBARE_ONE_ROM_PATH=""
 CONFIG_MSXBARE_FEAT_SCC=y
+CONFIG_MSXBARE_FEAT_GFX9000=y
 CONFIG_MSXBARE_FEAT_FMPAC=y
 CONFIG_MSXBARE_FEAT_DISK_ROM=y
 CONFIG_MSXBARE_FEAT_MEGARAM=y
@@ -66,7 +75,7 @@ KCONF
 
 write_kconfig_from_legacy() {
   local legacy="$1"
-  local debug=1 scc=1 fmpac=1 disk=1 megaram=1 msx2=1 bootscreen=0 msx2p=1 loadrom=1 loaddisk=1 onerom=0
+  local debug=1 scc=1 gfx9000=1 fmpac=1 disk=1 megaram=1 msx2=1 bootscreen=0 msx2p=1 loadrom=1 loaddisk=1 onerom=0
   local onerom_path="" bootmode="NORM" patreon=""
 
   # shellcheck disable=SC1090
@@ -74,6 +83,7 @@ write_kconfig_from_legacy() {
 
   debug="${DEBUG:-1}"
   scc="${MSXBARE_FEAT_SCC:-1}"
+  gfx9000="${MSXBARE_FEAT_GFX9000:-1}"
   fmpac="${MSXBARE_FEAT_FMPAC:-1}"
   disk="${MSXBARE_FEAT_DISK_ROM:-1}"
   megaram="${MSXBARE_FEAT_MEGARAM:-1}"
@@ -124,6 +134,7 @@ write_kconfig_from_legacy() {
     [ "$(yn "$onerom")" = "y" ] && echo "CONFIG_MSXBARE_ONE_ROM_MODE=y" || echo "# CONFIG_MSXBARE_ONE_ROM_MODE is not set"
     echo "CONFIG_MSXBARE_ONE_ROM_PATH=\"${onerom_path}\""
     [ "$(yn "$scc")" = "y" ] && echo "CONFIG_MSXBARE_FEAT_SCC=y" || echo "# CONFIG_MSXBARE_FEAT_SCC is not set"
+    [ "$(yn "$gfx9000")" = "y" ] && echo "CONFIG_MSXBARE_FEAT_GFX9000=y" || echo "# CONFIG_MSXBARE_FEAT_GFX9000 is not set"
     [ "$(yn "$fmpac")" = "y" ] && echo "CONFIG_MSXBARE_FEAT_FMPAC=y" || echo "# CONFIG_MSXBARE_FEAT_FMPAC is not set"
     [ "$(yn "$disk")" = "y" ] && echo "CONFIG_MSXBARE_FEAT_DISK_ROM=y" || echo "# CONFIG_MSXBARE_FEAT_DISK_ROM is not set"
     [ "$(yn "$megaram")" = "y" ] && echo "CONFIG_MSXBARE_FEAT_MEGARAM=y" || echo "# CONFIG_MSXBARE_FEAT_MEGARAM is not set"
@@ -143,15 +154,18 @@ prepare_kconfig_file() {
   fi
 
   if grep -q '^CONFIG_' "$CONFIG_KCONFIG_FILE"; then
+    ensure_missing_kconfig_defaults
     return 0
   fi
 
   if grep -q '^DEBUG=' "$CONFIG_KCONFIG_FILE"; then
     write_kconfig_from_legacy "$CONFIG_KCONFIG_FILE"
+    ensure_missing_kconfig_defaults
     return 0
   fi
 
   ensure_default_kconfig
+  ensure_missing_kconfig_defaults
 }
 
 emit_make_config() {
@@ -159,6 +173,7 @@ emit_make_config() {
 
   local DEBUG
   local MSXBARE_FEAT_SCC
+  local MSXBARE_FEAT_GFX9000
   local MSXBARE_FEAT_FMPAC
   local MSXBARE_FEAT_DISK_ROM
   local MSXBARE_FEAT_MEGARAM
@@ -174,6 +189,7 @@ emit_make_config() {
 
   DEBUG="$(kconfig_enabled MSXBARE_DEBUG)"
   MSXBARE_FEAT_SCC="$(kconfig_enabled MSXBARE_FEAT_SCC)"
+  MSXBARE_FEAT_GFX9000="$(kconfig_enabled MSXBARE_FEAT_GFX9000)"
   MSXBARE_FEAT_FMPAC="$(kconfig_enabled MSXBARE_FEAT_FMPAC)"
   MSXBARE_FEAT_DISK_ROM="$(kconfig_enabled MSXBARE_FEAT_DISK_ROM)"
   MSXBARE_FEAT_MEGARAM="$(kconfig_enabled MSXBARE_FEAT_MEGARAM)"
@@ -213,6 +229,8 @@ emit_make_config() {
     echo "DEBUG := $DEBUG"
     echo "MSXBARE_FEAT_SCC_CONFIG := $MSXBARE_FEAT_SCC"
     echo "MSXBARE_FEAT_SCC := $MSXBARE_FEAT_SCC"
+    echo "MSXBARE_FEAT_GFX9000_CONFIG := $MSXBARE_FEAT_GFX9000"
+    echo "MSXBARE_FEAT_GFX9000 := $MSXBARE_FEAT_GFX9000"
     echo "MSXBARE_FEAT_FMPAC_CONFIG := $MSXBARE_FEAT_FMPAC"
     echo "MSXBARE_FEAT_FMPAC := $MSXBARE_FEAT_FMPAC"
     echo "MSXBARE_FEAT_DISK_ROM_CONFIG := $MSXBARE_FEAT_DISK_ROM"

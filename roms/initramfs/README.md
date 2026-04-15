@@ -9,6 +9,7 @@ No runtime atual do `src`, esses nomes são detectados automaticamente no `msx.c
 MSX.ROM   - BIOS do MSX 1
 MSX2.ROM  - BIOS do MSX 2
 MSX2EXT.ROM - Extensão de BIOS para MSX2
+MSXDOS2.ROM - Cartucho MSX-DOS 2 (carregado automaticamente no boot de MSX2/MSX2+ quando disponível)
 MSX2P.ROM - BIOS do MSX 2+
 MSX2PEXT.ROM - Extensão de BIOS para MSX2+
 KANJI.ROM - ROM de Kanji
@@ -18,6 +19,10 @@ CARTB.ROM - Cartucho porta B ( Slot 1-2 )
 DRIVEA.DSK - Drive de disquete virtual A
 DRIVEB.DSK - Drive de disquete virtual B
 ```
+
+No fluxo `boot-minimal` do runtime atual, `MSXDOS2.ROM`, `DRIVEA.DSK` e `DRIVEB.DSK`
+precisam usar exatamente esses nomes canônicos para ficarem disponíveis já na
+primeira tentativa de boot do MSX2/MSX2+.
 
 Para boot completo de MSX2+ (logo do HB-F1XDJ), use as ROMs Sony HB-F1XDJ
 nos nomes canônicos já usados pelo runtime:

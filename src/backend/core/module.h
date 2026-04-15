@@ -21,10 +21,12 @@ typedef struct {
 typedef struct {
     unsigned logical_width;
     unsigned logical_height;
+    unsigned pitch_pixels;
     boolean hires_mode;
     boolean interlaced_mode;
     boolean woven_hires;
     boolean field_parity_odd;
+    boolean disable_scanline_postfx;
 } BackendVideoPresentation;
 
 typedef struct {

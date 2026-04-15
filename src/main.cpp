@@ -1,16 +1,17 @@
 #include "kernel.h"
 #include <circle/startup.h>
 
+static CComboKernel g_Kernel;
+
 int main(void)
 {
-	CComboKernel kernel;
-	if (!kernel.Initialize())
+	if (!g_Kernel.Initialize())
 	{
 		halt();
 		return EXIT_HALT;
 	}
 
-	const TComboShutdownMode shutdown_mode = kernel.Run();
+	const TComboShutdownMode shutdown_mode = g_Kernel.Run();
 
 	if (shutdown_mode == ComboShutdownReboot)
 	{

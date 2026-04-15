@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch main
 
-Ultima atualizacao: 10/04/2026 (17:25 -03)
+Ultima atualizacao: 10/04/2026 (16:11 -03)
 
 ## Objetivo da branch
 
@@ -8,6 +8,18 @@ Manter a baseline principal do `msxbarepi` coerente entre codigo, fluxo operacio
 
 ## Atualizacao desta iteracao
 
+- Foi aberta a issue avulsa `#251` para a trilha `V9990/GFX9000`, com espelho local em `docs/issues/251-suporte-cartucho-vdp-v9990.md`.
+- A issue `#251` foi ativada, recebeu branch vinculada `251-suporte-cartucho-vdp-v9990` e esta no projeto `MSX BarePI` com `Status: In progress`.
+- O PR `#250` foi aceito e mergeado em `main`, fechando a issue `#249`.
+- `origin/main` agora aponta para o merge commit `1e936ec`.
+- A branch remota `249-backend-framework-modular-por-familia-msx` foi removida apos o merge.
+- O baseline atual de `main` inclui, alem da modularizacao de backend por familia:
+  - fastboot com ordem `screen/audio -> msxbarepi.cfg -> backend -> debug/UART (DEBUG=1) -> USB HID -> init diferido`
+  - `msxbarepi.cfg` como nome canonico do arquivo de configuracao no SD e nos scripts
+  - `logger/serial` e o renderer do overlay condicionados a `DEBUG=1`
+  - wipe global do overlay nas transicoes `MAX/MIN/OFF`
+  - overlay sempre iniciado em `OFF` no boot e so depois assumindo `debugger=` do cfg
+- Durante a sincronizacao local pos-merge, o commit local isolado `a9d9ea5` foi preservado em `backup/main-a9d9ea5` antes de realinhar `main` com `origin/main`.
 - A arvore `src/backend/` foi introduzida para separar o framework de backend por familia da implementacao concreta atual.
 - O include publico do kernel passou a ser por familia:
   - `backend/msx/backend.h`
@@ -45,6 +57,8 @@ Manter a baseline principal do `msxbarepi` coerente entre codigo, fluxo operacio
 - `src/kernel.cpp`
 - `src/machine_profile_catalog.c`
 - `src/tools/menu/combo_menu.cpp`
+- `src/tools/debug/debug_runtime_gate.h`
+- `src/tools/debug/combo_debug_overlay.cpp`
 - `src/backend/core/module.h`
 - `src/backend/core/registry.h`
 - `src/backend/core/registry.c`
@@ -54,11 +68,19 @@ Manter a baseline principal do `msxbarepi` coerente entre codigo, fluxo operacio
 - `src/backend/msx/modules/fmsx/module.c`
 - `src/backend/msx/modules/fmsx/loadable_manifest.c`
 - `src/backend/msx/modules/bluemsx/module.c`
+- `scripts/make-sdcard-package.sh`
+- `scripts/prepare-sd.sh`
+- `scripts/update-sd-incremental.sh`
+- `sdcard/msxbarepi.cfg`
 - `docs/backend-framework.md`
+- `docs/debug-layer.md`
+- `docs/fluxograma-boot-baremetal-rpi-msx.md`
 - `docs/github-project-management.md`
 
 ## Validacao desta iteracao
 
+- `make clean && make DEBUG=1`: OK
+- `make clean && make DEBUG=0`: OK
 - `make clean && make`: OK
 - `make EMULATOR_BACKEND=fmsx`: OK
 - `make BACKEND_FAMILY=msx BACKEND_DEFAULT=msx.fmsx`: OK
@@ -68,6 +90,8 @@ Manter a baseline principal do `msxbarepi` coerente entre codigo, fluxo operacio
 
 ## Observacoes
 
+- A issue `#249` esta fechada e o PR `#250` ja foi mergeado em `main`.
+- A branch remota da issue foi apagada; a branch local correspondente foi mantida para remocao apenas sob confirmacao explicita do usuario.
 - O loader completo de modulos em runtime continua fora do escopo desta rodada; o que ficou pronto agora foi a ABI, o registry e o artefato loadable.
 - A fachada publica `src/backend/msx/backend.h` ainda reaproveita tipos `TFmsx*` para parte da telemetria de debug; isso preserva compatibilidade nesta baseline e deixa o desacoplamento fino desses tipos para uma rodada posterior.
 - O caminho futuro previsto para descoberta de modulo em runtime ja ficou documentado como `SD:/modules/msx/msx.fmsx.mod.elf`.

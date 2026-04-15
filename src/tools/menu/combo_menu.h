@@ -24,6 +24,7 @@ public:
     unsigned GetScalePercent(void) const;
     boolean IsScaleMaxFitEnabled(void) const;
     void SetScanlineMode(unsigned mode);
+    void SetGfx9000Enabled(boolean enabled);
     void SetRefreshRateHz(unsigned hz);
     unsigned GetRefreshRateHz(void) const;
     void SetDiskRomEnabled(boolean enabled);
@@ -125,6 +126,7 @@ private:
     unsigned m_Language;
     unsigned m_ResolutionMode;
     unsigned m_ScanlineMode;
+    boolean m_Gfx9000Enabled;
     unsigned m_RefreshRateHz;
     boolean m_DiskRomEnabled;
     boolean m_KanjiRomEnabled;
@@ -189,6 +191,7 @@ private:
     unsigned m_LastDrawnLanguage;
     unsigned m_LastDrawnResolutionMode;
     unsigned m_LastDrawnScanlineMode;
+    boolean m_LastDrawnGfx9000Enabled;
     unsigned m_LastDrawnRefreshRateHz;
     boolean m_LastDrawnDiskRomEnabled;
     boolean m_LastDrawnKanjiRomEnabled;

@@ -80,6 +80,8 @@ boolean msx_backend_get_disk_rom_enabled(void);
 void msx_backend_set_kanji_rom_enabled(boolean enabled);
 boolean msx_backend_get_kanji_rom_enabled(void);
 boolean msx_backend_get_kanji_rom_available(void);
+void msx_backend_set_gfx9000_enabled(boolean enabled);
+boolean msx_backend_get_gfx9000_enabled(void);
 void msx_backend_set_boot_mode(unsigned mode);
 unsigned msx_backend_get_boot_mode(void);
 unsigned msx_backend_get_active_boot_mode(void);

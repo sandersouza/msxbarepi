@@ -2,27 +2,1165 @@
 
 Ponto de entrada rapido para contexto operacional do projeto.
 
-- Contexto completo e historico de handoff da branch atual: [docs/handoff/249-backend-framework-modular-por-familia-msx.md](docs/handoff/249-backend-framework-modular-por-familia-msx.md)
-- Guardrail ativo: nem `git commit` local nem `git push` devem acontecer durante cortes experimentais; ambos so voltam quando o usuario declarar explicitamente que a issue ativa ficou estavel.
-- Branch ativa da rodada: `249-backend-framework-modular-por-familia-msx`
-- Issue ativa: `#249 [P0] Estruturar framework de backend modular por família em src/backend (primeira família: msx)`
-- Atualizacao 2026-04-10 (15:56 -03):
+- Contexto completo e historico de handoff da branch atual: [docs/handoff/251-suporte-cartucho-vdp-v9990.md](docs/handoff/251-suporte-cartucho-vdp-v9990.md)
+- Guardrail ativo: a issue `#251` acabou de entrar em execucao; manter a trilha experimental no worktree ate voce declarar estabilidade suficiente para commit/push adicionais.
+- Branch ativa da rodada: `251-suporte-cartucho-vdp-v9990`
+- Issue ativa: `#251 [P1] Implementar suporte ao cartucho/VDP V9990 (GFX9000) no backend MSX`
+- Atualizacao 2026-04-15 (02:42 -03):
+  - a trilha do defeito dos `3` gaps no gameplay entrou no ponto mais forte das referencias: writes raster no `P1` estao sendo aplicados por tempo/pixel em `openMSX`, enquanto o core local ainda desenhava a linha inteira com um unico estado
+  - a UART ja mostrava `AX` mudando exatamente nas linhas do gameplay (`54`, `126`, `160/161`, `176`, `194/195`), o que bate com as bandas horizontais corrompidas
+  - a correcao local desta rodada entrou em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - novo log transiente de eventos raster por frame (`raster_events`)
+    - `AX/BX/AY0/BY0/PRIORITY` com display ativo deixam de sobrescrever a linha corrente inteira
+    - esses writes agora:
+      - registram `y/x` reais do evento no frame
+      - atualizam apenas as linhas seguintes como baseline
+      - o `P1` renderiza a linha em segmentos, aplicando o novo estado apenas a partir do `x` correto
+  - isso aproxima o comportamento local do modelo `sync(time) -> draw(fromX..toX)` do `openMSX`, sem reintroduzir a regressao de rolagem vertical
+  - build atual:
+    - `BUILD_BID: 202604150242-1e936ec`
+    - `TXTDBG BUILD: 02EF`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-14 (11:05 -03):
+  - a trilha mais forte saiu de presenter/raster e entrou no stream do command engine
+  - o dissassembly da `GHOSTGOBLINS.ROM` continua mostrando uploads grandes por `COMMAND_DATA` (`0x62`) cercados por programacao do `V9990`
+  - o core local ainda consumia `LMMC/LMCM/CMMC` com `mode/pitch/image_width` recalculados ao vivo durante o stream
+  - isso divergia da semantica do `openMSX`, que latches o geometry do command engine no inicio do opcode
+  - a correcao local aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c` foi:
+    - latch de `mode/pitch/image_width` no inicio de `fmsx_v9990_cmd_execute()`
+    - `LMMC` e `CMMC` em `PORT_COMMAND_DATA` passaram a usar geometry latched
+    - `LMCM` (`cmd_get_data`) passou a recarregar usando geometry latched
+    - save/load state promovido para `version 4`, persistindo `cmd_mode/cmd_pitch/cmd_image_width`
+    - load `v3` recomposto com geometry latched inferido do estado atual
+  - objetivo do proximo reteste:
+    - confirmar se os `3` gaps do gameplay mudam quando o stream deixa de ser reinterpretado no meio do opcode
+  - build atual:
+    - `BUILD_BID: 202604141105-1e936ec`
+    - `TXTDBG BUILD: C34C`
+    - `BUILD_HASH: 1e936ec-613a64b3e85522b09b1abb51a48bbab910d41061`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-14 (09:39 -03):
+  - a trilha mais forte agora veio do dissassembly da `roms/games/roms/GHOSTGOBLINS.ROM`, nao de heuristica de renderer
+  - o gameplay arma `LMMC` em `P1` e faz stream em `COMMAND_DATA` (`port 0x62`) em rajadas de `0x2000` bytes
+  - em `P1`, `0x2000` bytes equivalem a `64` linhas (`128 bytes/linha`), o que casa diretamente com o sintoma visual dos `4` blocos com `3` cortes
+  - a UART existente ja mostrava que:
+    - o presenter esta limpo (`G9D vp ... dis:1 ... scan:0`)
+    - os holes nascem no framebuffer `P1`
+    - nas linhas furadas, `A/B/final` podem cair em backdrop ao mesmo tempo (`G9D lc ... bg:1 ... fi:1`)
+  - a correcao local desta rodada nao foi mais no presenter nem em `AY/BY`; entrou instrumentacao especifica de `LMMC` em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - `G9L start`
+    - `G9L chunk`
+    - `G9L done`
+    - cada linha carrega `b/total`, `dx/dy/nx/ny/sx/sy/wm/arg/log`
+  - objetivo do proximo reteste:
+    - confirmar se `DX/DY/NX/NY` quebram exatamente nos boundaries de `0x2000`
+    - separar de vez `command engine P1` de qualquer suspeita residual no renderer/presenter
+  - build atual:
+    - `BUILD_BID: 202604140939-1e936ec`
+    - `TXTDBG BUILD: 7AF9`
+    - `BUILD_HASH: 1e936ec-1157ea4c8e9fa04db48d539c9e22a21ce2c022ef`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-14 (10:27 -03):
+  - a UART da `7AF9` mostrou um fato importante: nao saiu nenhum `G9L`
+  - isso invalida a hipotese estreita de que o defeito restante vinha apenas de `LMMC` em `P1`
+  - revisando o dissassembly, a ROM realmente faz `0x34 <- 0x10` em rotinas de upload grandes no banco 7, mas esse upload pode acontecer em outro modo antes do gameplay entrar em `P1`
+  - resposta local desta rodada:
+    - a instrumentacao `G9L` deixou de depender de `mode == P1`
+    - agora qualquer `LMMC` grande (`>= 0x2000` bytes) gera:
+      - `md` (modo real do command engine)
+      - `iw` (image width)
+      - `pt` (pitch)
+      - `dx/dy/nx/ny/sx/sy/wm/arg/log`
+  - objetivo do proximo reteste:
+    - provar se os `4` blocos nascem de upload em `P1`, `Bx` ou `P2`
+    - eliminar de vez a ambiguidade entre `command engine` e `renderer`
+  - build atual:
+    - `BUILD_BID: 202604141027-1e936ec`
+    - `TXTDBG BUILD: 7F77`
+    - `BUILD_HASH: 1e936ec-7de9f0fede05b11f23ba51596b23d424eab2ebb6`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-12 (17:04 -03):
+  - a UART mais util desta trilha segue fechando que o defeito dos blocos nasce no framebuffer `P1`, nao no presenter:
+    - `G9D vp ... dis:1 ... scan:0`
+    - `G9D p1 ... holes:73(0/256/0)...`
+  - o dado mais forte agora e que, nas linhas dos `holes`, a plane `B` aparece cheia (`256`) enquanto o frame final cai para `0`
+  - isso e muito mais compativel com estado de paleta/backdrop incorreto por linha do que com scroll/presenter
+  - a correcao local aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c` foi:
+    - promover `PALETTE_CONTROL` e `BACK_DROP_COLOR` a estado por linha no `P1/P2`
+    - atualizar o baseline em `reset_scroll_line_state()`
+    - atualizar as linhas seguintes do frame quando esses registradores mudarem com display ativo
+    - usar `palette_control_lines[]` e `backdrop_color_lines[]` durante o draw do `P1/P2`
+    - ampliar `G9D lh/ls` para mostrar `pc/bd` exatamente nas linhas dos buracos
+  - build atual:
+    - `BUILD_BID: 202604121704-1e936ec`
+    - `TXTDBG BUILD: E95D`
+    - `BUILD_HASH: 1e936ec-3fc0e52976b5a558fee205128026db2e6fb89dab`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-12 (11:41 -03):
+  - a UART atual fechou que os `3` gaps grandes do gameplay `P1` nao estao vindo do presenter nem do mapa raster:
+    - `G9D vp ... dis:1 ... scan:0`
+    - `G9D ls y:194 ...` ou `G9D ls none`
+  - o `G9D fb` antigo estava misturando os vazios reais do ceu preto com os cortes do cenario, entao a metrica `gap/step` nao isolava o defeito
+  - a resposta local desta rodada foi trocar a instrumentacao para o que realmente interessa no `P1`:
+    - perfil por plane `A/B/final` por linha
+    - resumo de `holes` reais dentro do envelope denso da cena
+  - isso vai dizer se os `3` cortes nascem:
+    - na plane `A`
+    - na plane `B`
+    - ou na composicao final das duas
+  - build atual:
+    - `BUILD_BID: 202604121441-1e936ec`
+    - `TXTDBG BUILD: DADC`
+    - `BUILD_HASH: 1e936ec-57683ced246dca8bd4a2f8b7617d58d9bc70c4b3`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-12 (14:56 -03):
+  - a UART desta rodada mostrou que os `3` gaps grandes restantes nao batem com `AY/BY/AX/BX/PRIORITY`; o mapa raster ainda aparece em `y:194`, enquanto os buracos reais continuam em outras linhas
+  - o desvio estrutural mais forte ficou em `CONTROL/SCREEN_MODE` sendo alternados no meio do frame enquanto o backend ainda reseta/aplica estado como se o `display-on` valesse para o frame inteiro
+  - a correcao local aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c` foi:
+    - preservar o estado ja acumulado nas linhas anteriores
+    - trocar o `reset_scroll_line_state()` do `display-on` por `apply_line_state_from(split)`
+    - passar a registrar `CONTROL`, `SCREEN_MODE_0` e `SCREEN_MODE_1` por linha no mesmo mapa raster
+    - ampliar `G9D ls` para incluir `ct/m0/m1`
+  - build atual:
+    - `BUILD_BID: 202604121456-1e936ec`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-12 (15:19 -03):
+  - a build `D51B` corrigiu o desvio de janelas falsas de display/VBlank, mas deixou o `GFX9000` extremamente lento no gameplay
+  - a causa ficou no mesmo ponto: o clock sintetico de `STATUS` com `1` tick por leitura quando `CONTROL.7=1` ficou conservador demais para os loops de polling da ROM
+  - correcao local em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - manter o bootstrap agressivo com display desligado em `UC_TICKS_PER_LINE / 4`
+    - com display ativo, usar passo intermediario `UC_TICKS_PER_LINE / 32` por leitura
+    - isso preserva o corte das falsas janelas sem arrastar o gameplay
+  - build atual:
+    - `BUILD_BID: 202604121516-1e936ec`
+    - `TXTDBG BUILD: 29A4`
+    - `BUILD_HASH: 1e936ec-3247e17c6d45155fd8cf5b179feef6750653c389`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-12 (15:28 -03):
+  - os `3` gaps grandes continuam no gameplay do `P1`, e a UART anterior ja tinha fechado que eles nascem no framebuffer final, nao no presenter
+  - o `G9D ls` antigo era insuficiente porque so mostrava o primeiro split detectado no frame; isso nao respondia pelas linhas reais dos buracos
+  - a resposta local desta rodada foi instrumentar o proprio `P1` para despejar o estado exato nas linhas dos `holes` detectados:
+    - `G9D lh y:<linha> ay/by/ax/bx/pr/ct/m0/m1`
+    - isso vai mostrar se os buracos ainda coincidem com estado raster errado ou se o problema ja e fetch/comando puro
+  - build atual:
+    - `BUILD_BID: 202604121528-1e936ec`
+    - `TXTDBG BUILD: 524D`
+    - `BUILD_HASH: 1e936ec-e7b4eb6631e636f1d46677095aa79c9db1e0b634`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-12 (15:43 -03):
+  - o corte semantico mais forte desta rodada veio do `openMSX`: `display-on/off` nao rebasa `displayYA/displayYB`; apenas `AY0/BY0` fazem isso
+  - no backend local, `CONTROL.7` ainda fazia `apply_line_state_from(split)` ao entrar em display-on e zerava `displayYA/displayYB` ao desligar
+  - isso casa diretamente com o sintoma de janelas de `3/4` desenhado + `1/4` faltando, porque cada janela de display reabria o frame com offset vertical artificial
+  - correcao local em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - `display-on` deixa de rebasear `displayYA/displayYB`
+    - `display-off` deixa de zerar esses offsets
+    - o estado por linha continua sendo alterado apenas por `AY0/BY0` e pelos demais registradores raster
+  - build atual:
+    - `BUILD_BID: 202604121543-1e936ec`
+    - `TXTDBG BUILD: 2F36`
+    - `BUILD_HASH: 1e936ec-a56b23861b8543aef4ac7787cebf6303f2a9266d`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-12 (01:47 -03):
+  - a UART do gameplay `P1` mostrou a causa mais forte para os `4` blocos:
+    - `AY/BY` ainda eram escritos com `CONTROL=02`, antes do `02->82`
+    - o backend local estava transformando esses writes em splits raster mesmo com `display-off`
+  - isso nao bate com o `openMSX`, onde `updateScrollAYLow/ByLow/AX/BX` so sincronizam o rasterizador quando `displayEnabled`
+  - correcao local em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - gate por `CONTROL.7` nos handlers de `AY/BY/AX/BX/PRIORITY`
+    - com `display-off`, o register write continua valendo para a proxima janela, mas sem cortar o frame atual
+  - build atual:
+    - `BUILD_BID: 202604120147-1e936ec`
+    - `TXTDBG BUILD: AA0F`
+    - `BUILD_HASH: 1e936ec-f8124f06f848c50ab73109b496e8260d63d68ea7`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-12 (01:56 -03):
+  - o feedback visual em hardware recolocou `AX/BX/PRIORITY` e o mapa raster do `P1` como suspeitos principais
+  - a instrumentacao UART foi ampliada em `src/backend/msx/modules/fmsx/fmsx_v9990.c` para fechar isso sem novo chute de renderer:
+    - `G9Y ax`
+    - `G9Y bx`
+    - `G9Y pr`
+    - `G9D ls`
+  - `G9D ls` resume os pontos de mudanca reais de:
+    - `displayYA/displayYB`
+    - `scrollAY/scrollBY`
+    - `scrollAX/scrollBX`
+    - `priority_control`
+  - build atual:
+    - `BUILD_BID: 202604120156-1e936ec`
+    - `TXTDBG BUILD: A6A1`
+    - `BUILD_HASH: 1e936ec-6cb7edd9e04ce9af3eb5e2d66bd99201aa23ba63`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-12 (01:20 -03):
+  - o defeito residual continua sendo os 3 grandes gaps horizontais no gameplay do `Ghost'n Goblins`
+  - a comparacao com o `openMSX` mostrou que o nosso `P1` podia herdar estado por linha de uma janela `Bx`/`display-off`
+  - a correcao local reinicializa `scroll_*_lines`, `display_y*_lines` e `priority_control_lines`:
+    - quando `CONTROL` sobe para `display-on`
+    - quando `SCREEN_MODE_0/1` muda com display desligado
+  - build atual:
+    - `BUILD_BID: 202604120120-1e936ec`
+    - `TXTDBG BUILD: 55E5`
+    - `BUILD_HASH: 1e936ec-f4259203e7eb8e0eb904526f16115470e891fae9`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-12 (01:39 -03):
+  - o defeito dos 3 blocos continuou, e o corte estrutural agora ficou mais forte
+  - os writes raster do `P1` sao gravados durante o `RunZ80()`, mas o `render_frame()` ainda limpava o estado por linha no inicio do draw
+  - isso fazia o renderer consumir um baseline zerado ou do frame seguinte, e nao os splits programados pelo gameplay
+  - a correcao local foi:
+    - adicionar `fmsx_v9990_begin_frame()`
+    - chamar esse inicio de frame antes do `RunZ80()` em `fmsx_runtime_step_frame()`
+    - remover do `render_frame()` o `advance_status_time(full_frame)` que apagava o raster state antes do draw
+  - build atual:
+    - `BUILD_BID: 202604120139-1e936ec`
+    - `TXTDBG BUILD: B08D`
+    - `BUILD_HASH: 1e936ec-01ecb876bcd0c17ab1ae2b054d8d6cea2e4d6ba5`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-12 (00:43 -03):
+  - as correcoes anteriores estabilizaram `F12`, presenter/stride e paleta/transparencia dos sprites em `P1`
+  - o defeito residual ficou restrito aos 3 grandes gaps horizontais no cenario do `Ghost'n Goblins`
+  - a UART recente fechou a causa: `AY0/BY0` ainda estavam sendo aplicados sempre em `y:211`
+  - a correcao local trocou `fmsx_v9990_get_active_display_line()` para usar `ScanLine` real do `fMSX` como fonte primaria do split vertical
+  - `status_uc_ticks` ficou apenas como fallback fora da emulacao ativa
+  - build atual:
+    - `BUILD_BID: 202604120043-1e936ec`
+    - `TXTDBG BUILD: 8274`
+    - `BUILD_HASH: 1e936ec-c6b5d0ef0775a61d7fd8d76c1b664cc0301ae940`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-12 (00:55 -03):
+  - a UART da build `8274` mostrou que o split de `AY/BY` melhorou, mas o `P1` ainda mantinha 3 grandes gaps
+  - o diagnostico refinado e que `AX/BX` e `PRIORITY_CONTROL` ainda estavam globais por frame inteiro
+  - a correcao local adicionou estado por linha para `scroll_ax`, `scroll_bx` e `priority_control`
+  - `SCROLL_CONTROL_AX0/AX1`, `SCROLL_CONTROL_BX0/BX1` e `PRIORITY_CONTROL` agora passam a valer apenas para as linhas seguintes do frame, alinhando o `batch renderer` ao modelo de `sync(time)` do `openMSX`
+  - build atual:
+    - `BUILD_BID: 202604120055-1e936ec`
+    - `TXTDBG BUILD: E1FC`
+    - `BUILD_HASH: 1e936ec-5ef73e8114eecab13f5671effa1a48c2e79e4c11`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-12 (01:06 -03):
+  - o rastreio de `TXTDBG BUILD` foi corrigido: o calculo manual anterior estava sem o passo final `hash ^= (hash >> 16)`
+  - a build `202604120055-1e936ec` exibida em campo como `E1FC` confirmou esse desvio
+  - a resposta local foi alinhar `AY1/BY1` ao comportamento do `openMSX`: o byte alto agora tambem afeta apenas as linhas seguintes, sem resetar `displayYA/displayYB`
+  - build atual:
+    - `BUILD_BID: 202604120106-1e936ec`
+    - `TXTDBG BUILD: 96E0`
+    - `BUILD_HASH: 1e936ec-681e7bba61c016fb54102d45179459e119a10dc9`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-11 (23:42 -03):
   - a branch correta da issue foi criada e vinculada via `gh issue develop`
-  - branch atual: `249-backend-framework-modular-por-familia-msx`
-  - issue `#249` agora esta no projeto `MSX BarePI` com `Status: In progress`
-  - o worktree atual ja contem a reorganizacao fisica do backend MSX para dentro de `src/backend/msx/`
-  - o `src/` raiz ficou sem arquivos `fmsx_*`, `bluemsx_*`, `emulator_backend.*`, `gamemaster_catalog.*` e `machine_profile_catalog.*`
-  - `src/kernel.*`, `src/tools/menu/*` e `src/tools/file_browser/combo_file_browser.cpp` agora dependem da adaptacao neutra `src/backend/runtime/runtime.h`
-  - sistemas genericos do kernel/UI nao incluem mais `backend/msx/*` diretamente
-  - os headers reais de logger/serial (`<circle/logger.h>` e `<circle/serial.h>`) so entram com `DEBUG=1`
-  - o renderer do overlay e os caminhos de UART de debug ficaram condicionados a `DEBUG=1`
-  - o atalho `F10` e o item `UART Log` foram removidos do kernel/menu
-  - o boot foi reordenado para fastboot: `screen` e audio antes do backend; `msxbarepi.cfg` ainda entra antes do `backend init`; `UART + Logger` e overlay so entram depois do backend; `USB HID` vem antes do restante diferido
-  - `Initialize()` voltou a ser bootstrap minimo, sem serial e sem `SD/eMMC`
-  - o restante do `initramfs` agora fica diferido para o loop principal, apos a fase de USB
-  - `RefillAudioQueue()` passou a emitir silencio enquanto o backend ainda nao estiver pronto, permitindo iniciar o HDMI audio cedo no boot
-  - a troca de `DEBUG OVERLAY` entre `MAX/MIN/OFF` agora faz wipe global imediato da tela para evitar vestigios residuais do modo anterior
-  - o modo inicial do overlay no boot agora e sempre `OFF`; o valor persistido em `msxbarepi.cfg` so e assumido depois da carga do arquivo
-  - builds validados nesta rodada:
+  - branch atual: `251-suporte-cartucho-vdp-v9990`
+  - branch remota publicada: `origin/251-suporte-cartucho-vdp-v9990`
+  - a issue `#251` esta no projeto `MSX BarePI` com `Status: In progress`
+  - o objetivo desta trilha e implementar o baseline funcional do cartucho/VDP `V9990` dentro da familia `src/backend/msx/`
+  - o kernel generico deve permanecer independente do core MSX e nao pode ganhar acoplamento direto ao `V9990`
+  - a trilha `#251` ganhou tambem o gate estatico de build para `GFX9000` no `menuconfig`
+  - conclusao local mais recente:
+    - `MSXBARE_FEAT_GFX9000` agora controla a presenca do item `GFX9000 [ON/OFF]` no `F12`
+    - builds com a feature desligada forcam `m_Gfx9000Enabled=FALSE` e nao deixam o `msxbarepi.cfg` reativar o recurso
+    - no backend `V9990`, `EO` e `VER_IRQ` deixaram de depender do `render_frame()` para progredir
+    - o relogio sintetico do `STATUS` agora avanca por `fmsx_v9990_advance_status_time()`, incluindo wrap de frame e cruzamento de `VSCAN`, para que loops de polling dentro do `RunZ80()` nao congelem o handshake antes do `display-on`
+    - o print preto mais recente corrigiu um diagnostico anterior: `Screen:13` vem do `ScrMode` do VDP principal (`MAXSCREEN+1`) e nao prova `display-on` do `V9990`
+    - a ladder sintetica saiu, mas o polling de `STATUS` regrediu para `0x00/0x20`, entao o handshake antes de `ctl:C2` continua sendo o foco
+  - a resposta local foi:
+    - adicionar `MSXBARE_FEAT_GFX9000` em `config/Kconfig.msxbarepi`, `scripts/menuconfig.sh`, `Makefile`, `src/Makefile` e `scripts/gen-build-header.sh`
+    - esconder o item do `F12` em `src/tools/menu/combo_menu_items.cpp` quando a feature estiver desligada
+    - forcar `m_Gfx9000Enabled=FALSE` em `NormalizeSettingsForBuild()` e persistir `gfx9000=0` no save
+    - centralizar a progressao sintetica de frame/VSCAN/EO do `V9990` em `src/backend/msx/modules/fmsx/fmsx_v9990.c`
+    - desativar por padrao a ladder visual de fases do `V9990` no target normal, preservando a telemetria UART
+    - reposicionar o raster sintetico do `V9990` em inicio de frame/VSCAN (`status_uc_ticks = 0`) no reset de registradores
+  - o corte atual do UART mudou mais uma vez:
+    - a pilha da build `202604112114-1e936ec` nao caiu mais no renderer `Bx`
+    - a simbolizacao fechou em `CDWHCIDevice::InterruptStub(void*)` com a CPU em `CString::PutChar()`
+    - isso mostrou que o proprio probe `TIRQ/UIRQ` estava pesado demais no caminho quente
+    - a resposta local foi manter a captura/restauro de baseline para `ARM_IRQ_TIMER3` e `ARM_IRQ_USB`, trocar o formatter do probe para emissao minima em buffer fixo/hex, e ler o singleton real via `CInterruptSystem::Get()` em vez de assumir `&m_Interrupt` como objeto ativo
+  - build atual da rodada:
     - `make DEBUG=1`
+    - `BUILD_BID: 202604112342-1e936ec`
+    - `TXTDBG BUILD: 3901`
+    - `BUILD_HASH: 1e936ec-3dfcf9e04d26c89608f31b70c18172f40ae04b33`
+    - `NON_INTERACTIVE=1 ./scripts/menuconfig.sh --sync-only` confirmou:
+      - `CONFIG_MSXBARE_FEAT_GFX9000=y` em `.config`
+      - `MSXBARE_FEAT_GFX9000 := 1` em `.config.mk` e `build/config.mk`
+  - corte tecnico mais recente:
+    - o `V9990` ja esta estavel o bastante para animar em hardware sem travar o kernel
+    - `active_width=256` confirmou a geometria horizontal correta
+    - o ajuste de `woven_hires` piorou o espacamento e foi revertido
+    - o `G9D fb` real mostrou linhas contiguas no framebuffer do `V9990` (`step:1-1`)
+    - isso moveu o foco do defeito para o presenter/kernel
+    - a build atual força `G9D vp ...` por ate `4` frames apos cada `display-on`
+  - a primeira entrega da trilha ja entrou no menu/config: `GFX9000 [ON/OFF]` abaixo de `Scanline`, com locale PT/EN/ES e persistencia em `gfx9000=0|1`
+  - defaults de `sdcard/msxbarepi.cfg` e scripts de SD tambem foram atualizados com `gfx9000=0`
+  - o backend agora ja recebeu o primeiro `V9990` funcional:
+    - API `set/get_gfx9000_enabled` exposta pela familia `msx`
+    - device separado em `src/backend/msx/modules/fmsx/fmsx_v9990.c`
+    - portas `0x60-0x6F` interceptadas no `fMSX` quando `GFX9000` esta ativo
+    - lifecycle integrado a `StartMSX()/ResetMSX()`
+    - save/load state do runtime com extensao leve para o estado basico do device
+    - framebuffer proprio do `V9990` ja ligado ao pipeline de apresentacao do backend
+    - mapeamento de VRAM por modo (`Bx`, `P1`, `P2`) no caminho de CPU e renderer
+    - renderer `Bx` com scroll X/Y, `roll mask` e baseline de `even/odd`
+    - renderizacao simplificada de `P1/P2` por `name/pattern table`
+    - sprites/cursors basicos em `P1/P2`, com limite de `16` sprites por linha e prioridade `front/back`
+    - save/load state do `V9990` agora persiste tambem a VRAM inteira (`512 KiB`) e continua aceitando leitura do formato anterior sem VRAM
+    - `command engine` minimo ativo com `STOP`, `LMMC`, `LMMV`, `LMCM`, `LMMM`, `CMMC`, `CMMM`, `BMXL`, `BMLX`, `BMLL`, `LINE`, `SRCH`, `POINT`, `PSET` e `ADVN`
+    - `STATUS`, `COMMAND_DATA` e `REGISTER_DATA` agora refletem esse estado minimo de comando
+    - `LMMC/LMCM` ja usam `TR` como handshake de stream CPU<->VRAM, incluindo caminho de `16bpp`
+    - `CMMC/CMMM/BMXL/BMLX/BMLL` ja passaram a funcionar no baseline local do caminho linear `Bx`
+    - `SRCH` ja atualiza `BD` e `border_x`, e `LINE` usa baseline de Bresenham inspirada no `openMSX`
+    - `PSET/ADVN` foram alinhados ao formato `YYXX` documentado no manual do `V9990`
+    - `write masks` de registradores e palette ficaram mais proximos do baseline do `openMSX`
+    - o primeiro teste em hardware encontrou um bug na politica de saida de video:
+      - `GFX9000 [ON/OFF]` estava forcando a troca para o framebuffer do `V9990`
+      - o toggle correto nesta fase deve apenas habilitar/desabilitar o chip/cartucho
+      - a comutacao de video agora foi ajustada para acontecer automaticamente apenas quando o `V9990` estiver com frame ativo
+      - quando o `V9990` estiver habilitado, mas sem `display enable`/frame valido, o runtime volta para o `V9958`
+    - o reteste seguinte em hardware refinou o ponto da falha:
+      - o UART mostra `G9A: runtime apply ON`, `G9A: runtime applied ON`, `Settings: GFX9000 ON`, `G9A: pause render begin`, `G9A: pause present OK`
+      - depois disso aparece `Emulation RESUMED` e o kernel aborta em `third_party/circle/lib/usb/dwhcidevice.cpp:1518` com `assertion failed: pThis != 0`
+      - isso move a suspeita para o primeiro retorno ao loop apos o resume, e nao mais para o toggle do menu
+      - o log lido ainda e da imagem compilada em `Apr 10 2026 18:31:00`, portanto anterior a instrumentacao `G9R`
+      - a build atual adiciona a segunda trilha UART `G9R` para separar:
+        - arm do resume
+        - `backend_runtime_step_frame()`
+        - blit
+        - present final
+      - a rodada atual tambem endurece o core `V9990`:
+        - guard para abortar opcodes patologicos com `NX/NY=0` antes que virem operacoes maximas
+        - guard de custo para operacoes absurdamente grandes
+        - trilha UART propria do device em `DEBUG=1`:
+          - `G9P in/out`
+          - `G9C exec/drop`
+          - `G9V`
+      - o reteste seguinte mostrou que a queda ainda acontece antes do proprio device:
+        - `G9R: step begin`
+        - assert imediato em `dwhcidevice.cpp:1518`
+        - sem `G9R: step OK`, `G9P`, `G9C` ou `G9V`
+      - a resposta local foi refinada mais uma vez:
+        - o `prime step` do toggle `GFX9000` foi removido depois de o UART fechar em `G9A: prime step begin ON` com abort em `third_party/circle/lib/timer.cpp:606`
+        - o menu voltou a fazer apenas `config apply -> menu reset -> redraw`
+        - a depuracao do primeiro frame real voltou para o caminho normal de `resume`
+      - a telemetria `DEBUG=1` do backend tambem foi corrigida:
+        - `src/Makefile` agora propaga `MSXBARE_ENABLE_DEBUG_OVERLAY=$(DEBUG)` aos arquivos `.c`
+        - isso expôs e corrigiu um bug latente em `src/backend/msx/modules/fmsx/fmsx_local/MSX.c`, onde `fmsx_debug_peek_ram_byte()` usava `RAM` antes da declaracao
+        - o kernel agora expone `msxbare_debug_trace()` para o backend registrar pelo logger
+        - `fmsx_runtime_step_frame()` ganhou a trilha `G9S: frame begin`, `G9S: runz80 begin`, `G9S: runz80 end` e `G9S: frame end`
+      - o UART do reteste com a build `2AAD` fechou o ponto seguinte:
+        - `G9R: step begin`
+        - `G9S: frame begin`
+        - `G9S: runz80 begin`
+        - `G9S: runz80 end`
+        - `G9V f:600 m:0 ctl:00 sm0:00 sm1:00 w:320 h:212`
+        - sem `G9S: frame end`
+      - interpretacao atual:
+        - o primeiro `RunZ80()` com `GFX9000=ON` ja conclui
+        - a falha caiu para dentro do `fmsx_v9990_render_frame()`
+        - como `ctl:00`, o `V9990` ainda esta ocioso; o guest ainda nao habilitou display
+      - a resposta local foi cortar o render idle do chip:
+        - `fmsx_v9990_render_frame()` agora retorna imediatamente quando o display do `V9990` esta desabilitado
+        - isso mantem `GFX9000=ON` apenas como presenca do chip/cartucho ate o guest realmente ligar video no `V9990`
+      - o reteste com `GHOSTGOBLINS.ROM` mostrou que o `V9990` ja e detectado pela ROM quando `GFX9000=ON`
+      - o problema atual virou tela preta com emulacao viva e `F12` funcional, entao o foco migrou para pipeline de video/estado do `V9990`
+      - o UART trouxe o primeiro estado util do guest:
+        - `CONTROL=0x02`
+        - `SCREEN_MODE_0=0x85`
+        - `SCREEN_MODE_1=0x40`
+        - `LMMV` (`op:20`) com area grande
+        - ainda sem `display enable` no bit 7 de `CONTROL`
+      - a resposta local desta rodada foi:
+        - alinhar `cmd_ready()` ao `openMSX`, levantando `CMD_IRQ` (`pending_irqs |= 0x04`)
+        - adicionar trilha curta de registradores criticos (`G9I reg` / `G9I cmd-ready`)
+        - ampliar a janela de logs de render para capturar a transicao ate o primeiro frame ativo
+      - o reteste seguinte com `GHOSTGOBLINS.ROM` mostrou que:
+        - a ROM detecta o `V9990` quando `GFX9000=ON`
+        - a emulacao continua viva e o `F12` segue funcional
+        - o guest executa `LMMV`, com `CMD_IRQ` pendente (`irq:04`), mas o log observado ainda nao mostra `display enable` no bit 7 de `CONTROL`
+        - o mesmo recorte de UART ainda nao mostra escrita observada em `INTERRUPT_0`
+      - a resposta local desta rodada foi:
+        - propagar IRQ real do `V9990` para a linha de IRQ do MSX quando `pending_irqs & INTERRUPT_0 != 0`
+        - reavaliar essa linha em escrita de `INTERRUPT_0`, clear de `INTERRUPT_FLAG`, reset e `load-state`
+        - voltar a alternar o bit `EO` do `STATUS` a cada frame, mesmo com display desligado
+        - devolver tambem os bits de borda `0x60` no `STATUS` baseline local
+        - ampliar a telemetria UART com:
+          - mais budget de `G9P in/out`
+          - `G9P sts`
+          - `G9P irq`
+          - mais budget de `G9I reg`
+      - o reteste seguinte fechou mais um ponto:
+        - o guest esta lendo `STATUS` (`0x65`)
+        - nao apareceu leitura de `INTERRUPT_FLAG` (`0x66`) no recorte observado
+        - apos o `LMMV`, o valor observado de `STATUS` seguia preso em `0x60`
+      - a resposta local desta rodada foi:
+        - tornar o `STATUS` do `V9990` dinamico
+        - adicionar base temporal local em UC ticks
+        - calcular `HR/VR` a partir de timing inspirado no `openMSX`
+      - a UART mais recente consolidou o corte atual:
+        - o ultimo log observado continua sendo `G9A phase5 line48 done`
+        - ainda nao aparece `G9S: frame end`
+        - isso desloca o suspeito principal do renderer para a fronteira pos-render do `backend_runtime_step_frame()`
+      - a depuracao local evoluiu para um harness host-side com `ASan/UBSan`:
+        - `tools/host/v9990_phase_harness.c`
+        - `scripts/run-v9990-host-harness.sh`
+        - ele ja passa por `phase5`, `phase6`, `phase8`, `phase9` e pelo render normal
+      - conclusao desta fase:
+        - o bug nao esta mais sendo tratado como erro bruto do renderer puro do `V9990`
+        - o foco foi movido para a interacao especifica do target Raspberry com o caminho de debug/serial
+      - correcao de processo consolidada:
+        - a UART do target continua obrigatoria em `DEBUG=1`
+        - o tracing de fase do target foi restaurado e nao deve mais ser removido sem autorizacao explicita
+      - a resposta local mais nova foi mudar o transporte da UART do backend:
+        - `msxbare_uart_write()` nao chama mais `CSerialDevice::Write()` no meio do `step/render`
+        - agora os bytes sao enfileirados em memoria no kernel
+        - o `Write()` fisico da serial foi movido para fora do hot path:
+          - depois de `backend_runtime_step_frame()`
+          - depois de `PresentIfDirty()`
+          - depois da inicializacao do `UART + Logger`
+        - isso preserva o conteudo dos logs do target e reduz a pressao do driver de serial do Circle durante o bring-up do `V9990`
+      - validacao local desta rodada:
+        - `scripts/check-third-party-pristine.sh`
+        - `make DEBUG=1`
+        - `scripts/run-v9990-host-harness.sh 20`
+      - build atual:
+        - `BUILD_BID: 202604110001-1e936ec`
+        - `TXTDBG BUILD: B869`
+        - `BUILD_HASH: 1e936ec-7cf168cae02e4ed64141ea2f13e386a6054982bc`
+        - artefato: `artifacts/kernel8-issue251.img`
+      - a leitura do UART mais recente fechou o corte seguinte:
+        - o bring-up ativo do `V9990` agora completa `phase3 line16 done`
+        - o runtime tambem completa `G9S: v9990 end`, `audio acc`, `audio play` e `G9S: frame end`
+        - nao houve `assert`, `panic` nem `UARTDROP`
+      - conclusao tecnica nova:
+        - o freeze deixou de ficar dentro do `render_frame()` ate `phase3`
+        - a fronteira atual passou para depois do retorno de `backend_runtime_step_frame()`
+      - a resposta local mais nova foi adicionar a trilha `G9K` no kernel:
+        - `G9K: blit begin/end`
+        - `G9K: present begin/end`
+        - `G9K: yield begin/end`
+        - essa trilha e rearmada junto do `display-on` do `V9990`
+      - validacao local desta rodada:
+        - `scripts/check-third-party-pristine.sh`
+        - `make DEBUG=1`
+        - `scripts/run-v9990-host-harness.sh 12`
+      - build atual:
+      - `BUILD_BID: 202604110008-1e936ec`
+      - `TXTDBG BUILD: E7E0`
+      - `BUILD_HASH: 1e936ec-d4bc9aa9f1b2387f4a056badf4a570bf812462c6`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-11 (22:56 -03):
+    - o crash estrutural do `V9990` saiu da frente; o build `9BBD` deixou de travar e passou a mostrar os primeiros vestigios de imagem real
+    - o build `4F0B` confirmou animacao real do `GFX9000`, mas com linhas muito espaçadas
+    - o UART fecha que o bring-up ja passa de `CONTROL=C2` e `display-on`, com `sm0:86 sm1:40` e `LMMM` real no `command engine`
+    - o corte tecnico desta rodada caiu no renderer `Bx`: ele ainda truncava o endereco vertical em `0x01FF`, enquanto o `openMSX` usa `0x1FFF`
+    - a correcao local foi alinhar `fmsx_v9990_render_bx_firstlight()` para usar `roll mask` e `scroll_y_base` com `0x1FFF`
+    - o corte seguinte removeu a regressao de geometria introduzida por `FD43`
+    - o frame apresentado em `Bx/B1` voltou a usar `line_width` (`320`) em vez de `active_width` (`256`)
+    - build atual:
+      - `BUILD_BID: 202604112305-1e936ec`
+      - `TXTDBG BUILD: 1E95`
+      - `BUILD_HASH: 1e936ec-14ca2d3f7f7b00cdd6fcfe2e9a8e228caec3eb1f`
+      - artefato: `artifacts/kernel8-issue251.img`
+      - o UART com `G9K` fechou ainda melhor o corte:
+        - apos `phase3 line16`, o kernel conclui `blit`, `present` e `yield`
+        - o log seguinte avanca ate `phase4 line32 done`, `G9S: v9990 end`, `audio acc`, `audio play` e `G9S: frame end`
+        - ele para exatamente depois disso, sem o proximo `G9K: blit begin`
+      - conclusao tecnica nova:
+        - a falha passou por `blit/present/yield` do frame anterior
+        - a fronteira atual ficou entre o fim do `backend_runtime_step_frame()` e a entrada no `blit` do frame seguinte
+      - a resposta local mais nova foi refinar `G9K` no pos-step do kernel:
+        - `G9K: step ret`
+        - `G9K: status begin/end`
+        - `G9K: sync begin/end`
+        - `G9K: flush begin/end`
+        - `G9K: tick end`
+      - validacao local desta rodada:
+        - `scripts/check-third-party-pristine.sh`
+        - `make DEBUG=1`
+        - `scripts/run-v9990-host-harness.sh 8`
+      - build atual:
+        - `BUILD_BID: 202604110012-1e936ec`
+        - `TXTDBG BUILD: 7DD7`
+        - `BUILD_HASH: 1e936ec-619968423fbb0d5870dbd98d406c8d0d2c9a104a`
+        - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-11 20:26 -03:
+    - a UART do build `0785` mostrou que o guest segue vivo bem depois de `host+ pc:569D`
+    - ele volta a programar `SCREEN_MODE_0=0x85`, executa novos `LMMV`, fica em polling `STATUS=0x40/0x60` e retorna ao par `int0+/host+` em `pc:4652`
+    - o print verde foi reclassificado:
+      - nao prova `display-on` do `V9990`
+      - e compativel com o fallback `Bx first-light` no modo `BP4`
+    - a resposta local desta rodada foi tirar esse falso positivo do caminho:
+      - `fmsx_v9990_render_bx_firstlight()` passou a decodificar VRAM real de `Bx`
+      - o call site em `render_frame()` agora passa `image_width`
+      - `debug_phase_return` foi limpo para manter o source consistente com `MSXBARE_V9990_PHASE_VISUAL_DEBUG=0`
+    - o harness host-side tambem foi restaurado:
+      - `scripts/run-v9990-host-harness.sh` agora inclui `third_party/fmsx/Z80` e `third_party/fmsx/fMSX`
+      - `tools/host/v9990_phase_harness.c` ganhou stubs de `CPU` e `IRQPending`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+      - `scripts/run-v9990-host-harness.sh 6`
+    - build local mais recente:
+      - `BUILD_BID: 202604112026-1e936ec`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-11 20:31 -03:
+    - o reteste com tela preta nao fechou se o guest chega a `CONTROL=C2`, porque o trace geral ainda pode acabar cedo demais
+    - a resposta local foi adicionar `G9W`, independente de budgets, para writes reais em:
+      - `SCREEN_MODE_0`
+      - `SCREEN_MODE_1`
+      - `CONTROL`
+      - `INTERRUPT_0`
+    - cada `G9W` inclui `pc`, `pending_irqs` e `INTERRUPT_0`, para separar:
+      - ausencia real de `display enable`
+      - perda de visibilidade do trace
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build local mais recente:
+      - `BUILD_BID: 202604112031-1e936ec`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-11 20:39 -03:
+    - o ultimo UART fechou um corte mais estrutural:
+      - a IRQ do `V9990` sobe
+      - o guest le `0x66`
+      - faz ack `0x66 = 0x05`
+      - e o abort seguinte cai em `timer.cpp(606)` com `assertion failed: pThis != 0`
+    - a pilha registrada aponta para:
+      - `CTimer::InterruptHandler(void*)`
+      - `RefreshLineTx80`
+      - `IRQStub`
+    - o foco da rodada saiu do renderer do `V9990` e foi para o fato de o kernel inteiro viver na stack do `main()`
+    - `src/main.cpp` deixou de usar `CComboKernel kernel;`
+    - o kernel agora vive em storage estatico como `g_Kernel`
+    - objetivo do proximo reteste:
+      - verificar se o assert do timer desaparece com o kernel fora da stack
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build local mais recente:
+      - `BUILD_BID: 202604112039-1e936ec`
+      - `TXTDBG BUILD: 37C7`
+      - `BUILD_HASH: 1e936ec-6ce2796b2ae84656baae8348e20801775a9f29ac`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-11 20:50 -03:
+    - o reteste com o kernel fora da stack removeu o abort de `timer.cpp(606)`
+    - no lugar dele entrou uma excecao sincrona em `strcmp`
+    - a simbolizacao da mesma build fechou:
+      - `PC 0x10CF20` -> `strcmp`
+      - `LR 0x9BE1C` -> `fmsx_runtime_trace_gfx9000_step_marker()`
+      - pilha dentro de `fmsx_runtime_step_frame()` voltando para `CComboKernel::Run()`
+    - o foco da rodada saiu de timer/stack e foi para o proprio trace compacto `G9S`
+    - `src/backend/msx/modules/fmsx/fmsx_runtime.c` deixou de usar strings/`strcmp()` nesse hot path
+    - agora o step trace usa `enum FmsxRuntimeGfx9000TraceStepId` + `switch`
+    - todos os call sites do runtime foram convertidos para IDs fixos
+    - objetivo do proximo reteste:
+      - confirmar que o runtime nao cai mais no proprio trace
+      - voltar a observar o bug real do bring-up do `V9990`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build local mais recente:
+      - `BUILD_BID: 202604112050-1e936ec`
+      - `TXTDBG BUILD: 4056`
+      - `BUILD_HASH: 1e936ec-afd8b40aa9906c93612f02f2020bb97c1dd5b61f`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-11 21:00 -03:
+    - o UART do build `4056` descartou o crash em `strcmp`, mas o abort de `timer.cpp(606)` continuou
+    - a simbolizacao da mesma build fechou:
+      - `stack[1]` -> `CTimer::InterruptHandler(void*)`
+      - `stack[10]` -> `fmsx_v9990_safe_index_color()`
+      - `stack[11]` -> `IRQStub`
+    - o foco da rodada ficou no binding do slot `ARM_IRQ_TIMER3`, nao mais no compactador `G9S`
+    - `src/kernel.cpp` agora tem uma sonda ativa do layout real de `CInterruptSystem`
+    - essa sonda:
+      - le `handler` e `m_pParam[ARM_IRQ_TIMER3]`
+      - repara o `param` para `&m_Timer` quando o handler ainda esta valido
+      - registra `TIRQ ...` apenas quando ha desvio/reparo
+    - `src/backend/msx/modules/fmsx/fmsx_v9990.c` chama essa sonda:
+      - antes do render ativo
+      - apos `rf-begin`
+      - por linha no caminho `Bx first-light`
+      - apos `rf-end`
+    - objetivo do proximo reteste:
+      - fechar em que fase do renderer o binding do timer se degrada
+      - e impedir que o abort mate a execucao antes desse corte
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build local mais recente:
+      - `BUILD_BID: 202604112100-1e936ec`
+      - `TXTDBG BUILD: D5D5`
+      - `BUILD_HASH: 1e936ec-6f063b8f29910e43d29de52e3a8326b2a25202ec`
+      - artefato: `artifacts/kernel8-issue251.img`
+      - o UART mais recente com `G9K` refinado mostrou que o ultimo trecho observado e:
+        - `step ret`
+        - `status begin/end`
+        - `sync begin/end`
+        - `flush begin/end`
+        - `tick end`
+        - `blit begin/end`
+        - `present begin/end`
+        - `yield begin/end`
+      - o log para exatamente em `G9K: yield end`
+      - conclusao tecnica nova:
+        - a falha ja passou por todo o pos-step do kernel e por `blit/present/yield`
+        - o corte atual foi empurrado para o topo da iteracao seguinte do loop principal
+      - a resposta local mais nova foi expandir `G9K` para o topo do loop:
+        - `G9K: loop top`
+        - `G9K: usb begin/end`
+        - `G9K: deferred begin/end`
+        - `G9K: pace begin/end`
+        - `G9K: step gate`
+      - validacao local desta rodada:
+        - `scripts/check-third-party-pristine.sh`
+        - `make DEBUG=1`
+        - `scripts/run-v9990-host-harness.sh 6`
+      - build atual:
+        - `BUILD_BID: 202604110016-1e936ec`
+        - `TXTDBG BUILD: BA93`
+        - `BUILD_HASH: 1e936ec-77721a3dab50991f47fb24e43db18677948a8697`
+        - artefato: `artifacts/kernel8-issue251.img`
+      - a build atual pronta para o proximo reteste em hardware e:
+        - `BUILD_BID: 202604102313-1e936ec`
+        - `TXTDBG BUILD: 3121`
+        - `BUILD_HASH: 1e936ec-07f4a18403da9c8215a1ad5147970224e8426310`
+        - avancar a fase sintetica a cada leitura de `STATUS`
+        - reposicionar essa fase no inicio da area ativa no reset do `V9990`
+      - a UART desta rodada expôs um bug de integracao:
+        - o helper novo de `STATUS` dinamico existia
+        - mas o `PORT_STATUS` (`0x65`) ainda retornava o caminho estatico antigo
+      - a resposta local foi ligar `FMSX_V9990_PORT_STATUS` de fato ao helper `fmsx_v9990_read_status_port()`
+      - a UART seguinte descartou a suspeita de `timer.h`:
+        - o assert continua em `dwhcidevice.cpp(1518)`
+        - o `addr2line` primeiro fechou em `fmsx_v9990_render_frame()`, no hot path `Bx`
+        - a resposta local removeu `% image_width` do hot path do renderer `Bx`
+      - o reteste seguinte refinou mais o diagnostico:
+        - a ROM chega ate `ctl:C2 sm0:85 sm1:40 i0:01 irq:00`
+        - o `addr2line` atual fecha em `fmsx_v9990_palette_color()`
+        - isso aponta para o primeiro frame `Bx` realmente ativo, nao mais para `STATUS/IRQ`
+      - a resposta local da rodada atual foi deslocar o foco para estabilidade do primeiro-light:
+        - o framebuffer do `V9990` ganhou guards antes/depois da area de pixels
+        - `power_on/reset` agora restauram esses guards
+        - o renderer verifica os guards antes/depois do frame e emite `G9X pre/post` se houver overwrite
+        - o `Bx` inicial deixou de depender da `palette[]`
+        - modos indexados `2/4/6bpp` agora usam decode seguro direto para `RGB565`, preservando enderecamento de VRAM, `scroll` e command engine
+      - o reteste seguinte trouxe um novo corte:
+        - nao houve novo assert do Circle
+        - nao houve `G9X pre/post`
+        - a UART terminou exatamente em `ctl:C2 sm0:85 sm1:40 i0:01 irq:00`
+        - isso indica que a imagem anterior removeu o crash explicito, mas a telemetria ficou cega no ponto critico
+      - a resposta local seguinte foi rearmar a janela de debug no momento em que o `CONTROL` liga o display:
+        - budgets de `G9P/G9I/G9V` ampliados
+        - `G9A display-on` quando o bit 7 liga
+        - `G9A rf-begin` / `G9A rf-end` nos primeiros frames ativos do `V9990`
+      - o reteste mais recente fechou o primeiro frame ativo:
+        - `display-on` acontece
+        - o primeiro `rf-begin/rf-end` completa inteiro
+        - nao houve assert
+        - nao houve `G9X pre/post`
+        - o corte aparece no comeco do frame seguinte, no meio de `G9V`
+      - a resposta local desta rodada foi atacar a UART no caminho quente:
+        - `G9V` deixa de logar enquanto o display do `V9990` estiver ativo
+        - a janela rearmada em `display-on` fica reduzida a:
+          - `G9A display-on`
+          - um unico `rf-begin`
+          - um unico `rf-end`
+        - budgets de `port/cmd/reg` apos `display-on` tambem foram reduzidos
+      - o reteste seguinte refinou mais o ponto:
+        - `display-on` acontece
+        - o log para em `rf-begin`, sem `rf-end`
+        - isso recoloca o freeze dentro do primeiro render ativo do caminho `Bx`
+      - a resposta local desta rodada foi simplificar o `Bx` ativo outra vez:
+        - first-light linear
+        - sem `scroll`
+        - sem `transform_bx`
+        - sem `roll mask`
+        - sem `even/odd`
+        - leitura linear de VRAM e conversao minima por `mode_kind`
+      - a resposta local seguinte foi o corte maximo:
+        - o primeiro frame ativo nao le VRAM nenhuma
+        - o `Bx` ativo preenche a area inteira com cor solida por `mode_kind`
+        - esse corte existe apenas para separar renderer ativo de handoff/apresentacao do framebuffer
+      - como o log ainda parava em `rf-begin`, a rodada atual trocou o diagnostico para bisect por fases:
+        - `phase0 inactive`
+        - `phase1 nofill`
+        - `phase2 line1`
+        - `phase3 full`
+      - o proximo UART vai fechar exatamente em qual fronteira o freeze acontece:
+        - antes do handoff
+        - no handoff do framebuffer ativo
+        - na primeira escrita
+        - ou apenas no frame inteiro
+      - o plano coeso desta fase ficou:
+        - estabilizar o primeiro frame ativo do `V9990`
+        - confirmar em hardware que `CONTROL=C2` nao derruba mais o loop
+        - recolocar a palette real por cima do baseline estavel
+        - depois retomar fidelidade maior (`Video9000`, autodetect, `CMMK`)
+      - build pronta para o proximo reteste em hardware:
+        - `BUILD_BID: 202604102037-1e936ec`
+        - `TXTDBG BUILD: BACB`
+        - `BUILD_HASH: 1e936ec-0dc21536a7ab8bc0b1063f7c5804d0c10aaf7362`
+  - a rodada tambem endureceu o build do topo:
+    - `Makefile` raiz agora usa `CHECK_DEPS=0` ao limpar `src`
+    - isso evita que `.d` antigos/corrompidos travem o rebuild antes da recompilacao
+  - validacao local fechada com:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+    - `make backend-module DEBUG=1`
     - `make DEBUG=0`
+  - a imagem anterior da issue tinha sido sobrescrita pelo ultimo `make DEBUG=0`; o artefato correto para o proximo teste foi regenerado em seguida com `make DEBUG=1`
+  - ainda faltam renderer completo, `CMMK`/Kanji ROM, refinamento de page/scroll, composicao `Video9000` e deteccao automatica do cartucho `GFX9000`
+  - atualizacao 2026-04-11 20:00 -03:
+    - o ultimo UART segue cortando em `ctl:42 ... i0:01 irq:05`, mas com `STATUS` ja de volta em `0x40/0x60`
+    - isso fecha o foco atual no handshake de IRQ/CPU do `V9990`, nao mais no renderer
+    - `src/backend/msx/modules/fmsx/fmsx_v9990.c` agora:
+      - inclui `Z80.h`
+      - emite `G9I int0+` e `G9I host+/host-` com `PC/SP/IFF/IRequest/IRQPending/pending_irqs/INTERRUPT_0`
+      - rearma `G9P` exatamente na subida de `INTERRUPT_0`
+      - adiciona `pc:XXXX` aos traces de porta do `V9990`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604112000-1e936ec`
+      - `TXTDBG BUILD: 684F`
+      - `BUILD_HASH: 1e936ec-06fa1fe9cc5ee0876817e0e0b279f87621b78f53`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-11 20:14 -03:
+    - a UART com `PC/IFF/IRequest` fechou que a IRQ do `V9990` chega e e consumida:
+      - `int0+` em `pc:4652`
+      - `host+` arma `IRequest=00FF`
+      - o guest le `0x66`
+      - o guest faz ack `0x66 = 0x05`
+      - `host-` baixa a linha
+      - depois `host+` volta em `pc:569D` apenas com `VER_IRQ`
+    - o bloqueio restante nao e “IRQ nao entregue”; ele ficou no fluxo posterior ao ack
+    - o print com `TXTDBG BUILD:684F` continua compativel com `VDP principal + scanlines`, sem provar `display-on` do `V9990`
+    - `src/backend/msx/modules/fmsx/fmsx_v9990.c` agora rearma budgets de trace quando o host volta a subir apenas com `VER_IRQ`, para capturar o trecho depois de `pc:569D`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604112014-1e936ec`
+      - `TXTDBG BUILD: 0785`
+      - `BUILD_HASH: 1e936ec-29f82fbc37c11d589a73fd94ed5efa221eca7575`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-11 22:10 -03:
+    - o bug estrutural desta rodada nao estava no handshake do `V9990`, e sim no bootstrap do Circle
+    - o bring-up ja chega a `CONTROL=C2`, `display-on` e `op:40`
+    - mas `startup64.S` ainda subia `sp` em `0x002A0000`, embora o projeto estivesse compilando com `KERNEL_MAX_SIZE=0x400000`
+    - isso colocava a stack principal dentro da faixa do framebuffer do `V9990`, explicando a degradacao de `USB/IRQ` depois do `display-on`
+    - correcao aplicada em `Makefile`:
+      - stamp `build/circle-build.stamp`
+      - rebuild automatico do Circle quando a configuracao muda
+      - submakes do Circle agora recebem `AS='$(CROSS)gcc $(CIRCLE_EXTRAINCLUDE)'`, para que `startup64.S` veja `-DKERNEL_MAX_SIZE=0x400000`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+      - `aarch64-elf-objdump -d third_party/circle/lib/startup64.o`
+      - `aarch64-elf-objdump -d src/kernel8.elf --start-address=0x80078 --stop-address=0x800a8`
+    - resultado validado:
+      - `startup64.o` agora sobe `sp = 0x004A0000`
+      - o `kernel8.elf` final tambem sobe `sp = 0x004A0000`
+    - build atual:
+      - `BUILD_BID: 202604112210-1e936ec`
+      - `TXTDBG BUILD: F76A`
+      - `BUILD_HASH: 1e936ec-c8381597b9a8b3d878da711f7d72967539d9bf09`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-11 22:12 -03:
+    - limpeza final da instrumentacao:
+      - `IQLV` deixou de tratar `live_interrupt != &m_Interrupt` como anomalia
+      - isso era esperado por desenho do `sysinit()` do Circle
+      - o marcador agora so acusa `CInterruptSystem::Get() == 0`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604112212-1e936ec`
+      - `TXTDBG BUILD: 9BBD`
+      - `BUILD_HASH: 1e936ec-5c60f6826d4a6d58ee5d8b04da509441ea271e13`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-11 22:18 -03:
+    - o reteste em hardware de `9BBD` fechou o bug estrutural do bring-up:
+      - nao travou mais depois do `display-on`
+      - saiu do preto total
+      - ja apareceu vestigio real de imagem do `V9990`
+    - o problema remanescente passou a ser fidelidade do renderer `Bx`, nao mais stack/IRQ/bootstrap
+    - `src/backend/msx/modules/fmsx/fmsx_v9990.c` foi realinhado para usar palette real do `V9990` nos modos `Bx` indexados:
+      - `BP2/BP4` com subpalette real
+      - `BP6` com palette indexada real
+      - `BD8` sem fallback `rgb332`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+      - `strings artifacts/kernel8-issue251.img | rg "Compile time|202604112218"`
+    - build atual:
+      - `BUILD_BID: 202604112218-1e936ec`
+      - `TXTDBG BUILD: 4F0B`
+      - `BUILD_HASH: 1e936ec-2bcb31e8c44aa535fec5e2fc8db8eb28d0d4de98`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-11 22:34 -03:
+    - o reteste em hardware de `4F0B` confirmou funcionamento inicial do `V9990`:
+      - ja ha imagem
+      - ja ha animacao
+      - o defeito remanescente ficou em linhas separadas/intercaladas
+    - o corte tecnico desta rodada trata isso como apresentacao host-side, nao como novo bug estrutural do renderer
+    - o contrato de video ganhou `disable_scanline_postfx`
+    - quando o frame ativo vem do `GFX9000`, o backend marca esse flag e o kernel nao aplica `scanline` host-side
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+      - `strings artifacts/kernel8-issue251.img | rg "Compile time|202604112234"`
+    - build atual:
+      - `BUILD_BID: 202604112234-1e936ec`
+      - `TXTDBG BUILD: 7397`
+      - `BUILD_HASH: 1e936ec-f819d9cd8416e235e8f916b36e213712032005e5`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-11 22:41 -03:
+    - o reteste em hardware de `7397` descartou `scanline` host-side como causa principal do efeito de linhas separadas
+    - o renderer `Bx` foi alinhado com o `openMSX` para o caso `even/odd page`:
+      - altura de frame fixada em `212`
+      - source `Y` inicia na paridade do campo atual
+      - source `Y` avanca `2 em 2` quando `even/odd` esta ativo
+    - isso substitui o passo vertical linear anterior no `render_bx_firstlight()`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+      - `strings artifacts/kernel8-issue251.img | rg "Compile time|202604112241"`
+    - build atual:
+      - `BUILD_BID: 202604112241-1e936ec`
+      - `TXTDBG BUILD: 4861`
+      - `BUILD_HASH: 1e936ec-4cf97a3b1b7aafb7ab0bd3088fcca50d952991d9`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-11 22:47 -03:
+    - o reteste em hardware de `4861` manteve o mesmo padrao visual
+    - o corte seguinte moveu o problema para a geometria ativa do frame:
+      - `line_width` do `V9990` nao podia ser usado como largura util do frame em `B1/B3/B7`
+      - isso estava causando wrap horizontal e distorcao do envelope de apresentacao
+    - `src/backend/msx/modules/fmsx/fmsx_v9990.c` agora publica largura ativa por modo:
+      - `P1/B1 = 256`
+      - `P2/B3 = 512`
+      - `B0 = 192`
+      - `B2 = 384`
+      - `B4 = 768`
+      - `B7 = 1024`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+      - `strings artifacts/kernel8-issue251.img | rg "Compile time|202604112247"`
+    - build atual:
+      - `BUILD_BID: 202604112247-1e936ec`
+      - `TXTDBG BUILD: FD43`
+      - `BUILD_HASH: 1e936ec-088cc8f258d10a01333f0c8f2bdb9abfa45e90b7`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-11 23:50 -03:
+    - os logs da build `3901` fecharam que o framebuffer util do `V9990` sai continuo:
+      - `G9D fb ... step:1-1`
+    - a hipotese ativa passou a ser desacoplamento entre o snapshot de `pixels` e os metadados de apresentacao usados pelo kernel
+    - `src/backend/msx/modules/fmsx/fmsx_runtime.c` agora cacheia `pixels + width/height + sequence + presentation` do mesmo frame retornado por `backend_runtime_video_frame()`
+    - `backend_runtime_get_video_presentation()` reaproveita esse snapshot cacheado
+    - o cache e invalidado em `start`, `shutdown`, `reboot_basic`, `menu_reset`, `load_state` e no toggle do `GFX9000`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604112350-1e936ec`
+      - `TXTDBG BUILD: 25AD`
+      - `BUILD_HASH: 1e936ec-ebdcd84798d0b9363a746d8bf812d302faa99dcf`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-11 23:56 -03:
+    - a build `25AD` continuou com espacamento vertical grande em hardware
+    - `G9D fb ... step:1-1` passou a ser considerado insuficiente, porque ele conta qualquer linha com pixel nao-preto e pode mascarar linhas "fortes" espaçadas
+    - `src/backend/msx/modules/fmsx/fmsx_v9990.c` agora registra tambem linhas significativas por densidade (`sig/sstep/ssamp`)
+    - `src/kernel.cpp` agora emite `G9D vp ...` mesmo quando `disable_scanline_postfx` vier `0`, adicionando o campo `dis:` para fechar o estado real do presenter
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604112356-1e936ec`
+      - `TXTDBG BUILD: 4589`
+      - `BUILD_HASH: 1e936ec-b565fc24e3d4b012a82d5bf8224d17a2936042a8`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-12 00:01 -03:
+    - o UART da build `4589` finalmente mostrou `G9D vp ...`, e ele fechou a causa imediata do presenter:
+      - `pitch:0`
+      - `dis:0`
+    - isso entrou em contradicao direta com o frame util do `V9990`, que ja estava ativo
+    - a origem do bug estava no bridge `src/backend/msx/modules/fmsx/module.c`, que nao copiava `pitch_pixels` nem `disable_scanline_postfx` para `BackendVideoPresentation`
+    - o wrapper agora copia esses campos
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604120001-1e936ec`
+      - `TXTDBG BUILD: 38D1`
+      - `BUILD_HASH: 1e936ec-fde6ce1de7b24408b175aedd68260dc1277eec0e`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-12 00:10 -03:
+    - o mesmo eixo de bug afetava o `F12`: a captura do pause menu ainda assumia framebuffer tight e reaplicava `scanline` local
+    - `src/tools/render/viewport_screenshot.cpp` agora recebe `src_pitch_pixels`
+    - `src/kernel.cpp` passa `presentation.pitch_pixels` e desliga `scanline` local na captura quando `disable_scanline_postfx` vier ativo
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604120010-1e936ec`
+      - `TXTDBG BUILD: 36A0`
+      - `BUILD_HASH: 1e936ec-bc07747c49c0a0928d467f0873d1cdd0cb48f096`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-12 00:24 -03:
+    - a UART confirmou que o defeito visivel atual do Ghost'n Goblins ja nao esta mais no caminho `Bx`; o jogo troca para `P1`
+    - evidencias:
+      - `SCREEN_MODE_0: 0x86 -> 0x05`
+      - `CONTROL: 0x02 -> 0x82`
+      - os frames ativos com defeito aparecem como `iw:256 bpl:0 mk:0`
+    - correcao objetiva:
+      - `src/backend/msx/modules/fmsx/fmsx_v9990.c`
+      - base de paleta dos sprites `P1/P2` corrigida para `(spriteAttr >> 2) & 0x30`
+    - correcao estrutural:
+      - adicionado estado de scroll vertical por linha para `AY0/BY0`
+      - quando `SCROLL_CONTROL_AY0` ou `SCROLL_CONTROL_BY0` mudam com display ativo, as linhas restantes do frame passam a usar o novo scroll e o novo `displayYA/displayYB`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604120023-1e936ec`
+      - `TXTDBG BUILD: 9216`
+      - `BUILD_HASH: 1e936ec-70afe2eaeffa0190480927a79b1d9d1295275362`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-12 00:33 -03:
+    - o defeito restante passou a ser tratado explicitamente no caminho `P1`, que e o modo ativo quando os gaps visiveis aparecem
+    - correcao objetiva:
+      - sprites `P1/P2` agora tratam transparencia pelo nibble original antes da base de paleta
+      - isso corrige o rosa visivel atras de player/HUD quando o nibble `0` era promovido a cor valida do banco
+    - correcao estrutural:
+      - `AY1/BY1` agora ficam latched por frame, em linha com `openMSX`
+      - o estado de split vertical por linha (`AY0/BY0`) passou a usar esses bytes altos latched
+    - instrumentacao util adicionada:
+      - `G9Y ay y:<linha> v:<valor>`
+      - `G9Y by y:<linha> v:<valor>`
+      - objetivo: fechar se os 3 gaps restantes ainda vem de raster split vertical em `P1`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604120033-1e936ec`
+      - `TXTDBG BUILD: 0643`
+      - `BUILD_HASH: 1e936ec-3355b7f51151dcf3b1d8c629edce548f914305df`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-12 16:43 -03:
+    - o defeito residual dos `4` blocos entrou em uma trilha mais precisa: a ROM do `Ghost'n Goblins` usa `IN (65h)` para temporizar transferencias do `V9990` durante o gameplay
+    - causa tecnica corrigida:
+      - `src/backend/msx/modules/fmsx/fmsx_v9990.c`
+      - o `STATUS` do `V9990` deixou de avancar por numero de leituras no port `0x65`
+      - agora ele e sincronizado por ciclos reais da CPU via `fmsx_vdp_cpu_cycles_now()` e `HPeriod`
+    - correcoes de integracao:
+      - reset/power-on/load-state agora reinicializam `status_last_cpu_cycles` e `status_cpu_cycle_frac`
+      - `tools/host/v9990_phase_harness.c` ganhou stubs de `ScanLine`, `HPeriod`, `fmsx_vdp_cpu_cycles_now()` e hooks de debug para validar a nova semantica fora do Raspberry
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `scripts/run-v9990-host-harness.sh 6`
+      - `make DEBUG=1`
+    - resultado local:
+      - o harness host-side voltou a renderizar frames ativos do `V9990` sem falha de simbolos/estado
+      - o build cruzado do kernel fechou com a mesma semantica nova de `STATUS`
+    - build atual:
+      - `BUILD_BID: 202604121642-1e936ec`
+      - `TXTDBG BUILD: 37DB`
+      - `BUILD_HASH: 1e936ec-661e51b8fbe6fa444080fcd3052e4a7192fabb94`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-12 16:51 -03:
+    - comparacao direta com o `openMSX` fechou um desvio estrutural no `P1/P2`
+    - causa tecnica:
+      - `src/backend/msx/modules/fmsx/fmsx_v9990.c`
+      - `fmsx_v9990_image_width()` ainda devolvia largura visivel (`256/512`) em `P1/P2`
+      - no `openMSX`, `IMAGE_WIDTH` e `512` para `P1` e `1024` para `P2`
+      - isso afeta diretamente o pitch do command engine (`getPitch(width)`), nao so o renderer
+    - correcao aplicada:
+      - `P1 -> 512`
+      - `P2 -> 1024`
+      - a largura ativa de apresentacao continua `256/512`; o ajuste e apenas do envelope interno do chip
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `scripts/run-v9990-host-harness.sh 6`
+      - `make DEBUG=1`
+    - evidencia local:
+      - o harness passou a reportar `G9D fb ... iw:512` para `P1`, em vez de `iw:256`
+    - build atual:
+      - `BUILD_BID: 202604121651-1e936ec`
+      - `TXTDBG BUILD: 7FC9`
+      - `BUILD_HASH: 1e936ec-107a03d1f833faa1acbb68a254a4ae9a6235453f`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-12 17:13 -03:
+    - a UART do gameplay fechou um corte mais estreito no `P1`:
+      - nos buracos, a plane `B` aparece cheia (`256` pixels) enquanto a composicao final cai para `0`
+      - isso empurra o foco do defeito para `paleta/composicao` do `P1`, e nao mais para `presenter` ou split raster
+    - instrumentacao nova:
+      - `src/backend/msx/modules/fmsx/fmsx_v9990.c`
+      - `G9D lc` registra, na primeira linha furada do frame:
+        - `pa/pb/bd`
+        - amostras dos primeiros `8` nibbles de `A` e `B`
+        - flags `bg==backdrop` e `final==backdrop`
+      - objetivo: distinguir de forma objetiva se a plane `B` chega correta e e perdida na composicao, ou se o problema nasce antes no fetch
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604121713-1e936ec`
+      - `TXTDBG BUILD: 6B8D`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-13 17:48 -03:
+    - a UART apertou o defeito residual para o timing do split raster durante `display-on`
+    - evidencia:
+      - bursts de `AY0/BY0` estavam caindo com skew de `1-2` linhas (`AY` e `BY` aplicados em linhas diferentes)
+      - isso e coerente com os grandes blocos/gaps do `P1`
+    - causa tecnica:
+      - `src/backend/msx/modules/fmsx/fmsx_v9990.c`
+      - `fmsx_v9990_get_active_display_line()` usava o relogio sintetico de `STATUS` tambem para posicionar writes raster com display ativo
+      - para bootstrap isso funciona, mas no gameplay o clock sintetico e jittery demais para `AY0/BY0/AX/BX/PRIORITY`
+    - correcao aplicada:
+      - `STATUS/IRQ` continuam sincronizados pelo clock sintetico do `V9990`
+      - writes raster com `CONTROL.7=1` passaram a usar `ScanLine` do core `fMSX` como fonte da linha ativa
+      - isso aproxima o comportamento de `sync(time)->lastY` do `openMSX` sem perder o polling de bring-up
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604131748-1e936ec`
+      - `TXTDBG BUILD: 92D3`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-13 18:15 -03:
+    - corte estrutural aplicado no `V9990`:
+      - `display enable` do frame deixou de depender do bit vivo `CONTROL.7`
+      - o estado passa a ser latched no inicio do frame, alinhado ao `openMSX`
+    - correcao aplicada:
+      - `src/backend/msx/modules/fmsx/fmsx_v9990.c`
+      - novo estado `display_enabled_frame`
+      - `fmsx_v9990_reset_scroll_line_state()` agora latches:
+        - `display_enabled_frame`
+        - `AY1`
+        - `BY1`
+      - os pontos abaixo deixaram de usar `regs[CONTROL] & 0x80` ao vivo e passaram a usar o latch do frame:
+        - `fmsx_v9990_get_active_display_line()`
+        - gating de `AY/BY/AX/BX/PRIORITY`
+        - gating de `PALETTE_CONTROL` / `BACK_DROP_COLOR`
+        - reset de baseline em `SCREEN_MODE_0/1`
+        - early return de `render_frame()`
+    - racional tecnico:
+      - no `openMSX`, `CONTROL.7` nao altera o renderer diretamente no write
+      - `displayEnabled` so vira efetivo em `frameStart()` e em `DISPLAY_START/VSCAN`
+      - o nosso uso do bit vivo ainda deixava o frame corrente reagir a writes que, semanticamente, pertencem ao frame seguinte
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604131815-1e936ec`
+      - `TXTDBG BUILD: 95D8`
+      - `BUILD_HASH: 1e936ec-ed8909d8ab522375dc347556c892b7ee3f775ea9`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-13 18:46 -03:
+    - corte atual:
+      - o defeito residual do `P1` continua sendo os `3` gaps horizontais do gameplay
+      - presenter/paleta/F12 ja nao sao o gargalo principal
+    - correcao aplicada:
+      - `src/backend/msx/modules/fmsx/fmsx_v9990.c`
+      - `fmsx_v9990_get_active_display_line()` deixou de misturar dois relogios
+      - writes raster de `AY/BY/AX/BX/PRIORITY` agora usam o mesmo clock sintetico do `V9990` que ja alimenta `STATUS/IRQ`
+      - esse clock ja esta sincronizado por ciclos reais da CPU, entao a justificativa antiga para preferir `ScanLine` do VDP principal deixou de valer
+    - racional tecnico:
+      - a UART mostrou que o gameplay programa o `V9990` baseado em `STATUS`
+      - usar `ScanLine` para os writes raster e o clock sintetico para `STATUS` deixava o frame dividido por dois dominios de tempo diferentes
+      - isso e coerente com bandas horizontais estaveis no `P1`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+  - `BUILD_BID: 202604131846-1e936ec`
+  - `TXTDBG BUILD: 46F0`
+  - `BUILD_HASH: 1e936ec-9da8c68620ad0d4946729ada7de29e06aaf1588c`
+  - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-13 19:10 -03:
+    - a mudanca da `46F0` para usar apenas o clock sintetico do `V9990` nos writes raster foi revertida
+    - motivo:
+      - os `3` gaps do `P1` continuaram
+      - o efeito de rolagem vertical voltou em hardware
+    - correcao aplicada:
+      - `src/backend/msx/modules/fmsx/fmsx_v9990.c`
+      - `fmsx_v9990_get_active_display_line()` voltou ao modo hibrido:
+        - `ScanLine` do `fMSX` quando o `V9990` esta com display ativo
+        - clock sintetico apenas em bootstrap / display-off
+    - leitura tecnica:
+      - o clock sintetico puro segue valido para `STATUS/IRQ`
+      - mas os writes raster vivos do gameplay precisam usar a linha que o core esta efetivamente desenhando para o frame permanecer estavel
+    - estado atual:
+      - a regressao do scroll vertical saiu da build local
+      - o defeito remanescente continua restrito aos `3` gaps horizontais do `P1`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604131910-1e936ec`
+      - `TXTDBG BUILD: 570C`
+      - `BUILD_HASH: 1e936ec-57bd9640ba1951cdb2402cbe5330fe6c8526faf0`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-14 18:11 -03:
+    - o `P1` local deixou de usar a composicao simplificada por pixel e passou a seguir a ordem do `openMSX/WebMSX` de forma mais literal
+    - correcao aplicada:
+      - `src/backend/msx/modules/fmsx/fmsx_v9990.c`
+      - renderizacao por linha do `P1` agora faz:
+        - backdrop
+        - back plane
+        - front plane
+        - sprites
+      - a ordem `A/B` passou a depender de `displayY < prioY`, como no `openMSX`
+      - `BY1` passou a valer por linha para:
+        - bit alto do scroll de `B`
+        - enable das planes `A/B` (`SDA/SDB`)
+      - `AY1` passou a valer por linha para o `roll mask`
+      - writes de `AY1/BY1` com display ativo agora atualizam o estado das linhas seguintes, em vez de ficarem completamente ignorados
+    - racional tecnico:
+      - o defeito remanescente dos `3` gaps horizontais persistia mesmo com presenter e paleta corretos
+      - o renderer anterior ainda estava simplificado demais em relacao a `openMSX/WebMSX`, especialmente no `P1`
+      - a semantica de `BY1` como fonte de enable das planes e de scroll alto por linha nao existia localmente
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604141811-1e936ec`
+      - `TXTDBG BUILD: EB60`
+      - `BUILD_HASH: 1e936ec-6c60711a2168eccc9d2af295c01e8c6f05f17c7c`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-14 19:03 -03:
+    - o defeito dos `3` gaps horizontais foi reduzido a uma divergencia de composicao `P1`
+    - correcao aplicada:
+      - `src/backend/msx/modules/fmsx/fmsx_v9990.c`
+      - a ordem `background/foreground` das planes `A/B` agora segue o `openMSX` em todas as linhas
+      - abaixo de `prioY`, `prioX` zera, mas a ordem das planes nao e invertida
+    - racional tecnico:
+      - o renderer local trocava a ordem `A/B` inteira quando `displayY >= prioY`
+      - no `openMSX`, `prioY` apenas zera o split horizontal
+      - isso e compativel com blocos horizontais onde uma plane caia em backdrop durante o gameplay
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604141903-1e936ec`
+      - `TXTDBG BUILD: DA80`
+      - `BUILD_HASH: 1e936ec-688802491549ca1449b88c63223f080ea3f43fd4`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-14 20:23 -03:
+    - a comparacao com `openMSX` e `WebMSX` fechou uma divergencia concreta no command engine `P1`
+    - correcao aplicada:
+      - `src/backend/msx/modules/fmsx/fmsx_v9990.c`
+      - `fmsx_v9990_cmd_address_of()` em `P1` agora usa:
+        - `X = 0..255` para o byte address
+        - `X9` apenas como seletor de plane `B`
+        - `X8` completamente ignorado no endereco, como nas referencias
+    - racional tecnico:
+      - no `WebMSX`, `getSX()/getDX()` em `P1` mascaram `imageWidthMask=0xFF`
+      - o offset de plane vem separado de `SX9/DX9`
+      - o core local ainda deixava `X8` entrar em `((x >> 1) & (pitch - 1))`
+      - isso desvia o stream do command engine `P1` em `128` bytes dentro da linha e e coerente com “leitura de VRAM errada”
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604142023-1e936ec`
+      - `TXTDBG BUILD: A6F0`
+      - `BUILD_HASH: 1e936ec-812c78295223b1b14b0dd96555e6c75580f88f18`
+      - artefato: `artifacts/kernel8-issue251.img`

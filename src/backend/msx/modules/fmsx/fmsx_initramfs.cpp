@@ -308,6 +308,7 @@ static int fmsx_initramfs_is_boot_minimal_name(const char *name)
         "CARTS.CRC",
         "MSX2.ROM",
         "MSX2EXT.ROM",
+        "MSXDOS2.ROM",
         "MSX2P.ROM",
         "MSX2PEXT.ROM",
         "MSX2SUB.ROM",
@@ -330,6 +331,8 @@ static int fmsx_initramfs_is_boot_minimal_name(const char *name)
         "FS-A1F_DISK.ROM",
         "CARTA.ROM",
         "CARTB.ROM",
+        "DRIVEA.DSK",
+        "DRIVEB.DSK",
         "DISKA.DSK",
         "DISKB.DSK"
     };

@@ -2,9 +2,10 @@
 
 - URL: https://github.com/sandersouza/msxbarepi/issues/249
 - Milestone: issue avulsa (sem milestone)
-- Estado remoto: OPEN
+- Estado remoto: CLOSED
 - Labels: `priority:P0`, `type:feature`, `area:emulation`, `area:boot`, `area:scripts`
-- Projeto: `MSX BarePI` (`Status: In progress`)
+- Projeto: `MSX BarePI` (`Status: Done`)
+- Fechamento: PR `#250` mergeado em `main` em 10/04/2026; branch remota da issue apagada apos o merge
 
 ## Contexto
 
@@ -49,29 +50,29 @@ Estruturar `src/backend/` por familia, sem header publico generico, consolidando
 
 ## DoD
 
-- [ ] O kernel usa apenas `backend/msx/backend.h` como header publico de backend
-- [ ] `msx.fmsx` esta migrado para `src/backend/msx/modules/fmsx/`
-- [ ] `msx.bluemsx` permanece registravel como stub da mesma familia
-- [ ] `src/backend/core/` define ABI comum e registry para built-ins/loadables
-- [ ] O build aceita `BACKEND_FAMILY=msx` e `BACKEND_DEFAULT=msx.fmsx`
-- [ ] `EMULATOR_BACKEND=fmsx|bluemsx` segue funcionando como alias transitorio
-- [ ] O artefato `artifacts/backend/msx/msx.fmsx.mod.elf` e gerado
-- [ ] O config aceita `backend_id=msx.fmsx`
-- [ ] Fallback de backend invalido cai para o default com log claro
-- [ ] Documentacao e espelho local atualizados para a nova convencao
+- [x] O kernel usa apenas `backend/msx/backend.h` como header publico de backend
+- [x] `msx.fmsx` esta migrado para `src/backend/msx/modules/fmsx/`
+- [x] `msx.bluemsx` permanece registravel como stub da mesma familia
+- [x] `src/backend/core/` define ABI comum e registry para built-ins/loadables
+- [x] O build aceita `BACKEND_FAMILY=msx` e `BACKEND_DEFAULT=msx.fmsx`
+- [x] `EMULATOR_BACKEND=fmsx|bluemsx` segue funcionando como alias transitorio
+- [x] O artefato `artifacts/backend/msx/msx.fmsx.mod.elf` e gerado
+- [x] O config aceita `backend_id=msx.fmsx`
+- [x] Fallback de backend invalido cai para o default com log claro
+- [x] Documentacao e espelho local atualizados para a nova convencao
 
 ## Checklist de trabalho
 
-- [ ] Definir `BackendModuleV1`, `BackendOps` e `BackendHostExportsV1`
-- [ ] Criar registry/manager generico em `src/backend/core/`
-- [ ] Consolidar fachada publica `src/backend/msx/backend.h`
-- [ ] Migrar o backend fMSX para `src/backend/msx/modules/fmsx/`
-- [ ] Registrar `msx.bluemsx` como segundo modulo da familia
-- [ ] Remover includes diretos de `fmsx_runtime.h` do kernel
-- [ ] Propagar `backend_id` no load/save de configuracao
-- [ ] Ajustar build raiz e `src/Makefile` para familia/default backend
-- [ ] Gerar `msx.fmsx.mod.elf`
-- [ ] Documentar a convencao de `src/backend/<family>/backend.h`
+- [x] Definir `BackendModuleV1`, `BackendOps` e `BackendHostExportsV1`
+- [x] Criar registry/manager generico em `src/backend/core/`
+- [x] Consolidar fachada publica `src/backend/msx/backend.h`
+- [x] Migrar o backend fMSX para `src/backend/msx/modules/fmsx/`
+- [x] Registrar `msx.bluemsx` como segundo modulo da familia
+- [x] Remover includes diretos de `fmsx_runtime.h` do kernel
+- [x] Propagar `backend_id` no load/save de configuracao
+- [x] Ajustar build raiz e `src/Makefile` para familia/default backend
+- [x] Gerar `msx.fmsx.mod.elf`
+- [x] Documentar a convencao de `src/backend/<family>/backend.h`
 
 ## Referencias tecnicas
 

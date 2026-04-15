@@ -142,10 +142,12 @@ static void msx_backend_clear_video_presentation(BackendVideoPresentation *prese
     {
         presentation->logical_width = 0u;
         presentation->logical_height = 0u;
+        presentation->pitch_pixels = 0u;
         presentation->hires_mode = FALSE;
         presentation->interlaced_mode = FALSE;
         presentation->woven_hires = FALSE;
         presentation->field_parity_odd = FALSE;
+        presentation->disable_scanline_postfx = FALSE;
     }
 }
 
@@ -377,6 +379,8 @@ boolean msx_backend_get_disk_rom_enabled(void) { MSX_BACKEND_CALL_BOOL(machine, 
 void msx_backend_set_kanji_rom_enabled(boolean enabled) { MSX_BACKEND_CALL_VOID(machine, set_kanji_rom_enabled, enabled); }
 boolean msx_backend_get_kanji_rom_enabled(void) { MSX_BACKEND_CALL_BOOL(machine, get_kanji_rom_enabled); }
 boolean msx_backend_get_kanji_rom_available(void) { MSX_BACKEND_CALL_BOOL(machine, get_kanji_rom_available); }
+void msx_backend_set_gfx9000_enabled(boolean enabled) { MSX_BACKEND_CALL_VOID(machine, set_gfx9000_enabled, enabled); }
+boolean msx_backend_get_gfx9000_enabled(void) { MSX_BACKEND_CALL_BOOL(machine, get_gfx9000_enabled); }
 void msx_backend_set_boot_mode(unsigned mode) { MSX_BACKEND_CALL_VOID(machine, set_boot_mode, mode); }
 unsigned msx_backend_get_boot_mode(void) { MSX_BACKEND_CALL_UNSIGNED(machine, get_boot_mode, 0u); }
 unsigned msx_backend_get_active_boot_mode(void) { MSX_BACKEND_CALL_UNSIGNED(machine, get_active_boot_mode, 0u); }

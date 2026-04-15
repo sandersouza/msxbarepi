@@ -27,6 +27,8 @@ typedef struct {
     void (*set_kanji_rom_enabled)(boolean enabled);
     boolean (*get_kanji_rom_enabled)(void);
     boolean (*get_kanji_rom_available)(void);
+    void (*set_gfx9000_enabled)(boolean enabled);
+    boolean (*get_gfx9000_enabled)(void);
     void (*set_boot_mode)(unsigned mode);
     unsigned (*get_boot_mode)(void);
     unsigned (*get_active_boot_mode)(void);

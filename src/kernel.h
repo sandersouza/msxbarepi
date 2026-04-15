@@ -41,6 +41,7 @@ public:
 
     boolean Initialize(void);
     TComboShutdownMode Run(void);
+    static unsigned DebugRepairTimerIrqBindingCurrent(unsigned stage);
 
 private:
     void RefillAudioQueue(void);
@@ -101,6 +102,7 @@ private:
     void SaveEmulatorStateToStorage(void);
     void LoadEmulatorStateFromStorage(void);
     void NormalizeSettingsForBuild(void);
+    unsigned DebugRepairTimerIrqBinding(unsigned stage);
 
     static void KeyPressedHandler(const char *text);
     static void SystemThrottledHandler(TSystemThrottledState state, void *param);
@@ -247,6 +249,7 @@ private:
     unsigned m_Language;
     unsigned m_ResolutionMode;
     unsigned m_ScanlineMode;
+    boolean m_Gfx9000Enabled;
     unsigned m_RefreshRateHz;
     boolean m_DiskRomEnabled;
     unsigned m_BootMode;
@@ -270,6 +273,8 @@ private:
     unsigned m_FmLayerGainPct;
     boolean m_SccCartEnabled;
     boolean m_SccDualCartEnabled;
+    boolean m_Gfx9000ToggleTracePending;
+    boolean m_Gfx9000ResumeTracePending;
     u64 m_FrameIntervalUs;
     boolean m_FramePacingResetPending;
     boolean m_BackendFallbackPattern;
