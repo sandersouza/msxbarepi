@@ -60,6 +60,15 @@
 extern void msxbare_uart_write(const char *text);
 extern void msxbare_debug_trace(const char *text);
 
+typedef struct TFmsxRuntimeGhostGoblinsTraceState
+{
+    boolean active;
+    boolean key_logged;
+    boolean select_logged;
+    boolean upload_logged;
+    boolean upload_poll_logged;
+} TFmsxRuntimeGhostGoblinsTraceState;
+
 typedef enum FmsxRuntimeGfx9000TraceStepId
 {
     FmsxRuntimeGfx9000TraceFrameBegin = 0,
@@ -98,6 +107,149 @@ static char fmsx_runtime_trace_gfx9000_step_marker(FmsxRuntimeGfx9000TraceStepId
     case FmsxRuntimeGfx9000TraceFrameEnd:      return '|';
     default:                                   return '\0';
     }
+}
+
+static boolean fmsx_runtime_name_contains_casefold(const char *text, const char *needle)
+{
+    if (text == 0 || needle == 0 || *needle == '\0')
+    {
+        return FALSE;
+    }
+
+    for (; *text != '\0'; ++text)
+    {
+        const char *a = text;
+        const char *b = needle;
+
+        while (*a != '\0' && *b != '\0'
+            && toupper((unsigned char) *a) == toupper((unsigned char) *b))
+        {
+            ++a;
+            ++b;
+        }
+
+        if (*b == '\0')
+        {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+static TFmsxRuntimeGhostGoblinsTraceState g_fmsx_gg_trace = { FALSE, FALSE, FALSE, FALSE, FALSE };
+
+static void fmsx_runtime_reset_ghostgoblins_trace(void)
+{
+    memset(&g_fmsx_gg_trace, 0, sizeof(g_fmsx_gg_trace));
+}
+
+static boolean fmsx_runtime_is_ghostgoblins_active(void)
+{
+    unsigned slot;
+
+    for (slot = 0u; slot < 2u; ++slot)
+    {
+        if (fmsx_runtime_name_contains_casefold(ROMName[slot], "GHOSTGOBLINS"))
+        {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+static void fmsx_runtime_trace_ghostgoblins_selection(const char *tag)
+{
+    char line[192];
+    unsigned pos = 0u;
+    uint8_t state = 0u;
+    uint8_t f088 = 0u;
+    uint8_t f087 = 0u;
+    uint8_t f947 = 0u;
+    uint16_t r0 = 0u;
+    uint16_t r1 = 0u;
+    uint16_t r2 = 0u;
+    uint16_t r3 = 0u;
+
+    if (tag == 0)
+    {
+        return;
+    }
+
+    (void) fmsx_runtime_peek8(0xC719u, &state);
+    (void) fmsx_runtime_peek8(0xC088u, &f088);
+    (void) fmsx_runtime_peek8(0xC087u, &f087);
+    (void) fmsx_runtime_peek8(0xC947u, &f947);
+    (void) fmsx_runtime_peek16(0xC1C1u, &r0);
+    (void) fmsx_runtime_peek16(0xC1C3u, &r1);
+    (void) fmsx_runtime_peek16(0xC1C5u, &r2);
+    (void) fmsx_runtime_peek16(0xC1C7u, &r3);
+
+    pos += (unsigned) snprintf(
+        line + pos, sizeof(line) - pos,
+        "G9R sel tag:%s pc:%04X st:%02X r0:%04X/%04X r1:%04X/%04X fl:%02X/%02X/%02X\n",
+        tag,
+        CPU.PC.W,
+        state,
+        r0,
+        r1,
+        r2,
+        r3,
+        f088,
+        f087,
+        f947);
+
+    if (pos < sizeof(line))
+    {
+        msxbare_uart_write(line);
+    }
+}
+
+static void fmsx_runtime_trace_ghostgoblins_checkpoint(void)
+{
+    const uint16_t pc = CPU.PC.W;
+
+    if (!g_fmsx_gg_trace.active)
+    {
+        g_fmsx_gg_trace.active = fmsx_runtime_is_ghostgoblins_active();
+        if (!g_fmsx_gg_trace.active)
+        {
+            return;
+        }
+    }
+
+    if (!g_fmsx_gg_trace.key_logged && pc >= 0x4A62u && pc <= 0x4ABFu)
+    {
+        g_fmsx_gg_trace.key_logged = TRUE;
+        fmsx_runtime_trace_ghostgoblins_selection("key");
+    }
+
+    if (!g_fmsx_gg_trace.select_logged && pc >= 0x4902u && pc <= 0x495Eu)
+    {
+        g_fmsx_gg_trace.select_logged = TRUE;
+        fmsx_runtime_trace_ghostgoblins_selection("phase");
+    }
+
+    if (!g_fmsx_gg_trace.upload_logged && pc >= 0x4EFCu && pc <= 0x4F51u)
+    {
+        g_fmsx_gg_trace.upload_logged = TRUE;
+        fmsx_runtime_trace_ghostgoblins_selection("upload");
+    }
+
+    if (!g_fmsx_gg_trace.upload_poll_logged && pc >= 0x5080u && pc <= 0x50B0u)
+    {
+        g_fmsx_gg_trace.upload_poll_logged = TRUE;
+        fmsx_runtime_trace_ghostgoblins_selection("disp");
+    }
+}
+#else
+static void fmsx_runtime_reset_ghostgoblins_trace(void)
+{
+}
+
+static void fmsx_runtime_trace_ghostgoblins_checkpoint(void)
+{
 }
 #endif
 
@@ -1130,6 +1282,7 @@ static void fmsx_runtime_apply_audio_channels(void)
 static boolean fmsx_runtime_start(boolean boot_basic)
 {
     fmsx_runtime_set_load_diag(2100u); /* runtime_start begin */
+    fmsx_runtime_reset_ghostgoblins_trace();
     fmsx_runtime_game_master_clear_tables();
     fmsx_runtime_reset_frame_perf_stats_window();
     fmsx_runtime_invalidate_video_cache();
@@ -1514,6 +1667,7 @@ boolean fmsx_runtime_step_frame(void)
             {
                 fmsx_runtime_trace_gfx9000_step(FmsxRuntimeGfx9000TraceRunZ80End);
             }
+            fmsx_runtime_trace_ghostgoblins_checkpoint();
             ++slices;
 
             if (fmsx_video_get_latest(0, 0, 0) != seq_before)
@@ -1676,6 +1830,7 @@ void fmsx_runtime_shutdown(void)
 {
     fmsx_runtime_reset_frame_perf_stats_window();
     fmsx_runtime_invalidate_video_cache();
+    fmsx_runtime_reset_ghostgoblins_trace();
     if (g_fmsx_status.running)
     {
         fmsx_runtime_reset_game_master_session();
@@ -1732,6 +1887,7 @@ boolean fmsx_runtime_load_state(const void *src, unsigned size)
 
     fmsx_runtime_reset_game_master_session();
     fmsx_runtime_invalidate_video_cache();
+    fmsx_runtime_reset_ghostgoblins_trace();
 
     const unsigned consumed = LoadState((unsigned char *) src, size);
     if (consumed == 0u || consumed > size)
@@ -2558,6 +2714,26 @@ void fmsx_runtime_set_load_diag(unsigned stage)
 unsigned fmsx_runtime_get_load_diag(void)
 {
     return g_load_diag_stage;
+}
+
+void fmsx_runtime_set_v9990_debug_live_view(TFmsxV9990DebugLiveView view)
+{
+    fmsx_v9990_set_debug_live_view(view);
+}
+
+TFmsxV9990DebugLiveView fmsx_runtime_get_v9990_debug_live_view(void)
+{
+    return fmsx_v9990_get_debug_live_view();
+}
+
+void fmsx_runtime_set_v9990_debug_reference_view(TFmsxV9990DebugReferenceView view)
+{
+    fmsx_v9990_set_debug_reference_view(view);
+}
+
+TFmsxV9990DebugReferenceView fmsx_runtime_get_v9990_debug_reference_view(void)
+{
+    return fmsx_v9990_get_debug_reference_view();
 }
 
 void fmsx_runtime_set_frame_perf_telemetry_enabled(boolean enabled)

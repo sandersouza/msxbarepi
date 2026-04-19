@@ -427,6 +427,10 @@ boolean msx_backend_peek16(uint16_t address, uint16_t *value) { MSX_BACKEND_CALL
 
 void msx_backend_set_load_diag(unsigned stage) { MSX_BACKEND_CALL_VOID(debug, set_load_diag, stage); }
 unsigned msx_backend_get_load_diag(void) { MSX_BACKEND_CALL_UNSIGNED(debug, get_load_diag, 0u); }
+void msx_backend_set_v9990_debug_live_view(MsxBackendV9990DebugLiveView view) { MSX_BACKEND_CALL_VOID(debug, set_v9990_debug_live_view, view); }
+MsxBackendV9990DebugLiveView msx_backend_get_v9990_debug_live_view(void) { MSX_BACKEND_CALL_UNSIGNED(debug, get_v9990_debug_live_view, FMSX_V9990_DEBUG_LIVE_VIEW_OFF); }
+void msx_backend_set_v9990_debug_reference_view(MsxBackendV9990DebugReferenceView view) { MSX_BACKEND_CALL_VOID(debug, set_v9990_debug_reference_view, view); }
+MsxBackendV9990DebugReferenceView msx_backend_get_v9990_debug_reference_view(void) { MSX_BACKEND_CALL_UNSIGNED(debug, get_v9990_debug_reference_view, FMSX_V9990_DEBUG_REF_VIEW_OFF); }
 void msx_backend_get_video_host_debug(MsxBackendVideoHostDebug *debug) { MSX_BACKEND_CALL_VOID(debug, get_video_host_debug, debug); }
 void msx_backend_get_audio_stats(MsxBackendAudioStats *stats) { MSX_BACKEND_CALL_VOID(debug, get_audio_stats, stats); }
 void msx_backend_get_audio_mix_debug(MsxBackendAudioMixDebug *stats) { MSX_BACKEND_CALL_VOID(debug, get_audio_mix_debug, stats); }

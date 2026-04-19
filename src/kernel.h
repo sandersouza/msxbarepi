@@ -166,6 +166,8 @@ private:
     boolean m_LastF6Pressed;
     boolean m_LastF7Pressed;
     boolean m_LastF8Pressed;
+    boolean m_LastF9Pressed;
+    boolean m_LastF10Pressed;
     boolean m_LastFmGainUpPressed;
     boolean m_LastFmGainDownPressed;
     boolean m_LastPauseWasInSettings;

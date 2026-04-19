@@ -18,9 +18,11 @@ extern int ScanLine;
 #endif
 
 #define FMSX_V9990_STATE_MAGIC 0x56393939u /* 'V999' */
-#define FMSX_V9990_STATE_VERSION 4u
+#define FMSX_V9990_STATE_VERSION 5u
 #define FMSX_V9990_FB_MAX_WIDTH 1280u
-#define FMSX_V9990_FB_MAX_HEIGHT 424u
+#define FMSX_V9990_FB_MAX_HEIGHT 480u
+#define FMSX_V9990_DEBUG_BLOCK_LINES 16u
+#define FMSX_V9990_DEBUG_BLOCK_MAX ((FMSX_V9990_FB_MAX_HEIGHT + FMSX_V9990_DEBUG_BLOCK_LINES - 1u) / FMSX_V9990_DEBUG_BLOCK_LINES)
 #define FMSX_V9990_UC_TICKS_PER_LINE 2736u
 #define FMSX_V9990_FB_GUARD_WORD 0x9A9905A5u
 
@@ -132,6 +134,8 @@ typedef enum {
     FMSX_V9990_MODE_B2,
     FMSX_V9990_MODE_B3,
     FMSX_V9990_MODE_B4,
+    FMSX_V9990_MODE_B5,
+    FMSX_V9990_MODE_B6,
     FMSX_V9990_MODE_B7
 } TFmsxV9990DisplayMode;
 
@@ -249,6 +253,45 @@ typedef struct {
 } TFmsxV9990StatePayloadV4;
 
 typedef struct {
+    uint32_t io_reads;
+    uint32_t io_writes;
+    uint32_t vram_write_ptr;
+    uint32_t vram_read_ptr;
+    uint8_t reg_select;
+    uint8_t status;
+    uint8_t pending_irqs;
+    uint8_t system_control;
+    uint8_t command_data;
+    uint8_t vram_read_buffer;
+    uint8_t vram_interleaved;
+    uint8_t reserved0;
+    uint32_t vram_bytes;
+    uint16_t cmd_sx;
+    uint16_t cmd_sy;
+    uint16_t cmd_dx;
+    uint16_t cmd_dy;
+    uint16_t cmd_nx;
+    uint16_t cmd_ny;
+    uint16_t cmd_wm;
+    uint16_t cmd_fg;
+    uint16_t cmd_bg;
+    uint16_t cmd_border_x;
+    uint16_t cmd_pitch;
+    uint16_t cmd_image_width;
+    uint8_t cmd_arg;
+    uint8_t cmd_log;
+    uint8_t cmd_opcode;
+    uint8_t cmd_data;
+    uint8_t cmd_partial;
+    uint8_t cmd_status;
+    uint8_t cmd_flags;
+    uint8_t cmd_mode;
+    uint8_t reserved1;
+    uint8_t regs[FMSX_V9990_REG_COUNT];
+    uint8_t palette[FMSX_V9990_PALETTE_BYTES];
+} TFmsxV9990StatePayloadV5;
+
+typedef struct {
     uint16_t sx;
     uint16_t sy;
     uint16_t dx;
@@ -301,6 +344,8 @@ typedef struct {
     uint16_t scroll_by_lines[FMSX_V9990_FB_MAX_HEIGHT];
     uint16_t scroll_ax_lines[FMSX_V9990_FB_MAX_HEIGHT];
     uint16_t scroll_bx_lines[FMSX_V9990_FB_MAX_HEIGHT];
+    int16_t scroll_ay_frame_lines[FMSX_V9990_FB_MAX_HEIGHT];
+    int16_t scroll_by_frame_lines[FMSX_V9990_FB_MAX_HEIGHT];
     uint16_t display_ya_lines[FMSX_V9990_FB_MAX_HEIGHT];
     uint16_t display_yb_lines[FMSX_V9990_FB_MAX_HEIGHT];
     uint8_t priority_control_lines[FMSX_V9990_FB_MAX_HEIGHT];
@@ -313,18 +358,26 @@ typedef struct {
     uint8_t scroll_by1_lines[FMSX_V9990_FB_MAX_HEIGHT];
     uint8_t scroll_ay_high_frame;
     uint8_t scroll_by_high_frame;
+    uint8_t control_frame;
     boolean display_enabled_frame;
+    boolean sprites_enabled_frame;
     TFmsxV9990RasterEvent raster_events[1024];
     unsigned raster_event_count;
+    boolean vram_interleaved;
     uint8_t vram[FMSX_V9990_VRAM_BYTES];
 } TFmsxV9990State;
 
 typedef enum {
     FMSX_V9990_RASTER_EVENT_AY0 = 0u,
     FMSX_V9990_RASTER_EVENT_BY0,
+    FMSX_V9990_RASTER_EVENT_AY1,
+    FMSX_V9990_RASTER_EVENT_BY1,
     FMSX_V9990_RASTER_EVENT_AX,
     FMSX_V9990_RASTER_EVENT_BX,
     FMSX_V9990_RASTER_EVENT_PRIORITY,
+    FMSX_V9990_RASTER_EVENT_BY1_PLANES,
+    FMSX_V9990_RASTER_EVENT_PALETTE_CONTROL,
+    FMSX_V9990_RASTER_EVENT_BACKDROP_COLOR,
 } TFmsxV9990RasterEventKind;
 
 typedef struct {
@@ -332,14 +385,22 @@ typedef struct {
     uint16_t scroll_by;
     uint16_t scroll_ax;
     uint16_t scroll_bx;
-    uint16_t display_ya;
-    uint16_t display_yb;
+    int16_t scroll_ay_frame;
+    int16_t scroll_by_frame;
     uint8_t priority;
     uint8_t palette_control;
     uint8_t backdrop_color;
     uint8_t ay1;
     uint8_t by1;
 } TFmsxV9990P1LineState;
+
+typedef struct {
+    int16_t scroll_ay_frame;
+    uint16_t scroll_ax;
+    uint8_t ay1;
+    uint8_t palette_control;
+    uint8_t backdrop_color;
+} TFmsxV9990BxLineState;
 
 typedef struct {
     uint32_t guard_lo;
@@ -349,8 +410,38 @@ typedef struct {
 
 static TFmsxV9990State g_fmsx_v9990;
 static TFmsxV9990FramebufferStorage g_fmsx_v9990_framebuffer_storage;
+static uint8_t g_fmsx_v9990_vram_interleave_tmp[FMSX_V9990_VRAM_BYTES >> 1];
 static TFmsxV9990VideoFrame g_fmsx_v9990_video = { 0 };
+static TFmsxV9990VideoFrame g_fmsx_v9990_debug_video = { 0 };
+static TFmsxV9990DebugLiveView g_fmsx_v9990_debug_live_view = FMSX_V9990_DEBUG_LIVE_VIEW_OFF;
+static TFmsxV9990DebugReferenceView g_fmsx_v9990_debug_reference_view = FMSX_V9990_DEBUG_REF_VIEW_OFF;
+static boolean g_fmsx_v9990_debug_reference_valid = FALSE;
+static boolean g_fmsx_v9990_debug_reference_unavailable_logged = FALSE;
 #define FMSX_V9990_FRAMEBUFFER (g_fmsx_v9990_framebuffer_storage.pixels)
+
+static void fmsx_v9990_get_p1_frame_initial_state(TFmsxV9990P1LineState *state)
+{
+    state->scroll_ay = g_fmsx_v9990.scroll_ay_lines[0];
+    state->scroll_by = g_fmsx_v9990.scroll_by_lines[0];
+    state->scroll_ax = g_fmsx_v9990.scroll_ax_lines[0];
+    state->scroll_bx = g_fmsx_v9990.scroll_bx_lines[0];
+    state->scroll_ay_frame = g_fmsx_v9990.scroll_ay_frame_lines[0];
+    state->scroll_by_frame = g_fmsx_v9990.scroll_by_frame_lines[0];
+    state->priority = g_fmsx_v9990.priority_control_lines[0];
+    state->palette_control = g_fmsx_v9990.palette_control_lines[0];
+    state->backdrop_color = g_fmsx_v9990.backdrop_color_lines[0];
+    state->ay1 = g_fmsx_v9990.scroll_ay1_lines[0];
+    state->by1 = g_fmsx_v9990.scroll_by1_lines[0];
+}
+
+static void fmsx_v9990_get_bx_frame_initial_state(TFmsxV9990BxLineState *state)
+{
+    state->scroll_ay_frame = g_fmsx_v9990.scroll_ay_frame_lines[0];
+    state->scroll_ax = g_fmsx_v9990.scroll_ax_lines[0];
+    state->ay1 = g_fmsx_v9990.scroll_ay1_lines[0];
+    state->palette_control = g_fmsx_v9990.palette_control_lines[0];
+    state->backdrop_color = g_fmsx_v9990.backdrop_color_lines[0];
+}
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
 static unsigned g_fmsx_v9990_debug_port_logs_remaining = 0u;
 static unsigned g_fmsx_v9990_debug_cmd_logs_remaining = 0u;
@@ -358,6 +449,7 @@ static unsigned g_fmsx_v9990_debug_render_logs_remaining = 0u;
 static unsigned g_fmsx_v9990_debug_reg_logs_remaining = 0u;
 static unsigned g_fmsx_v9990_debug_active_logs_remaining = 0u;
 static unsigned g_fmsx_v9990_debug_scroll_logs_remaining = 0u;
+static unsigned g_fmsx_v9990_debug_vram_cpu_logs_remaining = 0u;
 static unsigned g_fmsx_v9990_debug_active_phase = 0u;
 static unsigned g_fmsx_v9990_debug_frame_snapshot_pending = 0u;
 static boolean g_fmsx_v9990_debug_compact_trace = FALSE;
@@ -367,7 +459,9 @@ static uint32_t g_fmsx_v9990_debug_lmmc_total_bytes = 0u;
 static unsigned g_fmsx_v9990_debug_lmmc_logs_remaining = 0u;
 static unsigned g_fmsx_v9990_debug_lmmc_pitch = 0u;
 static unsigned g_fmsx_v9990_debug_lmmc_image_width = 0u;
+static unsigned g_fmsx_v9990_debug_lmmc_row_bytes = 0u;
 static uint8_t g_fmsx_v9990_debug_lmmc_mode = 0u;
+static uint8_t g_fmsx_v9990_debug_lmmc_opcode = 0u;
 static uint16_t g_fmsx_v9990_debug_p1_plane_a_lines[FMSX_V9990_FB_MAX_HEIGHT];
 static uint16_t g_fmsx_v9990_debug_p1_plane_b_lines[FMSX_V9990_FB_MAX_HEIGHT];
 static uint16_t g_fmsx_v9990_debug_p1_final_lines[FMSX_V9990_FB_MAX_HEIGHT];
@@ -392,7 +486,11 @@ extern int HPeriod;
 static unsigned fmsx_v9990_transform_bx(unsigned address);
 static unsigned fmsx_v9990_transform_p1(unsigned address);
 static unsigned fmsx_v9990_transform_p2(unsigned address);
+static void fmsx_v9990_update_vram_interleaving(const char *tag);
+static void fmsx_v9990_fill_scanline(uint16_t *dst, unsigned width, uint16_t value);
 static TFmsxV9990DisplayMode fmsx_v9990_get_display_mode(void);
+static const char *fmsx_v9990_mode_name(TFmsxV9990DisplayMode mode);
+static unsigned fmsx_v9990_frame_height(void);
 static uint8_t fmsx_v9990_read_status_port(void);
 static unsigned fmsx_v9990_image_width(void);
 static boolean fmsx_v9990_is_even_odd_enabled(void);
@@ -415,10 +513,15 @@ static uint8_t fmsx_v9990_read_vram_bx(unsigned address);
 static unsigned fmsx_v9990_transform_linear_p1(unsigned address);
 static uint8_t fmsx_v9990_read_vram_linear(TFmsxV9990CommandMode mode, unsigned address);
 static void fmsx_v9990_write_vram_linear(TFmsxV9990CommandMode mode, unsigned address, uint8_t value);
+static uint8_t fmsx_v9990_cmd_read_vram_nonp1(unsigned address);
+static void fmsx_v9990_cmd_write_vram_nonp1(unsigned address, uint8_t value);
+static uint8_t fmsx_v9990_cmd_read_vram_xy(TFmsxV9990CommandMode mode, unsigned address);
+static void fmsx_v9990_cmd_write_vram_xy(TFmsxV9990CommandMode mode, unsigned address, uint8_t value);
 static void fmsx_v9990_cmd_ready(void);
 static void fmsx_v9990_update_host_irq(void);
 static void fmsx_v9990_advance_status_time(unsigned uc_ticks);
 static void fmsx_v9990_sync_status_to_cpu(void);
+static boolean fmsx_v9990_is_csm_mode(void);
 static boolean fmsx_v9990_cmd_should_abort(uint8_t opcode);
 static TFmsxV9990CommandMode fmsx_v9990_get_command_mode(void);
 static unsigned fmsx_v9990_cmd_get_pitch(TFmsxV9990CommandMode mode, unsigned width);
@@ -429,6 +532,7 @@ static void fmsx_v9990_debug_trace_enable(const char *tag, boolean enabled);
 static void fmsx_v9990_debug_trace_regs(const char *prefix);
 static void fmsx_v9990_debug_trace_guard(const char *tag);
 static void fmsx_v9990_debug_trace_active(const char *prefix, unsigned width, unsigned height, TFmsxV9990DisplayMode mode);
+static void fmsx_v9990_debug_rearm_port_window(void);
 static void fmsx_v9990_debug_rearm_active_window(const char *tag);
 static void fmsx_v9990_debug_trace_phase(const char *tag);
 static void fmsx_v9990_debug_trace_irq_host(const char *prefix);
@@ -439,6 +543,23 @@ static void fmsx_v9990_debug_trace_p1_plane_profile(unsigned height);
 static void fmsx_v9990_debug_trace_p1_hole_state(unsigned height);
 static void fmsx_v9990_debug_trace_p1_hole_samples(unsigned height);
 static void fmsx_v9990_debug_trace_lmmc(const char *tag);
+static void fmsx_v9990_debug_trace_p1_block_timing(unsigned height);
+static void fmsx_v9990_debug_trace_p1_block_profile(unsigned height);
+static void fmsx_v9990_debug_trace_vram_cpu(const char *tag, unsigned raw, unsigned phys, uint8_t value);
+static void fmsx_v9990_render_debug_frame(unsigned width,
+                                          unsigned height,
+                                          TFmsxV9990DisplayMode display_mode,
+                                          unsigned image_width,
+                                          unsigned bytes_per_line,
+                                          uint8_t mode_kind);
+static void fmsx_v9990_render_p1_live_debug_frame(uint16_t *base,
+                                                  unsigned width,
+                                                  unsigned height,
+                                                  TFmsxV9990DebugLiveView view);
+static void fmsx_v9990_render_reference_debug_frame(uint16_t *base,
+                                                    unsigned width,
+                                                    unsigned height,
+                                                    TFmsxV9990DisplayMode display_mode);
 extern uint16_t SetIRQ(uint8_t IRQ);
 
 /*
@@ -507,6 +628,42 @@ static unsigned fmsx_v9990_cmd_latched_image_width(void)
     return g_fmsx_v9990.cmd.image_width != 0u
         ? (unsigned) g_fmsx_v9990.cmd.image_width
         : fmsx_v9990_image_width();
+}
+
+static unsigned fmsx_v9990_cmd_bits_per_pixel(TFmsxV9990CommandMode mode)
+{
+    switch (mode)
+    {
+    case FMSX_V9990_CMD_MODE_P1:
+    case FMSX_V9990_CMD_MODE_P2:
+    case FMSX_V9990_CMD_MODE_BPP4:
+        return 4u;
+    case FMSX_V9990_CMD_MODE_BPP2:
+        return 2u;
+    case FMSX_V9990_CMD_MODE_BPP8:
+        return 8u;
+    case FMSX_V9990_CMD_MODE_BPP16:
+        return 16u;
+    default:
+        return 8u;
+    }
+}
+
+static unsigned fmsx_v9990_cmd_latched_image_height(void)
+{
+    const TFmsxV9990CommandMode mode = fmsx_v9990_cmd_latched_mode();
+
+    if (mode == FMSX_V9990_CMD_MODE_P1 || mode == FMSX_V9990_CMD_MODE_P2)
+    {
+        return 2048u;
+    }
+
+    {
+        const unsigned width = fmsx_v9990_cmd_latched_image_width();
+        const unsigned bpp = fmsx_v9990_cmd_bits_per_pixel(mode);
+        const unsigned row_bytes = (width * bpp) >> 3;
+        return (row_bytes != 0u) ? (FMSX_V9990_VRAM_BYTES / row_bytes) : 0u;
+    }
 }
 
 static unsigned fmsx_v9990_cmd_latched_pitch(void)
@@ -612,6 +769,17 @@ static void fmsx_v9990_tracebuf_push_uint(TFmsxV9990TraceBuffer *tb, unsigned va
     }
 }
 
+static void fmsx_v9990_tracebuf_push_int(TFmsxV9990TraceBuffer *tb, int value)
+{
+    if (value < 0)
+    {
+        fmsx_v9990_tracebuf_push_char(tb, '-');
+        fmsx_v9990_tracebuf_push_uint(tb, (unsigned) (-value));
+        return;
+    }
+    fmsx_v9990_tracebuf_push_uint(tb, (unsigned) value);
+}
+
 static void fmsx_v9990_debug_trace_char(char c)
 {
     char text[2];
@@ -656,7 +824,7 @@ static unsigned fmsx_v9990_cmd_get_total_nx(void)
 {
     const unsigned nx =
         (unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_NX0]
-        | ((unsigned) (g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_NX1] & 0x0Fu) << 8);
+        | ((unsigned) (g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_NX1] & 0x07u) << 8);
     return nx ? nx : 2048u;
 }
 
@@ -683,22 +851,212 @@ static unsigned fmsx_v9990_cmd_pixels_per_byte(TFmsxV9990CommandMode mode)
     }
 }
 
+static unsigned fmsx_v9990_cmd_visible_width_mask(TFmsxV9990CommandMode mode)
+{
+    switch (mode)
+    {
+    case FMSX_V9990_CMD_MODE_P1:
+    case FMSX_V9990_CMD_MODE_P2:
+    case FMSX_V9990_CMD_MODE_BPP2:
+    case FMSX_V9990_CMD_MODE_BPP4:
+    case FMSX_V9990_CMD_MODE_BPP8:
+    case FMSX_V9990_CMD_MODE_BPP16:
+    {
+        const unsigned width = fmsx_v9990_cmd_latched_image_width();
+        return width != 0u ? (width - 1u) : 0u;
+    }
+    default:
+        return 0u;
+    }
+}
+
+static unsigned fmsx_v9990_cmd_image_width_mask(TFmsxV9990CommandMode mode)
+{
+    return fmsx_v9990_cmd_visible_width_mask(mode);
+}
+
+static unsigned fmsx_v9990_cmd_visible_height_mask(TFmsxV9990CommandMode mode)
+{
+    switch (mode)
+    {
+    case FMSX_V9990_CMD_MODE_P1:
+    case FMSX_V9990_CMD_MODE_P2:
+    case FMSX_V9990_CMD_MODE_BPP2:
+    case FMSX_V9990_CMD_MODE_BPP4:
+    case FMSX_V9990_CMD_MODE_BPP8:
+    case FMSX_V9990_CMD_MODE_BPP16:
+    {
+        const unsigned height = fmsx_v9990_cmd_latched_image_height();
+        return height != 0u ? (height - 1u) : 0u;
+    }
+    default:
+        return 0u;
+    }
+}
+
+static unsigned fmsx_v9990_cmd_image_height_mask(TFmsxV9990CommandMode mode)
+{
+    return fmsx_v9990_cmd_visible_height_mask(mode);
+}
+
+static unsigned fmsx_v9990_cmd_start_visible_sx(TFmsxV9990CommandMode mode)
+{
+    const unsigned mask = fmsx_v9990_cmd_visible_width_mask(mode);
+    if (mask == 0u)
+    {
+        return g_fmsx_v9990.cmd.sx;
+    }
+    return (((unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SX1] << 8)
+        | (unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SX0]) & mask;
+}
+
+static unsigned fmsx_v9990_cmd_start_visible_sy(TFmsxV9990CommandMode mode)
+{
+    const unsigned mask = fmsx_v9990_cmd_visible_height_mask(mode);
+    if (mask == 0u)
+    {
+        return g_fmsx_v9990.cmd.sy;
+    }
+    return (((unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SY1] << 8)
+        | (unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SY0]) & mask;
+}
+
+static unsigned fmsx_v9990_cmd_start_visible_dx(TFmsxV9990CommandMode mode)
+{
+    const unsigned mask = fmsx_v9990_cmd_visible_width_mask(mode);
+    if (mask == 0u)
+    {
+        return g_fmsx_v9990.cmd.dx;
+    }
+    return (((unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DX1] << 8)
+        | (unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DX0]) & mask;
+}
+
+static unsigned fmsx_v9990_cmd_start_visible_dy(TFmsxV9990CommandMode mode)
+{
+    const unsigned mask = fmsx_v9990_cmd_visible_height_mask(mode);
+    if (mask == 0u)
+    {
+        return g_fmsx_v9990.cmd.dy;
+    }
+    return (((unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DY1] << 8)
+        | (unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DY0]) & mask;
+}
+
+static void fmsx_v9990_cmd_normalize_start_coordinates(TFmsxV9990CommandMode mode)
+{
+    const unsigned sx_raw =
+        ((unsigned) (g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SX1] & 0x07u) << 8)
+        | (unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SX0];
+    const unsigned dx_raw =
+        ((unsigned) (g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DX1] & 0x07u) << 8)
+        | (unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DX0];
+    const unsigned sx_plane_bits = sx_raw & ~fmsx_v9990_cmd_visible_width_mask(mode);
+    const unsigned dx_plane_bits = dx_raw & ~fmsx_v9990_cmd_visible_width_mask(mode);
+
+    g_fmsx_v9990.cmd.sx = (uint16_t) (sx_plane_bits | fmsx_v9990_cmd_start_visible_sx(mode));
+    g_fmsx_v9990.cmd.sy = (uint16_t) fmsx_v9990_cmd_start_visible_sy(mode);
+    g_fmsx_v9990.cmd.dx = (uint16_t) (dx_plane_bits | fmsx_v9990_cmd_start_visible_dx(mode));
+    g_fmsx_v9990.cmd.dy = (uint16_t) fmsx_v9990_cmd_start_visible_dy(mode);
+}
+
+static boolean fmsx_v9990_cmd_p1_source_plane_b(void)
+{
+    return (g_fmsx_v9990.cmd.sx & 0x0200u) ? TRUE : FALSE;
+}
+
+static boolean fmsx_v9990_cmd_p1_dest_plane_b(void)
+{
+    return (g_fmsx_v9990.cmd.dx & 0x0200u) ? TRUE : FALSE;
+}
+
+static unsigned fmsx_v9990_cmd_p1_source_plane_offset(void)
+{
+    return fmsx_v9990_cmd_p1_source_plane_b() ? 0x0800u : 0u;
+}
+
+static unsigned fmsx_v9990_cmd_p1_dest_plane_offset(void)
+{
+    return fmsx_v9990_cmd_p1_dest_plane_b() ? 0x0800u : 0u;
+}
+
+static uint16_t fmsx_v9990_cmd_plane_wm(boolean plane_b)
+{
+    if (fmsx_v9990_cmd_latched_mode() != FMSX_V9990_CMD_MODE_P1)
+    {
+        return g_fmsx_v9990.cmd.wm;
+    }
+
+    return plane_b
+        ? (uint16_t) ((((uint16_t) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_WM1]) << 8)
+            | (uint16_t) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_WM1])
+        : (uint16_t) ((((uint16_t) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_WM0]) << 8)
+            | (uint16_t) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_WM0]);
+}
+
+static uint16_t fmsx_v9990_cmd_plane_fc(boolean plane_b)
+{
+    if (fmsx_v9990_cmd_latched_mode() != FMSX_V9990_CMD_MODE_P1)
+    {
+        return g_fmsx_v9990.cmd.fg;
+    }
+
+    return plane_b
+        ? (uint16_t) ((((uint16_t) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_FC1]) << 8)
+            | (uint16_t) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_FC1])
+        : (uint16_t) ((((uint16_t) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_FC0]) << 8)
+            | (uint16_t) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_FC0]);
+}
+
+static uint16_t fmsx_v9990_cmd_plane_bc(boolean plane_b)
+{
+    if (fmsx_v9990_cmd_latched_mode() != FMSX_V9990_CMD_MODE_P1)
+    {
+        return g_fmsx_v9990.cmd.bg;
+    }
+
+    return plane_b
+        ? (uint16_t) ((((uint16_t) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_BC1]) << 8)
+            | (uint16_t) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_BC1])
+        : (uint16_t) ((((uint16_t) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_BC0]) << 8)
+            | (uint16_t) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_BC0]);
+}
+
 static unsigned fmsx_v9990_cmd_linear_src_address(void)
 {
-    return ((unsigned) g_fmsx_v9990.cmd.sx & 0x00FFu)
-        | (((unsigned) g_fmsx_v9990.cmd.sy & 0x07FFu) << 8);
+    /*
+     * WebMSX treats SA as a raw 19-bit linear address assembled from the
+     * shared SX0/SY0/SY1 registers, without the imageWidth/imageHeight masks
+     * applied to the XY view. Reconstructing SA from masked cmd.sx/cmd.sy
+     * corrupts BMXL/CMMM/BMLL in Bx/P2 modes.
+     */
+    return ((unsigned) (g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SY1] & 0x07u) << 16)
+        | ((unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SY0] << 8)
+        | (unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SX0];
 }
 
 static unsigned fmsx_v9990_cmd_linear_dst_address(void)
 {
-    return ((unsigned) g_fmsx_v9990.cmd.dx & 0x00FFu)
-        | (((unsigned) g_fmsx_v9990.cmd.dy & 0x07FFu) << 8);
+    /* Same semantics as SA above, but for DA on DX0/DY0/DY1. */
+    return ((unsigned) (g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DY1] & 0x07u) << 16)
+        | ((unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DY0] << 8)
+        | (unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DX0];
 }
 
 static unsigned fmsx_v9990_cmd_linear_byte_count(void)
 {
-    unsigned count = ((unsigned) g_fmsx_v9990.cmd.nx & 0x00FFu)
-        | (((unsigned) g_fmsx_v9990.cmd.ny & 0x07FFu) << 8);
+    /*
+     * WebMSX/openMSX use NA for BMLL:
+     *   NA = ((NY1 & 0x07) << 16) | (NY0 << 8) | NX0
+     *
+     * NX1 is not part of the linear byte count. Using our wrapped NX/NY view
+     * here can walk the linear stream at the wrong size and is consistent with
+     * repeated background blocks missing from gameplay while static screens
+     * still look correct.
+     */
+    unsigned count = ((unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_NX0] << 0)
+        | ((unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_NY0] << 8)
+        | (((unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_NY1] & 0x07u) << 16);
     if (count == 0u)
     {
         count = 0x80000u;
@@ -709,7 +1067,7 @@ static unsigned fmsx_v9990_cmd_linear_byte_count(void)
 static boolean fmsx_v9990_cmd_dims_are_zero(void)
 {
     return (g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_NX0] == 0u)
-        && ((g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_NX1] & 0x0Fu) == 0u)
+        && ((g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_NX1] & 0x07u) == 0u)
         && (g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_NY0] == 0u)
         && ((g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_NY1] & 0x0Fu) == 0u);
 }
@@ -796,6 +1154,66 @@ static void fmsx_v9990_debug_trace_port(const char *prefix, uint8_t port, uint8_
     msxbare_uart_write(line);
 }
 
+static void fmsx_v9990_debug_trace_vram_cpu(const char *tag, unsigned raw, unsigned phys, uint8_t value)
+{
+    char line[96];
+    TFmsxV9990TraceBuffer tb;
+
+    if (g_fmsx_v9990_debug_vram_cpu_logs_remaining == 0u)
+    {
+        return;
+    }
+
+    --g_fmsx_v9990_debug_vram_cpu_logs_remaining;
+    fmsx_v9990_tracebuf_init(&tb, line, sizeof(line));
+    fmsx_v9990_tracebuf_push_text(&tb, tag);
+    fmsx_v9990_tracebuf_push_text(&tb, " raw:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, (uint8_t) ((raw >> 16) & 0xFFu));
+    fmsx_v9990_tracebuf_push_hex16(&tb, (uint16_t) (raw & 0xFFFFu));
+    fmsx_v9990_tracebuf_push_text(&tb, " phys:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, (uint8_t) ((phys >> 16) & 0xFFu));
+    fmsx_v9990_tracebuf_push_hex16(&tb, (uint16_t) (phys & 0xFFFFu));
+    fmsx_v9990_tracebuf_push_text(&tb, " m:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, (uint8_t) fmsx_v9990_get_display_mode());
+    fmsx_v9990_tracebuf_push_text(&tb, " sc:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, g_fmsx_v9990.system_control);
+    fmsx_v9990_tracebuf_push_text(&tb, " v:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, value);
+    fmsx_v9990_tracebuf_push_text(&tb, " pc:");
+    fmsx_v9990_tracebuf_push_hex16(&tb, CPU.PC.W);
+    fmsx_v9990_tracebuf_push_char(&tb, '\n');
+    msxbare_uart_write(line);
+}
+
+static void fmsx_v9990_debug_trace_vram_interleave(const char *tag, boolean before, boolean after)
+{
+    char line[96];
+    TFmsxV9990TraceBuffer tb;
+
+    fmsx_v9990_tracebuf_init(&tb, line, sizeof(line));
+    fmsx_v9990_tracebuf_push_text(&tb, "G9V ilv ");
+    if (tag != 0)
+    {
+        fmsx_v9990_tracebuf_push_text(&tb, tag);
+        fmsx_v9990_tracebuf_push_char(&tb, ' ');
+    }
+    fmsx_v9990_tracebuf_push_uint(&tb, before ? 1u : 0u);
+    fmsx_v9990_tracebuf_push_text(&tb, "->");
+    fmsx_v9990_tracebuf_push_uint(&tb, after ? 1u : 0u);
+    fmsx_v9990_tracebuf_push_text(&tb, " m:");
+    fmsx_v9990_tracebuf_push_uint(&tb, (unsigned) fmsx_v9990_get_display_mode());
+    fmsx_v9990_tracebuf_push_text(&tb, " sc:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, g_fmsx_v9990.system_control);
+    fmsx_v9990_tracebuf_push_text(&tb, " sm0:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, g_fmsx_v9990.regs[FMSX_V9990_REG_SCREEN_MODE_0]);
+    fmsx_v9990_tracebuf_push_text(&tb, " sm1:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, g_fmsx_v9990.regs[FMSX_V9990_REG_SCREEN_MODE_1]);
+    fmsx_v9990_tracebuf_push_text(&tb, " pc:");
+    fmsx_v9990_tracebuf_push_hex16(&tb, CPU.PC.W);
+    fmsx_v9990_tracebuf_push_char(&tb, '\n');
+    msxbare_uart_write(line);
+}
+
 static void fmsx_v9990_debug_trace_command(const char *prefix, uint8_t opcode)
 {
     char line[96];
@@ -848,6 +1266,8 @@ static void fmsx_v9990_debug_trace_render(unsigned width, unsigned height, TFmsx
     fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990_video.sequence);
     fmsx_v9990_tracebuf_push_text(&tb, " m:");
     fmsx_v9990_tracebuf_push_uint(&tb, (unsigned) mode);
+    fmsx_v9990_tracebuf_push_text(&tb, " mn:");
+    fmsx_v9990_tracebuf_push_text(&tb, fmsx_v9990_mode_name(mode));
     fmsx_v9990_tracebuf_push_text(&tb, " ctl:");
     fmsx_v9990_tracebuf_push_hex8(&tb, g_fmsx_v9990.regs[FMSX_V9990_REG_CONTROL]);
     fmsx_v9990_tracebuf_push_text(&tb, " sm0:");
@@ -927,7 +1347,7 @@ static void fmsx_v9990_debug_trace_core_reg_write(uint8_t reg, uint8_t prev, uin
     }
 
     fmsx_v9990_tracebuf_init(&tb, line, sizeof(line));
-    fmsx_v9990_tracebuf_push_text(&tb, "G9W r:");
+    fmsx_v9990_tracebuf_push_text(&tb, "G9M mode r:");
     fmsx_v9990_tracebuf_push_hex8(&tb, reg);
     fmsx_v9990_tracebuf_push_text(&tb, " ");
     fmsx_v9990_tracebuf_push_hex8(&tb, prev);
@@ -935,6 +1355,8 @@ static void fmsx_v9990_debug_trace_core_reg_write(uint8_t reg, uint8_t prev, uin
     fmsx_v9990_tracebuf_push_hex8(&tb, value);
     fmsx_v9990_tracebuf_push_text(&tb, " pc:");
     fmsx_v9990_tracebuf_push_hex16(&tb, CPU.PC.W);
+    fmsx_v9990_tracebuf_push_text(&tb, " dm:");
+    fmsx_v9990_tracebuf_push_text(&tb, fmsx_v9990_mode_name(fmsx_v9990_get_display_mode()));
     fmsx_v9990_tracebuf_push_text(&tb, " vi:");
     fmsx_v9990_tracebuf_push_hex8(&tb, g_fmsx_v9990.pending_irqs);
     fmsx_v9990_tracebuf_push_text(&tb, " i0:");
@@ -1057,6 +1479,18 @@ static void fmsx_v9990_debug_trace_active(const char *prefix, unsigned width, un
     fmsx_v9990_tracebuf_push_uint(&tb, height);
     fmsx_v9990_tracebuf_push_char(&tb, '\n');
     msxbare_uart_write(line);
+}
+
+static void fmsx_v9990_debug_rearm_port_window(void)
+{
+    if (g_fmsx_v9990_debug_port_logs_remaining < 96u)
+    {
+        g_fmsx_v9990_debug_port_logs_remaining = 96u;
+    }
+    if (g_fmsx_v9990_debug_vram_cpu_logs_remaining < 16u)
+    {
+        g_fmsx_v9990_debug_vram_cpu_logs_remaining = 16u;
+    }
 }
 
 static void fmsx_v9990_debug_rearm_active_window(const char *tag)
@@ -1214,6 +1648,24 @@ static void fmsx_v9990_debug_trace_frame_profile(unsigned width,
     fmsx_v9990_tracebuf_push_uint(&tb, bytes_per_line);
     fmsx_v9990_tracebuf_push_text(&tb, " mk:");
     fmsx_v9990_tracebuf_push_uint(&tb, mode_kind);
+    fmsx_v9990_tracebuf_push_text(&tb, " dm:");
+    fmsx_v9990_tracebuf_push_uint(&tb, (unsigned) fmsx_v9990_get_display_mode());
+    fmsx_v9990_tracebuf_push_text(&tb, " mn:");
+    fmsx_v9990_tracebuf_push_text(&tb, fmsx_v9990_mode_name(fmsx_v9990_get_display_mode()));
+    fmsx_v9990_tracebuf_push_text(&tb, " sc:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, g_fmsx_v9990.system_control);
+    fmsx_v9990_tracebuf_push_text(&tb, " sm0:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, g_fmsx_v9990.regs[FMSX_V9990_REG_SCREEN_MODE_0]);
+    fmsx_v9990_tracebuf_push_text(&tb, " sm1:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, g_fmsx_v9990.regs[FMSX_V9990_REG_SCREEN_MODE_1]);
+    fmsx_v9990_tracebuf_push_text(&tb, " pc:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, g_fmsx_v9990.regs[FMSX_V9990_REG_PALETTE_CONTROL]);
+    fmsx_v9990_tracebuf_push_text(&tb, " map:");
+    fmsx_v9990_tracebuf_push_text(&tb, (fmsx_v9990_get_display_mode() == FMSX_V9990_MODE_P1) ? "p1" : "lin");
+    fmsx_v9990_tracebuf_push_text(&tb, " cpu:");
+    fmsx_v9990_tracebuf_push_text(&tb, (fmsx_v9990_get_display_mode() == FMSX_V9990_MODE_P1) ? "p1" : "lin");
+    fmsx_v9990_tracebuf_push_text(&tb, " cmd:");
+    fmsx_v9990_tracebuf_push_text(&tb, (fmsx_v9990_get_display_mode() == FMSX_V9990_MODE_P1) ? "mix" : "mix");
     fmsx_v9990_tracebuf_push_text(&tb, " eo:");
     fmsx_v9990_tracebuf_push_uint(&tb, fmsx_v9990_is_even_odd_enabled() ? 1u : 0u);
     fmsx_v9990_tracebuf_push_text(&tb, " fld:");
@@ -1278,6 +1730,8 @@ static void fmsx_v9990_debug_trace_frame_profile(unsigned width,
     msxbare_uart_write(line);
     if ((mode_kind == 0u) && (width == 256u) && (height == 212u))
     {
+        fmsx_v9990_debug_trace_p1_block_timing(height);
+        fmsx_v9990_debug_trace_p1_block_profile(height);
         fmsx_v9990_debug_trace_p1_plane_profile(height);
         fmsx_v9990_debug_trace_p1_hole_state(height);
         fmsx_v9990_debug_trace_p1_hole_samples(height);
@@ -1599,10 +2053,243 @@ static void fmsx_v9990_debug_trace_p1_line_state(unsigned height)
     msxbare_uart_write(line);
 }
 
+static void fmsx_v9990_debug_trace_p1_block_timing(unsigned height)
+{
+    char line[224];
+    TFmsxV9990TraceBuffer tb;
+    const uint64_t now_cycles = fmsx_vdp_cpu_cycles_now();
+    const unsigned status_line = g_fmsx_v9990.status_uc_ticks / FMSX_V9990_UC_TICKS_PER_LINE;
+    const unsigned status_x = g_fmsx_v9990.status_uc_ticks % FMSX_V9990_UC_TICKS_PER_LINE;
+    const unsigned blocks = (height + FMSX_V9990_DEBUG_BLOCK_LINES - 1u) / FMSX_V9990_DEBUG_BLOCK_LINES;
+
+    fmsx_v9990_tracebuf_init(&tb, line, sizeof(line));
+    fmsx_v9990_tracebuf_push_text(&tb, "G9D clk sc:");
+    fmsx_v9990_tracebuf_push_int(&tb, ScanLine);
+    fmsx_v9990_tracebuf_push_text(&tb, " sy:");
+    fmsx_v9990_tracebuf_push_uint(&tb, status_line);
+    fmsx_v9990_tracebuf_push_text(&tb, " sx:");
+    fmsx_v9990_tracebuf_push_uint(&tb, status_x);
+    fmsx_v9990_tracebuf_push_text(&tb, " uc:");
+    fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990.status_uc_ticks);
+    fmsx_v9990_tracebuf_push_text(&tb, " cy:");
+    fmsx_v9990_tracebuf_push_hex32(&tb, (uint32_t) now_cycles);
+    fmsx_v9990_tracebuf_push_text(&tb, " ev:");
+    fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990.raster_event_count);
+    fmsx_v9990_tracebuf_push_text(&tb, " blk:");
+    fmsx_v9990_tracebuf_push_uint(&tb, blocks);
+    fmsx_v9990_tracebuf_push_text(&tb, " fld:");
+    fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990_video.field_parity_odd ? 1u : 0u);
+    fmsx_v9990_tracebuf_push_char(&tb, '\n');
+    msxbare_uart_write(line);
+}
+
+static void fmsx_v9990_debug_trace_p1_block_profile(unsigned height)
+{
+    char line[320];
+    TFmsxV9990TraceBuffer tb;
+    unsigned block_a_rows[FMSX_V9990_DEBUG_BLOCK_MAX];
+    unsigned block_b_rows[FMSX_V9990_DEBUG_BLOCK_MAX];
+    unsigned block_f_rows[FMSX_V9990_DEBUG_BLOCK_MAX];
+    unsigned block_missing_rows[FMSX_V9990_DEBUG_BLOCK_MAX];
+    unsigned block_backdrop_rows[FMSX_V9990_DEBUG_BLOCK_MAX];
+    unsigned block_event_count[FMSX_V9990_DEBUG_BLOCK_MAX];
+    unsigned block_backdrop_events[FMSX_V9990_DEBUG_BLOCK_MAX];
+    unsigned block_palette_events[FMSX_V9990_DEBUG_BLOCK_MAX];
+    unsigned block_scroll_events[FMSX_V9990_DEBUG_BLOCK_MAX];
+    unsigned block_event_x_min[FMSX_V9990_DEBUG_BLOCK_MAX];
+    unsigned block_event_x_max[FMSX_V9990_DEBUG_BLOCK_MAX];
+    uint8_t block_backdrop_index[FMSX_V9990_DEBUG_BLOCK_MAX];
+    uint8_t block_control[FMSX_V9990_DEBUG_BLOCK_MAX];
+    uint8_t block_mode0[FMSX_V9990_DEBUG_BLOCK_MAX];
+    uint8_t block_mode1[FMSX_V9990_DEBUG_BLOCK_MAX];
+    unsigned blocks;
+    unsigned y;
+    unsigned i;
+    unsigned emitted = 0u;
+    const unsigned plane_threshold = 16u;
+    const unsigned final_threshold = 16u;
+    const unsigned backdrop_threshold = 4u;
+
+    if (!g_fmsx_v9990_debug_p1_profile_valid || height == 0u)
+    {
+        return;
+    }
+
+    blocks = (height + FMSX_V9990_DEBUG_BLOCK_LINES - 1u) / FMSX_V9990_DEBUG_BLOCK_LINES;
+    if (blocks > FMSX_V9990_DEBUG_BLOCK_MAX)
+    {
+        blocks = FMSX_V9990_DEBUG_BLOCK_MAX;
+    }
+
+    memset(block_a_rows, 0, sizeof(block_a_rows));
+    memset(block_b_rows, 0, sizeof(block_b_rows));
+    memset(block_f_rows, 0, sizeof(block_f_rows));
+    memset(block_missing_rows, 0, sizeof(block_missing_rows));
+    memset(block_backdrop_rows, 0, sizeof(block_backdrop_rows));
+    memset(block_event_count, 0, sizeof(block_event_count));
+    memset(block_backdrop_events, 0, sizeof(block_backdrop_events));
+    memset(block_palette_events, 0, sizeof(block_palette_events));
+    memset(block_scroll_events, 0, sizeof(block_scroll_events));
+
+    for (i = 0u; i < blocks; ++i)
+    {
+        const unsigned base_y = i * FMSX_V9990_DEBUG_BLOCK_LINES;
+        block_event_x_min[i] = 0xFFFFu;
+        block_event_x_max[i] = 0u;
+        block_backdrop_index[i] = g_fmsx_v9990.backdrop_color_lines[base_y];
+        block_control[i] = g_fmsx_v9990.control_lines[base_y];
+        block_mode0[i] = g_fmsx_v9990.screen_mode_0_lines[base_y];
+        block_mode1[i] = g_fmsx_v9990.screen_mode_1_lines[base_y];
+    }
+
+    for (y = 0u; y < height; ++y)
+    {
+        const unsigned block = y / FMSX_V9990_DEBUG_BLOCK_LINES;
+        const boolean a_on = (g_fmsx_v9990_debug_p1_plane_a_lines[y] >= plane_threshold) ? TRUE : FALSE;
+        const boolean b_on = (g_fmsx_v9990_debug_p1_plane_b_lines[y] >= plane_threshold) ? TRUE : FALSE;
+        const boolean f_on = (g_fmsx_v9990_debug_p1_final_lines[y] >= final_threshold) ? TRUE : FALSE;
+        const boolean f_backdrop = (g_fmsx_v9990_debug_p1_final_lines[y] <= backdrop_threshold) ? TRUE : FALSE;
+
+        if (block >= blocks)
+        {
+            continue;
+        }
+
+        if (a_on) ++block_a_rows[block];
+        if (b_on) ++block_b_rows[block];
+        if (f_on) ++block_f_rows[block];
+        if ((a_on || b_on) && f_backdrop) ++block_missing_rows[block];
+        if (f_backdrop) ++block_backdrop_rows[block];
+    }
+
+    for (i = 0u; i < g_fmsx_v9990.raster_event_count; ++i)
+    {
+        const TFmsxV9990RasterEvent *event = &g_fmsx_v9990.raster_events[i];
+        const unsigned block = event->y / FMSX_V9990_DEBUG_BLOCK_LINES;
+
+        if (block >= blocks)
+        {
+            continue;
+        }
+
+        ++block_event_count[block];
+        if (event->x < block_event_x_min[block]) block_event_x_min[block] = event->x;
+        if (event->x > block_event_x_max[block]) block_event_x_max[block] = event->x;
+
+        switch ((TFmsxV9990RasterEventKind) event->kind)
+        {
+        case FMSX_V9990_RASTER_EVENT_BACKDROP_COLOR:
+            ++block_backdrop_events[block];
+            break;
+        case FMSX_V9990_RASTER_EVENT_PALETTE_CONTROL:
+            ++block_palette_events[block];
+            break;
+        case FMSX_V9990_RASTER_EVENT_AY0:
+        case FMSX_V9990_RASTER_EVENT_BY0:
+        case FMSX_V9990_RASTER_EVENT_AY1:
+        case FMSX_V9990_RASTER_EVENT_BY1:
+        case FMSX_V9990_RASTER_EVENT_AX:
+        case FMSX_V9990_RASTER_EVENT_BX:
+        case FMSX_V9990_RASTER_EVENT_PRIORITY:
+        case FMSX_V9990_RASTER_EVENT_BY1_PLANES:
+            ++block_scroll_events[block];
+            break;
+        default:
+            break;
+        }
+    }
+
+    for (i = 0u; i < blocks; ++i)
+    {
+        const boolean suspicious = (block_missing_rows[i] >= 4u)
+            || ((block_a_rows[i] + block_b_rows[i]) >= 8u && block_f_rows[i] == 0u);
+
+        if (!suspicious)
+        {
+            continue;
+        }
+
+        if ((emitted % 2u) == 0u)
+        {
+            if (emitted != 0u)
+            {
+                fmsx_v9990_tracebuf_push_char(&tb, '\n');
+                msxbare_uart_write(line);
+            }
+            fmsx_v9990_tracebuf_init(&tb, line, sizeof(line));
+            fmsx_v9990_tracebuf_push_text(&tb, "G9B blk ");
+        }
+        else
+        {
+            fmsx_v9990_tracebuf_push_text(&tb, " | ");
+        }
+
+        fmsx_v9990_tracebuf_push_uint(&tb, i);
+        fmsx_v9990_tracebuf_push_char(&tb, ':');
+        fmsx_v9990_tracebuf_push_uint(&tb, block_a_rows[i]);
+        fmsx_v9990_tracebuf_push_char(&tb, '/');
+        fmsx_v9990_tracebuf_push_uint(&tb, block_b_rows[i]);
+        fmsx_v9990_tracebuf_push_char(&tb, '/');
+        fmsx_v9990_tracebuf_push_uint(&tb, block_f_rows[i]);
+        fmsx_v9990_tracebuf_push_text(&tb, " m:");
+        fmsx_v9990_tracebuf_push_uint(&tb, block_missing_rows[i]);
+        fmsx_v9990_tracebuf_push_text(&tb, " bd:");
+        fmsx_v9990_tracebuf_push_uint(&tb, block_backdrop_rows[i]);
+        fmsx_v9990_tracebuf_push_char(&tb, '@');
+        fmsx_v9990_tracebuf_push_hex8(&tb, block_backdrop_index[i]);
+        fmsx_v9990_tracebuf_push_text(&tb, " ev:");
+        fmsx_v9990_tracebuf_push_uint(&tb, block_event_count[i]);
+        fmsx_v9990_tracebuf_push_char(&tb, '/');
+        fmsx_v9990_tracebuf_push_uint(&tb, block_scroll_events[i]);
+        fmsx_v9990_tracebuf_push_char(&tb, '/');
+        fmsx_v9990_tracebuf_push_uint(&tb, block_palette_events[i]);
+        fmsx_v9990_tracebuf_push_char(&tb, '/');
+        fmsx_v9990_tracebuf_push_uint(&tb, block_backdrop_events[i]);
+        fmsx_v9990_tracebuf_push_text(&tb, " x:");
+        if (block_event_count[i] == 0u || block_event_x_min[i] == 0xFFFFu)
+        {
+            fmsx_v9990_tracebuf_push_text(&tb, "-");
+        }
+        else
+        {
+            fmsx_v9990_tracebuf_push_uint(&tb, block_event_x_min[i]);
+            fmsx_v9990_tracebuf_push_char(&tb, '-');
+            fmsx_v9990_tracebuf_push_uint(&tb, block_event_x_max[i]);
+        }
+        fmsx_v9990_tracebuf_push_text(&tb, " ct:");
+        fmsx_v9990_tracebuf_push_hex8(&tb, block_control[i]);
+        fmsx_v9990_tracebuf_push_char(&tb, '/');
+        fmsx_v9990_tracebuf_push_hex8(&tb, block_mode0[i]);
+        fmsx_v9990_tracebuf_push_char(&tb, '/');
+        fmsx_v9990_tracebuf_push_hex8(&tb, block_mode1[i]);
+        ++emitted;
+    }
+
+    if (emitted != 0u)
+    {
+        fmsx_v9990_tracebuf_push_char(&tb, '\n');
+        msxbare_uart_write(line);
+    }
+}
+
 static void fmsx_v9990_debug_trace_lmmc(const char *tag)
 {
-    char line[256];
+    char line[320];
     TFmsxV9990TraceBuffer tb;
+    unsigned rows = 0u;
+    unsigned blocks16 = 0u;
+    const unsigned sx_raw =
+        ((unsigned) (g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SX1] & 0x07u) << 8)
+        | (unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SX0];
+    const unsigned sy_raw =
+        ((unsigned) (g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SY1] & 0x0Fu) << 8)
+        | (unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SY0];
+    const unsigned dx_raw =
+        ((unsigned) (g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DX1] & 0x07u) << 8)
+        | (unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DX0];
+    const unsigned dy_raw =
+        ((unsigned) (g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DY1] & 0x0Fu) << 8)
+        | (unsigned) g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DY0];
 
     if (g_fmsx_v9990_debug_lmmc_logs_remaining == 0u)
     {
@@ -1611,12 +2298,22 @@ static void fmsx_v9990_debug_trace_lmmc(const char *tag)
 
     --g_fmsx_v9990_debug_lmmc_logs_remaining;
     fmsx_v9990_tracebuf_init(&tb, line, sizeof(line));
-    fmsx_v9990_tracebuf_push_text(&tb, "G9L ");
+    fmsx_v9990_tracebuf_push_text(&tb, "G9U ");
     fmsx_v9990_tracebuf_push_text(&tb, tag);
+    fmsx_v9990_tracebuf_push_text(&tb, " op:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, g_fmsx_v9990_debug_lmmc_opcode);
     fmsx_v9990_tracebuf_push_text(&tb, " b:");
     fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990_debug_lmmc_bytes);
     fmsx_v9990_tracebuf_push_char(&tb, '/');
     fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990_debug_lmmc_total_bytes);
+    fmsx_v9990_tracebuf_push_text(&tb, " c8:");
+    fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990_debug_lmmc_bytes >> 11);
+    fmsx_v9990_tracebuf_push_char(&tb, '/');
+    fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990_debug_lmmc_total_bytes >> 11);
+    fmsx_v9990_tracebuf_push_text(&tb, " c20:");
+    fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990_debug_lmmc_bytes >> 13);
+    fmsx_v9990_tracebuf_push_char(&tb, '/');
+    fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990_debug_lmmc_total_bytes >> 13);
     fmsx_v9990_tracebuf_push_text(&tb, " dx:");
     fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990.cmd.dx);
     fmsx_v9990_tracebuf_push_text(&tb, " dy:");
@@ -1631,10 +2328,37 @@ static void fmsx_v9990_debug_trace_lmmc(const char *tag)
     fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990_debug_lmmc_image_width);
     fmsx_v9990_tracebuf_push_text(&tb, " pt:");
     fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990_debug_lmmc_pitch);
+    fmsx_v9990_tracebuf_push_text(&tb, " rb:");
+    fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990_debug_lmmc_row_bytes);
+    if (g_fmsx_v9990_debug_lmmc_row_bytes != 0u)
+    {
+        rows = g_fmsx_v9990_debug_lmmc_bytes / g_fmsx_v9990_debug_lmmc_row_bytes;
+        blocks16 = rows >> 4;
+    }
+    fmsx_v9990_tracebuf_push_text(&tb, " row:");
+    fmsx_v9990_tracebuf_push_uint(&tb, rows);
+    fmsx_v9990_tracebuf_push_text(&tb, " b16:");
+    fmsx_v9990_tracebuf_push_uint(&tb, blocks16);
     fmsx_v9990_tracebuf_push_text(&tb, " sx:");
     fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990.cmd.sx);
+    fmsx_v9990_tracebuf_push_char(&tb, '/');
+    fmsx_v9990_tracebuf_push_uint(&tb, sx_raw);
     fmsx_v9990_tracebuf_push_text(&tb, " sy:");
     fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990.cmd.sy);
+    fmsx_v9990_tracebuf_push_char(&tb, '/');
+    fmsx_v9990_tracebuf_push_uint(&tb, sy_raw);
+    fmsx_v9990_tracebuf_push_text(&tb, " dx:");
+    fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990.cmd.dx);
+    fmsx_v9990_tracebuf_push_char(&tb, '/');
+    fmsx_v9990_tracebuf_push_uint(&tb, dx_raw);
+    fmsx_v9990_tracebuf_push_text(&tb, " dy:");
+    fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990.cmd.dy);
+    fmsx_v9990_tracebuf_push_char(&tb, '/');
+    fmsx_v9990_tracebuf_push_uint(&tb, dy_raw);
+    fmsx_v9990_tracebuf_push_text(&tb, " sa:");
+    fmsx_v9990_tracebuf_push_uint(&tb, fmsx_v9990_cmd_linear_src_address());
+    fmsx_v9990_tracebuf_push_text(&tb, " da:");
+    fmsx_v9990_tracebuf_push_uint(&tb, fmsx_v9990_cmd_linear_dst_address());
     fmsx_v9990_tracebuf_push_text(&tb, " wm:");
     fmsx_v9990_tracebuf_push_hex16(&tb, g_fmsx_v9990.cmd.wm);
     fmsx_v9990_tracebuf_push_text(&tb, " arg:");
@@ -1643,6 +2367,59 @@ static void fmsx_v9990_debug_trace_lmmc(const char *tag)
     fmsx_v9990_tracebuf_push_hex8(&tb, g_fmsx_v9990.cmd.log);
     fmsx_v9990_tracebuf_push_char(&tb, '\n');
     msxbare_uart_write(line);
+}
+
+static void fmsx_v9990_debug_begin_linear_trace(
+    uint8_t opcode,
+    TFmsxV9990CommandMode mode,
+    unsigned image_width,
+    unsigned pitch,
+    uint32_t total_bytes)
+{
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+    unsigned row_bytes = 0u;
+
+    switch (mode)
+    {
+    case FMSX_V9990_CMD_MODE_P1:
+    case FMSX_V9990_CMD_MODE_P2:
+    case FMSX_V9990_CMD_MODE_BPP4:
+        row_bytes = image_width >> 1;
+        break;
+    case FMSX_V9990_CMD_MODE_BPP2:
+        row_bytes = image_width >> 2;
+        break;
+    case FMSX_V9990_CMD_MODE_BPP8:
+        row_bytes = image_width;
+        break;
+    case FMSX_V9990_CMD_MODE_BPP16:
+        row_bytes = image_width << 1;
+        break;
+    default:
+        row_bytes = 0u;
+        break;
+    }
+
+    g_fmsx_v9990_debug_lmmc_trace_active = (total_bytes >= 0x0800u) ? TRUE : FALSE;
+    g_fmsx_v9990_debug_lmmc_bytes = 0u;
+    g_fmsx_v9990_debug_lmmc_total_bytes = total_bytes;
+    g_fmsx_v9990_debug_lmmc_logs_remaining = g_fmsx_v9990_debug_lmmc_trace_active ? 16u : 0u;
+    g_fmsx_v9990_debug_lmmc_pitch = pitch;
+    g_fmsx_v9990_debug_lmmc_image_width = image_width;
+    g_fmsx_v9990_debug_lmmc_row_bytes = row_bytes;
+    g_fmsx_v9990_debug_lmmc_mode = (uint8_t) mode;
+    g_fmsx_v9990_debug_lmmc_opcode = opcode;
+    if (g_fmsx_v9990_debug_lmmc_trace_active)
+    {
+        fmsx_v9990_debug_trace_lmmc("start");
+    }
+#else
+    (void) opcode;
+    (void) mode;
+    (void) image_width;
+    (void) pitch;
+    (void) total_bytes;
+#endif
 }
 
 static void fmsx_v9990_debug_trace_phase(const char *tag)
@@ -1718,6 +2495,21 @@ static void fmsx_v9990_debug_trace_command(const char *prefix, uint8_t opcode)
     (void) opcode;
 }
 
+static void fmsx_v9990_debug_trace_vram_cpu(const char *tag, unsigned raw, unsigned phys, uint8_t value)
+{
+    (void) tag;
+    (void) raw;
+    (void) phys;
+    (void) value;
+}
+
+static void fmsx_v9990_debug_trace_vram_interleave(const char *tag, boolean before, boolean after)
+{
+    (void) tag;
+    (void) before;
+    (void) after;
+}
+
 static void fmsx_v9990_debug_trace_render(unsigned width, unsigned height, TFmsxV9990DisplayMode mode)
 {
     (void) width;
@@ -1747,6 +2539,10 @@ static void fmsx_v9990_debug_trace_active(const char *prefix, unsigned width, un
     (void) width;
     (void) height;
     (void) mode;
+}
+
+static void fmsx_v9990_debug_rearm_port_window(void)
+{
 }
 
 static void fmsx_v9990_debug_rearm_active_window(const char *tag)
@@ -1806,16 +2602,23 @@ static void fmsx_v9990_update_host_irq(void)
 
 static unsigned fmsx_v9990_get_left_border_ticks(void)
 {
-    const boolean xtal = (g_fmsx_v9990.status & 0x04u) ? TRUE : FALSE;
+    const boolean xtal = fmsx_v9990_is_csm_mode();
+    const TFmsxV9990DisplayMode mode = fmsx_v9990_get_display_mode();
+    const boolean has_borders =
+        (mode == FMSX_V9990_MODE_P1
+      || mode == FMSX_V9990_MODE_P2
+      || mode == FMSX_V9990_MODE_B1
+      || mode == FMSX_V9990_MODE_B3
+      || mode == FMSX_V9990_MODE_B7) ? TRUE : FALSE;
     const unsigned blank = xtal ? 372u : 400u;
-    const unsigned border1 = xtal ? 0u : 112u;
+    const unsigned border1 = has_borders ? (xtal ? 0u : 112u) : 0u;
     const int adjust = ((((int) (g_fmsx_v9990.regs[FMSX_V9990_REG_DISPLAY_ADJUST] & 0x0Fu)) ^ 7) - 8) * 8;
     return (unsigned) ((int) blank + (int) border1 + adjust);
 }
 
 static unsigned fmsx_v9990_get_right_border_ticks(void)
 {
-    const boolean xtal = (g_fmsx_v9990.status & 0x04u) ? TRUE : FALSE;
+    const boolean xtal = fmsx_v9990_is_csm_mode();
     const unsigned display = xtal ? 2304u : 2048u;
     return fmsx_v9990_get_left_border_ticks() + display;
 }
@@ -1827,20 +2630,29 @@ static unsigned fmsx_v9990_get_frame_lines(void)
 
 static unsigned fmsx_v9990_get_top_border_lines(void)
 {
-    const boolean xtal = (g_fmsx_v9990.status & 0x04u) ? TRUE : FALSE;
+    const boolean xtal = fmsx_v9990_is_csm_mode();
+    const TFmsxV9990DisplayMode mode = fmsx_v9990_get_display_mode();
+    const boolean has_borders =
+        (mode == FMSX_V9990_MODE_P1
+      || mode == FMSX_V9990_MODE_P2
+      || mode == FMSX_V9990_MODE_B1
+      || mode == FMSX_V9990_MODE_B3
+      || mode == FMSX_V9990_MODE_B7) ? TRUE : FALSE;
     const boolean pal = (g_fmsx_v9990.regs[FMSX_V9990_REG_SCREEN_MODE_1] & 0x08u) ? TRUE : FALSE;
     const unsigned blank = 15u;
-    const unsigned border1 = xtal ? 0u : (pal ? 41u : 14u);
+    const unsigned border1 = has_borders ? (xtal ? 0u : (pal ? 41u : 14u)) : 0u;
     const int adjust = ((((int) ((g_fmsx_v9990.regs[FMSX_V9990_REG_DISPLAY_ADJUST] >> 4) & 0x0Fu)) ^ 7) - 8);
     return (unsigned) ((int) blank + (int) border1 + adjust);
 }
 
 static unsigned fmsx_v9990_get_bottom_border_lines(void)
 {
-    const boolean xtal = (g_fmsx_v9990.status & 0x04u) ? TRUE : FALSE;
-    const boolean pal = (g_fmsx_v9990.regs[FMSX_V9990_REG_SCREEN_MODE_1] & 0x08u) ? TRUE : FALSE;
-    const unsigned display = xtal ? (pal ? 290u : 240u) : 212u;
-    return fmsx_v9990_get_top_border_lines() + display;
+    return fmsx_v9990_get_top_border_lines() + fmsx_v9990_frame_height();
+}
+
+static boolean fmsx_v9990_is_csm_mode(void)
+{
+    return (g_fmsx_v9990.system_control & 0x01u) ? TRUE : FALSE;
 }
 
 static void fmsx_v9990_raise_ver_irq_if_needed(void)
@@ -1988,8 +2800,9 @@ static unsigned fmsx_v9990_cmd_get_pitch(TFmsxV9990CommandMode mode, unsigned wi
     case FMSX_V9990_CMD_MODE_BPP2:
         return width >> 2;
     case FMSX_V9990_CMD_MODE_BPP8:
-    case FMSX_V9990_CMD_MODE_BPP16:
         return width;
+    case FMSX_V9990_CMD_MODE_BPP16:
+        return width << 1;
     default:
         return width;
     }
@@ -2001,31 +2814,31 @@ static unsigned fmsx_v9990_cmd_address_of(TFmsxV9990CommandMode mode, unsigned x
     {
     case FMSX_V9990_CMD_MODE_P1:
     {
-        /*
-         * Match openMSX/WebMSX semantics for P1 command coordinates:
-         *   - visible X coordinate is always 0..255
-         *   - bit 9 selects plane B
-         *   - bit 8 must not feed the byte address
-         *
-         * Letting X8 leak into ((x >> 1) & (pitch - 1)) shifts the command
-         * stream by 128 bytes inside a row and is consistent with the
-         * repeated "3/4 drawn + 1/4 missing" gameplay corruption.
-         */
         const unsigned coord_x = x & 0x00FFu;
-        const unsigned plane_offset = (x & 0x0200u) ? 0x40000u : 0u;
-        unsigned addr = fmsx_v9990_transform_p1(((coord_x >> 1) & (pitch - 1u)) + y * pitch);
-        return (addr & 0x3FFFFu) | plane_offset;
+        const unsigned plane_y = (y & 0x07FFu) | ((x & 0x0200u) ? 0x0800u : 0u);
+
+        /*
+         * WebMSX/openMSX treat P1 x/y commands on raw VRAM coordinates:
+         *   pos = (planeY * imageWidthBytes) + (x >> 1)
+         *
+         * The linear-address swizzle ((addr >> 1) | ((addr & 1) << 18)) is
+         * only for the linear-address family (BMLX/BMLL/CMMM on P1), not for
+         * x/y-addressed commands. Applying transform_linear_p1() here makes
+         * the command engine read/write the wrong quarter of the background
+         * and matches the persistent gameplay corruption.
+         */
+        return (((plane_y * pitch) + (coord_x >> 1)) & (FMSX_V9990_VRAM_BYTES - 1u));
     }
     case FMSX_V9990_CMD_MODE_P2:
-        return fmsx_v9990_transform_p2(((x >> 1) & (pitch - 1u)) + y * pitch) & 0x7FFFFu;
+        return (((x >> 1) & (pitch - 1u)) + y * pitch) & 0x7FFFFu;
     case FMSX_V9990_CMD_MODE_BPP2:
-        return fmsx_v9990_transform_bx(((x >> 2) & (pitch - 1u)) + y * pitch) & 0x7FFFFu;
+        return (((x >> 2) & (pitch - 1u)) + y * pitch) & 0x7FFFFu;
     case FMSX_V9990_CMD_MODE_BPP4:
-        return fmsx_v9990_transform_bx(((x >> 1) & (pitch - 1u)) + y * pitch) & 0x7FFFFu;
+        return (((x >> 1) & (pitch - 1u)) + y * pitch) & 0x7FFFFu;
     case FMSX_V9990_CMD_MODE_BPP8:
-        return fmsx_v9990_transform_bx((x & (pitch - 1u)) + y * pitch) & 0x7FFFFu;
+        return ((x & (pitch - 1u)) + y * pitch) & 0x7FFFFu;
     case FMSX_V9990_CMD_MODE_BPP16:
-        return ((x & (pitch - 1u)) + y * pitch) & 0x3FFFFu;
+        return ((((x << 1) & (pitch - 1u)) + y * pitch) & 0x7FFFFu);
     default:
         return 0u;
     }
@@ -2104,6 +2917,12 @@ static uint8_t fmsx_v9990_cmd_wm8_for_addr(uint16_t wm, unsigned linear_addr)
     return (uint8_t) ((wm >> (((~linear_addr) & 1u) << 3)) & 0xFFu);
 }
 
+static uint16_t fmsx_v9990_cmd_wm16_for_addr(uint16_t wm, unsigned linear_addr)
+{
+    return (uint16_t) (((wm >> (((linear_addr & 1u) != 0u) ? 8u : 0u)) & 0x00FFu)
+        | ((wm << (((linear_addr & 1u) != 0u) ? 8u : 0u)) & 0xFF00u));
+}
+
 static uint8_t fmsx_v9990_cmd_logic_apply8(uint8_t dst, uint8_t src, uint8_t mask, uint8_t log)
 {
     if (((log & 0x10u) != 0u) && (src == 0u))
@@ -2120,6 +2939,11 @@ static uint8_t fmsx_v9990_cmd_p1_plane_wm8(uint16_t wm, unsigned dy_linear)
         : (uint8_t) ((wm >> 8) & 0x00FFu);
 }
 
+static unsigned fmsx_v9990_cmd_p1_xy_direct_address(unsigned x, unsigned y_linear, unsigned pitch)
+{
+    return ((((y_linear & 0x0FFFu) * pitch) + ((x & 0x00FFu) >> 1)) & (FMSX_V9990_VRAM_BYTES - 1u));
+}
+
 static void fmsx_v9990_cmd_p1_logical_pcopyxx(
     unsigned dx,
     unsigned dy_linear,
@@ -2131,10 +2955,8 @@ static void fmsx_v9990_cmd_p1_logical_pcopyxx(
 {
     const unsigned s_shift = (1u - (sx & 1u)) << 2;
     const unsigned d_shift = (1u - (dx & 1u)) << 2;
-    const unsigned s_linear = ((sy_linear * pitch) + (sx >> 1)) & 0x7FFFFu;
-    const unsigned d_linear = ((dy_linear * pitch) + (dx >> 1)) & 0x7FFFFu;
-    const unsigned s_direct = fmsx_v9990_transform_linear_p1(s_linear);
-    const unsigned d_direct = fmsx_v9990_transform_linear_p1(d_linear);
+    const unsigned s_direct = fmsx_v9990_cmd_p1_xy_direct_address(sx, sy_linear, pitch);
+    const unsigned d_direct = fmsx_v9990_cmd_p1_xy_direct_address(dx, dy_linear, pitch);
     const uint8_t src = (uint8_t) (((fmsx_v9990_read_vram_direct(s_direct) >> s_shift) & 0x0Fu) << d_shift);
     const uint8_t mask = (uint8_t) ((0x0Fu << d_shift) & fmsx_v9990_cmd_p1_plane_wm8(wm, dy_linear));
     const uint8_t dst = fmsx_v9990_read_vram_direct(d_direct);
@@ -2153,8 +2975,7 @@ static void fmsx_v9990_cmd_p1_logical_psetx(
 {
     const unsigned s_shift = (3u - (sx & 3u)) << 2;
     const unsigned d_shift = (1u - (dx & 1u)) << 2;
-    const unsigned d_linear = ((dy_linear * pitch) + (dx >> 1)) & 0x7FFFFu;
-    const unsigned d_direct = fmsx_v9990_transform_linear_p1(d_linear);
+    const unsigned d_direct = fmsx_v9990_cmd_p1_xy_direct_address(dx, dy_linear, pitch);
     const uint8_t src = (uint8_t) ((((unsigned) sc >> s_shift) & 0x0Fu) << d_shift);
     const uint8_t mask = (uint8_t) ((0x0Fu << d_shift) & fmsx_v9990_cmd_p1_plane_wm8(wm, dy_linear));
     const uint8_t dst = fmsx_v9990_read_vram_direct(d_direct);
@@ -2173,8 +2994,7 @@ static void fmsx_v9990_cmd_p1_logical_pcopylx(
 {
     const unsigned s_shift = (1u - (sx & 1u)) << 2;
     const unsigned d_shift = (1u - (dx & 1u)) << 2;
-    const unsigned s_linear = ((sy_linear * pitch) + (sx >> 1)) & 0x7FFFFu;
-    const unsigned s_direct = fmsx_v9990_transform_linear_p1(s_linear);
+    const unsigned s_direct = fmsx_v9990_cmd_p1_xy_direct_address(sx, sy_linear, pitch);
     const unsigned d_direct = fmsx_v9990_transform_linear_p1(da);
     const uint8_t src = (uint8_t) (((fmsx_v9990_read_vram_direct(s_direct) >> s_shift) & 0x0Fu) << d_shift);
     const uint8_t mask = (uint8_t) ((0x0Fu << d_shift) & fmsx_v9990_cmd_wm8_for_addr(wm, da));
@@ -2194,17 +3014,52 @@ static void fmsx_v9990_cmd_p1_logical_pcopyll(unsigned da, unsigned sa, uint8_t 
     g_fmsx_v9990.vram[d_direct] = fmsx_v9990_cmd_logic_apply8(dst, src, mask, log);
 }
 
+static void fmsx_v9990_cmd_linear_pcopylx_bpp16(
+    unsigned da,
+    unsigned sx,
+    unsigned sy,
+    unsigned pitch,
+    uint8_t log,
+    uint16_t wm)
+{
+    const unsigned s_direct = fmsx_v9990_cmd_address_of(FMSX_V9990_CMD_MODE_BPP16, sx, sy, pitch);
+    const uint16_t src =
+        (uint16_t) fmsx_v9990_cmd_read_vram_xy(FMSX_V9990_CMD_MODE_BPP16, s_direct + 0u)
+      | ((uint16_t) fmsx_v9990_cmd_read_vram_xy(FMSX_V9990_CMD_MODE_BPP16, s_direct + 1u) << 8);
+    const unsigned d_direct = da & 0x7FFFFu;
+    const uint16_t dst =
+        (uint16_t) fmsx_v9990_read_vram_linear(FMSX_V9990_CMD_MODE_BPP16, d_direct + 0u)
+      | ((uint16_t) fmsx_v9990_read_vram_linear(FMSX_V9990_CMD_MODE_BPP16, (d_direct + 1u) & 0x7FFFFu) << 8);
+    const uint16_t result = fmsx_v9990_cmd_logic16(
+        log,
+        src,
+        dst,
+        (log & 0x10u) ? TRUE : FALSE);
+    const uint16_t masked = (uint16_t) ((dst & ~fmsx_v9990_cmd_wm16_for_addr(wm, da)) | (result & fmsx_v9990_cmd_wm16_for_addr(wm, da)));
+
+    fmsx_v9990_write_vram_linear(FMSX_V9990_CMD_MODE_BPP16, d_direct + 0u, (uint8_t) (masked & 0x00FFu));
+    fmsx_v9990_write_vram_linear(FMSX_V9990_CMD_MODE_BPP16, (d_direct + 1u) & 0x7FFFFu, (uint8_t) (masked >> 8));
+}
+
+static uint16_t fmsx_v9990_cmd_p1_normal_pgetx(unsigned sx, unsigned sy_linear, unsigned dx, unsigned pitch)
+{
+    const unsigned s_shift = (1u - (sx & 1u)) << 2;
+    const unsigned d_shift = (3u - (dx & 3u)) << 2;
+    const unsigned s_direct = fmsx_v9990_cmd_p1_xy_direct_address(sx, sy_linear, pitch);
+    return (uint16_t) ((((unsigned) fmsx_v9990_read_vram_direct(s_direct) >> s_shift) & 0x0Fu) << d_shift);
+}
+
 static uint16_t fmsx_v9990_cmd_point(TFmsxV9990CommandMode mode, unsigned x, unsigned y, unsigned pitch)
 {
     const unsigned addr = fmsx_v9990_cmd_address_of(mode, x, y, pitch);
 
     if (mode == FMSX_V9990_CMD_MODE_BPP16)
     {
-        return (uint16_t) fmsx_v9990_read_vram_direct(addr + 0x00000u)
-            | ((uint16_t) fmsx_v9990_read_vram_direct(addr + 0x40000u) << 8);
+        return (uint16_t) fmsx_v9990_cmd_read_vram_xy(mode, addr + 0u)
+            | ((uint16_t) fmsx_v9990_cmd_read_vram_xy(mode, addr + 1u) << 8);
     }
 
-    return fmsx_v9990_read_vram_direct(addr);
+    return fmsx_v9990_cmd_read_vram_xy(mode, addr);
 }
 
 static uint16_t fmsx_v9990_cmd_pixel_value(TFmsxV9990CommandMode mode, uint16_t value, unsigned x)
@@ -2257,7 +3112,36 @@ static void fmsx_v9990_write_vram_linear(TFmsxV9990CommandMode mode, unsigned ad
         g_fmsx_v9990.vram[fmsx_v9990_transform_linear_p1(address)] = value;
         return;
     }
-    fmsx_v9990_write_vram_bx(address, value);
+    g_fmsx_v9990.vram[fmsx_v9990_transform_bx(address)] = value;
+}
+
+static uint8_t fmsx_v9990_cmd_read_vram_nonp1(unsigned address)
+{
+    return fmsx_v9990_read_vram_direct(fmsx_v9990_transform_bx(address));
+}
+
+static void fmsx_v9990_cmd_write_vram_nonp1(unsigned address, uint8_t value)
+{
+    g_fmsx_v9990.vram[fmsx_v9990_transform_bx(address)] = value;
+}
+
+static uint8_t fmsx_v9990_cmd_read_vram_xy(TFmsxV9990CommandMode mode, unsigned address)
+{
+    if (mode == FMSX_V9990_CMD_MODE_P1)
+    {
+        return fmsx_v9990_read_vram_direct(address);
+    }
+    return fmsx_v9990_cmd_read_vram_nonp1(address);
+}
+
+static void fmsx_v9990_cmd_write_vram_xy(TFmsxV9990CommandMode mode, unsigned address, uint8_t value)
+{
+    if (mode == FMSX_V9990_CMD_MODE_P1)
+    {
+        g_fmsx_v9990.vram[address & (FMSX_V9990_VRAM_BYTES - 1u)] = value;
+        return;
+    }
+    fmsx_v9990_cmd_write_vram_nonp1(address, value);
 }
 
 static void fmsx_v9990_cmd_pset_color(TFmsxV9990CommandMode mode, unsigned x, unsigned y, unsigned pitch, uint16_t color, uint16_t mask, uint8_t log)
@@ -2267,17 +3151,17 @@ static void fmsx_v9990_cmd_pset_color(TFmsxV9990CommandMode mode, unsigned x, un
 
     if (mode == FMSX_V9990_CMD_MODE_BPP16)
     {
-        const uint16_t dst = (uint16_t) fmsx_v9990_read_vram_direct(addr + 0x00000u)
-            | ((uint16_t) fmsx_v9990_read_vram_direct(addr + 0x40000u) << 8);
+        const uint16_t dst = (uint16_t) fmsx_v9990_cmd_read_vram_xy(mode, addr + 0u)
+            | ((uint16_t) fmsx_v9990_cmd_read_vram_xy(mode, addr + 1u) << 8);
         const uint16_t logic = fmsx_v9990_cmd_logic16(log, color, dst, transparent);
         const uint16_t result = (uint16_t) ((dst & ~mask) | (logic & mask));
-        g_fmsx_v9990.vram[(addr + 0x00000u) & (FMSX_V9990_VRAM_BYTES - 1u)] = (uint8_t) (result & 0xFFu);
-        g_fmsx_v9990.vram[(addr + 0x40000u) & (FMSX_V9990_VRAM_BYTES - 1u)] = (uint8_t) (result >> 8);
+        fmsx_v9990_cmd_write_vram_xy(mode, addr + 0u, (uint8_t) (result & 0xFFu));
+        fmsx_v9990_cmd_write_vram_xy(mode, addr + 1u, (uint8_t) (result >> 8));
         return;
     }
 
     {
-        const uint8_t dst = fmsx_v9990_read_vram_direct(addr);
+        const uint8_t dst = fmsx_v9990_cmd_read_vram_xy(mode, addr);
         const uint8_t src = (addr & 0x40000u) ? (uint8_t) (color >> 8) : (uint8_t) color;
         const uint8_t mask_byte = (addr & 0x40000u) ? (uint8_t) (mask >> 8) : (uint8_t) mask;
         const uint8_t pixel_mask = fmsx_v9990_cmd_group_mask(mode, x);
@@ -2292,21 +3176,48 @@ static void fmsx_v9990_cmd_pset_color(TFmsxV9990CommandMode mode, unsigned x, un
         {
             logic = fmsx_v9990_cmd_logic8(log, src, dst, pixel_mask);
         }
-        g_fmsx_v9990.vram[addr & (FMSX_V9990_VRAM_BYTES - 1u)] = (uint8_t) ((dst & ~active_mask) | (logic & active_mask));
+        fmsx_v9990_cmd_write_vram_xy(mode, addr, (uint8_t) ((dst & ~active_mask) | (logic & active_mask)));
     }
 }
 
-static boolean fmsx_v9990_cmd_advance_write_cursor(void)
+static boolean fmsx_v9990_cmd_advance_write_cursor(TFmsxV9990CommandMode mode)
 {
     const unsigned total_nx = fmsx_v9990_cmd_get_total_nx();
     const int step_x = (g_fmsx_v9990.cmd.arg & FMSX_V9990_CMD_ARG_DIX) ? -1 : 1;
     const int step_y = (g_fmsx_v9990.cmd.arg & FMSX_V9990_CMD_ARG_DIY) ? -1 : 1;
+    const unsigned width_mask = fmsx_v9990_cmd_visible_width_mask(mode);
+    const unsigned height_mask = fmsx_v9990_cmd_visible_height_mask(mode);
 
-    g_fmsx_v9990.cmd.dx = (uint16_t) (g_fmsx_v9990.cmd.dx + step_x);
+    if (width_mask != 0u)
+    {
+        const unsigned plane_bits = (unsigned) g_fmsx_v9990.cmd.dx & ~width_mask;
+        const unsigned visible_x = (((unsigned) g_fmsx_v9990.cmd.dx & width_mask) + step_x) & width_mask;
+        g_fmsx_v9990.cmd.dx = (uint16_t) (plane_bits | visible_x);
+    }
+    else
+    {
+        g_fmsx_v9990.cmd.dx = (uint16_t) (g_fmsx_v9990.cmd.dx + step_x);
+    }
     if (--g_fmsx_v9990.cmd.nx == 0u)
     {
-        g_fmsx_v9990.cmd.dx = (uint16_t) (g_fmsx_v9990.cmd.dx - (int) total_nx * step_x);
-        g_fmsx_v9990.cmd.dy = (uint16_t) (g_fmsx_v9990.cmd.dy + step_y);
+        if (width_mask != 0u)
+        {
+            const unsigned plane_bits = (unsigned) g_fmsx_v9990.cmd.dx & ~width_mask;
+            g_fmsx_v9990.cmd.dx = (uint16_t) (plane_bits | fmsx_v9990_cmd_start_visible_dx(mode));
+        }
+        else
+        {
+            g_fmsx_v9990.cmd.dx = (uint16_t) (g_fmsx_v9990.cmd.dx - (int) total_nx * step_x);
+        }
+
+        if (height_mask != 0u)
+        {
+            g_fmsx_v9990.cmd.dy = (uint16_t) ((((unsigned) g_fmsx_v9990.cmd.dy & height_mask) + step_y) & height_mask);
+        }
+        else
+        {
+            g_fmsx_v9990.cmd.dy = (uint16_t) (g_fmsx_v9990.cmd.dy + step_y);
+        }
         if (--g_fmsx_v9990.cmd.ny == 0u)
         {
             return TRUE;
@@ -2316,17 +3227,44 @@ static boolean fmsx_v9990_cmd_advance_write_cursor(void)
     return FALSE;
 }
 
-static boolean fmsx_v9990_cmd_advance_read_cursor(void)
+static boolean fmsx_v9990_cmd_advance_read_cursor(TFmsxV9990CommandMode mode)
 {
     const unsigned total_nx = fmsx_v9990_cmd_get_total_nx();
     const int step_x = (g_fmsx_v9990.cmd.arg & FMSX_V9990_CMD_ARG_DIX) ? -1 : 1;
     const int step_y = (g_fmsx_v9990.cmd.arg & FMSX_V9990_CMD_ARG_DIY) ? -1 : 1;
+    const unsigned width_mask = fmsx_v9990_cmd_visible_width_mask(mode);
+    const unsigned height_mask = fmsx_v9990_cmd_visible_height_mask(mode);
 
-    g_fmsx_v9990.cmd.sx = (uint16_t) (g_fmsx_v9990.cmd.sx + step_x);
+    if (width_mask != 0u)
+    {
+        const unsigned plane_bits = (unsigned) g_fmsx_v9990.cmd.sx & ~width_mask;
+        const unsigned visible_x = (((unsigned) g_fmsx_v9990.cmd.sx & width_mask) + step_x) & width_mask;
+        g_fmsx_v9990.cmd.sx = (uint16_t) (plane_bits | visible_x);
+    }
+    else
+    {
+        g_fmsx_v9990.cmd.sx = (uint16_t) (g_fmsx_v9990.cmd.sx + step_x);
+    }
     if (--g_fmsx_v9990.cmd.nx == 0u)
     {
-        g_fmsx_v9990.cmd.sx = (uint16_t) (g_fmsx_v9990.cmd.sx - (int) total_nx * step_x);
-        g_fmsx_v9990.cmd.sy = (uint16_t) (g_fmsx_v9990.cmd.sy + step_y);
+        if (width_mask != 0u)
+        {
+            const unsigned plane_bits = (unsigned) g_fmsx_v9990.cmd.sx & ~width_mask;
+            g_fmsx_v9990.cmd.sx = (uint16_t) (plane_bits | fmsx_v9990_cmd_start_visible_sx(mode));
+        }
+        else
+        {
+            g_fmsx_v9990.cmd.sx = (uint16_t) (g_fmsx_v9990.cmd.sx - (int) total_nx * step_x);
+        }
+
+        if (height_mask != 0u)
+        {
+            g_fmsx_v9990.cmd.sy = (uint16_t) ((((unsigned) g_fmsx_v9990.cmd.sy & height_mask) + step_y) & height_mask);
+        }
+        else
+        {
+            g_fmsx_v9990.cmd.sy = (uint16_t) (g_fmsx_v9990.cmd.sy + step_y);
+        }
         if (--g_fmsx_v9990.cmd.ny == 0u)
         {
             return TRUE;
@@ -2347,10 +3285,38 @@ static void fmsx_v9990_cmd_fill_lmcm_read(TFmsxV9990CommandMode mode, unsigned p
         return;
     }
 
-    if (mode == FMSX_V9990_CMD_MODE_BPP16)
+    if (mode == FMSX_V9990_CMD_MODE_P1)
+    {
+        const unsigned sy_linear =
+            ((unsigned) g_fmsx_v9990.cmd.sy & 0x07FFu)
+            | (((unsigned) g_fmsx_v9990.cmd.sx & 0x0200u) ? 0x0800u : 0u);
+        uint8_t packed = 0u;
+
+        packed = (uint8_t) (packed | (fmsx_v9990_cmd_p1_normal_pgetx(
+            (unsigned) g_fmsx_v9990.cmd.sx & 0x00FFu,
+            sy_linear,
+            2u,
+            pitch) & 0xF0u));
+        end_after_read = fmsx_v9990_cmd_advance_read_cursor(mode);
+        if (!end_after_read)
+        {
+            const unsigned sy_linear_next =
+                ((unsigned) g_fmsx_v9990.cmd.sy & 0x07FFu)
+                | (((unsigned) g_fmsx_v9990.cmd.sx & 0x0200u) ? 0x0800u : 0u);
+            packed = (uint8_t) (packed | (fmsx_v9990_cmd_p1_normal_pgetx(
+                (unsigned) g_fmsx_v9990.cmd.sx & 0x00FFu,
+                sy_linear_next,
+                3u,
+                pitch) & 0x0Fu));
+            end_after_read = fmsx_v9990_cmd_advance_read_cursor(mode);
+        }
+
+        g_fmsx_v9990.cmd.data = packed;
+    }
+    else if (mode == FMSX_V9990_CMD_MODE_BPP16)
     {
         const uint16_t value = fmsx_v9990_cmd_point(mode, g_fmsx_v9990.cmd.sx, g_fmsx_v9990.cmd.sy, pitch);
-        end_after_read = fmsx_v9990_cmd_advance_read_cursor();
+        end_after_read = fmsx_v9990_cmd_advance_read_cursor(mode);
         g_fmsx_v9990.cmd.data = (uint8_t) (value & 0xFFu);
         g_fmsx_v9990.cmd.partial = (uint8_t) (value >> 8);
         g_fmsx_v9990.cmd.flags |= FMSX_V9990_CMD_FLAG_PARTIAL_VALID;
@@ -2366,7 +3332,7 @@ static void fmsx_v9990_cmd_fill_lmcm_read(TFmsxV9990CommandMode mode, unsigned p
             const uint16_t value = fmsx_v9990_cmd_point(mode, g_fmsx_v9990.cmd.sx, g_fmsx_v9990.cmd.sy, pitch);
             const uint16_t shifted = fmsx_v9990_cmd_shift_value(mode, value, g_fmsx_v9990.cmd.sx, i);
             packed = (uint8_t) (packed | (shifted & fmsx_v9990_cmd_group_mask(mode, i)));
-            end_after_read = fmsx_v9990_cmd_advance_read_cursor();
+            end_after_read = fmsx_v9990_cmd_advance_read_cursor(mode);
             if (end_after_read)
             {
                 break;
@@ -2389,7 +3355,7 @@ static void fmsx_v9990_cmd_consume_lmmc(TFmsxV9990CommandMode mode, unsigned pit
     if (g_fmsx_v9990_debug_lmmc_trace_active)
     {
         ++g_fmsx_v9990_debug_lmmc_bytes;
-        if ((g_fmsx_v9990_debug_lmmc_bytes % 0x2000u) == 0u)
+        if ((g_fmsx_v9990_debug_lmmc_bytes % 0x0800u) == 0u)
         {
             fmsx_v9990_debug_trace_lmmc("chunk");
         }
@@ -2404,7 +3370,51 @@ static void fmsx_v9990_cmd_consume_lmmc(TFmsxV9990CommandMode mode, unsigned pit
         return;
     }
 
-    if (mode == FMSX_V9990_CMD_MODE_BPP16)
+    if (mode == FMSX_V9990_CMD_MODE_P1)
+    {
+        const boolean plane_b = fmsx_v9990_cmd_p1_dest_plane_b();
+        const uint16_t wm = fmsx_v9990_cmd_plane_wm(plane_b);
+        const unsigned dy_linear =
+            ((unsigned) g_fmsx_v9990.cmd.dy & 0x07FFu)
+            | (plane_b ? 0x0800u : 0u);
+        const uint16_t sc = (uint16_t) (value | ((uint16_t) value << 8));
+
+        fmsx_v9990_cmd_p1_logical_psetx(
+            (unsigned) g_fmsx_v9990.cmd.dx & 0x00FFu,
+            dy_linear,
+            0u,
+            sc,
+            g_fmsx_v9990.cmd.log,
+            wm,
+            pitch);
+
+        if (fmsx_v9990_cmd_advance_write_cursor(mode))
+        {
+            fmsx_v9990_cmd_ready();
+            return;
+        }
+
+        fmsx_v9990_cmd_p1_logical_psetx(
+            (unsigned) g_fmsx_v9990.cmd.dx & 0x00FFu,
+            (((unsigned) g_fmsx_v9990.cmd.dy & 0x07FFu)
+                | (plane_b ? 0x0800u : 0u)),
+            1u,
+            sc,
+            g_fmsx_v9990.cmd.log,
+            wm,
+            pitch);
+
+        if (fmsx_v9990_cmd_advance_write_cursor(mode))
+        {
+            fmsx_v9990_cmd_ready();
+        }
+        else
+        {
+            g_fmsx_v9990.cmd.status |= FMSX_V9990_CMD_STATUS_TR;
+        }
+        return;
+    }
+    else if (mode == FMSX_V9990_CMD_MODE_BPP16)
     {
         if ((g_fmsx_v9990.cmd.flags & FMSX_V9990_CMD_FLAG_PARTIAL_VALID) == 0u)
         {
@@ -2424,7 +3434,7 @@ static void fmsx_v9990_cmd_consume_lmmc(TFmsxV9990CommandMode mode, unsigned pit
             g_fmsx_v9990.cmd.wm,
             g_fmsx_v9990.cmd.log);
 
-        if (fmsx_v9990_cmd_advance_write_cursor())
+        if (fmsx_v9990_cmd_advance_write_cursor(mode))
         {
             fmsx_v9990_cmd_ready();
         }
@@ -2452,7 +3462,7 @@ static void fmsx_v9990_cmd_consume_lmmc(TFmsxV9990CommandMode mode, unsigned pit
                 g_fmsx_v9990.cmd.wm,
                 g_fmsx_v9990.cmd.log);
 
-            if (fmsx_v9990_cmd_advance_write_cursor())
+            if (fmsx_v9990_cmd_advance_write_cursor(mode))
             {
                 fmsx_v9990_cmd_ready();
                 return;
@@ -2476,6 +3486,40 @@ static void fmsx_v9990_cmd_consume_cmmc(TFmsxV9990CommandMode mode, unsigned pit
         return;
     }
 
+    if (mode == FMSX_V9990_CMD_MODE_P1)
+    {
+        const boolean plane_b = fmsx_v9990_cmd_p1_dest_plane_b();
+        const uint16_t wm = fmsx_v9990_cmd_plane_wm(plane_b);
+        const uint16_t fg = fmsx_v9990_cmd_plane_fc(plane_b);
+        const uint16_t bg = fmsx_v9990_cmd_plane_bc(plane_b);
+        for (bit = 0u; (bit < 8u) && (g_fmsx_v9990.cmd.ny != 0u); ++bit)
+        {
+            const uint16_t color = ((value & 0x80u) != 0u) ? fg : bg;
+            const unsigned dy_linear =
+                ((unsigned) g_fmsx_v9990.cmd.dy & 0x07FFu)
+                | (plane_b ? 0x0800u : 0u);
+
+            value <<= 1;
+            fmsx_v9990_cmd_p1_logical_psetx(
+                (unsigned) g_fmsx_v9990.cmd.dx & 0x00FFu,
+                dy_linear,
+                (unsigned) g_fmsx_v9990.cmd.dx & 0x00FFu,
+                color,
+                g_fmsx_v9990.cmd.log,
+                wm,
+                pitch);
+
+            if (fmsx_v9990_cmd_advance_write_cursor(mode))
+            {
+                fmsx_v9990_cmd_ready();
+                return;
+            }
+        }
+
+        g_fmsx_v9990.cmd.status |= FMSX_V9990_CMD_STATUS_TR;
+        return;
+    }
+
     for (bit = 0u; (bit < 8u) && (g_fmsx_v9990.cmd.ny != 0u); ++bit)
     {
         const uint16_t color = ((value & 0x80u) != 0u) ? g_fmsx_v9990.cmd.fg : g_fmsx_v9990.cmd.bg;
@@ -2490,7 +3534,7 @@ static void fmsx_v9990_cmd_consume_cmmc(TFmsxV9990CommandMode mode, unsigned pit
             g_fmsx_v9990.cmd.wm,
             g_fmsx_v9990.cmd.log);
 
-        if (fmsx_v9990_cmd_advance_write_cursor())
+        if (fmsx_v9990_cmd_advance_write_cursor(mode))
         {
             fmsx_v9990_cmd_ready();
             return;
@@ -2550,7 +3594,17 @@ static void fmsx_v9990_cmd_apply_advn(void)
 
 static void fmsx_v9990_cmd_store_sy(uint16_t value)
 {
-    value &= 0x0FFFu;
+    const TFmsxV9990CommandMode mode = fmsx_v9990_cmd_latched_mode();
+    const unsigned mask = fmsx_v9990_cmd_image_height_mask(mode);
+
+    if (mask != 0u)
+    {
+        value = (uint16_t) ((g_fmsx_v9990.cmd.sy & ~mask) | ((unsigned) value & mask));
+    }
+    else
+    {
+        value &= 0x0FFFu;
+    }
     g_fmsx_v9990.cmd.sy = value;
     g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SY0] = (uint8_t) (value & 0xFFu);
     g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SY1] =
@@ -2559,7 +3613,17 @@ static void fmsx_v9990_cmd_store_sy(uint16_t value)
 
 static void fmsx_v9990_cmd_store_dy(uint16_t value)
 {
-    value &= 0x0FFFu;
+    const TFmsxV9990CommandMode mode = fmsx_v9990_cmd_latched_mode();
+    const unsigned mask = fmsx_v9990_cmd_image_height_mask(mode);
+
+    if (mask != 0u)
+    {
+        value = (uint16_t) ((g_fmsx_v9990.cmd.dy & ~mask) | ((unsigned) value & mask));
+    }
+    else
+    {
+        value &= 0x0FFFu;
+    }
     g_fmsx_v9990.cmd.dy = value;
     g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DY0] = (uint8_t) (value & 0xFFu);
     g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DY1] =
@@ -2568,7 +3632,17 @@ static void fmsx_v9990_cmd_store_dy(uint16_t value)
 
 static void fmsx_v9990_cmd_store_dx(uint16_t value)
 {
-    value &= 0x07FFu;
+    const TFmsxV9990CommandMode mode = fmsx_v9990_cmd_latched_mode();
+    const unsigned mask = fmsx_v9990_cmd_image_width_mask(mode);
+
+    if (mask != 0u)
+    {
+        value = (uint16_t) ((g_fmsx_v9990.cmd.dx & ~mask) | ((unsigned) value & mask));
+    }
+    else
+    {
+        value &= 0x07FFu;
+    }
     g_fmsx_v9990.cmd.dx = value;
     g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DX0] = (uint8_t) (value & 0xFFu);
     g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DX1] =
@@ -2582,8 +3656,7 @@ static void fmsx_v9990_cmd_store_sa(unsigned value)
     g_fmsx_v9990.cmd.sy = (uint16_t) ((value >> 8) & 0x0FFFu);
     g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SX0] = (uint8_t) (value & 0xFFu);
     g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SY0] = (uint8_t) ((value >> 8) & 0xFFu);
-    g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SY1] =
-        (uint8_t) ((g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SY1] & 0xF8u) | ((value >> 16) & 0x07u));
+    g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_SY1] = (uint8_t) ((value >> 16) & 0x07u);
 }
 
 static void fmsx_v9990_cmd_store_da(unsigned value)
@@ -2593,14 +3666,17 @@ static void fmsx_v9990_cmd_store_da(unsigned value)
     g_fmsx_v9990.cmd.dy = (uint16_t) ((value >> 8) & 0x0FFFu);
     g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DX0] = (uint8_t) (value & 0xFFu);
     g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DY0] = (uint8_t) ((value >> 8) & 0xFFu);
-    g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DY1] =
-        (uint8_t) ((g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DY1] & 0xF8u) | ((value >> 16) & 0x07u));
+    g_fmsx_v9990.regs[FMSX_V9990_CMD_REG_DY1] = (uint8_t) ((value >> 16) & 0x07u);
 }
 
 static void fmsx_v9990_cmd_ready(void)
 {
     if (g_fmsx_v9990_debug_lmmc_trace_active)
     {
+        if (g_fmsx_v9990_debug_lmmc_bytes == 0u && g_fmsx_v9990_debug_lmmc_total_bytes != 0u)
+        {
+            g_fmsx_v9990_debug_lmmc_bytes = g_fmsx_v9990_debug_lmmc_total_bytes;
+        }
         fmsx_v9990_debug_trace_lmmc("done");
         g_fmsx_v9990_debug_lmmc_trace_active = FALSE;
         g_fmsx_v9990_debug_lmmc_bytes = 0u;
@@ -2608,7 +3684,9 @@ static void fmsx_v9990_cmd_ready(void)
         g_fmsx_v9990_debug_lmmc_logs_remaining = 0u;
         g_fmsx_v9990_debug_lmmc_pitch = 0u;
         g_fmsx_v9990_debug_lmmc_image_width = 0u;
+        g_fmsx_v9990_debug_lmmc_row_bytes = 0u;
         g_fmsx_v9990_debug_lmmc_mode = 0u;
+        g_fmsx_v9990_debug_lmmc_opcode = 0u;
     }
     g_fmsx_v9990.cmd.opcode = 0u;
     g_fmsx_v9990.cmd.status &= (uint8_t) ~(FMSX_V9990_CMD_STATUS_CE | FMSX_V9990_CMD_STATUS_TR);
@@ -2626,6 +3704,7 @@ static void fmsx_v9990_cmd_execute(void)
     const uint8_t opcode = (uint8_t) (g_fmsx_v9990.cmd.opcode >> 4);
 
     fmsx_v9990_cmd_latch_geometry(mode, image_width, pitch);
+    fmsx_v9990_cmd_normalize_start_coordinates(mode);
     fmsx_v9990_debug_trace_command("G9C exec", g_fmsx_v9990.cmd.opcode);
     if (fmsx_v9990_cmd_should_abort(g_fmsx_v9990.cmd.opcode))
     {
@@ -2655,17 +3734,7 @@ static void fmsx_v9990_cmd_execute(void)
                 (uint32_t) fmsx_v9990_cmd_get_total_nx() * (uint32_t) fmsx_v9990_cmd_get_total_ny();
             const uint32_t total_bytes =
                 (pixels_per_byte != 0u) ? ((total_pixels + pixels_per_byte - 1u) / pixels_per_byte) : 0u;
-            g_fmsx_v9990_debug_lmmc_trace_active = (total_bytes >= 0x2000u) ? TRUE : FALSE;
-            g_fmsx_v9990_debug_lmmc_bytes = 0u;
-            g_fmsx_v9990_debug_lmmc_total_bytes = total_bytes;
-            g_fmsx_v9990_debug_lmmc_logs_remaining = g_fmsx_v9990_debug_lmmc_trace_active ? 12u : 0u;
-            g_fmsx_v9990_debug_lmmc_pitch = pitch;
-            g_fmsx_v9990_debug_lmmc_image_width = image_width;
-            g_fmsx_v9990_debug_lmmc_mode = (uint8_t) mode;
-            if (g_fmsx_v9990_debug_lmmc_trace_active)
-            {
-                fmsx_v9990_debug_trace_lmmc("start");
-            }
+            fmsx_v9990_debug_begin_linear_trace(g_fmsx_v9990.cmd.opcode, mode, image_width, pitch, total_bytes);
         }
 #endif
         break;
@@ -2679,6 +3748,39 @@ static void fmsx_v9990_cmd_execute(void)
         unsigned row;
         uint16_t dx = g_fmsx_v9990.cmd.dx;
         uint16_t dy = g_fmsx_v9990.cmd.dy;
+
+        if (mode == FMSX_V9990_CMD_MODE_P1)
+        {
+            const unsigned dest_plane = fmsx_v9990_cmd_p1_dest_plane_offset();
+            const uint16_t wm = fmsx_v9990_cmd_plane_wm(fmsx_v9990_cmd_p1_dest_plane_b());
+            const uint16_t fc = fmsx_v9990_cmd_plane_fc(fmsx_v9990_cmd_p1_dest_plane_b());
+            uint16_t dx_vis = (uint16_t) (dx & 0x00FFu);
+            uint16_t dy_vis = (uint16_t) (dy & 0x07FFu);
+
+            for (row = 0u; row < ny; ++row)
+            {
+                unsigned col;
+                uint16_t edx = dx_vis;
+
+                for (col = 0u; col < nx; ++col)
+                {
+                    fmsx_v9990_cmd_p1_logical_psetx(
+                        edx,
+                        (unsigned) dy_vis | dest_plane,
+                        edx,
+                        fc,
+                        g_fmsx_v9990.cmd.log,
+                        wm,
+                        pitch);
+                    edx = (uint16_t) ((edx + step_x) & 0x00FFu);
+                }
+                dy_vis = (uint16_t) ((dy_vis + step_y) & 0x07FFu);
+            }
+
+            fmsx_v9990_cmd_store_dy(dy_vis);
+            fmsx_v9990_cmd_ready();
+            break;
+        }
 
         for (row = 0u; row < ny; ++row)
         {
@@ -2719,6 +3821,7 @@ static void fmsx_v9990_cmd_execute(void)
         {
             const unsigned src_plane = (g_fmsx_v9990.cmd.sx & 0x0200u) ? 0x0800u : 0u;
             const unsigned dst_plane = (g_fmsx_v9990.cmd.dx & 0x0200u) ? 0x0800u : 0u;
+            const uint16_t wm = fmsx_v9990_cmd_plane_wm(fmsx_v9990_cmd_p1_dest_plane_b());
             uint16_t sy_vis = (uint16_t) (sy & 0x07FFu);
             uint16_t dy_vis = (uint16_t) (dy & 0x07FFu);
             uint16_t sx_vis = (uint16_t) (sx & 0x00FFu);
@@ -2738,7 +3841,7 @@ static void fmsx_v9990_cmd_execute(void)
                         cur_sx,
                         (unsigned) sy_vis | src_plane,
                         g_fmsx_v9990.cmd.log,
-                        g_fmsx_v9990.cmd.wm,
+                        wm,
                         pitch);
                     cur_sx = (uint16_t) ((cur_sx + step_x) & 0x00FFu);
                     cur_dx = (uint16_t) ((cur_dx + step_x) & 0x00FFu);
@@ -2796,36 +3899,94 @@ static void fmsx_v9990_cmd_execute(void)
         const uint16_t step_x = (g_fmsx_v9990.cmd.arg & FMSX_V9990_CMD_ARG_DIX) ? (uint16_t) -1 : 1;
         const uint16_t step_y = (g_fmsx_v9990.cmd.arg & FMSX_V9990_CMD_ARG_DIY) ? (uint16_t) -1 : 1;
         unsigned src_address = fmsx_v9990_cmd_linear_src_address();
-        uint8_t data = 0u;
-        unsigned bits_left = 0u;
         uint16_t dx = g_fmsx_v9990.cmd.dx;
         uint16_t dy = g_fmsx_v9990.cmd.dy;
         unsigned row;
 
-        for (row = 0u; row < ny; ++row)
-        {
-            unsigned col;
-            uint16_t cur_dx = dx;
-            for (col = 0u; col < nx; ++col)
-            {
-                uint16_t color;
-                if (bits_left == 0u)
-                {
-                    data = fmsx_v9990_read_vram_linear(mode, src_address++);
-                    bits_left = 8u;
-                }
-                color = ((data & 0x80u) != 0u) ? g_fmsx_v9990.cmd.fg : g_fmsx_v9990.cmd.bg;
-                data <<= 1;
-                --bits_left;
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+        fmsx_v9990_debug_begin_linear_trace(
+            g_fmsx_v9990.cmd.opcode,
+            mode,
+            image_width,
+            pitch,
+            (uint32_t) ((((uint64_t) nx * (uint64_t) ny) + 7ull) >> 3));
+#endif
 
-                fmsx_v9990_cmd_pset_color(mode, cur_dx, dy, pitch, color, g_fmsx_v9990.cmd.wm, g_fmsx_v9990.cmd.log);
-                cur_dx = (uint16_t) (cur_dx + step_x);
+        if (mode == FMSX_V9990_CMD_MODE_P1)
+        {
+            const unsigned dest_plane = fmsx_v9990_cmd_p1_dest_plane_offset();
+            const uint16_t wm = fmsx_v9990_cmd_plane_wm(fmsx_v9990_cmd_p1_dest_plane_b());
+            const uint16_t fg = fmsx_v9990_cmd_plane_fc(fmsx_v9990_cmd_p1_dest_plane_b());
+            const uint16_t bg = fmsx_v9990_cmd_plane_bc(fmsx_v9990_cmd_p1_dest_plane_b());
+            uint16_t dx_vis = (uint16_t) (dx & 0x00FFu);
+            uint16_t dy_vis = (uint16_t) (dy & 0x07FFu);
+            uint8_t pd = 0u;
+            unsigned cp = 0u;
+
+            for (row = 0u; row < ny; ++row)
+            {
+                unsigned col;
+                uint16_t edx = dx_vis;
+
+                for (col = 0u; col < nx; ++col)
+                {
+                    uint16_t color;
+                    if ((cp & 0x07u) == 0u)
+                    {
+                        pd = fmsx_v9990_read_vram_linear(mode, src_address);
+                        src_address = (src_address + 1u) & 0x7FFFFu;
+                    }
+                    color = ((pd >> (7u - (cp & 0x07u))) & 1u) ? fg : bg;
+                    fmsx_v9990_cmd_p1_logical_psetx(
+                        edx,
+                        (unsigned) dy_vis | dest_plane,
+                        edx,
+                        color,
+                        g_fmsx_v9990.cmd.log,
+                        wm,
+                        pitch);
+                    edx = (uint16_t) ((edx + step_x) & 0x00FFu);
+                    ++cp;
+                }
+
+                dy_vis = (uint16_t) ((dy_vis + step_y) & 0x07FFu);
             }
-            dy = (uint16_t) (dy + step_y);
+
+            fmsx_v9990_cmd_store_sa(src_address);
+            fmsx_v9990_cmd_store_dy(dy_vis);
+            fmsx_v9990_cmd_ready();
+            break;
         }
-        fmsx_v9990_cmd_store_sa(src_address);
-        fmsx_v9990_cmd_store_dy(dy);
-        fmsx_v9990_cmd_ready();
+
+        {
+            uint8_t data = 0u;
+            unsigned bits_left = 0u;
+
+            for (row = 0u; row < ny; ++row)
+            {
+                unsigned col;
+                uint16_t cur_dx = dx;
+                for (col = 0u; col < nx; ++col)
+                {
+                    uint16_t color;
+                    if (bits_left == 0u)
+                    {
+                        data = fmsx_v9990_read_vram_linear(mode, src_address++);
+                        bits_left = 8u;
+                    }
+                    color = ((data & 0x80u) != 0u) ? g_fmsx_v9990.cmd.fg : g_fmsx_v9990.cmd.bg;
+                    data <<= 1;
+                    --bits_left;
+
+                    fmsx_v9990_cmd_pset_color(mode, cur_dx, dy, pitch, color, g_fmsx_v9990.cmd.wm, g_fmsx_v9990.cmd.log);
+                    cur_dx = (uint16_t) (cur_dx + step_x);
+                }
+                dy = (uint16_t) (dy + step_y);
+            }
+            fmsx_v9990_cmd_store_sa(src_address);
+            fmsx_v9990_cmd_store_dy(dy);
+            fmsx_v9990_cmd_ready();
+        }
         break;
     }
 
@@ -2840,9 +4001,22 @@ static void fmsx_v9990_cmd_execute(void)
         uint16_t dy = g_fmsx_v9990.cmd.dy;
         unsigned row;
 
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+        {
+            const unsigned bits_per_pixel = (mode == FMSX_V9990_CMD_MODE_BPP16)
+                ? 16u
+                : ((mode == FMSX_V9990_CMD_MODE_BPP8) ? 8u
+                    : ((mode == FMSX_V9990_CMD_MODE_BPP4 || mode == FMSX_V9990_CMD_MODE_P1 || mode == FMSX_V9990_CMD_MODE_P2) ? 4u : 2u));
+            const uint32_t total_bytes =
+                (uint32_t) ((((uint64_t) nx * (uint64_t) ny * (uint64_t) bits_per_pixel) + 7ull) >> 3);
+            fmsx_v9990_debug_begin_linear_trace(g_fmsx_v9990.cmd.opcode, mode, image_width, pitch, total_bytes);
+        }
+#endif
+
         if (mode == FMSX_V9990_CMD_MODE_P1)
         {
             const unsigned dest_plane = (g_fmsx_v9990.cmd.dx & 0x0200u) ? 0x0800u : 0u;
+            const uint16_t wm = fmsx_v9990_cmd_plane_wm(fmsx_v9990_cmd_p1_dest_plane_b());
             uint16_t dy_vis = (uint16_t) (dy & 0x07FFu);
             uint16_t dx_vis = (uint16_t) (dx & 0x00FFu);
             unsigned sx_linear = 0u;
@@ -2866,7 +4040,7 @@ static void fmsx_v9990_cmd_execute(void)
                             sx_linear,
                             sc,
                             g_fmsx_v9990.cmd.log,
-                            g_fmsx_v9990.cmd.wm,
+                            wm,
                             pitch);
                         cur_dx = (uint16_t) ((cur_dx + step_x) & 0x00FFu);
                         ++sx_linear;
@@ -2890,9 +4064,9 @@ static void fmsx_v9990_cmd_execute(void)
                 for (col = 0u; col < nx; ++col)
                 {
                     const uint16_t color =
-                        (uint16_t) fmsx_v9990_read_vram_bx(src_address + 0u)
-                        | ((uint16_t) fmsx_v9990_read_vram_bx(src_address + 1u) << 8);
-                    src_address += 2u;
+                        (uint16_t) fmsx_v9990_read_vram_linear(mode, src_address & 0x7FFFFu)
+                        | ((uint16_t) fmsx_v9990_read_vram_linear(mode, (src_address + 1u) & 0x7FFFFu) << 8);
+                    src_address = (src_address + 2u) & 0x7FFFFu;
                     fmsx_v9990_cmd_pset_color(mode, cur_dx, dy, pitch, color, g_fmsx_v9990.cmd.wm, g_fmsx_v9990.cmd.log);
                     cur_dx = (uint16_t) (cur_dx + step_x);
                 }
@@ -2939,6 +4113,18 @@ static void fmsx_v9990_cmd_execute(void)
         uint16_t sy = g_fmsx_v9990.cmd.sy;
         unsigned row;
 
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+        {
+            const unsigned bits_per_pixel = (mode == FMSX_V9990_CMD_MODE_BPP16)
+                ? 16u
+                : ((mode == FMSX_V9990_CMD_MODE_BPP8) ? 8u
+                    : ((mode == FMSX_V9990_CMD_MODE_BPP4 || mode == FMSX_V9990_CMD_MODE_P1 || mode == FMSX_V9990_CMD_MODE_P2) ? 4u : 2u));
+            const uint32_t total_bytes =
+                (uint32_t) ((((uint64_t) nx * (uint64_t) ny * (uint64_t) bits_per_pixel) + 7ull) >> 3);
+            fmsx_v9990_debug_begin_linear_trace(g_fmsx_v9990.cmd.opcode, mode, image_width, pitch, total_bytes);
+        }
+#endif
+
         if (mode == FMSX_V9990_CMD_MODE_P1)
         {
             const unsigned src_plane = (g_fmsx_v9990.cmd.sx & 0x0200u) ? 0x0800u : 0u;
@@ -2983,9 +4169,8 @@ static void fmsx_v9990_cmd_execute(void)
                 uint16_t cur_sx = sx;
                 for (col = 0u; col < nx; ++col)
                 {
-                    const uint16_t value = fmsx_v9990_cmd_point(mode, cur_sx, sy, pitch);
-                    fmsx_v9990_write_vram_bx(dst_address++, (uint8_t) (value & 0xFFu));
-                    fmsx_v9990_write_vram_bx(dst_address++, (uint8_t) (value >> 8));
+                    fmsx_v9990_cmd_linear_pcopylx_bpp16(dst_address, cur_sx, sy, pitch, g_fmsx_v9990.cmd.log, g_fmsx_v9990.cmd.wm);
+                    dst_address = (dst_address + 2u) & 0x7FFFFu;
                     cur_sx = (uint16_t) (cur_sx + step_x);
                 }
                 sy = (uint16_t) (sy + step_y);
@@ -3025,70 +4210,42 @@ static void fmsx_v9990_cmd_execute(void)
         unsigned dst_address = fmsx_v9990_cmd_linear_dst_address();
         unsigned count = fmsx_v9990_cmd_linear_byte_count();
 
-        if (mode == FMSX_V9990_CMD_MODE_BPP16)
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+        fmsx_v9990_debug_begin_linear_trace(g_fmsx_v9990.cmd.opcode, mode, image_width, pitch, (uint32_t) count);
+#endif
+
+        if (mode == FMSX_V9990_CMD_MODE_P1)
         {
-            const boolean transparent = (g_fmsx_v9990.cmd.log & 0x10u) ? TRUE : FALSE;
-            src_address >>= 1;
-            dst_address >>= 1;
-            count >>= 1;
-            if (count == 0u)
-            {
-                count = 0x40000u;
-            }
+            const int step = (g_fmsx_v9990.cmd.arg & FMSX_V9990_CMD_ARG_DIX) ? -1 : 1;
 
             while (count-- != 0u)
             {
-                const uint16_t src_color =
-                    (uint16_t) fmsx_v9990_read_vram_direct(src_address + 0x00000u)
-                    | ((uint16_t) fmsx_v9990_read_vram_direct(src_address + 0x40000u) << 8);
-                const uint16_t dst_color =
-                    (uint16_t) fmsx_v9990_read_vram_direct(dst_address + 0x00000u)
-                    | ((uint16_t) fmsx_v9990_read_vram_direct(dst_address + 0x40000u) << 8);
-                const uint16_t logic = fmsx_v9990_cmd_logic16(g_fmsx_v9990.cmd.log, src_color, dst_color, transparent);
-                const uint16_t result = (uint16_t) ((dst_color & ~g_fmsx_v9990.cmd.wm) | (logic & g_fmsx_v9990.cmd.wm));
-
-                g_fmsx_v9990.vram[(dst_address + 0x00000u) & (FMSX_V9990_VRAM_BYTES - 1u)] = (uint8_t) (result & 0xFFu);
-                g_fmsx_v9990.vram[(dst_address + 0x40000u) & (FMSX_V9990_VRAM_BYTES - 1u)] = (uint8_t) (result >> 8);
-                src_address = (src_address + 1u) & 0x3FFFFu;
-                dst_address = (dst_address + 1u) & 0x3FFFFu;
+                fmsx_v9990_cmd_p1_logical_pcopyll(
+                    dst_address & 0x7FFFFu,
+                    src_address & 0x7FFFFu,
+                    g_fmsx_v9990.cmd.log,
+                    g_fmsx_v9990.cmd.wm);
+                src_address = (unsigned) ((src_address + step) & 0x7FFFFu);
+                dst_address = (unsigned) ((dst_address + step) & 0x7FFFFu);
             }
+
+            fmsx_v9990_cmd_store_sa(src_address);
+            fmsx_v9990_cmd_store_da(dst_address);
+            fmsx_v9990_cmd_ready();
+            break;
         }
         else
         {
-            if (mode == FMSX_V9990_CMD_MODE_P1)
-            {
-                const int step = (g_fmsx_v9990.cmd.arg & FMSX_V9990_CMD_ARG_DIX) ? -1 : 1;
-
-                while (count-- != 0u)
-                {
-                    fmsx_v9990_cmd_p1_logical_pcopyll(
-                        dst_address & 0x7FFFFu,
-                        src_address & 0x7FFFFu,
-                        g_fmsx_v9990.cmd.log,
-                        g_fmsx_v9990.cmd.wm);
-                    src_address = (unsigned) ((src_address + step) & 0x7FFFFu);
-                    dst_address = (unsigned) ((dst_address + step) & 0x7FFFFu);
-                }
-
-                fmsx_v9990_cmd_store_sa(src_address);
-                fmsx_v9990_cmd_store_da(dst_address);
-                fmsx_v9990_cmd_ready();
-                break;
-            }
-
             const boolean transparent = (g_fmsx_v9990.cmd.log & 0x10u) ? TRUE : FALSE;
             while (count-- != 0u)
             {
                 const uint8_t src_color = fmsx_v9990_read_vram_linear(mode, src_address);
-                const unsigned dst_direct =
-                    (mode == FMSX_V9990_CMD_MODE_P1)
-                        ? fmsx_v9990_transform_linear_p1(dst_address)
-                        : fmsx_v9990_transform_bx(dst_address);
-                const uint8_t dst_color = fmsx_v9990_read_vram_direct(dst_direct);
-                const uint8_t mask = (dst_direct & 0x40000u) ? (uint8_t) (g_fmsx_v9990.cmd.wm >> 8) : (uint8_t) g_fmsx_v9990.cmd.wm;
+                const unsigned dst_direct = dst_address & 0x7FFFFu;
+                const uint8_t dst_color = fmsx_v9990_read_vram_linear(mode, dst_direct);
+                const uint8_t mask = fmsx_v9990_cmd_wm8_for_addr(g_fmsx_v9990.cmd.wm, dst_address);
                 const uint8_t result = fmsx_v9990_cmd_logic_byte(mode, src_color, dst_color, mask, g_fmsx_v9990.cmd.log, transparent);
 
-                g_fmsx_v9990.vram[dst_direct] = result;
+                fmsx_v9990_write_vram_linear(mode, dst_direct, result);
                 src_address = (src_address + 1u) & 0x7FFFFu;
                 dst_address = (dst_address + 1u) & 0x7FFFFu;
             }
@@ -3110,6 +4267,73 @@ static void fmsx_v9990_cmd_execute(void)
         uint16_t dx = g_fmsx_v9990.cmd.dx;
         uint16_t dy = g_fmsx_v9990.cmd.dy;
         unsigned count = 0u;
+
+        if (mode == FMSX_V9990_CMD_MODE_P1)
+        {
+            const unsigned dest_plane = fmsx_v9990_cmd_p1_dest_plane_offset();
+            const uint16_t wm = fmsx_v9990_cmd_plane_wm(fmsx_v9990_cmd_p1_dest_plane_b());
+            const uint16_t fc = fmsx_v9990_cmd_plane_fc(fmsx_v9990_cmd_p1_dest_plane_b());
+            uint16_t dx_vis = (uint16_t) (dx & 0x00FFu);
+            uint16_t dy_vis = (uint16_t) (dy & 0x07FFu);
+
+            if ((g_fmsx_v9990.cmd.arg & FMSX_V9990_CMD_ARG_MAJ) == 0u)
+            {
+                for (;;)
+                {
+                    fmsx_v9990_cmd_p1_logical_psetx(
+                        dx_vis,
+                        (unsigned) dy_vis | dest_plane,
+                        dx_vis,
+                        fc,
+                        g_fmsx_v9990.cmd.log,
+                        wm,
+                        pitch);
+                    dx_vis = (uint16_t) ((dx_vis + step_x) & 0x00FFu);
+                    if (accumulator < ny)
+                    {
+                        accumulator = (uint16_t) (accumulator + nx);
+                        dy_vis = (uint16_t) ((dy_vis + step_y) & 0x07FFu);
+                    }
+                    accumulator = (uint16_t) (accumulator - ny);
+                    if (count++ == nx)
+                    {
+                        fmsx_v9990_cmd_store_dx(dx_vis);
+                        fmsx_v9990_cmd_store_dy(dy_vis);
+                        fmsx_v9990_cmd_ready();
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                for (;;)
+                {
+                    fmsx_v9990_cmd_p1_logical_psetx(
+                        dx_vis,
+                        (unsigned) dy_vis | dest_plane,
+                        dx_vis,
+                        fc,
+                        g_fmsx_v9990.cmd.log,
+                        wm,
+                        pitch);
+                    dy_vis = (uint16_t) ((dy_vis + step_y) & 0x07FFu);
+                    if (accumulator < ny)
+                    {
+                        accumulator = (uint16_t) (accumulator + nx);
+                        dx_vis = (uint16_t) ((dx_vis + step_x) & 0x00FFu);
+                    }
+                    accumulator = (uint16_t) (accumulator - ny);
+                    if (count++ == nx)
+                    {
+                        fmsx_v9990_cmd_store_dx(dx_vis);
+                        fmsx_v9990_cmd_store_dy(dy_vis);
+                        fmsx_v9990_cmd_ready();
+                        break;
+                    }
+                }
+            }
+            break;
+        }
 
         if ((g_fmsx_v9990.cmd.arg & FMSX_V9990_CMD_ARG_MAJ) == 0u)
         {
@@ -3162,6 +4386,44 @@ static void fmsx_v9990_cmd_execute(void)
         const boolean neq = (g_fmsx_v9990.cmd.arg & FMSX_V9990_CMD_ARG_NEQ) ? TRUE : FALSE;
         uint16_t sx = g_fmsx_v9990.cmd.sx;
 
+        if (mode == FMSX_V9990_CMD_MODE_P1)
+        {
+            const unsigned src_plane = fmsx_v9990_cmd_p1_source_plane_offset();
+            const uint16_t fc = fmsx_v9990_cmd_plane_fc(fmsx_v9990_cmd_p1_source_plane_b());
+            const int step_x_signed = (g_fmsx_v9990.cmd.arg & FMSX_V9990_CMD_ARG_DIX) ? -1 : 1;
+            const unsigned stop_x = (step_x_signed > 0) ? fmsx_v9990_cmd_latched_image_width() : (unsigned) -1;
+            uint16_t sx_vis = (uint16_t) (sx & 0x00FFu);
+
+            for (;;)
+            {
+                const uint16_t value = fmsx_v9990_cmd_p1_normal_pgetx(
+                    sx_vis,
+                    ((unsigned) g_fmsx_v9990.cmd.sy & 0x07FFu) | src_plane,
+                    sx_vis,
+                    pitch);
+                const uint16_t fc_compare = (uint16_t) (fc & (0xF000u >> (((unsigned) sx_vis & 0x0003u) << 2)));
+                const boolean match = (value == fc_compare) ? TRUE : FALSE;
+
+                if ((match ^ neq) != 0)
+                {
+                    g_fmsx_v9990.cmd.status |= FMSX_V9990_CMD_STATUS_BD;
+                    g_fmsx_v9990.cmd.border_x = sx_vis;
+                    fmsx_v9990_cmd_ready();
+                    break;
+                }
+
+                sx_vis = (uint16_t) ((sx_vis + step_x) & 0x00FFu);
+                if (sx_vis == (uint16_t) stop_x)
+                {
+                    g_fmsx_v9990.cmd.status &= (uint8_t) ~FMSX_V9990_CMD_STATUS_BD;
+                    g_fmsx_v9990.cmd.border_x = sx_vis;
+                    fmsx_v9990_cmd_ready();
+                    break;
+                }
+            }
+            break;
+        }
+
         for (;;)
         {
             boolean match;
@@ -3173,7 +4435,7 @@ static void fmsx_v9990_cmd_execute(void)
             else
             {
                 const unsigned addr = fmsx_v9990_cmd_address_of(mode, sx, g_fmsx_v9990.cmd.sy, pitch);
-                const uint8_t value = fmsx_v9990_read_vram_direct(addr);
+                const uint8_t value = fmsx_v9990_cmd_read_vram_xy(mode, addr);
                 const uint8_t src = (addr & 0x40000u) ? (uint8_t) (g_fmsx_v9990.cmd.fg >> 8) : (uint8_t) g_fmsx_v9990.cmd.fg;
                 match = (fmsx_v9990_cmd_pixel_value(mode, value, sx) == fmsx_v9990_cmd_pixel_value(mode, src, sx)) ? TRUE : FALSE;
             }
@@ -3217,6 +4479,22 @@ static void fmsx_v9990_cmd_execute(void)
     }
 
     case 0x0Eu:
+        if (mode == FMSX_V9990_CMD_MODE_P1)
+        {
+            fmsx_v9990_cmd_p1_logical_psetx(
+                (unsigned) g_fmsx_v9990.cmd.dx & 0x00FFu,
+                ((unsigned) g_fmsx_v9990.cmd.dy & 0x07FFu) | fmsx_v9990_cmd_p1_dest_plane_offset(),
+                (unsigned) g_fmsx_v9990.cmd.dx & 0x00FFu,
+                fmsx_v9990_cmd_plane_fc(fmsx_v9990_cmd_p1_dest_plane_b()),
+                g_fmsx_v9990.cmd.log,
+                fmsx_v9990_cmd_plane_wm(fmsx_v9990_cmd_p1_dest_plane_b()),
+                pitch);
+            fmsx_v9990_cmd_apply_advn();
+            g_fmsx_v9990.cmd.dx = (uint16_t) ((g_fmsx_v9990.cmd.dx & 0x0200u) | ((unsigned) g_fmsx_v9990.cmd.dx & 0x00FFu));
+            g_fmsx_v9990.cmd.dy &= 0x07FFu;
+            fmsx_v9990_cmd_ready();
+            break;
+        }
         fmsx_v9990_cmd_pset_color(mode, g_fmsx_v9990.cmd.dx, g_fmsx_v9990.cmd.dy, pitch, g_fmsx_v9990.cmd.fg, g_fmsx_v9990.cmd.wm, g_fmsx_v9990.cmd.log);
         fmsx_v9990_cmd_apply_advn();
         fmsx_v9990_cmd_ready();
@@ -3225,6 +4503,11 @@ static void fmsx_v9990_cmd_execute(void)
     case 0x0Fu:
     {
         fmsx_v9990_cmd_apply_advn();
+        if (mode == FMSX_V9990_CMD_MODE_P1)
+        {
+            g_fmsx_v9990.cmd.dx = (uint16_t) ((g_fmsx_v9990.cmd.dx & 0x0200u) | ((unsigned) g_fmsx_v9990.cmd.dx & 0x00FFu));
+            g_fmsx_v9990.cmd.dy &= 0x07FFu;
+        }
         fmsx_v9990_cmd_ready();
         break;
     }
@@ -3250,7 +4533,7 @@ static void fmsx_v9990_cmd_set_reg(uint8_t reg, uint8_t value)
     case FMSX_V9990_CMD_REG_DY0: g_fmsx_v9990.cmd.dy = (uint16_t) ((g_fmsx_v9990.cmd.dy & 0x0F00u) | ((uint16_t) value << 0)); break;
     case FMSX_V9990_CMD_REG_DY1: value &= 0x0Fu; g_fmsx_v9990.regs[reg] = value; g_fmsx_v9990.cmd.dy = (uint16_t) ((g_fmsx_v9990.cmd.dy & 0x00FFu) | ((uint16_t) value << 8)); break;
     case FMSX_V9990_CMD_REG_NX0: g_fmsx_v9990.cmd.nx = (uint16_t) ((g_fmsx_v9990.cmd.nx & 0x0F00u) | ((uint16_t) value << 0)); break;
-    case FMSX_V9990_CMD_REG_NX1: value &= 0x0Fu; g_fmsx_v9990.regs[reg] = value; g_fmsx_v9990.cmd.nx = (uint16_t) ((g_fmsx_v9990.cmd.nx & 0x00FFu) | ((uint16_t) value << 8)); break;
+    case FMSX_V9990_CMD_REG_NX1: value &= 0x07u; g_fmsx_v9990.regs[reg] = value; g_fmsx_v9990.cmd.nx = (uint16_t) ((g_fmsx_v9990.cmd.nx & 0x00FFu) | ((uint16_t) value << 8)); break;
     case FMSX_V9990_CMD_REG_NY0: g_fmsx_v9990.cmd.ny = (uint16_t) ((g_fmsx_v9990.cmd.ny & 0x0F00u) | ((uint16_t) value << 0)); break;
     case FMSX_V9990_CMD_REG_NY1: value &= 0x0Fu; g_fmsx_v9990.regs[reg] = value; g_fmsx_v9990.cmd.ny = (uint16_t) ((g_fmsx_v9990.cmd.ny & 0x00FFu) | ((uint16_t) value << 8)); break;
     case FMSX_V9990_CMD_REG_ARG: value &= 0x0Fu; g_fmsx_v9990.regs[reg] = value; g_fmsx_v9990.cmd.arg = value; break;
@@ -3384,9 +4667,66 @@ static void fmsx_v9990_palette_advance(void)
     }
 }
 
-static unsigned fmsx_v9990_transform_bx(unsigned address)
+static unsigned fmsx_v9990_transform_bx_interleaved_to_linear(unsigned address)
 {
     return (((address & 1u) << 18) | ((address & 0x7FFFEu) >> 1)) & (FMSX_V9990_VRAM_BYTES - 1u);
+}
+
+static void fmsx_v9990_vram_enter_interleaving(void)
+{
+    const unsigned half = FMSX_V9990_VRAM_BYTES >> 1;
+    unsigned even_src = 0u;
+    unsigned odd_src = half;
+    unsigned dst;
+
+    memcpy(g_fmsx_v9990_vram_interleave_tmp, g_fmsx_v9990.vram, half);
+    for (dst = 0u; dst < FMSX_V9990_VRAM_BYTES; dst += 2u, ++even_src, ++odd_src)
+    {
+        g_fmsx_v9990.vram[dst + 0u] = g_fmsx_v9990_vram_interleave_tmp[even_src];
+        g_fmsx_v9990.vram[dst + 1u] = g_fmsx_v9990.vram[odd_src];
+    }
+}
+
+static void fmsx_v9990_vram_exit_interleaving(void)
+{
+    const unsigned half = FMSX_V9990_VRAM_BYTES >> 1;
+    unsigned even_dst = 0u;
+    unsigned odd_dst = half;
+    unsigned src;
+
+    memcpy(g_fmsx_v9990_vram_interleave_tmp, g_fmsx_v9990.vram + half, half);
+    for (src = 0u; src < half; src += 2u, ++even_dst, ++odd_dst)
+    {
+        g_fmsx_v9990.vram[even_dst] = g_fmsx_v9990.vram[src + 0u];
+        g_fmsx_v9990.vram[odd_dst] = g_fmsx_v9990.vram[src + 1u];
+    }
+    for (src = 0u; src < half; src += 2u, ++even_dst, ++odd_dst)
+    {
+        g_fmsx_v9990.vram[even_dst] = g_fmsx_v9990_vram_interleave_tmp[src + 0u];
+        g_fmsx_v9990.vram[odd_dst] = g_fmsx_v9990_vram_interleave_tmp[src + 1u];
+    }
+}
+
+static void fmsx_v9990_update_vram_interleaving(const char *tag)
+{
+    /*
+     * The physical interleaving experiment regressed boot before UART on real
+     * hardware. Keep the storage linear for now and preserve the stable boot
+     * baseline; renderer/command helpers still provide the logical mapping.
+     */
+    (void) tag;
+    g_fmsx_v9990.vram_interleaved = FALSE;
+}
+
+static unsigned fmsx_v9990_transform_bx(unsigned address)
+{
+    /*
+     * Keep the non-P1 backing store linear end-to-end on the stable hardware
+     * baseline. The virtual-interleaved experiment (`map:vil cpu:vil`) made
+     * the first useful Bx frames of the title/presentation already corrupt,
+     * while not fixing the gameplay holes.
+     */
+    return address & (FMSX_V9990_VRAM_BYTES - 1u);
 }
 
 static unsigned fmsx_v9990_transform_p1(unsigned address)
@@ -3396,21 +4736,14 @@ static unsigned fmsx_v9990_transform_p1(unsigned address)
 
 static unsigned fmsx_v9990_transform_p2(unsigned address)
 {
-    address &= 0x7FFFFu;
-    if (address < 0x78000u)
-    {
-        return fmsx_v9990_transform_bx(address);
-    }
-    if (address < 0x7C000u)
-    {
-        return address - 0x3C000u;
-    }
-    return address;
+    return fmsx_v9990_transform_bx(address);
 }
 
 static TFmsxV9990DisplayMode fmsx_v9990_get_display_mode(void)
 {
     const uint8_t screen_mode_0 = g_fmsx_v9990.regs[FMSX_V9990_REG_SCREEN_MODE_0];
+    const uint8_t screen_mode_1 = g_fmsx_v9990.regs[FMSX_V9990_REG_SCREEN_MODE_1];
+    const boolean csm = fmsx_v9990_is_csm_mode();
 
     switch (screen_mode_0 & 0xC0u)
     {
@@ -3419,7 +4752,7 @@ static TFmsxV9990DisplayMode fmsx_v9990_get_display_mode(void)
     case 0x40u:
         return FMSX_V9990_MODE_P2;
     case 0x80u:
-        if (g_fmsx_v9990.status & 0x04u)
+        if (csm)
         {
             switch (screen_mode_0 & 0x30u)
             {
@@ -3435,7 +4768,16 @@ static TFmsxV9990DisplayMode fmsx_v9990_get_display_mode(void)
             {
             case 0x00u: return FMSX_V9990_MODE_B1;
             case 0x10u: return FMSX_V9990_MODE_B3;
-            case 0x20u: return FMSX_V9990_MODE_B7;
+            case 0x20u:
+                switch (screen_mode_1 & 0x41u)
+                {
+                case 0x01u: return FMSX_V9990_MODE_B5;
+                case 0x41u: return FMSX_V9990_MODE_B6;
+                case 0x00u:
+                case 0x40u:
+                default:
+                    return FMSX_V9990_MODE_B7;
+                }
             default: break;
             }
         }
@@ -3447,14 +4789,30 @@ static TFmsxV9990DisplayMode fmsx_v9990_get_display_mode(void)
     return FMSX_V9990_MODE_P1;
 }
 
+static const char *fmsx_v9990_mode_name(TFmsxV9990DisplayMode mode)
+{
+    switch (mode)
+    {
+    case FMSX_V9990_MODE_P1: return "P1";
+    case FMSX_V9990_MODE_P2: return "P2";
+    case FMSX_V9990_MODE_B0: return "B0";
+    case FMSX_V9990_MODE_B1: return "B1";
+    case FMSX_V9990_MODE_B2: return "B2";
+    case FMSX_V9990_MODE_B3: return "B3";
+    case FMSX_V9990_MODE_B4: return "B4";
+    case FMSX_V9990_MODE_B5: return "B5";
+    case FMSX_V9990_MODE_B6: return "B6";
+    case FMSX_V9990_MODE_B7: return "B7";
+    default:                 return "?";
+    }
+}
+
 static unsigned fmsx_v9990_map_vram_address(unsigned address)
 {
     switch (fmsx_v9990_get_display_mode())
     {
     case FMSX_V9990_MODE_P1:
         return fmsx_v9990_transform_p1(address);
-    case FMSX_V9990_MODE_P2:
-        return fmsx_v9990_transform_p2(address);
     default:
         return fmsx_v9990_transform_bx(address);
     }
@@ -3491,24 +4849,45 @@ static uint8_t fmsx_v9990_read_vram_linear(TFmsxV9990CommandMode mode, unsigned 
     {
         return fmsx_v9990_read_vram_direct(fmsx_v9990_transform_linear_p1(address));
     }
-    return fmsx_v9990_read_vram_bx(address);
+    return fmsx_v9990_read_vram_direct(address);
+}
+
+static unsigned fmsx_v9990_cpu_vram_physical_address(unsigned address)
+{
+    return fmsx_v9990_map_vram_address(address);
 }
 
 static uint8_t fmsx_v9990_read_vram_cpu(unsigned address)
 {
-    return fmsx_v9990_read_vram_direct(fmsx_v9990_map_vram_address(address));
+    const unsigned phys = fmsx_v9990_cpu_vram_physical_address(address);
+    const uint8_t value = fmsx_v9990_read_vram_direct(phys);
+
+    fmsx_v9990_debug_trace_vram_cpu("G9V cpu in", address, phys, value);
+    return value;
 }
 
 static void fmsx_v9990_write_vram_cpu(unsigned address, uint8_t value)
 {
-    g_fmsx_v9990.vram[fmsx_v9990_map_vram_address(address)] = value;
+    const unsigned phys = fmsx_v9990_cpu_vram_physical_address(address);
+    g_fmsx_v9990.vram[phys] = value;
+    fmsx_v9990_debug_trace_vram_cpu("G9V cpu out", address, phys, value);
 }
 
 static uint16_t fmsx_v9990_rgb555_to_rgb565(uint16_t value)
 {
-    const uint16_t r = (uint16_t) (value & 0x1Fu);
-    const uint16_t g = (uint16_t) ((value >> 5) & 0x1Fu);
-    const uint16_t b = (uint16_t) ((value >> 10) & 0x1Fu);
+    /*
+     * WebMSX decodes V9990 15-bit direct color as GRB:
+     *   bits  0.. 4 = blue
+     *   bits  5.. 9 = red
+     *   bits 10..14 = green
+     *
+     * The previous local mapping treated this as RGB555, which preserves
+     * geometry but scrambles colors badly in B1/BD16 demos such as
+     * UNDERWATER.
+     */
+    const uint16_t b = (uint16_t) (value & 0x1Fu);
+    const uint16_t r = (uint16_t) ((value >> 5) & 0x1Fu);
+    const uint16_t g = (uint16_t) ((value >> 10) & 0x1Fu);
     const uint16_t g6 = (uint16_t) ((g << 1) | (g >> 4));
     return (uint16_t) ((r << 11) | (g6 << 5) | b);
 }
@@ -3559,14 +4938,7 @@ static uint16_t fmsx_v9990_safe_index_color(uint8_t index, uint8_t mode_kind)
 
 static boolean fmsx_v9990_is_bx_hires(void)
 {
-    switch (fmsx_v9990_get_display_mode())
-    {
-    case FMSX_V9990_MODE_B3:
-    case FMSX_V9990_MODE_B7:
-        return TRUE;
-    default:
-        return FALSE;
-    }
+    return (fmsx_v9990_get_active_display_width() > 512u) ? TRUE : FALSE;
 }
 
 static uint8_t fmsx_v9990_palette_index_bp2(unsigned src_x, uint8_t index)
@@ -3608,9 +4980,64 @@ static uint16_t fmsx_v9990_decode_bd8_pixel(uint8_t value)
     return fmsx_v9990_rgb555_to_rgb565(value15);
 }
 
+static int fmsx_v9990_signed6(uint8_t value)
+{
+    return (value > 31u) ? ((int) value - 64) : (int) value;
+}
+
+static uint16_t fmsx_v9990_clamp5_to_rgb565(int r, int g, int b)
+{
+    uint16_t rr;
+    uint16_t gg;
+    uint16_t bb;
+    uint16_t g6;
+
+    if (r < 0) r = 0; else if (r > 31) r = 31;
+    if (g < 0) g = 0; else if (g > 31) g = 31;
+    if (b < 0) b = 0; else if (b > 31) b = 31;
+
+    rr = (uint16_t) r;
+    gg = (uint16_t) g;
+    bb = (uint16_t) b;
+    g6 = (uint16_t) ((gg << 1) | (gg >> 4));
+    return (uint16_t) ((rr << 11) | (g6 << 5) | bb);
+}
+
+static uint16_t fmsx_v9990_decode_byuv_pixel(uint8_t y_value, uint16_t chroma)
+{
+    const int y = (int) (y_value >> 3);
+    const int j = fmsx_v9990_signed6((uint8_t) ((chroma >> 6) & 0x3Fu));
+    const int k = fmsx_v9990_signed6((uint8_t) (chroma & 0x3Fu));
+    const int r = y + j;
+    const int g = (5 * y - (j << 1) - k) >> 2;
+    const int b = y + k;
+    return fmsx_v9990_clamp5_to_rgb565(r, g, b);
+}
+
+static uint16_t fmsx_v9990_decode_byjk_pixel(uint8_t y_value, uint16_t chroma)
+{
+    const int y = (int) (y_value >> 3);
+    const int j = fmsx_v9990_signed6((uint8_t) ((chroma >> 6) & 0x3Fu));
+    const int k = fmsx_v9990_signed6((uint8_t) (chroma & 0x3Fu));
+    const int r = y + j;
+    const int g = y + k;
+    const int b = (5 * y - (j << 1) - k) >> 2;
+    return fmsx_v9990_clamp5_to_rgb565(r, g, b);
+}
+
+static unsigned fmsx_v9990_palette_offset_b_from_control(uint8_t palette_control)
+{
+    return (unsigned) ((palette_control & 0x0Cu) << 2);
+}
+
 static unsigned fmsx_v9990_get_palette_offset(void)
 {
     return g_fmsx_v9990.regs[FMSX_V9990_REG_PALETTE_CONTROL] & 0x0Fu;
+}
+
+static unsigned fmsx_v9990_get_palette_offset_from_control(uint8_t palette_control)
+{
+    return (unsigned) (palette_control & 0x0Fu);
 }
 
 static uint16_t fmsx_v9990_backdrop_color(void)
@@ -3717,6 +5144,8 @@ static unsigned fmsx_v9990_get_line_width(void)
     case FMSX_V9990_MODE_P2:
     case FMSX_V9990_MODE_B3: return 640u;
     case FMSX_V9990_MODE_B4: return 853u;
+    case FMSX_V9990_MODE_B5:
+    case FMSX_V9990_MODE_B6: return 640u;
     case FMSX_V9990_MODE_B7: return 1280u;
     default:                 return 256u;
     }
@@ -3733,6 +5162,8 @@ static unsigned fmsx_v9990_get_active_display_width(void)
     case FMSX_V9990_MODE_B0: return 192u;
     case FMSX_V9990_MODE_B2: return 384u;
     case FMSX_V9990_MODE_B4: return 768u;
+    case FMSX_V9990_MODE_B5:
+    case FMSX_V9990_MODE_B6: return 640u;
     case FMSX_V9990_MODE_B7: return 1024u;
     default:                 return fmsx_v9990_image_width();
     }
@@ -3740,7 +5171,19 @@ static unsigned fmsx_v9990_get_active_display_width(void)
 
 static unsigned fmsx_v9990_frame_height(void)
 {
-    return 212u;
+    switch (fmsx_v9990_get_display_mode())
+    {
+    case FMSX_V9990_MODE_B0:
+    case FMSX_V9990_MODE_B2:
+    case FMSX_V9990_MODE_B4:
+        return 240u;
+    case FMSX_V9990_MODE_B5:
+        return 400u;
+    case FMSX_V9990_MODE_B6:
+        return 480u;
+    default:
+        return 212u;
+    }
 }
 
 static void fmsx_v9990_reset_scroll_line_state(void)
@@ -3748,19 +5191,24 @@ static void fmsx_v9990_reset_scroll_line_state(void)
     unsigned y;
     g_fmsx_v9990.scroll_ay_high_frame = g_fmsx_v9990.regs[FMSX_V9990_REG_SCROLL_CONTROL_AY1];
     g_fmsx_v9990.scroll_by_high_frame = g_fmsx_v9990.regs[FMSX_V9990_REG_SCROLL_CONTROL_BY1];
+    g_fmsx_v9990.control_frame = g_fmsx_v9990.regs[FMSX_V9990_REG_CONTROL];
     g_fmsx_v9990.display_enabled_frame =
-        ((g_fmsx_v9990.regs[FMSX_V9990_REG_CONTROL] & 0x80u) != 0u) ? TRUE : FALSE;
+        ((g_fmsx_v9990.control_frame & 0x80u) != 0u) ? TRUE : FALSE;
+    g_fmsx_v9990.sprites_enabled_frame =
+        ((g_fmsx_v9990.control_frame & 0x40u) == 0u) ? TRUE : FALSE;
 
     const unsigned scroll_ay = fmsx_v9990_get_scroll_ay();
     const unsigned scroll_by = fmsx_v9990_get_scroll_by();
     const unsigned scroll_ax = fmsx_v9990_get_scroll_ax();
     const unsigned scroll_bx = fmsx_v9990_get_scroll_bx();
+    const int16_t scroll_ay_frame = (int16_t) scroll_ay;
+    const int16_t scroll_by_frame = (int16_t) scroll_by;
     const unsigned height = fmsx_v9990_frame_height();
     const uint8_t priority = g_fmsx_v9990.regs[FMSX_V9990_REG_PRIORITY_CONTROL];
     const uint8_t palette_control = g_fmsx_v9990.regs[FMSX_V9990_REG_PALETTE_CONTROL];
     const uint8_t backdrop_color = g_fmsx_v9990.regs[FMSX_V9990_REG_BACK_DROP_COLOR];
     const uint8_t ay1 = g_fmsx_v9990.scroll_ay_high_frame;
-    const uint8_t by1 = (uint8_t) (g_fmsx_v9990.regs[FMSX_V9990_REG_SCROLL_CONTROL_BY1] & 0xC0u);
+    const uint8_t by1 = g_fmsx_v9990.regs[FMSX_V9990_REG_SCROLL_CONTROL_BY1];
 
     for (y = 0u; y < height; ++y)
     {
@@ -3768,12 +5216,14 @@ static void fmsx_v9990_reset_scroll_line_state(void)
         g_fmsx_v9990.scroll_by_lines[y] = (uint16_t) scroll_by;
         g_fmsx_v9990.scroll_ax_lines[y] = (uint16_t) scroll_ax;
         g_fmsx_v9990.scroll_bx_lines[y] = (uint16_t) scroll_bx;
+        g_fmsx_v9990.scroll_ay_frame_lines[y] = scroll_ay_frame;
+        g_fmsx_v9990.scroll_by_frame_lines[y] = scroll_by_frame;
         g_fmsx_v9990.display_ya_lines[y] = (uint16_t) y;
         g_fmsx_v9990.display_yb_lines[y] = (uint16_t) y;
         g_fmsx_v9990.priority_control_lines[y] = priority;
         g_fmsx_v9990.palette_control_lines[y] = palette_control;
         g_fmsx_v9990.backdrop_color_lines[y] = backdrop_color;
-        g_fmsx_v9990.control_lines[y] = g_fmsx_v9990.regs[FMSX_V9990_REG_CONTROL];
+        g_fmsx_v9990.control_lines[y] = g_fmsx_v9990.control_frame;
         g_fmsx_v9990.screen_mode_0_lines[y] = g_fmsx_v9990.regs[FMSX_V9990_REG_SCREEN_MODE_0];
         g_fmsx_v9990.screen_mode_1_lines[y] = g_fmsx_v9990.regs[FMSX_V9990_REG_SCREEN_MODE_1];
         g_fmsx_v9990.scroll_ay1_lines[y] = ay1;
@@ -3794,14 +5244,16 @@ static void fmsx_v9990_apply_line_state_from(unsigned split)
     const uint16_t scroll_by = (uint16_t) fmsx_v9990_get_scroll_by();
     const uint16_t scroll_ax = (uint16_t) fmsx_v9990_get_scroll_ax();
     const uint16_t scroll_bx = (uint16_t) fmsx_v9990_get_scroll_bx();
+    const int16_t scroll_ay_frame = (int16_t) ((int) scroll_ay - (int) split);
+    const int16_t scroll_by_frame = (int16_t) ((int) scroll_by - (int) split);
     const uint8_t priority = g_fmsx_v9990.regs[FMSX_V9990_REG_PRIORITY_CONTROL];
     const uint8_t palette_control = g_fmsx_v9990.regs[FMSX_V9990_REG_PALETTE_CONTROL];
     const uint8_t backdrop_color = g_fmsx_v9990.regs[FMSX_V9990_REG_BACK_DROP_COLOR];
-    const uint8_t control = g_fmsx_v9990.regs[FMSX_V9990_REG_CONTROL];
+    const uint8_t control = g_fmsx_v9990.control_frame;
     const uint8_t sm0 = g_fmsx_v9990.regs[FMSX_V9990_REG_SCREEN_MODE_0];
     const uint8_t sm1 = g_fmsx_v9990.regs[FMSX_V9990_REG_SCREEN_MODE_1];
     const uint8_t ay1 = g_fmsx_v9990.scroll_ay_high_frame;
-    const uint8_t by1 = (uint8_t) (g_fmsx_v9990.regs[FMSX_V9990_REG_SCROLL_CONTROL_BY1] & 0xC0u);
+    const uint8_t by1 = g_fmsx_v9990.regs[FMSX_V9990_REG_SCROLL_CONTROL_BY1];
 
     if (split >= height)
     {
@@ -3814,6 +5266,8 @@ static void fmsx_v9990_apply_line_state_from(unsigned split)
         g_fmsx_v9990.scroll_by_lines[y] = scroll_by;
         g_fmsx_v9990.scroll_ax_lines[y] = scroll_ax;
         g_fmsx_v9990.scroll_bx_lines[y] = scroll_bx;
+        g_fmsx_v9990.scroll_ay_frame_lines[y] = scroll_ay_frame;
+        g_fmsx_v9990.scroll_by_frame_lines[y] = scroll_by_frame;
         g_fmsx_v9990.display_ya_lines[y] = (uint16_t) (y - split);
         g_fmsx_v9990.display_yb_lines[y] = (uint16_t) (y - split);
         g_fmsx_v9990.priority_control_lines[y] = priority;
@@ -3906,6 +5360,10 @@ static unsigned fmsx_v9990_get_active_display_x(TFmsxV9990DisplayMode mode)
     case FMSX_V9990_MODE_B4:
         x = x_ticks / 3u;
         break;
+    case FMSX_V9990_MODE_B5:
+    case FMSX_V9990_MODE_B6:
+        x = (x_ticks * 640u) / (right - left);
+        break;
     case FMSX_V9990_MODE_B7:
         x = x_ticks / 2u;
         break;
@@ -3940,12 +5398,14 @@ static void fmsx_v9990_note_scroll_ay_low_write(void)
     const unsigned split = fmsx_v9990_get_active_display_line();
     const unsigned height = fmsx_v9990_frame_height();
     const uint16_t scroll_ay = (uint16_t) fmsx_v9990_get_scroll_ay();
+    const int16_t scroll_ay_frame = (int16_t) ((int) scroll_ay - (int) split);
 
-    fmsx_v9990_record_raster_event(FMSX_V9990_RASTER_EVENT_AY0, scroll_ay);
+    fmsx_v9990_record_raster_event(FMSX_V9990_RASTER_EVENT_AY0, (uint16_t) scroll_ay_frame);
 
     for (y = (split + 1u); y < height; ++y)
     {
         g_fmsx_v9990.scroll_ay_lines[y] = scroll_ay;
+        g_fmsx_v9990.scroll_ay_frame_lines[y] = scroll_ay_frame;
         g_fmsx_v9990.display_ya_lines[y] = (uint16_t) (y - split);
     }
 
@@ -3958,12 +5418,14 @@ static void fmsx_v9990_note_scroll_by_low_write(void)
     const unsigned split = fmsx_v9990_get_active_display_line();
     const unsigned height = fmsx_v9990_frame_height();
     const uint16_t scroll_by = (uint16_t) fmsx_v9990_get_scroll_by();
+    const int16_t scroll_by_frame = (int16_t) ((int) scroll_by - (int) split);
 
-    fmsx_v9990_record_raster_event(FMSX_V9990_RASTER_EVENT_BY0, scroll_by);
+    fmsx_v9990_record_raster_event(FMSX_V9990_RASTER_EVENT_BY0, (uint16_t) scroll_by_frame);
 
     for (y = (split + 1u); y < height; ++y)
     {
         g_fmsx_v9990.scroll_by_lines[y] = scroll_by;
+        g_fmsx_v9990.scroll_by_frame_lines[y] = scroll_by_frame;
         g_fmsx_v9990.display_yb_lines[y] = (uint16_t) (y - split);
     }
 
@@ -3972,11 +5434,27 @@ static void fmsx_v9990_note_scroll_by_low_write(void)
 
 static void fmsx_v9990_note_scroll_ay_high_write(void)
 {
+    unsigned y;
+    const unsigned split = fmsx_v9990_get_active_display_line();
+    const unsigned height = fmsx_v9990_frame_height();
+    const uint8_t ay1_live = g_fmsx_v9990.regs[FMSX_V9990_REG_SCROLL_CONTROL_AY1];
+    const uint8_t ay1_frame =
+        (uint8_t) ((g_fmsx_v9990.scroll_ay_high_frame & 0x1Fu) | (ay1_live & 0xC0u));
+
     /*
-     * openMSX/WebMSX do not apply AY1 high scroll / roll-mask changes to the
-     * current active frame. They are latched on frame start. Keep the new raw
-     * register value for the next frame only.
+     * WebMSX defers SCAY12-8 to the next active-display start. During the
+     * current active frame, only the live scroll mask bits (R512/R256) take
+     * effect. Recomputing scrollYOffsetFrame here was splitting the frame with
+     * the wrong vertical address source.
      */
+    fmsx_v9990_record_raster_event(FMSX_V9990_RASTER_EVENT_AY1, ay1_frame);
+
+    for (y = (split + 1u); y < height; ++y)
+    {
+        g_fmsx_v9990.scroll_ay1_lines[y] = ay1_frame;
+    }
+
+    fmsx_v9990_debug_trace_scroll_split("G9Y ay1", split, ay1_frame);
 }
 
 static void fmsx_v9990_note_scroll_by_high_write(void)
@@ -3984,17 +5462,23 @@ static void fmsx_v9990_note_scroll_by_high_write(void)
     unsigned y;
     const unsigned split = fmsx_v9990_get_active_display_line();
     const unsigned height = fmsx_v9990_frame_height();
-    const uint8_t plane_control = (uint8_t) (g_fmsx_v9990.regs[FMSX_V9990_REG_SCROLL_CONTROL_BY1] & 0xC0u);
+    const uint8_t by1_live = g_fmsx_v9990.regs[FMSX_V9990_REG_SCROLL_CONTROL_BY1];
+    const uint8_t by1_frame =
+        (uint8_t) ((g_fmsx_v9990.scroll_by_high_frame & 0x01u) | (by1_live & 0xC0u));
 
-    for (y = split; y < height; ++y)
+    /*
+     * WebMSX applies *SDA/*SDB immediately, but SCBY8 is deferred until the
+     * next active-display start. Keep the current frame on the old vertical
+     * base and only expose the plane-enable bits right away.
+     */
+    fmsx_v9990_record_raster_event(FMSX_V9990_RASTER_EVENT_BY1, by1_frame);
+
+    for (y = (split + 1u); y < height; ++y)
     {
-        /*
-         * In WebMSX, BY1 low scroll bit is only committed at vertical blank,
-         * but *SDA/*SDB are immediate. Keep only the plane-enable bits live
-         * for the remainder of the current frame.
-         */
-        g_fmsx_v9990.scroll_by1_lines[y] = plane_control;
+        g_fmsx_v9990.scroll_by1_lines[y] = by1_frame;
     }
+
+    fmsx_v9990_debug_trace_scroll_split("G9Y by1", split, by1_frame);
 }
 
 static void fmsx_v9990_note_scroll_ax_write(void)
@@ -4055,7 +5539,9 @@ static void fmsx_v9990_note_palette_control_write(void)
     const unsigned height = fmsx_v9990_frame_height();
     const uint8_t palette_control = g_fmsx_v9990.regs[FMSX_V9990_REG_PALETTE_CONTROL];
 
-    for (y = split; y < height; ++y)
+    fmsx_v9990_record_raster_event(FMSX_V9990_RASTER_EVENT_PALETTE_CONTROL, palette_control);
+
+    for (y = (split + 1u); y < height; ++y)
     {
         g_fmsx_v9990.palette_control_lines[y] = palette_control;
     }
@@ -4070,7 +5556,9 @@ static void fmsx_v9990_note_backdrop_color_write(void)
     const unsigned height = fmsx_v9990_frame_height();
     const uint8_t backdrop_color = g_fmsx_v9990.regs[FMSX_V9990_REG_BACK_DROP_COLOR];
 
-    for (y = split; y < height; ++y)
+    fmsx_v9990_record_raster_event(FMSX_V9990_RASTER_EVENT_BACKDROP_COLOR, backdrop_color);
+
+    for (y = (split + 1u); y < height; ++y)
     {
         g_fmsx_v9990.backdrop_color_lines[y] = backdrop_color;
     }
@@ -4085,13 +5573,14 @@ static boolean fmsx_v9990_is_even_odd_enabled(void)
 
 static boolean fmsx_v9990_sprites_enabled(void)
 {
-    return (g_fmsx_v9990.regs[FMSX_V9990_REG_CONTROL] & 0x40u) ? FALSE : TRUE;
+    return g_fmsx_v9990.sprites_enabled_frame ? TRUE : FALSE;
 }
 
 static unsigned fmsx_v9990_bytes_per_line(unsigned image_width, uint8_t *mode_kind)
 {
     const uint8_t sm0 = g_fmsx_v9990.regs[FMSX_V9990_REG_SCREEN_MODE_0];
     const uint8_t pal_ctrl = g_fmsx_v9990.regs[FMSX_V9990_REG_PALETTE_CONTROL];
+    const uint8_t clrm = sm0 & 0x03u;
 
     if ((sm0 & 0xC0u) != 0x80u)
     {
@@ -4099,7 +5588,7 @@ static unsigned fmsx_v9990_bytes_per_line(unsigned image_width, uint8_t *mode_ki
         return 0u;
     }
 
-    switch (sm0 & 0x03u)
+    switch (clrm)
     {
     case 0u:
         *mode_kind = 1u; /* BP2 */
@@ -4108,17 +5597,48 @@ static unsigned fmsx_v9990_bytes_per_line(unsigned image_width, uint8_t *mode_ki
         *mode_kind = 2u; /* BP4 */
         return image_width >> 1;
     case 2u:
-        if ((pal_ctrl & 0xC0u) == 0x00u)
+        /*
+         * WebMSX/openMSX derive CLRM from SCREEN_MODE_0 and only consult
+         * PALETTE_CONTROL to distinguish BP6/BD8/BYJK/BYUV families when
+         * CLRM==2. Using PALETTE_CONTROL as if it contained CLRM corrupts the
+         * Bx title/presentation before gameplay even starts.
+         */
+        switch (pal_ctrl >> 6)
         {
+        case 0u:
             *mode_kind = 3u; /* BP6 */
-        }
-        else
-        {
-            *mode_kind = 4u; /* direct 8-bit fallback */
+            break;
+        case 1u:
+            *mode_kind = 4u; /* BD8 */
+            break;
+        case 2u:
+        case 3u:
+            switch (pal_ctrl >> 5)
+            {
+            case 0x04u:
+                *mode_kind = 6u; /* BYJK */
+                break;
+            case 0x05u:
+                *mode_kind = 7u; /* BYJKP */
+                break;
+            case 0x06u:
+                *mode_kind = 8u; /* BYUV */
+                break;
+            case 0x07u:
+                *mode_kind = 9u; /* BYUVP */
+                break;
+            default:
+                *mode_kind = 0u;
+                return 0u;
+            }
+            break;
+        default:
+            *mode_kind = 0u;
+            return 0u;
         }
         return image_width;
     case 3u:
-        *mode_kind = 5u; /* direct 16-bit fallback */
+        *mode_kind = 5u; /* BD16 */
         return image_width << 1;
     default:
         *mode_kind = 0u;
@@ -4163,6 +5683,43 @@ static uint16_t fmsx_v9990_decode_bx_pixel(unsigned src_x, unsigned src_y, unsig
             | ((uint16_t) fmsx_v9990_read_vram_bx(addr + 1u) << 8);
         return fmsx_v9990_rgb555_to_rgb565(value);
     }
+    case 6u:
+    case 7u:
+    case 8u:
+    case 9u:
+    {
+        const unsigned base_addr = line_base + (src_x & ~0x03u);
+        const uint8_t v1 = fmsx_v9990_read_vram_bx(base_addr + 0u);
+        const uint8_t v2 = fmsx_v9990_read_vram_bx(base_addr + 1u);
+        const uint8_t v3 = fmsx_v9990_read_vram_bx(base_addr + 2u);
+        const uint8_t v4 = fmsx_v9990_read_vram_bx(base_addr + 3u);
+        const uint16_t chroma = (uint16_t) (((v4 & 0x07u) << 9)
+                                          | ((v3 & 0x07u) << 6)
+                                          | ((v2 & 0x07u) << 3)
+                                          | (v1 & 0x07u));
+        uint8_t value = v1;
+
+        switch (src_x & 0x03u)
+        {
+        case 1u: value = v2; break;
+        case 2u: value = v3; break;
+        case 3u: value = v4; break;
+        default: break;
+        }
+
+        if ((mode_kind == 7u || mode_kind == 9u) && (value & 0x08u))
+        {
+            const unsigned pal_b = fmsx_v9990_palette_offset_b_from_control(g_fmsx_v9990.regs[FMSX_V9990_REG_PALETTE_CONTROL]);
+            const unsigned pal_even = (image_width > 512u) ? (pal_b & ~0x20u) : pal_b;
+            const unsigned pal_odd = (image_width > 512u) ? (pal_b | 0x20u) : pal_b;
+            const unsigned pal = (src_x & 1u) ? pal_odd : pal_even;
+            return fmsx_v9990_palette_color((uint8_t) (pal | (value >> 4)));
+        }
+
+        return (mode_kind == 6u || mode_kind == 7u)
+            ? fmsx_v9990_decode_byjk_pixel(value, chroma)
+            : fmsx_v9990_decode_byuv_pixel(value, chroma);
+    }
     default:
         (void) image_width;
         return 0u;
@@ -4174,16 +5731,16 @@ static uint8_t fmsx_v9990_sample_p1_nibble(unsigned display_x, unsigned display_
     const unsigned cell_x = (display_x & 511u) >> 3;
     const unsigned cell_y = (display_y & 511u) >> 3;
     const unsigned name_addr = name_base + (((cell_y * 64u) + cell_x) << 1);
-    const unsigned pattern_num =
-        ((unsigned) fmsx_v9990_read_vram_p1(name_addr + 0u)
-      | ((unsigned) fmsx_v9990_read_vram_p1(name_addr + 1u) << 8)) & 0x1FFFu;
+    const unsigned name =
+        (unsigned) fmsx_v9990_read_vram_p1(name_addr + 0u)
+      | ((unsigned) fmsx_v9990_read_vram_p1(name_addr + 1u) << 8);
     const unsigned within_x = display_x & 7u;
     const unsigned within_y = display_y & 7u;
     const unsigned pattern_addr =
         pattern_base
-      + ((pattern_num % 32u) * 4u)
-      + ((pattern_num / 32u) * 1024u)
-      + (within_y * 128u)
+      + ((name >> 5) << 10)
+      + ((name & 0x1Fu) << 2)
+      + (within_y << 7)
       + (within_x >> 1);
     const uint8_t data = fmsx_v9990_read_vram_p1(pattern_addr);
     return (within_x & 1u) ? (data & 0x0Fu) : (data >> 4);
@@ -4204,7 +5761,17 @@ static void fmsx_v9990_render_p1_plane_pass(uint16_t *dst,
                                             boolean mark_foreground,
                                             unsigned *lit_counter)
 {
-    unsigned x;
+    unsigned blocks;
+    unsigned block;
+    unsigned name_pos_base;
+    unsigned name_pos;
+    unsigned patt_pos_base;
+    int buff_pos;
+
+    (void) info;
+    (void) backdrop;
+    (void) draw_backdrop;
+    (void) mark_foreground;
 
     if (start_x >= end_x || start_x >= width)
     {
@@ -4215,26 +5782,58 @@ static void fmsx_v9990_render_p1_plane_pass(uint16_t *dst,
         end_x = width;
     }
 
-    for (x = start_x; x < end_x; ++x)
-    {
-        const uint8_t nibble =
-            fmsx_v9990_sample_p1_nibble(display_x + (x - start_x), display_y, name_base, pattern_base);
+    /*
+     * WebMSX PP1A/PP1B render by names, not by per-pixel sampling:
+     *   - scrollX decides initial byte/nibble phase
+     *   - 32 names per line, or 33 when scrollX is misaligned
+     *   - name table is read raw from VRAM
+     *   - pattern data is read raw from VRAM
+     *
+     * The previous per-pixel sampler was semantically close, but not literal,
+     * and the title screen corruption suggests the remaining divergence is in
+     * this fetch path itself.
+     */
+    blocks = (((end_x - start_x) + (display_x & 7u)) + 7u) >> 3;
+    name_pos_base = name_base + (((display_y >> 3) << 6) << 1);
+    name_pos = ((display_x >> 3) << 1) & 127u;
+    patt_pos_base = pattern_base + ((display_y & 7u) << 7);
+    buff_pos = (int) start_x - (int) (display_x & 7u);
 
-        if (nibble != 0u)
+    for (block = 0u; block < blocks; ++block)
+    {
+        const unsigned name =
+            (unsigned) fmsx_v9990_read_vram_direct(name_pos_base + name_pos + 0u)
+          | ((unsigned) fmsx_v9990_read_vram_direct(name_pos_base + name_pos + 1u) << 8);
+        unsigned patt_pos = patt_pos_base + ((name >> 5) << 10) + ((name & 0x1Fu) << 2);
+        unsigned i;
+
+        name_pos = (name_pos + 2u) & 127u;
+
+        for (i = 0u; i < 4u; ++i)
         {
-            dst[x] = fmsx_v9990_palette_color((uint8_t) (palette_base + nibble));
-            if (mark_foreground)
+            const uint8_t value = fmsx_v9990_read_vram_direct(patt_pos++);
+            const uint8_t hi = (uint8_t) (value >> 4);
+            const uint8_t lo = (uint8_t) (value & 0x0Fu);
+
+            if (buff_pos >= (int) start_x && buff_pos < (int) end_x && hi != 0u)
             {
-                info[x] = 1u;
+                dst[buff_pos] = fmsx_v9990_palette_color((uint8_t) (palette_base + hi));
+                if (lit_counter != 0)
+                {
+                    ++*lit_counter;
+                }
             }
-            if (lit_counter != 0)
+            ++buff_pos;
+
+            if (buff_pos >= (int) start_x && buff_pos < (int) end_x && lo != 0u)
             {
-                ++*lit_counter;
+                dst[buff_pos] = fmsx_v9990_palette_color((uint8_t) (palette_base + lo));
+                if (lit_counter != 0)
+                {
+                    ++*lit_counter;
+                }
             }
-        }
-        else if (draw_backdrop)
-        {
-            dst[x] = backdrop;
+            ++buff_pos;
         }
     }
 }
@@ -4253,14 +5852,11 @@ static void fmsx_v9990_render_p1_segment(uint16_t *dst,
     const unsigned pal_a_base = (palette_control & 0x03u) << 4;
     const unsigned pal_b_base = (palette_control & 0x0Cu) << 2;
     const uint16_t backdrop = fmsx_v9990_palette_color(state->backdrop_color);
-    const unsigned roll_mask = fmsx_v9990_get_roll_mask_from_ay1(state->ay1, 0x01FFu);
     const unsigned prio_y = ((state->priority & 0x0Cu) == 0u) ? 256u : ((state->priority & 0x0Cu) << 4);
-    const unsigned prio_x_base = ((state->priority & 0x03u) == 0u) ? 256u : ((state->priority & 0x03u) << 6);
-    const unsigned prio_x = (display_y >= prio_y) ? 0u : prio_x_base;
-    const unsigned split_x = (prio_x < width) ? prio_x : width;
-    const unsigned scroll_ay_base = state->scroll_ay & ~roll_mask & 0x01FFu;
-    const unsigned display_ay = scroll_ay_base + ((state->display_ya + state->scroll_ay) & roll_mask);
-    const unsigned display_by = (state->display_yb + state->scroll_by) & 0x01FFu;
+    const boolean plane_a_has_priority = (display_y < prio_y) ? TRUE : FALSE;
+    const unsigned scroll_y_max = (state->ay1 & 0x80u) ? 0x01FFu : ((state->ay1 & 0x40u) ? 0x00FFu : 0x01FFu);
+    const unsigned display_ay = (unsigned) (((int) display_y + (int) state->scroll_ay_frame) & (int) scroll_y_max);
+    const unsigned display_by = (unsigned) (((int) display_y + (int) state->scroll_by_frame) & 0x01FF);
     const boolean plane_a_enabled = ((state->by1 & 0x80u) == 0u) ? TRUE : FALSE;
     const boolean plane_b_enabled = ((state->by1 & 0x40u) == 0u) ? TRUE : FALSE;
     unsigned x;
@@ -4279,44 +5875,47 @@ static void fmsx_v9990_render_p1_segment(uint16_t *dst,
         dst[x] = backdrop;
     }
 
-    if (plane_b_enabled)
+    if (plane_a_has_priority)
     {
-        fmsx_v9990_render_p1_plane_pass(
-            dst, info, width,
-            start_x, (end_x < split_x) ? end_x : split_x,
-            (state->scroll_bx + start_x) & 511u, display_by,
-            0x7E000u, 0x40000u, pal_b_base, backdrop,
-            FALSE, FALSE, plane_b_lit);
+        if (plane_b_enabled)
+        {
+            fmsx_v9990_render_p1_plane_pass(
+                dst, info, width,
+                start_x, end_x,
+                (state->scroll_bx + start_x) & 511u, display_by,
+                0x7E000u, 0x40000u, pal_b_base, backdrop,
+                FALSE, FALSE, plane_b_lit);
+        }
+        if (plane_a_enabled)
+        {
+            fmsx_v9990_render_p1_plane_pass(
+                dst, info, width,
+                start_x, end_x,
+                (state->scroll_ax + start_x) & 511u, display_ay,
+                0x7C000u, 0x00000u, pal_a_base, backdrop,
+                FALSE, TRUE, plane_a_lit);
+        }
     }
-    if (plane_a_enabled)
+    else
     {
-        const unsigned seg_start = (start_x > split_x) ? start_x : split_x;
-        fmsx_v9990_render_p1_plane_pass(
-            dst, info, width,
-            seg_start, end_x,
-            (state->scroll_ax + seg_start) & 511u, display_ay,
-            0x7C000u, 0x00000u, pal_a_base, backdrop,
-            FALSE, FALSE, plane_a_lit);
-    }
-
-    if (plane_a_enabled)
-    {
-        fmsx_v9990_render_p1_plane_pass(
-            dst, info, width,
-            start_x, (end_x < split_x) ? end_x : split_x,
-            (state->scroll_ax + start_x) & 511u, display_ay,
-            0x7C000u, 0x00000u, pal_a_base, backdrop,
-            FALSE, TRUE, plane_a_lit);
-    }
-    if (plane_b_enabled)
-    {
-        const unsigned seg_start = (start_x > split_x) ? start_x : split_x;
-        fmsx_v9990_render_p1_plane_pass(
-            dst, info, width,
-            seg_start, end_x,
-            (state->scroll_bx + seg_start) & 511u, display_by,
-            0x7E000u, 0x40000u, pal_b_base, backdrop,
-            FALSE, TRUE, plane_b_lit);
+        if (plane_a_enabled)
+        {
+            fmsx_v9990_render_p1_plane_pass(
+                dst, info, width,
+                start_x, end_x,
+                (state->scroll_ax + start_x) & 511u, display_ay,
+                0x7C000u, 0x00000u, pal_a_base, backdrop,
+                FALSE, FALSE, plane_a_lit);
+        }
+        if (plane_b_enabled)
+        {
+            fmsx_v9990_render_p1_plane_pass(
+                dst, info, width,
+                start_x, end_x,
+                (state->scroll_bx + start_x) & 511u, display_by,
+                0x7E000u, 0x40000u, pal_b_base, backdrop,
+                FALSE, TRUE, plane_b_lit);
+        }
     }
 }
 
@@ -4324,15 +5923,20 @@ static void fmsx_v9990_apply_p1_raster_event(TFmsxV9990P1LineState *state,
                                              const TFmsxV9990RasterEvent *event,
                                              unsigned line_y)
 {
+    (void) line_y;
     switch ((TFmsxV9990RasterEventKind) event->kind)
     {
     case FMSX_V9990_RASTER_EVENT_AY0:
-        state->scroll_ay = event->value;
-        state->display_ya = (uint16_t) (line_y - (unsigned) event->y);
+        state->scroll_ay_frame = (int16_t) event->value;
         break;
     case FMSX_V9990_RASTER_EVENT_BY0:
-        state->scroll_by = event->value;
-        state->display_yb = (uint16_t) (line_y - (unsigned) event->y);
+        state->scroll_by_frame = (int16_t) event->value;
+        break;
+    case FMSX_V9990_RASTER_EVENT_AY1:
+        state->ay1 = (uint8_t) event->value;
+        break;
+    case FMSX_V9990_RASTER_EVENT_BY1:
+        state->by1 = (uint8_t) event->value;
         break;
     case FMSX_V9990_RASTER_EVENT_AX:
         state->scroll_ax = event->value;
@@ -4342,6 +5946,40 @@ static void fmsx_v9990_apply_p1_raster_event(TFmsxV9990P1LineState *state,
         break;
     case FMSX_V9990_RASTER_EVENT_PRIORITY:
         state->priority = (uint8_t) event->value;
+        break;
+    case FMSX_V9990_RASTER_EVENT_BY1_PLANES:
+        state->by1 = (uint8_t) ((state->by1 & ~0xC0u) | ((uint8_t) event->value & 0xC0u));
+        break;
+    case FMSX_V9990_RASTER_EVENT_PALETTE_CONTROL:
+        state->palette_control = (uint8_t) event->value;
+        break;
+    case FMSX_V9990_RASTER_EVENT_BACKDROP_COLOR:
+        state->backdrop_color = (uint8_t) event->value;
+        break;
+    default:
+        break;
+    }
+}
+
+static void fmsx_v9990_apply_bx_raster_event(TFmsxV9990BxLineState *state,
+                                             const TFmsxV9990RasterEvent *event)
+{
+    switch ((TFmsxV9990RasterEventKind) event->kind)
+    {
+    case FMSX_V9990_RASTER_EVENT_AY0:
+        state->scroll_ay_frame = (int16_t) event->value;
+        break;
+    case FMSX_V9990_RASTER_EVENT_AY1:
+        state->ay1 = (uint8_t) event->value;
+        break;
+    case FMSX_V9990_RASTER_EVENT_AX:
+        state->scroll_ax = event->value;
+        break;
+    case FMSX_V9990_RASTER_EVENT_PALETTE_CONTROL:
+        state->palette_control = (uint8_t) event->value;
+        break;
+    case FMSX_V9990_RASTER_EVENT_BACKDROP_COLOR:
+        state->backdrop_color = (uint8_t) event->value;
         break;
     default:
         break;
@@ -4353,15 +5991,15 @@ static uint8_t fmsx_v9990_sample_p2_nibble(unsigned display_x, unsigned display_
     const unsigned cell_x = (display_x & 1023u) >> 3;
     const unsigned cell_y = (display_y & 511u) >> 3;
     const unsigned name_addr = 0x7C000u + (((cell_y * 128u) + cell_x) << 1);
-    const unsigned pattern_num =
-        ((unsigned) fmsx_v9990_read_vram_direct(name_addr + 0u)
-      | ((unsigned) fmsx_v9990_read_vram_direct(name_addr + 1u) << 8)) & 0x1FFFu;
+    const unsigned name =
+        (unsigned) fmsx_v9990_read_vram_direct(name_addr + 0u)
+      | ((unsigned) fmsx_v9990_read_vram_direct(name_addr + 1u) << 8);
     const unsigned within_x = display_x & 7u;
     const unsigned within_y = display_y & 7u;
     const unsigned pattern_addr =
-        ((pattern_num % 64u) * 4u)
-      + ((pattern_num / 64u) * 2048u)
-      + (within_y * 256u)
+        ((name >> 6) << 11)
+      + ((name & 0x3Fu) << 2)
+      + (within_y << 8)
       + (within_x >> 1);
     const uint8_t data = fmsx_v9990_read_vram_bx(pattern_addr);
     const unsigned offset = fmsx_v9990_get_palette_offset();
@@ -4414,13 +6052,11 @@ static unsigned fmsx_v9990_get_sprite_pattern_offset_p2(uint8_t sprite_no, uint8
         + (8u * ((unsigned) sprite_no & 0x1Fu));
 }
 
-static void fmsx_v9990_draw_sprite_pixel(uint16_t *dst,
-                                         uint8_t *info,
-                                         unsigned width,
-                                         int x_pos,
-                                         uint8_t level,
-                                         uint8_t palette_base,
-                                         uint8_t nibble)
+static void fmsx_v9990_draw_sprite_pixel_direct(uint16_t *dst,
+                                                unsigned width,
+                                                int x_pos,
+                                                uint8_t palette_base,
+                                                uint8_t nibble)
 {
     unsigned x;
 
@@ -4435,29 +6071,20 @@ static void fmsx_v9990_draw_sprite_pixel(uint16_t *dst,
         return;
     }
 
-    if (info[x] < level)
-    {
-        dst[x] = fmsx_v9990_palette_color((uint8_t) (palette_base + nibble));
-    }
-    info[x] = 2u;
+    dst[x] = fmsx_v9990_palette_color((uint8_t) (palette_base + nibble));
 }
 
-static void fmsx_v9990_render_p1_sprites_line(uint16_t *dst, uint8_t *info, unsigned width, unsigned display_y)
+static int fmsx_v9990_collect_p1_sprites_on_line(unsigned display_y, int *visible)
 {
-    int visible[FMSX_V9990_MAX_SPRITES_PER_LINE + 1u];
-    unsigned sprite_pattern_table;
     unsigned i;
     int visible_count = 0;
-    int visible_limit = (int) FMSX_V9990_MAX_SPRITES_PER_LINE;
 
     if (!fmsx_v9990_sprites_enabled())
     {
-        return;
+        return 0;
     }
 
-    sprite_pattern_table = fmsx_v9990_get_sprite_pattern_address(FMSX_V9990_MODE_P1);
-
-    for (i = 0u; i < 125u && visible_count < visible_limit; ++i)
+    for (i = 0u; i < 125u && visible_count < (int) FMSX_V9990_MAX_SPRITES_PER_LINE; ++i)
     {
         const unsigned sprite_info = FMSX_V9990_SPRITE_TABLE_BASE + (4u * i);
         const uint8_t sprite_y_base = (uint8_t) (fmsx_v9990_read_sprite_attr_p1(sprite_info) + 1u);
@@ -4465,32 +6092,70 @@ static void fmsx_v9990_render_p1_sprites_line(uint16_t *dst, uint8_t *info, unsi
 
         if (sprite_y_pos < FMSX_V9990_SPRITE_WIDTH)
         {
-            const uint8_t sprite_attr = fmsx_v9990_read_sprite_attr_p1(sprite_info + 3u);
-            if ((sprite_attr & 0x10u) != 0u)
-            {
-                visible_limit--;
-            }
-            else
-            {
-                visible[visible_count++] = (int) i;
-            }
+            visible[visible_count++] = (int) i;
         }
     }
-    visible[visible_count] = -1;
 
-    for (i = 0u; visible[i] >= 0; ++i)
+    return visible_count;
+}
+
+static int fmsx_v9990_collect_p2_sprites_on_line(unsigned display_y, int *visible)
+{
+    unsigned i;
+    int visible_count = 0;
+
+    if (!fmsx_v9990_sprites_enabled())
     {
-        const unsigned sprite_info = FMSX_V9990_SPRITE_TABLE_BASE + (4u * (unsigned) visible[i]);
+        return 0;
+    }
+
+    for (i = 0u; i < 125u && visible_count < (int) FMSX_V9990_MAX_SPRITES_PER_LINE; ++i)
+    {
+        const unsigned sprite_info = FMSX_V9990_SPRITE_TABLE_BASE + (4u * i);
+        const uint8_t sprite_y_base = (uint8_t) (fmsx_v9990_read_sprite_attr_p2(sprite_info) + 1u);
+        const uint8_t sprite_y_pos = (uint8_t) (display_y - sprite_y_base);
+
+        if (sprite_y_pos < FMSX_V9990_SPRITE_WIDTH)
+        {
+            visible[visible_count++] = (int) i;
+        }
+    }
+
+    return visible_count;
+}
+
+static void fmsx_v9990_render_p1_sprites_line_pass(uint16_t *dst, unsigned width, unsigned display_y, uint8_t pri)
+{
+    int visible[FMSX_V9990_MAX_SPRITES_PER_LINE];
+    unsigned sprite_pattern_table;
+    int visible_count;
+    int place;
+
+    sprite_pattern_table = fmsx_v9990_get_sprite_pattern_address(FMSX_V9990_MODE_P1);
+    visible_count = fmsx_v9990_collect_p1_sprites_on_line(display_y, visible);
+
+    for (place = visible_count - 1; place >= 0; --place)
+    {
+        const unsigned sprite_info = FMSX_V9990_SPRITE_TABLE_BASE + (4u * (unsigned) visible[place]);
         const uint8_t sprite_attr = fmsx_v9990_read_sprite_attr_p1(sprite_info + 3u);
-        const uint8_t level = ((sprite_attr & 0x20u) == 0u) ? 2u : 1u;
+        const uint8_t sprite_pri = (uint8_t) (sprite_attr & 0x30u);
         int sprite_x = (int) fmsx_v9990_read_sprite_attr_p1(sprite_info + 2u);
         uint8_t sprite_y = fmsx_v9990_read_sprite_attr_p1(sprite_info + 0u);
         const uint8_t sprite_no = fmsx_v9990_read_sprite_attr_p1(sprite_info + 1u);
         unsigned pat_addr;
         unsigned x;
 
+        if (sprite_pri != pri)
+        {
+            continue;
+        }
+
         sprite_x += 256 * (int) (sprite_attr & 0x03u);
-        if (sprite_x > 1008)
+        if (sprite_x >= (int) width && sprite_x < 1008)
+        {
+            continue;
+        }
+        if (sprite_x >= 1008)
         {
             sprite_x -= 1024;
         }
@@ -4501,61 +6166,43 @@ static void fmsx_v9990_render_p1_sprites_line(uint16_t *dst, uint8_t *info, unsi
         {
             const uint8_t data = fmsx_v9990_read_sprite_pattern_p1(pat_addr++);
             const uint8_t palette_base = (uint8_t) ((sprite_attr >> 2) & 0x30u);
-            fmsx_v9990_draw_sprite_pixel(dst, info, width, sprite_x + (int) x + 0, level, palette_base, (uint8_t) (data >> 4));
-            fmsx_v9990_draw_sprite_pixel(dst, info, width, sprite_x + (int) x + 1, level, palette_base, (uint8_t) (data & 0x0Fu));
+            fmsx_v9990_draw_sprite_pixel_direct(dst, width, sprite_x + (int) x + 0, palette_base, (uint8_t) (data >> 4));
+            fmsx_v9990_draw_sprite_pixel_direct(dst, width, sprite_x + (int) x + 1, palette_base, (uint8_t) (data & 0x0Fu));
         }
     }
 }
 
-static void fmsx_v9990_render_p2_sprites_line(uint16_t *dst, uint8_t *info, unsigned width, unsigned display_y)
+static void fmsx_v9990_render_p2_sprites_line_pass(uint16_t *dst, unsigned width, unsigned display_y, uint8_t pri)
 {
-    int visible[FMSX_V9990_MAX_SPRITES_PER_LINE + 1u];
+    int visible[FMSX_V9990_MAX_SPRITES_PER_LINE];
     unsigned sprite_pattern_table;
-    unsigned i;
-    int visible_count = 0;
-    int visible_limit = (int) FMSX_V9990_MAX_SPRITES_PER_LINE;
-
-    if (!fmsx_v9990_sprites_enabled())
-    {
-        return;
-    }
-
+    int visible_count;
+    int place;
     sprite_pattern_table = fmsx_v9990_get_sprite_pattern_address(FMSX_V9990_MODE_P2);
+    visible_count = fmsx_v9990_collect_p2_sprites_on_line(display_y, visible);
 
-    for (i = 0u; i < 125u && visible_count < visible_limit; ++i)
+    for (place = visible_count - 1; place >= 0; --place)
     {
-        const unsigned sprite_info = FMSX_V9990_SPRITE_TABLE_BASE + (4u * i);
-        const uint8_t sprite_y_base = (uint8_t) (fmsx_v9990_read_sprite_attr_p2(sprite_info) + 1u);
-        const uint8_t sprite_y_pos = (uint8_t) (display_y - sprite_y_base);
-
-        if (sprite_y_pos < FMSX_V9990_SPRITE_WIDTH)
-        {
-            const uint8_t sprite_attr = fmsx_v9990_read_sprite_attr_p2(sprite_info + 3u);
-            if ((sprite_attr & 0x10u) != 0u)
-            {
-                visible_limit--;
-            }
-            else
-            {
-                visible[visible_count++] = (int) i;
-            }
-        }
-    }
-    visible[visible_count] = -1;
-
-    for (i = 0u; visible[i] >= 0; ++i)
-    {
-        const unsigned sprite_info = FMSX_V9990_SPRITE_TABLE_BASE + (4u * (unsigned) visible[i]);
+        const unsigned sprite_info = FMSX_V9990_SPRITE_TABLE_BASE + (4u * (unsigned) visible[place]);
         const uint8_t sprite_attr = fmsx_v9990_read_sprite_attr_p2(sprite_info + 3u);
-        const uint8_t level = ((sprite_attr & 0x20u) == 0u) ? 2u : 1u;
+        const uint8_t sprite_pri = (uint8_t) (sprite_attr & 0x30u);
         int sprite_x = (int) fmsx_v9990_read_sprite_attr_p2(sprite_info + 2u);
         uint8_t sprite_y = fmsx_v9990_read_sprite_attr_p2(sprite_info + 0u);
         const uint8_t sprite_no = fmsx_v9990_read_sprite_attr_p2(sprite_info + 1u);
         unsigned pat_addr;
         unsigned x;
 
+        if (sprite_pri != pri)
+        {
+            continue;
+        }
+
         sprite_x += 256 * (int) (sprite_attr & 0x03u);
-        if (sprite_x > 1008)
+        if (sprite_x >= (int) width && sprite_x < 1008)
+        {
+            continue;
+        }
+        if (sprite_x >= 1008)
         {
             sprite_x -= 1024;
         }
@@ -4566,8 +6213,8 @@ static void fmsx_v9990_render_p2_sprites_line(uint16_t *dst, uint8_t *info, unsi
         {
             const uint8_t data = fmsx_v9990_read_sprite_pattern_p2(pat_addr++);
             const uint8_t palette_base = (uint8_t) ((sprite_attr >> 2) & 0x30u);
-            fmsx_v9990_draw_sprite_pixel(dst, info, width, sprite_x + (int) x + 0, level, palette_base, (uint8_t) (data >> 4));
-            fmsx_v9990_draw_sprite_pixel(dst, info, width, sprite_x + (int) x + 1, level, palette_base, (uint8_t) (data & 0x0Fu));
+            fmsx_v9990_draw_sprite_pixel_direct(dst, width, sprite_x + (int) x + 0, palette_base, (uint8_t) (data >> 4));
+            fmsx_v9990_draw_sprite_pixel_direct(dst, width, sprite_x + (int) x + 1, palette_base, (uint8_t) (data & 0x0Fu));
         }
     }
 }
@@ -4596,40 +6243,360 @@ static void fmsx_v9990_render_placeholder(unsigned width, unsigned height)
     }
 }
 
-/*
- * First-light Bx path: keep display-active rendering strictly linear and
- * bounded until the active-frame freeze is resolved. This intentionally avoids
- * scroll, transformed VRAM addressing and even/odd handling.
- */
+static unsigned fmsx_v9990_get_bx_real_line(unsigned y, const TFmsxV9990BxLineState *state)
+{
+    const unsigned scroll_y_max = fmsx_v9990_get_roll_mask_from_ay1(state->ay1, 0x1FFFu);
+    const boolean double_res = (g_fmsx_v9990.screen_mode_1_lines[y] & 0x04u) ? TRUE : FALSE;
+    const unsigned eo_shift = double_res ? 1u : 0u;
+    const unsigned eo_add = (double_res && g_fmsx_v9990_video.field_parity_odd) ? 1u : 0u;
+
+    return (unsigned) ((((int) (y << eo_shift) + (int) eo_add) + (int) state->scroll_ay_frame) & (int) scroll_y_max);
+}
+
+static void fmsx_v9990_render_bx_segment(uint16_t *dst,
+                                         unsigned width,
+                                         unsigned y,
+                                         unsigned start_x,
+                                         unsigned end_x,
+                                         unsigned image_width,
+                                         uint8_t mode_kind,
+                                         const TFmsxV9990BxLineState *state)
+{
+    const unsigned real_line = fmsx_v9990_get_bx_real_line(y, state);
+    const unsigned scroll_x = state->scroll_ax + start_x;
+    const unsigned palette_offset = fmsx_v9990_get_palette_offset_from_control(state->palette_control);
+    const unsigned segment_width = (end_x > start_x) ? (end_x - start_x) : 0u;
+
+    if (start_x >= end_x || start_x >= width)
+    {
+        return;
+    }
+    if (end_x > width)
+    {
+        end_x = width;
+    }
+
+    switch (mode_kind)
+    {
+    case 1u:
+    {
+        const unsigned byte_y_base = real_line * (image_width >> 2);
+        const unsigned scroll_x_max_bytes = (image_width >> 2) - 1u;
+        unsigned byte_x_pos = (scroll_x >> 2) & scroll_x_max_bytes;
+        const unsigned left_pixels = scroll_x & 3u;
+        const unsigned quant_bytes = (segment_width + left_pixels + 3u) >> 2;
+        const unsigned pal_even = (width > 512u) ? (palette_offset & ~0x20u) : palette_offset;
+        const unsigned pal_odd = (width > 512u) ? (palette_offset | 0x20u) : palette_offset;
+        unsigned b;
+        int buff_pos = (int) start_x - (int) left_pixels;
+
+        for (b = 0u; b < quant_bytes; ++b)
+        {
+            const uint8_t value = fmsx_v9990_read_vram_bx(byte_y_base + byte_x_pos);
+            byte_x_pos = (byte_x_pos + 1u) & scroll_x_max_bytes;
+
+            if (buff_pos >= (int) start_x && buff_pos < (int) end_x) dst[buff_pos] = fmsx_v9990_palette_color((uint8_t) (pal_even | (value >> 6))); ++buff_pos;
+            if (buff_pos >= (int) start_x && buff_pos < (int) end_x) dst[buff_pos] = fmsx_v9990_palette_color((uint8_t) (pal_odd  | ((value >> 4) & 0x03u))); ++buff_pos;
+            if (buff_pos >= (int) start_x && buff_pos < (int) end_x) dst[buff_pos] = fmsx_v9990_palette_color((uint8_t) (pal_even | ((value >> 2) & 0x03u))); ++buff_pos;
+            if (buff_pos >= (int) start_x && buff_pos < (int) end_x) dst[buff_pos] = fmsx_v9990_palette_color((uint8_t) (pal_odd  | (value & 0x03u))); ++buff_pos;
+        }
+        break;
+    }
+    case 2u:
+    {
+        const unsigned byte_y_base = real_line * (image_width >> 1);
+        const unsigned scroll_x_max_bytes = (image_width >> 1) - 1u;
+        unsigned byte_x_pos = (scroll_x >> 1) & scroll_x_max_bytes;
+        const unsigned left_pixels = scroll_x & 1u;
+        const unsigned quant_bytes = (segment_width + left_pixels + 1u) >> 1;
+        const unsigned pal_even = (width > 512u) ? (((palette_offset & 0x0Cu) << 2) & ~0x20u) : ((palette_offset & 0x0Cu) << 2);
+        const unsigned pal_odd = (width > 512u) ? ((((palette_offset & 0x0Cu) << 2) | 0x20u)) : ((palette_offset & 0x0Cu) << 2);
+        unsigned b;
+        int buff_pos = (int) start_x - (int) left_pixels;
+
+        for (b = 0u; b < quant_bytes; ++b)
+        {
+            const uint8_t value = fmsx_v9990_read_vram_bx(byte_y_base + byte_x_pos);
+            byte_x_pos = (byte_x_pos + 1u) & scroll_x_max_bytes;
+
+            if (buff_pos >= (int) start_x && buff_pos < (int) end_x) dst[buff_pos] = fmsx_v9990_palette_color((uint8_t) (pal_even | (value >> 4))); ++buff_pos;
+            if (buff_pos >= (int) start_x && buff_pos < (int) end_x) dst[buff_pos] = fmsx_v9990_palette_color((uint8_t) (pal_odd  | (value & 0x0Fu))); ++buff_pos;
+        }
+        break;
+    }
+    case 3u:
+    {
+        const unsigned byte_y_base = real_line * image_width;
+        const unsigned scroll_x_max_bytes = image_width - 1u;
+        unsigned byte_x_pos = scroll_x & scroll_x_max_bytes;
+        unsigned x = start_x;
+
+        for (; x < end_x; ++x)
+        {
+            const uint8_t value = fmsx_v9990_read_vram_bx(byte_y_base + byte_x_pos);
+            byte_x_pos = (byte_x_pos + 1u) & scroll_x_max_bytes;
+            dst[x] = fmsx_v9990_palette_color((uint8_t) (value & 0x3Fu));
+        }
+        break;
+    }
+    case 4u:
+    {
+        const unsigned byte_y_base = real_line * image_width;
+        const unsigned scroll_x_max_bytes = image_width - 1u;
+        unsigned byte_x_pos = scroll_x & scroll_x_max_bytes;
+        unsigned x = start_x;
+
+        for (; x < end_x; ++x)
+        {
+            const uint8_t value = fmsx_v9990_read_vram_bx(byte_y_base + byte_x_pos);
+            byte_x_pos = (byte_x_pos + 1u) & scroll_x_max_bytes;
+            dst[x] = fmsx_v9990_decode_bd8_pixel(value);
+        }
+        break;
+    }
+    case 5u:
+    {
+        const unsigned byte_y_base = real_line * (image_width << 1);
+        const unsigned scroll_x_max_bytes = (image_width << 1) - 1u;
+        unsigned byte_x_pos = (width > 256u)
+            ? (((scroll_x & ~1u) << 1) & scroll_x_max_bytes)
+            : ((scroll_x << 1) & scroll_x_max_bytes);
+        unsigned x = start_x;
+
+        for (; x < end_x; ++x)
+        {
+            const uint16_t value =
+                (uint16_t) fmsx_v9990_read_vram_bx(byte_y_base + byte_x_pos)
+              | ((uint16_t) fmsx_v9990_read_vram_bx(byte_y_base + byte_x_pos + 1u) << 8);
+            byte_x_pos = (byte_x_pos + 2u) & scroll_x_max_bytes;
+            dst[x] = fmsx_v9990_rgb555_to_rgb565(value);
+        }
+        break;
+    }
+    case 6u:
+    case 7u:
+    case 8u:
+    case 9u:
+    {
+        const unsigned byte_y_base = real_line * image_width;
+        const unsigned scroll_x_max_bytes = image_width - 1u;
+        unsigned byte_x_pos = (scroll_x & ~0x03u) & scroll_x_max_bytes;
+        const unsigned left_pixels = scroll_x & 3u;
+        const unsigned quant_groups = (segment_width + left_pixels + 3u) >> 2;
+        const unsigned pal_b = fmsx_v9990_palette_offset_b_from_control(state->palette_control);
+        const unsigned pal_even = (width > 512u) ? (pal_b & ~0x20u) : pal_b;
+        const unsigned pal_odd = (width > 512u) ? (pal_b | 0x20u) : pal_b;
+        unsigned b;
+        int buff_pos = (int) start_x - (int) left_pixels;
+
+        for (b = 0u; b < quant_groups; ++b)
+        {
+            const uint8_t v1 = fmsx_v9990_read_vram_bx(byte_y_base + byte_x_pos + 0u);
+            const uint8_t v2 = fmsx_v9990_read_vram_bx(byte_y_base + byte_x_pos + 1u);
+            const uint8_t v3 = fmsx_v9990_read_vram_bx(byte_y_base + byte_x_pos + 2u);
+            const uint8_t v4 = fmsx_v9990_read_vram_bx(byte_y_base + byte_x_pos + 3u);
+            const uint16_t chroma = (uint16_t) (((v4 & 0x07u) << 9)
+                                              | ((v3 & 0x07u) << 6)
+                                              | ((v2 & 0x07u) << 3)
+                                              | (v1 & 0x07u));
+            const uint16_t p1 = ((mode_kind == 7u || mode_kind == 9u) && (v1 & 0x08u))
+                ? fmsx_v9990_palette_color((uint8_t) (pal_even | (v1 >> 4)))
+                : ((mode_kind == 6u || mode_kind == 7u)
+                    ? fmsx_v9990_decode_byjk_pixel(v1, chroma)
+                    : fmsx_v9990_decode_byuv_pixel(v1, chroma));
+            const uint16_t p2 = ((mode_kind == 7u || mode_kind == 9u) && (v2 & 0x08u))
+                ? fmsx_v9990_palette_color((uint8_t) (pal_odd | (v2 >> 4)))
+                : ((mode_kind == 6u || mode_kind == 7u)
+                    ? fmsx_v9990_decode_byjk_pixel(v2, chroma)
+                    : fmsx_v9990_decode_byuv_pixel(v2, chroma));
+            const uint16_t p3 = ((mode_kind == 7u || mode_kind == 9u) && (v3 & 0x08u))
+                ? fmsx_v9990_palette_color((uint8_t) (pal_even | (v3 >> 4)))
+                : ((mode_kind == 6u || mode_kind == 7u)
+                    ? fmsx_v9990_decode_byjk_pixel(v3, chroma)
+                    : fmsx_v9990_decode_byuv_pixel(v3, chroma));
+            const uint16_t p4 = ((mode_kind == 7u || mode_kind == 9u) && (v4 & 0x08u))
+                ? fmsx_v9990_palette_color((uint8_t) (pal_odd | (v4 >> 4)))
+                : ((mode_kind == 6u || mode_kind == 7u)
+                    ? fmsx_v9990_decode_byjk_pixel(v4, chroma)
+                    : fmsx_v9990_decode_byuv_pixel(v4, chroma));
+
+            byte_x_pos = (byte_x_pos + 4u) & scroll_x_max_bytes;
+
+            if (buff_pos >= (int) start_x && buff_pos < (int) end_x) dst[buff_pos] = p1; ++buff_pos;
+            if (buff_pos >= (int) start_x && buff_pos < (int) end_x) dst[buff_pos] = p2; ++buff_pos;
+            if (buff_pos >= (int) start_x && buff_pos < (int) end_x) dst[buff_pos] = p3; ++buff_pos;
+            if (buff_pos >= (int) start_x && buff_pos < (int) end_x) dst[buff_pos] = p4; ++buff_pos;
+        }
+        break;
+    }
+    default:
+    {
+        unsigned x;
+        const uint16_t color = fmsx_v9990_palette_color(state->backdrop_color);
+        for (x = start_x; x < end_x; ++x)
+        {
+            dst[x] = color;
+        }
+        break;
+    }
+    }
+}
+
+static void fmsx_v9990_debug_trace_bx_line_state(unsigned height)
+{
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+    char line[256];
+    TFmsxV9990TraceBuffer tb;
+    unsigned i;
+    unsigned emitted = 0u;
+
+    if (g_fmsx_v9990_debug_frame_snapshot_pending == 0u || height == 0u)
+    {
+        return;
+    }
+
+    fmsx_v9990_tracebuf_init(&tb, line, sizeof(line));
+    fmsx_v9990_tracebuf_push_text(&tb, "G9D bx");
+
+    for (i = 0u; i < g_fmsx_v9990.raster_event_count && emitted < 8u; ++i)
+    {
+        const TFmsxV9990RasterEvent *event = &g_fmsx_v9990.raster_events[i];
+        const char *kind = 0;
+
+        if (event->y >= height)
+        {
+            continue;
+        }
+
+        switch ((TFmsxV9990RasterEventKind) event->kind)
+        {
+        case FMSX_V9990_RASTER_EVENT_AY0: kind = "ay0"; break;
+        case FMSX_V9990_RASTER_EVENT_AY1: kind = "ay1"; break;
+        case FMSX_V9990_RASTER_EVENT_AX: kind = "ax"; break;
+        case FMSX_V9990_RASTER_EVENT_PALETTE_CONTROL: kind = "pc"; break;
+        case FMSX_V9990_RASTER_EVENT_BACKDROP_COLOR: kind = "bd"; break;
+        default: break;
+        }
+
+        if (kind == 0)
+        {
+            continue;
+        }
+
+        fmsx_v9990_tracebuf_push_text(&tb, emitted == 0u ? " y:" : " |y:");
+        fmsx_v9990_tracebuf_push_uint(&tb, event->y);
+        fmsx_v9990_tracebuf_push_text(&tb, " x:");
+        fmsx_v9990_tracebuf_push_uint(&tb, event->x);
+        fmsx_v9990_tracebuf_push_text(&tb, " k:");
+        fmsx_v9990_tracebuf_push_text(&tb, kind);
+        fmsx_v9990_tracebuf_push_text(&tb, " v:");
+        if (event->kind == FMSX_V9990_RASTER_EVENT_AY0)
+        {
+            fmsx_v9990_tracebuf_push_int(&tb, (int16_t) event->value);
+        }
+        else if (event->kind == FMSX_V9990_RASTER_EVENT_AY1
+              || event->kind == FMSX_V9990_RASTER_EVENT_PALETTE_CONTROL
+              || event->kind == FMSX_V9990_RASTER_EVENT_BACKDROP_COLOR)
+        {
+            fmsx_v9990_tracebuf_push_hex8(&tb, (uint8_t) event->value);
+        }
+        else
+        {
+            fmsx_v9990_tracebuf_push_uint(&tb, event->value);
+        }
+        ++emitted;
+    }
+
+    if (emitted == 0u)
+    {
+        fmsx_v9990_tracebuf_push_text(&tb, " none");
+    }
+    fmsx_v9990_tracebuf_push_char(&tb, '\n');
+    msxbare_uart_write(line);
+#else
+    (void) height;
+#endif
+}
+
 static void fmsx_v9990_render_bx_firstlight(unsigned width,
                                             unsigned height,
                                             unsigned image_width,
                                             unsigned bytes_per_line,
                                             uint8_t mode_kind)
 {
+    TFmsxV9990BxLineState state;
+    unsigned event_index = 0u;
     unsigned y;
-    const unsigned scroll_x = fmsx_v9990_get_scroll_ax();
+
+    (void) bytes_per_line;
+    fmsx_v9990_get_bx_frame_initial_state(&state);
 
     for (y = 0u; y < height; ++y)
     {
         uint16_t *dst = FMSX_V9990_FRAMEBUFFER + (y * FMSX_V9990_FB_MAX_WIDTH);
-        const unsigned scroll_y = (unsigned) g_fmsx_v9990.scroll_ay_lines[y];
-        const unsigned display_y = (unsigned) g_fmsx_v9990.display_ya_lines[y];
-        const unsigned roll_mask = fmsx_v9990_get_roll_mask(0x1FFFu);
-        const unsigned scroll_y_base = scroll_y & ~roll_mask & 0x1FFFu;
-        const unsigned src_y = scroll_y_base + ((display_y + scroll_y) & roll_mask);
-        unsigned x;
+        TFmsxV9990BxLineState line_state;
+        unsigned line_event_index;
+        unsigned cursor_x = 0u;
 
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
         (void) msxbare_debug_timer_irq_binding(0x20u + (y & 0x7Fu));
 #endif
 
-        for (x = 0u; x < width; ++x)
+        while (event_index < g_fmsx_v9990.raster_event_count
+            && g_fmsx_v9990.raster_events[event_index].y < y)
         {
-            const unsigned src_x = (image_width != 0u) ? ((x + scroll_x) % image_width) : 0u;
-            dst[x] = fmsx_v9990_decode_bx_pixel(src_x, src_y, image_width, bytes_per_line, mode_kind);
+            fmsx_v9990_apply_bx_raster_event(&state, &g_fmsx_v9990.raster_events[event_index]);
+            ++event_index;
+        }
+
+        line_state = state;
+        line_event_index = event_index;
+
+        while (line_event_index < g_fmsx_v9990.raster_event_count
+            && g_fmsx_v9990.raster_events[line_event_index].y == y)
+        {
+            const TFmsxV9990RasterEvent *event = &g_fmsx_v9990.raster_events[line_event_index];
+            const unsigned split_x = (event->x < width) ? event->x : width;
+
+            if (cursor_x < split_x)
+            {
+                fmsx_v9990_render_bx_segment(
+                    dst,
+                    width,
+                    y,
+                    cursor_x,
+                    split_x,
+                    image_width,
+                    mode_kind,
+                    &line_state);
+                cursor_x = split_x;
+            }
+
+            fmsx_v9990_apply_bx_raster_event(&line_state, event);
+            ++line_event_index;
+        }
+
+        if (cursor_x < width)
+        {
+            fmsx_v9990_render_bx_segment(
+                dst,
+                width,
+                y,
+                cursor_x,
+                width,
+                image_width,
+                mode_kind,
+                &line_state);
+        }
+
+        while (event_index < line_event_index)
+        {
+            fmsx_v9990_apply_bx_raster_event(&state, &g_fmsx_v9990.raster_events[event_index]);
+            ++event_index;
         }
     }
+
+    fmsx_v9990_debug_trace_bx_line_state(height);
 }
 
 static void fmsx_v9990_fill_scanline(uint16_t *dst, unsigned width, uint16_t value)
@@ -4666,7 +6633,8 @@ static void fmsx_v9990_fill_frame_lines(uint16_t *base,
 
 static void fmsx_v9990_render_p1_frame(unsigned width, unsigned height)
 {
-    uint8_t info[640];
+    TFmsxV9990P1LineState state;
+    unsigned event_index = 0u;
     unsigned y;
     const boolean capture_profile = (g_fmsx_v9990_debug_frame_snapshot_pending != 0u) ? TRUE : FALSE;
 
@@ -4688,65 +6656,100 @@ static void fmsx_v9990_render_p1_frame(unsigned width, unsigned height)
     }
 #endif
 
+    /*
+     * WebMSX renders PP1 from the live scanline state of the current frame.
+     * Rebuilding the whole frame from pre-expanded line arrays was leaving us
+     * with a hybrid model: writes were recorded as raster events, but the draw
+     * still consumed the already-baked snapshots. For gameplay, that is the
+     * wrong semantic boundary.
+     *
+     * Start from the frame baseline and replay the raster events as we advance
+     * through Y. AY/BY/AX/BX/priority/palette/backdrop updates take effect on
+     * following scanlines, matching the current write-side behavior
+     * (split + 1u) and the scanline-oriented model of WebMSX.
+     */
+    fmsx_v9990_get_p1_frame_initial_state(&state);
+
     for (y = 0u; y < height; ++y)
     {
         uint16_t *dst = FMSX_V9990_FRAMEBUFFER + (y * FMSX_V9990_FB_MAX_WIDTH);
-        TFmsxV9990P1LineState state;
-        unsigned line_start = 0u;
-        unsigned event_i;
+        const uint16_t backdrop = fmsx_v9990_palette_color(state.backdrop_color);
+        const unsigned prio_y = ((state.priority & 0x0Cu) == 0u) ? 256u : ((state.priority & 0x0Cu) << 4);
+        const boolean plane_a_has_priority = (y < prio_y) ? TRUE : FALSE;
+        const unsigned palette_control = state.palette_control;
+        const unsigned pal_a_base = (palette_control & 0x03u) << 4;
+        const unsigned pal_b_base = (palette_control & 0x0Cu) << 2;
+        const unsigned scroll_y_max = (state.ay1 & 0x80u) ? 0x01FFu : ((state.ay1 & 0x40u) ? 0x00FFu : 0x01FFu);
+        const unsigned display_ay = (unsigned) (((int) y + (int) state.scroll_ay_frame) & (int) scroll_y_max);
+        const unsigned display_by = (unsigned) (((int) y + (int) state.scroll_by_frame) & 0x01FF);
+        const boolean plane_a_enabled = ((state.by1 & 0x80u) == 0u) ? TRUE : FALSE;
+        const boolean plane_b_enabled = ((state.by1 & 0x40u) == 0u) ? TRUE : FALSE;
         unsigned plane_a_lit = 0u;
         unsigned plane_b_lit = 0u;
 
-        memset(info, 0, width);
-        state.scroll_ay = g_fmsx_v9990.scroll_ay_lines[y];
-        state.scroll_by = g_fmsx_v9990.scroll_by_lines[y];
-        state.scroll_ax = g_fmsx_v9990.scroll_ax_lines[y];
-        state.scroll_bx = g_fmsx_v9990.scroll_bx_lines[y];
-        state.display_ya = g_fmsx_v9990.display_ya_lines[y];
-        state.display_yb = g_fmsx_v9990.display_yb_lines[y];
-        state.priority = g_fmsx_v9990.priority_control_lines[y];
-        state.palette_control = g_fmsx_v9990.palette_control_lines[y];
-        state.backdrop_color = g_fmsx_v9990.backdrop_color_lines[y];
-        state.ay1 = g_fmsx_v9990.scroll_ay_high_frame;
-        state.by1 = g_fmsx_v9990.scroll_by1_lines[y];
-
-        for (event_i = 0u; event_i < g_fmsx_v9990.raster_event_count; ++event_i)
+        while (event_index < g_fmsx_v9990.raster_event_count
+            && g_fmsx_v9990.raster_events[event_index].y < y)
         {
-            const TFmsxV9990RasterEvent *event = &g_fmsx_v9990.raster_events[event_i];
-            unsigned split_x;
-
-            if ((unsigned) event->y != y)
-            {
-                continue;
-            }
-
-            split_x = (event->x < width) ? (unsigned) event->x : width;
-            if (split_x > line_start)
-            {
-                fmsx_v9990_render_p1_segment(
-                    dst, info, width, y, line_start, split_x, &state, &plane_a_lit, &plane_b_lit);
-                line_start = split_x;
-            }
-            fmsx_v9990_apply_p1_raster_event(&state, event, y);
+            fmsx_v9990_apply_p1_raster_event(
+                &state,
+                &g_fmsx_v9990.raster_events[event_index],
+                y);
+            ++event_index;
         }
 
-        fmsx_v9990_render_p1_segment(
-            dst, info, width, y, line_start, width, &state, &plane_a_lit, &plane_b_lit);
+        fmsx_v9990_fill_scanline(dst, width, backdrop);
+
+        if (plane_a_has_priority)
+        {
+            if (plane_b_enabled)
+            {
+                fmsx_v9990_render_p1_plane_pass(
+                    dst, 0, width,
+                    0u, width,
+                    state.scroll_bx & 511u, display_by,
+                    0x7E000u, 0x40000u, pal_b_base, backdrop,
+                    FALSE, FALSE, &plane_b_lit);
+            }
+            fmsx_v9990_render_p1_sprites_line_pass(dst, width, y, 0x20u);
+            if (plane_a_enabled)
+            {
+                fmsx_v9990_render_p1_plane_pass(
+                    dst, 0, width,
+                    0u, width,
+                    state.scroll_ax & 511u, display_ay,
+                    0x7C000u, 0x00000u, pal_a_base, backdrop,
+                    FALSE, FALSE, &plane_a_lit);
+            }
+            fmsx_v9990_render_p1_sprites_line_pass(dst, width, y, 0x00u);
+        }
+        else
+        {
+            if (plane_a_enabled)
+            {
+                fmsx_v9990_render_p1_plane_pass(
+                    dst, 0, width,
+                    0u, width,
+                    state.scroll_ax & 511u, display_ay,
+                    0x7C000u, 0x00000u, pal_a_base, backdrop,
+                    FALSE, FALSE, &plane_a_lit);
+            }
+            fmsx_v9990_render_p1_sprites_line_pass(dst, width, y, 0x20u);
+            if (plane_b_enabled)
+            {
+                fmsx_v9990_render_p1_plane_pass(
+                    dst, 0, width,
+                    0u, width,
+                    state.scroll_bx & 511u, display_by,
+                    0x7E000u, 0x40000u, pal_b_base, backdrop,
+                    FALSE, FALSE, &plane_b_lit);
+            }
+            fmsx_v9990_render_p1_sprites_line_pass(dst, width, y, 0x00u);
+        }
 
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
         if (capture_profile && (y < FMSX_V9990_FB_MAX_HEIGHT))
         {
             unsigned x;
-            const unsigned roll_mask = fmsx_v9990_get_roll_mask_from_ay1(state.ay1, 0x01FFu);
-            const unsigned scroll_ay_base = state.scroll_ay & ~roll_mask & 0x01FFu;
-            const unsigned display_ay = scroll_ay_base + ((state.display_ya + state.scroll_ay) & roll_mask);
-            const unsigned display_by = (state.display_yb + state.scroll_by) & 0x01FFu;
-            const boolean plane_a_enabled = ((state.by1 & 0x80u) == 0u) ? TRUE : FALSE;
-            const boolean plane_b_enabled = ((state.by1 & 0x40u) == 0u) ? TRUE : FALSE;
-            const uint16_t backdrop = fmsx_v9990_palette_color(state.backdrop_color);
-            const unsigned prio_y = ((state.priority & 0x0Cu) == 0u) ? 256u : ((state.priority & 0x0Cu) << 4);
-            const unsigned prio_x_base = ((state.priority & 0x03u) == 0u) ? 256u : ((state.priority & 0x03u) << 6);
-            const unsigned prio_x = (y >= prio_y) ? 0u : prio_x_base;
             for (x = 0u; x < width && x < 8u; ++x)
             {
                 const unsigned ax = (x + state.scroll_ax) & 511u;
@@ -4755,29 +6758,21 @@ static void fmsx_v9990_render_p1_frame(unsigned width, unsigned height)
                 const uint8_t nibble_b = plane_b_enabled ? fmsx_v9990_sample_p1_nibble(bx, display_by, 0x7E000u, 0x40000u) : 0u;
                 g_fmsx_v9990_debug_p1_sample_a[y][x] = nibble_a;
                 g_fmsx_v9990_debug_p1_sample_b[y][x] = nibble_b;
-                g_fmsx_v9990_debug_p1_bg_is_backdrop[y][x] = (dst[x] == backdrop && info[x] == 0u) ? 1u : 0u;
+                g_fmsx_v9990_debug_p1_bg_is_backdrop[y][x] = (dst[x] == backdrop) ? 1u : 0u;
                 g_fmsx_v9990_debug_p1_final_is_backdrop[y][x] = (dst[x] == backdrop) ? 1u : 0u;
             }
         }
 #endif
-
-        fmsx_v9990_render_p1_sprites_line(dst, info, width, y);
 
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
         if (capture_profile && (y < FMSX_V9990_FB_MAX_HEIGHT))
         {
             unsigned sprite_lit = 0u;
             unsigned x;
-            const unsigned pal_a_base = (state.palette_control & 0x03u) << 4;
-            const unsigned pal_b_base = (state.palette_control & 0x0Cu) << 2;
-            const unsigned prio_y = ((state.priority & 0x0Cu) == 0u) ? 256u : ((state.priority & 0x0Cu) << 4);
-            const unsigned prio_x_base = ((state.priority & 0x03u) == 0u) ? 256u : ((state.priority & 0x03u) << 6);
-            const unsigned prio_x = (y >= prio_y) ? 0u : prio_x_base;
-            const uint16_t backdrop = fmsx_v9990_palette_color(state.backdrop_color);
             g_fmsx_v9990_debug_p1_pal_a_base[y] = (uint8_t) pal_a_base;
             g_fmsx_v9990_debug_p1_pal_b_base[y] = (uint8_t) pal_b_base;
             g_fmsx_v9990_debug_p1_backdrop_index[y] = state.backdrop_color;
-            g_fmsx_v9990_debug_p1_prio_x[y] = (uint16_t) prio_x;
+            g_fmsx_v9990_debug_p1_prio_x[y] = 256u;
             for (x = 0u; x < width; ++x)
             {
                 if (dst[x] != backdrop)
@@ -4795,7 +6790,6 @@ static void fmsx_v9990_render_p1_frame(unsigned width, unsigned height)
 
 static void fmsx_v9990_render_p2_frame(unsigned width, unsigned height)
 {
-    uint8_t info[640];
     unsigned y;
     const unsigned roll_mask = fmsx_v9990_get_roll_mask(0x01FFu);
 
@@ -4810,18 +6804,280 @@ static void fmsx_v9990_render_p2_frame(unsigned width, unsigned height)
         const unsigned display_y = scroll_y_base + ((display_ya + scroll_y) & roll_mask);
         unsigned x;
 
-        memset(info, 0, width);
+        fmsx_v9990_fill_scanline(dst, width, backdrop);
+        fmsx_v9990_render_p2_sprites_line_pass(dst, width, y, 0x20u);
         for (x = 0u; x < width; ++x)
         {
             unsigned palette_base = 0u;
             const unsigned display_x = (x + scroll_x) & 1023u;
             const uint8_t nibble = fmsx_v9990_sample_p2_nibble(display_x, display_y, &palette_base);
-            dst[x] = nibble ? fmsx_v9990_palette_color((uint8_t) (palette_base + nibble)) : backdrop;
-            info[x] = nibble ? 1u : 0u;
+            if (nibble != 0u)
+            {
+                dst[x] = fmsx_v9990_palette_color((uint8_t) (palette_base + nibble));
+            }
+        }
+        fmsx_v9990_render_p2_sprites_line_pass(dst, width, y, 0x00u);
+    }
+}
+
+static void fmsx_v9990_render_p1_live_debug_frame(uint16_t *base,
+                                                  unsigned width,
+                                                  unsigned height,
+                                                  TFmsxV9990DebugLiveView view)
+{
+    TFmsxV9990P1LineState state;
+    unsigned event_index = 0u;
+    unsigned y;
+
+    if (base == 0)
+    {
+        return;
+    }
+
+    fmsx_v9990_get_p1_frame_initial_state(&state);
+
+    for (y = 0u; y < height; ++y)
+    {
+        uint16_t *dst = base + (y * FMSX_V9990_FB_MAX_WIDTH);
+        const uint16_t backdrop = fmsx_v9990_palette_color(state.backdrop_color);
+        const unsigned prio_y = ((state.priority & 0x0Cu) == 0u) ? 256u : ((state.priority & 0x0Cu) << 4);
+        const boolean plane_a_has_priority = (y < prio_y) ? TRUE : FALSE;
+        const unsigned palette_control = state.palette_control;
+        const unsigned pal_a_base = (palette_control & 0x03u) << 4;
+        const unsigned pal_b_base = (palette_control & 0x0Cu) << 2;
+        const unsigned scroll_y_max = (state.ay1 & 0x80u) ? 0x01FFu : ((state.ay1 & 0x40u) ? 0x00FFu : 0x01FFu);
+        const unsigned display_ay = (unsigned) (((int) y + (int) state.scroll_ay_frame) & (int) scroll_y_max);
+        const unsigned display_by = (unsigned) (((int) y + (int) state.scroll_by_frame) & 0x01FF);
+        const boolean plane_a_enabled = ((state.by1 & 0x80u) == 0u) ? TRUE : FALSE;
+        const boolean plane_b_enabled = ((state.by1 & 0x40u) == 0u) ? TRUE : FALSE;
+
+        while (event_index < g_fmsx_v9990.raster_event_count
+            && g_fmsx_v9990.raster_events[event_index].y < y)
+        {
+            fmsx_v9990_apply_p1_raster_event(
+                &state,
+                &g_fmsx_v9990.raster_events[event_index],
+                y);
+            ++event_index;
         }
 
-        fmsx_v9990_render_p2_sprites_line(dst, info, width, y);
+        if (view == FMSX_V9990_DEBUG_LIVE_VIEW_BG_PROVENANCE)
+        {
+            unsigned tile_y;
+            const unsigned tile_y_base = y & ~7u;
+            for (tile_y = tile_y_base; tile_y <= y && tile_y < height; tile_y += 8u)
+            {
+                break;
+            }
+            (void) tile_y;
+            fmsx_v9990_fill_scanline(dst, width, 0u);
+            {
+                unsigned tile_x;
+                for (tile_x = 0u; tile_x < width; tile_x += 8u)
+                {
+                    boolean has_a = FALSE;
+                    boolean has_b = FALSE;
+                    unsigned sx;
+                    unsigned sy;
+                    uint16_t color = 0x0000u;
+
+                    for (sy = 0u; sy < 8u && (y + sy - (y & 7u)) < height; ++sy)
+                    {
+                        const unsigned sample_y = (y & ~7u) + sy;
+                        const unsigned sample_display_ay =
+                            (unsigned) (((int) sample_y + (int) state.scroll_ay_frame) & (int) scroll_y_max);
+                        const unsigned sample_display_by =
+                            (unsigned) (((int) sample_y + (int) state.scroll_by_frame) & 0x01FF);
+                        for (sx = 0u; sx < 8u && (tile_x + sx) < width; ++sx)
+                        {
+                            const unsigned ax = (state.scroll_ax + tile_x + sx) & 511u;
+                            const unsigned bx = (state.scroll_bx + tile_x + sx) & 511u;
+                            if (plane_a_enabled
+                                && fmsx_v9990_sample_p1_nibble(ax, sample_display_ay, 0x7C000u, 0x00000u) != 0u)
+                            {
+                                has_a = TRUE;
+                            }
+                            if (plane_b_enabled
+                                && fmsx_v9990_sample_p1_nibble(bx, sample_display_by, 0x7E000u, 0x40000u) != 0u)
+                            {
+                                has_b = TRUE;
+                            }
+                            if (has_a && has_b)
+                            {
+                                break;
+                            }
+                        }
+                        if (has_a && has_b)
+                        {
+                            break;
+                        }
+                    }
+
+                    if (has_a && has_b) color = 0x07FFu;
+                    else if (has_a)     color = 0x07E0u;
+                    else if (has_b)     color = 0x001Fu;
+                    else                color = 0xF800u;
+
+                    for (sx = 0u; sx < 8u && (tile_x + sx) < width; ++sx)
+                    {
+                        dst[tile_x + sx] = color;
+                    }
+                }
+            }
+            continue;
+        }
+
+        fmsx_v9990_fill_scanline(dst, width, backdrop);
+
+        switch (view)
+        {
+        case FMSX_V9990_DEBUG_LIVE_VIEW_BG_A:
+            if (plane_a_enabled)
+            {
+                fmsx_v9990_render_p1_plane_pass(
+                    dst, 0, width,
+                    0u, width,
+                    state.scroll_ax & 511u, display_ay,
+                    0x7C000u, 0x00000u, pal_a_base, backdrop,
+                    FALSE, FALSE, 0);
+            }
+            break;
+        case FMSX_V9990_DEBUG_LIVE_VIEW_BG_B:
+            if (plane_b_enabled)
+            {
+                fmsx_v9990_render_p1_plane_pass(
+                    dst, 0, width,
+                    0u, width,
+                    state.scroll_bx & 511u, display_by,
+                    0x7E000u, 0x40000u, pal_b_base, backdrop,
+                    FALSE, FALSE, 0);
+            }
+            break;
+        case FMSX_V9990_DEBUG_LIVE_VIEW_BG_COMPOSITE:
+            if (plane_a_has_priority)
+            {
+                if (plane_b_enabled)
+                {
+                    fmsx_v9990_render_p1_plane_pass(
+                        dst, 0, width,
+                        0u, width,
+                        state.scroll_bx & 511u, display_by,
+                        0x7E000u, 0x40000u, pal_b_base, backdrop,
+                        FALSE, FALSE, 0);
+                }
+                if (plane_a_enabled)
+                {
+                    fmsx_v9990_render_p1_plane_pass(
+                        dst, 0, width,
+                        0u, width,
+                        state.scroll_ax & 511u, display_ay,
+                        0x7C000u, 0x00000u, pal_a_base, backdrop,
+                        FALSE, FALSE, 0);
+                }
+            }
+            else
+            {
+                if (plane_a_enabled)
+                {
+                    fmsx_v9990_render_p1_plane_pass(
+                        dst, 0, width,
+                        0u, width,
+                        state.scroll_ax & 511u, display_ay,
+                        0x7C000u, 0x00000u, pal_a_base, backdrop,
+                        FALSE, FALSE, 0);
+                }
+                if (plane_b_enabled)
+                {
+                    fmsx_v9990_render_p1_plane_pass(
+                        dst, 0, width,
+                        0u, width,
+                        state.scroll_bx & 511u, display_by,
+                        0x7E000u, 0x40000u, pal_b_base, backdrop,
+                        FALSE, FALSE, 0);
+                }
+            }
+            break;
+        default:
+            break;
+        }
     }
+}
+
+static void fmsx_v9990_render_reference_debug_frame(uint16_t *base,
+                                                    unsigned width,
+                                                    unsigned height,
+                                                    TFmsxV9990DisplayMode display_mode)
+{
+    unsigned y;
+
+    if (base == 0)
+    {
+        return;
+    }
+
+    for (y = 0u; y < height; ++y)
+    {
+        uint16_t *dst = base + (y * FMSX_V9990_FB_MAX_WIDTH);
+        fmsx_v9990_fill_scanline(dst, width, 0u);
+    }
+
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+    if (!g_fmsx_v9990_debug_reference_valid && !g_fmsx_v9990_debug_reference_unavailable_logged)
+    {
+        char line[96];
+        TFmsxV9990TraceBuffer tb;
+        g_fmsx_v9990_debug_reference_unavailable_logged = TRUE;
+        fmsx_v9990_tracebuf_init(&tb, line, sizeof(line));
+        fmsx_v9990_tracebuf_push_text(&tb, "G9D ref unavailable dm:");
+        fmsx_v9990_tracebuf_push_uint(&tb, (unsigned) display_mode);
+        fmsx_v9990_tracebuf_push_char(&tb, '\n');
+        msxbare_uart_write(line);
+    }
+#else
+    (void) display_mode;
+#endif
+}
+
+static void fmsx_v9990_render_debug_frame(unsigned width,
+                                          unsigned height,
+                                          TFmsxV9990DisplayMode display_mode,
+                                          unsigned image_width,
+                                          unsigned bytes_per_line,
+                                          uint8_t mode_kind)
+{
+    g_fmsx_v9990_debug_video = g_fmsx_v9990_video;
+    g_fmsx_v9990_debug_video.pixels = FMSX_V9990_FRAMEBUFFER;
+    g_fmsx_v9990_debug_video.pitch_pixels = FMSX_V9990_FB_MAX_WIDTH;
+
+    if (g_fmsx_v9990_debug_reference_view != FMSX_V9990_DEBUG_REF_VIEW_OFF)
+    {
+        fmsx_v9990_render_reference_debug_frame(FMSX_V9990_FRAMEBUFFER, width, height, display_mode);
+        g_fmsx_v9990_debug_video.active = TRUE;
+        return;
+    }
+
+    if (g_fmsx_v9990_debug_live_view == FMSX_V9990_DEBUG_LIVE_VIEW_OFF)
+    {
+        g_fmsx_v9990_debug_video.active = FALSE;
+        return;
+    }
+
+    if (display_mode == FMSX_V9990_MODE_P1)
+    {
+        fmsx_v9990_render_p1_live_debug_frame(
+            FMSX_V9990_FRAMEBUFFER,
+            width,
+            height,
+            g_fmsx_v9990_debug_live_view);
+    }
+    else
+    {
+        (void) image_width;
+        (void) bytes_per_line;
+        (void) mode_kind;
+    }
+
+    g_fmsx_v9990_debug_video.active = TRUE;
 }
 
 static uint8_t fmsx_v9990_read_register(uint8_t index)
@@ -4874,23 +7130,15 @@ static void fmsx_v9990_write_register(uint8_t index, uint8_t value)
 
     if (reg == FMSX_V9990_REG_CONTROL)
     {
-        const boolean display_was_enabled = (prev & 0x80u) != 0u ? TRUE : FALSE;
+        const boolean display_was_enabled = fmsx_v9990_display_enabled_current_frame();
         const boolean display_is_enabled = (value & 0x80u) != 0u ? TRUE : FALSE;
-        const unsigned split = fmsx_v9990_get_active_display_line();
-
-        for (unsigned y = split; y < fmsx_v9990_frame_height(); ++y)
-        {
-            g_fmsx_v9990.control_lines[y] = value;
-        }
 
         if (!display_was_enabled && display_is_enabled)
         {
             /*
-             * openMSX only syncs the renderer on display enable/disable; it
-             * does not rebase displayYA/displayYB there. Only AY0/BY0 writes
-             * start a new vertical display window. Rebasing here splits the
-             * gameplay frame into artificial windows, which matches the
-             * observed "3/4 drawn + 1/4 missing" artifact.
+             * DISP/SPD are latched for the active frame. A mid-frame CONTROL
+             * write must not rewrite the current-frame baseline; the new state
+             * becomes visible when the next frame baseline is rebuilt.
              */
             fmsx_v9990_debug_rearm_active_window("display-on");
             msxbare_debug_note_gfx9000_activation();
@@ -4913,6 +7161,7 @@ static void fmsx_v9990_write_register(uint8_t index, uint8_t value)
         {
             g_fmsx_v9990.screen_mode_0_lines[y] = value;
         }
+        fmsx_v9990_update_vram_interleaving("sm0");
     }
     else if (reg == FMSX_V9990_REG_SCREEN_MODE_1)
     {
@@ -4970,12 +7219,20 @@ static void fmsx_v9990_write_register(uint8_t index, uint8_t value)
         {
             fmsx_v9990_note_scroll_ay_low_write();
         }
+        else
+        {
+            fmsx_v9990_reset_scroll_line_state();
+        }
     }
     else if (reg == FMSX_V9990_REG_SCROLL_CONTROL_AY1)
     {
         if (fmsx_v9990_display_enabled_current_frame())
         {
             fmsx_v9990_note_scroll_ay_high_write();
+        }
+        else
+        {
+            fmsx_v9990_reset_scroll_line_state();
         }
     }
     else if (reg == FMSX_V9990_REG_SCROLL_CONTROL_AX0 || reg == FMSX_V9990_REG_SCROLL_CONTROL_AX1)
@@ -4984,12 +7241,20 @@ static void fmsx_v9990_write_register(uint8_t index, uint8_t value)
         {
             fmsx_v9990_note_scroll_ax_write();
         }
+        else
+        {
+            fmsx_v9990_reset_scroll_line_state();
+        }
     }
     else if (reg == FMSX_V9990_REG_SCROLL_CONTROL_BY0)
     {
         if (fmsx_v9990_display_enabled_current_frame())
         {
             fmsx_v9990_note_scroll_by_low_write();
+        }
+        else
+        {
+            fmsx_v9990_reset_scroll_line_state();
         }
     }
     else if (reg == FMSX_V9990_REG_SCROLL_CONTROL_BY1)
@@ -4998,6 +7263,10 @@ static void fmsx_v9990_write_register(uint8_t index, uint8_t value)
         {
             fmsx_v9990_note_scroll_by_high_write();
         }
+        else
+        {
+            fmsx_v9990_reset_scroll_line_state();
+        }
     }
     else if (reg == FMSX_V9990_REG_SCROLL_CONTROL_BX0 || reg == FMSX_V9990_REG_SCROLL_CONTROL_BX1)
     {
@@ -5005,12 +7274,20 @@ static void fmsx_v9990_write_register(uint8_t index, uint8_t value)
         {
             fmsx_v9990_note_scroll_bx_write();
         }
+        else
+        {
+            fmsx_v9990_reset_scroll_line_state();
+        }
     }
     else if (reg == FMSX_V9990_REG_PRIORITY_CONTROL)
     {
         if (fmsx_v9990_display_enabled_current_frame())
         {
             fmsx_v9990_note_priority_control_write();
+        }
+        else
+        {
+            fmsx_v9990_reset_scroll_line_state();
         }
     }
 }
@@ -5027,8 +7304,12 @@ void fmsx_v9990_power_on(void)
     fmsx_v9990_init_palette_defaults();
     fmsx_v9990_reset_scroll_line_state();
     g_fmsx_v9990.raster_event_count = 0u;
+    g_fmsx_v9990.vram_interleaved = FALSE;
     memset(&g_fmsx_v9990_video, 0, sizeof(g_fmsx_v9990_video));
     g_fmsx_v9990_video.pixels = FMSX_V9990_FRAMEBUFFER;
+    memset(&g_fmsx_v9990_debug_video, 0, sizeof(g_fmsx_v9990_debug_video));
+    g_fmsx_v9990_debug_video.pixels = FMSX_V9990_FRAMEBUFFER;
+    g_fmsx_v9990_debug_reference_unavailable_logged = FALSE;
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
     g_fmsx_v9990_debug_port_logs_remaining = 0u;
     g_fmsx_v9990_debug_cmd_logs_remaining = 0u;
@@ -5048,10 +7329,12 @@ void fmsx_v9990_reset(void)
 
     fmsx_v9990_debug_trace_enable("reset", enabled);
     fmsx_v9990_reset_registers_keep_memory();
+    fmsx_v9990_update_vram_interleaving("rst");
     g_fmsx_v9990.enabled = enabled;
     g_fmsx_v9990.io_reads = io_reads;
     g_fmsx_v9990.io_writes = io_writes;
     g_fmsx_v9990_video.active = FALSE;
+    g_fmsx_v9990_debug_video.active = FALSE;
     fmsx_v9990_reset_scroll_line_state();
     g_fmsx_v9990.raster_event_count = 0u;
     fmsx_v9990_reset_framebuffer_guards();
@@ -5060,6 +7343,11 @@ void fmsx_v9990_reset(void)
 void fmsx_v9990_set_enabled(boolean enabled)
 {
     const boolean desired = enabled ? TRUE : FALSE;
+
+    if (desired)
+    {
+        fmsx_v9990_debug_rearm_port_window();
+    }
 
     if (g_fmsx_v9990.enabled == desired)
     {
@@ -5299,6 +7587,7 @@ void fmsx_v9990_render_frame(unsigned sequence)
     }
 
     fmsx_v9990_debug_trace_frame_profile(width, height, image_width, bytes_per_line, mode_kind);
+    fmsx_v9990_render_debug_frame(width, height, display_mode, image_width, bytes_per_line, mode_kind);
 
     fmsx_v9990_debug_trace_active("G9A rf-end", width, height, display_mode);
 
@@ -5313,7 +7602,43 @@ void fmsx_v9990_get_video_frame(TFmsxV9990VideoFrame *frame)
     {
         return;
     }
+    if (g_fmsx_v9990_debug_video.active)
+    {
+        *frame = g_fmsx_v9990_debug_video;
+        return;
+    }
     *frame = g_fmsx_v9990_video;
+}
+
+void fmsx_v9990_set_debug_live_view(TFmsxV9990DebugLiveView view)
+{
+    g_fmsx_v9990_debug_live_view = view;
+    if (view != FMSX_V9990_DEBUG_LIVE_VIEW_OFF)
+    {
+        g_fmsx_v9990_debug_reference_view = FMSX_V9990_DEBUG_REF_VIEW_OFF;
+    }
+    g_fmsx_v9990_debug_video.active = FALSE;
+}
+
+TFmsxV9990DebugLiveView fmsx_v9990_get_debug_live_view(void)
+{
+    return g_fmsx_v9990_debug_live_view;
+}
+
+void fmsx_v9990_set_debug_reference_view(TFmsxV9990DebugReferenceView view)
+{
+    g_fmsx_v9990_debug_reference_view = view;
+    if (view != FMSX_V9990_DEBUG_REF_VIEW_OFF)
+    {
+        g_fmsx_v9990_debug_live_view = FMSX_V9990_DEBUG_LIVE_VIEW_OFF;
+    }
+    g_fmsx_v9990_debug_reference_unavailable_logged = FALSE;
+    g_fmsx_v9990_debug_video.active = FALSE;
+}
+
+TFmsxV9990DebugReferenceView fmsx_v9990_get_debug_reference_view(void)
+{
+    return g_fmsx_v9990_debug_reference_view;
 }
 
 boolean fmsx_v9990_in_port(uint8_t port, uint8_t *value)
@@ -5335,6 +7660,7 @@ boolean fmsx_v9990_in_port(uint8_t port, uint8_t *value)
     {
     case FMSX_V9990_PORT_VRAM_DATA:
         out = g_fmsx_v9990.vram_read_buffer;
+        fmsx_v9990_debug_trace_port("G9P rd", port, out);
         if ((g_fmsx_v9990.regs[FMSX_V9990_REG_VRAM_READ_ADDRESS_2] & 0x80u) == 0u)
         {
             g_fmsx_v9990.vram_read_ptr = (fmsx_v9990_get_vram_addr(FMSX_V9990_REG_VRAM_READ_ADDRESS_0) + 1u)
@@ -5479,6 +7805,7 @@ boolean fmsx_v9990_out_port(uint8_t port, uint8_t value)
             g_fmsx_v9990.system_control = value;
             g_fmsx_v9990.status = (uint8_t) ((g_fmsx_v9990.status & 0xFBu) | ((value & 0x01u) << 2));
         }
+        fmsx_v9990_update_vram_interleaving("sys");
         fmsx_v9990_update_host_irq();
         break;
 
@@ -5492,7 +7819,7 @@ boolean fmsx_v9990_out_port(uint8_t port, uint8_t value)
 unsigned fmsx_v9990_save_state(void *dst, unsigned capacity)
 {
     TFmsxV9990StateHeader header;
-    TFmsxV9990StatePayloadV4 payload;
+    TFmsxV9990StatePayloadV5 payload;
     uint8_t *out = (uint8_t *) dst;
 
     if (!g_fmsx_v9990.enabled || dst == 0)
@@ -5525,6 +7852,7 @@ unsigned fmsx_v9990_save_state(void *dst, unsigned capacity)
     payload.system_control = g_fmsx_v9990.system_control;
     payload.command_data = g_fmsx_v9990.cmd.data;
     payload.vram_read_buffer = g_fmsx_v9990.vram_read_buffer;
+    payload.vram_interleaved = g_fmsx_v9990.vram_interleaved ? 1u : 0u;
     payload.vram_bytes = FMSX_V9990_VRAM_BYTES;
     payload.cmd_sx = g_fmsx_v9990.cmd.sx;
     payload.cmd_sy = g_fmsx_v9990.cmd.sy;
@@ -5562,6 +7890,7 @@ unsigned fmsx_v9990_load_state(const void *src, unsigned size)
     TFmsxV9990StatePayloadV2 payload_v2;
     TFmsxV9990StatePayloadV3 payload_v3;
     TFmsxV9990StatePayloadV4 payload_v4;
+    TFmsxV9990StatePayloadV5 payload_v5;
     const uint8_t *in = (const uint8_t *) src;
 
     if (src == 0 || size < sizeof(header))
@@ -5602,6 +7931,8 @@ unsigned fmsx_v9990_load_state(const void *src, unsigned size)
         memcpy(g_fmsx_v9990.regs, payload.regs, sizeof(g_fmsx_v9990.regs));
         memcpy(g_fmsx_v9990.palette, payload.palette, sizeof(g_fmsx_v9990.palette));
         g_fmsx_v9990_video.active = FALSE;
+        g_fmsx_v9990.vram_interleaved = FALSE;
+        fmsx_v9990_update_vram_interleaving("ld1");
         g_fmsx_v9990.status_last_cpu_cycles = fmsx_vdp_cpu_cycles_now();
         g_fmsx_v9990.status_cpu_cycle_frac = 0u;
         fmsx_v9990_update_host_irq();
@@ -5637,6 +7968,8 @@ unsigned fmsx_v9990_load_state(const void *src, unsigned size)
         memcpy(g_fmsx_v9990.palette, payload_v2.palette, sizeof(g_fmsx_v9990.palette));
         memcpy(g_fmsx_v9990.vram, in + sizeof(header) + sizeof(payload_v2), FMSX_V9990_VRAM_BYTES);
         g_fmsx_v9990_video.active = FALSE;
+        g_fmsx_v9990.vram_interleaved = FALSE;
+        fmsx_v9990_update_vram_interleaving("ld2");
         g_fmsx_v9990.status_last_cpu_cycles = fmsx_vdp_cpu_cycles_now();
         g_fmsx_v9990.status_cpu_cycle_frac = 0u;
         fmsx_v9990_update_host_irq();
@@ -5647,6 +7980,60 @@ unsigned fmsx_v9990_load_state(const void *src, unsigned size)
      && header.version != 3u)
     {
         return 0u;
+    }
+
+    if (header.version == 5u)
+    {
+        if (header.payload_size != sizeof(payload_v5) + FMSX_V9990_VRAM_BYTES
+         || size < sizeof(header) + sizeof(payload_v5) + FMSX_V9990_VRAM_BYTES)
+        {
+            return 0u;
+        }
+
+        memcpy(&payload_v5, in + sizeof(header), sizeof(payload_v5));
+        if (payload_v5.vram_bytes != FMSX_V9990_VRAM_BYTES)
+        {
+            return 0u;
+        }
+
+        g_fmsx_v9990.io_reads = payload_v5.io_reads;
+        g_fmsx_v9990.io_writes = payload_v5.io_writes;
+        g_fmsx_v9990.vram_write_ptr = payload_v5.vram_write_ptr & (FMSX_V9990_VRAM_BYTES - 1u);
+        g_fmsx_v9990.vram_read_ptr = payload_v5.vram_read_ptr & (FMSX_V9990_VRAM_BYTES - 1u);
+        g_fmsx_v9990.reg_select = payload_v5.reg_select;
+        g_fmsx_v9990.status = payload_v5.status;
+        g_fmsx_v9990.pending_irqs = payload_v5.pending_irqs;
+        g_fmsx_v9990.system_control = payload_v5.system_control;
+        g_fmsx_v9990.cmd.sx = payload_v5.cmd_sx;
+        g_fmsx_v9990.cmd.sy = payload_v5.cmd_sy;
+        g_fmsx_v9990.cmd.dx = payload_v5.cmd_dx;
+        g_fmsx_v9990.cmd.dy = payload_v5.cmd_dy;
+        g_fmsx_v9990.cmd.nx = payload_v5.cmd_nx;
+        g_fmsx_v9990.cmd.ny = payload_v5.cmd_ny;
+        g_fmsx_v9990.cmd.wm = payload_v5.cmd_wm;
+        g_fmsx_v9990.cmd.fg = payload_v5.cmd_fg;
+        g_fmsx_v9990.cmd.bg = payload_v5.cmd_bg;
+        g_fmsx_v9990.cmd.border_x = payload_v5.cmd_border_x;
+        g_fmsx_v9990.cmd.pitch = payload_v5.cmd_pitch;
+        g_fmsx_v9990.cmd.image_width = payload_v5.cmd_image_width;
+        g_fmsx_v9990.cmd.arg = payload_v5.cmd_arg;
+        g_fmsx_v9990.cmd.log = payload_v5.cmd_log;
+        g_fmsx_v9990.cmd.opcode = payload_v5.cmd_opcode;
+        g_fmsx_v9990.cmd.data = payload_v5.cmd_data;
+        g_fmsx_v9990.cmd.partial = payload_v5.cmd_partial;
+        g_fmsx_v9990.cmd.status = payload_v5.cmd_status;
+        g_fmsx_v9990.cmd.flags = payload_v5.cmd_flags;
+        g_fmsx_v9990.cmd.mode = payload_v5.cmd_mode;
+        g_fmsx_v9990.vram_read_buffer = payload_v5.vram_read_buffer;
+        memcpy(g_fmsx_v9990.regs, payload_v5.regs, sizeof(g_fmsx_v9990.regs));
+        memcpy(g_fmsx_v9990.palette, payload_v5.palette, sizeof(g_fmsx_v9990.palette));
+        memcpy(g_fmsx_v9990.vram, in + sizeof(header) + sizeof(payload_v5), FMSX_V9990_VRAM_BYTES);
+        g_fmsx_v9990_video.active = FALSE;
+        g_fmsx_v9990.vram_interleaved = payload_v5.vram_interleaved ? TRUE : FALSE;
+        g_fmsx_v9990.status_last_cpu_cycles = fmsx_vdp_cpu_cycles_now();
+        g_fmsx_v9990.status_cpu_cycle_frac = 0u;
+        fmsx_v9990_update_host_irq();
+        return sizeof(header) + header.payload_size;
     }
 
     if (header.version == 4u)
@@ -5696,6 +8083,8 @@ unsigned fmsx_v9990_load_state(const void *src, unsigned size)
         memcpy(g_fmsx_v9990.palette, payload_v4.palette, sizeof(g_fmsx_v9990.palette));
         memcpy(g_fmsx_v9990.vram, in + sizeof(header) + sizeof(payload_v4), FMSX_V9990_VRAM_BYTES);
         g_fmsx_v9990_video.active = FALSE;
+        g_fmsx_v9990.vram_interleaved = FALSE;
+        fmsx_v9990_update_vram_interleaving("ld4");
         g_fmsx_v9990.status_last_cpu_cycles = fmsx_vdp_cpu_cycles_now();
         g_fmsx_v9990.status_cpu_cycle_frac = 0u;
         fmsx_v9990_update_host_irq();
@@ -5749,6 +8138,8 @@ unsigned fmsx_v9990_load_state(const void *src, unsigned size)
     memcpy(g_fmsx_v9990.palette, payload_v3.palette, sizeof(g_fmsx_v9990.palette));
     memcpy(g_fmsx_v9990.vram, in + sizeof(header) + sizeof(payload_v3), FMSX_V9990_VRAM_BYTES);
     g_fmsx_v9990_video.active = FALSE;
+    g_fmsx_v9990.vram_interleaved = FALSE;
+    fmsx_v9990_update_vram_interleaving("ld3");
     g_fmsx_v9990.status_last_cpu_cycles = fmsx_vdp_cpu_cycles_now();
     g_fmsx_v9990.status_cpu_cycle_frac = 0u;
     fmsx_v9990_update_host_irq();

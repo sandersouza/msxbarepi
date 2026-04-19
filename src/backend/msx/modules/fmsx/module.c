@@ -177,6 +177,10 @@ static const MsxBackendCheatOps k_msx_fmsx_cheat_ops = {
 static const MsxBackendDebugOps k_msx_fmsx_debug_ops = {
     fmsx_runtime_set_load_diag,
     fmsx_runtime_get_load_diag,
+    fmsx_runtime_set_v9990_debug_live_view,
+    fmsx_runtime_get_v9990_debug_live_view,
+    fmsx_runtime_set_v9990_debug_reference_view,
+    fmsx_runtime_get_v9990_debug_reference_view,
     fmsx_runtime_get_video_host_debug,
     fmsx_audio_get_stats,
     fmsx_runtime_get_audio_mix_debug,

@@ -299,6 +299,36 @@ python3 scripts/build-msx-disk.py <diretorio_de_entrada> <arquivo_saida.dsk> --f
 - O arquivo de saida nao pode ficar dentro do diretorio de origem.
 - O arquivo de saida tambem nao pode sobrescrever `scripts/DISKBASE.DSK`.
 
+## 5.3) build-v9990-debug-disks.py
+
+### Funcao
+
+Gera imagens MSX FAT12 `720KB` em `sdcard/disks/DEBUG/` para a trilha de depuracao do `V9990`, usando `build-msx-disk.py` como builder canonico.
+
+### Como usar
+
+Default:
+
+```bash
+python3 scripts/build-v9990-debug-disks.py
+```
+
+Diretorios customizados:
+
+```bash
+python3 scripts/build-v9990-debug-disks.py \
+  --output-dir sdcard/disks/DEBUG \
+  --source-copy-dir sdcard/disks/DEBUG/src/V9990
+```
+
+### Observacoes
+
+- Gera atualmente:
+  - `GGDBG.DSK`
+  - `V9990CHK.DSK`
+- Cada disco e montado a partir de um staging host e tambem deixa uma copia das fontes em `sdcard/disks/DEBUG/src/V9990/`.
+- O fluxo oficial de `make sdcard` ignora `sdcard/disks/` por design; esses discos sao artefatos de debug/hardware, nao payload automatico do boot.
+
 ## 6) make-sdcard-package.sh
 
 ### Funcao

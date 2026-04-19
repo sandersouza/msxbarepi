@@ -6,6 +6,547 @@ Ponto de entrada rapido para contexto operacional do projeto.
 - Guardrail ativo: a issue `#251` acabou de entrar em execucao; manter a trilha experimental no worktree ate voce declarar estabilidade suficiente para commit/push adicionais.
 - Branch ativa da rodada: `251-suporte-cartucho-vdp-v9990`
 - Issue ativa: `#251 [P1] Implementar suporte ao cartucho/VDP V9990 (GFX9000) no backend MSX`
+- Atualizacao 2026-04-18 (02:18 -03):
+  - a UART da build `67DE` confirmou que o repro `UNDERWATER` segue em `B1/BD16`, com presenter limpo e framebuffer ja nascendo corrompido no `V9990`
+  - evidencias principais:
+    - `G9M mode ... dm:B1 sm0:87`
+    - `G9D fb ... mk:5 dm:3 mn:B1 sc:00 sm0:87 sm1:00`
+    - comandos `0x90/0x80` continuam montando a imagem sobre `B1`, mas as cores permaneciam psicodelicas mesmo depois do ajuste de geometria
+  - comparacao direta com:
+    - `third_party/WebMSX/src/main/msx/video/V9990.js`
+    - `third_party/WebMSX/src/main/msx/video/ColorCache.js`
+    fechou uma divergencia semantica concreta no decode `BD16`
+  - no `WebMSX`, a cor direta de `16` bits do `V9990` e `GRB`:
+    - bits `0..4` = blue
+    - bits `5..9` = red
+    - bits `10..14` = green
+  - o core local ainda tratava esse valor como `RGB555`
+  - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - `fmsx_v9990_rgb555_to_rgb565()` foi alinhada ao `ColorCache.getColors16bitValues()` do `WebMSX`
+    - novo mapeamento:
+      - `b = value & 0x1f`
+      - `r = (value >> 5) & 0x1f`
+      - `g = (value >> 10) & 0x1f`
+  - objetivo tecnico:
+    - eliminar a principal causa semantica para as cores corrompidas do `UNDERWATER` em `B1/BD16`
+    - manter o presenter e a geometria como estavam, sem abrir nova regressao de boot
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604180218-ebbecfe`
+    - `TXTDBG BUILD: 2870`
+    - `BUILD_HASH: ebbecfe-0b94271ab05157ef8fc494541b3e88e79ddf33fe`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-18 (00:32 -03):
+  - o novo repro principal passou a ser o demo `UNDERWATER`, usado como evidencia do caminho `Bx`
+  - sintoma observado em hardware:
+    - tela duplicada horizontalmente
+    - imagem com metade da altura esperada
+    - cores completamente corrompidas
+  - comparacao direta com `third_party/WebMSX/src/main/msx/video/V9990.js` fechou uma divergencia estrutural no decode de modo do `Bx`:
+    - o core local ainda nao distinguia `B5/B6` de `B7`
+    - `fmsx_v9990_frame_height()` ainda devolvia `212` para todos os modos
+  - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - novos modos:
+      - `FMSX_V9990_MODE_B5`
+      - `FMSX_V9990_MODE_B6`
+    - `fmsx_v9990_get_display_mode()` agora segue o `WebMSX` para `DCKM=2` com `CSM=0`:
+      - `C25M/HSCN = 0x01 -> B5`
+      - `C25M/HSCN = 0x41 -> B6`
+      - `0x00/0x40 -> B7`
+    - `fmsx_v9990_get_active_display_width()` passou a reconhecer `B5/B6 = 640`
+    - `fmsx_v9990_frame_height()` passou a reconhecer:
+      - `B0/B2/B4 = 240`
+      - `B5 = 400`
+      - `B6 = 480`
+      - demais modos mantidos
+    - `fmsx_v9990_get_left_border_ticks()` e `fmsx_v9990_get_top_border_lines()` passaram a respeitar modos sem borda (`B0/B2/B4/B5/B6`), aproximando a metrica visivel do `WebMSX`
+    - `fmsx_v9990_is_bx_hires()` deixou de testar so `B3/B7` e passou a usar `active_display_width > 512`
+    - `fmsx_v9990_get_active_display_x()` ganhou caminho especifico para `B5/B6`
+    - UART ampliada:
+      - `G9M mode ... dm:<nome>`
+      - `G9V ... mn:<nome>`
+      - `G9D fb ... mn:<nome> sm0:<..> sm1:<..>`
+  - objetivo tecnico:
+    - validar, por UART, se o `UNDERWATER` esta de fato em `B5/B6`
+    - remover a principal causa semantica para largura/altura erradas no `Bx`
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604180032-ebbecfe`
+    - `TXTDBG BUILD: 4C52`
+    - `BUILD_HASH: ebbecfe-b590bf91814e0b94dcc0123b6b9fde2874e44503`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-17 (17:19 -03):
+  - a build `AEE4` passou a nao bootar mesmo com `kernel8.img` dentro do limite do Circle
+  - verificacao objetiva:
+    - `artifacts/kernel8-issue251.img` = `807736` bytes
+    - `CIRCLE_KERNEL_MAX_SIZE = 0x400000`
+    - `startup64.o` segue com stack alta em `0x004A0000`
+  - conclusao:
+    - a regressao nao era `KERNEL_SIZE`
+    - o maior suspeito passou a ser footprint de `.bss`, em especial o framebuffer extra de debug do `V9990`
+  - correcao aplicada:
+    - `src/backend/msx/modules/fmsx/fmsx_v9990.c`
+      - removido `g_fmsx_v9990_debug_framebuffer_storage`
+      - `F9/F10` continuam existindo
+      - quando ativos, renderizam sobre o framebuffer principal do `V9990`, sem segunda copia residente
+  - objetivo:
+    - preservar a infraestrutura de depuracao/UART
+    - eliminar o candidato mais forte de regressao de boot sem desmontar o plano
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604171719-ebbecfe`
+    - `TXTDBG BUILD: 6F0E`
+    - `BUILD_HASH: ebbecfe-876fdcf40ead84cd0b779ab91a47e88b881922cb`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-17 (23:54 -03):
+  - a baseline voltou a bootar, mas o gameplay continuou abrindo os mesmos gaps no background do `P1`
+  - leitura da UART:
+    - o presenter segue limpo
+    - os holes continuam nascendo no framebuffer final do `P1`
+    - o padrao observado em campo (`48 linhas boas + 16 ruins`) continua compativel com perda de `0x800` bytes dentro de bursts de `0x2000`
+  - correcao desta rodada nao mexe na semantica do `V9990`; so amplia a evidencia UART no command engine:
+    - `G9U chunk` agora dispara a cada `0x0800`
+    - o trace passa a carregar:
+      - progresso em `0x800` (`c8`)
+      - progresso em `0x2000` (`c20`)
+      - `row_bytes`
+      - linhas equivalentes (`row`)
+      - blocos de `16` linhas (`b16`)
+  - objetivo:
+    - provar ou descartar no proximo log se a corrupcao do background coincide exatamente com boundaries de `0x800`/`16` linhas
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604172354-ebbecfe`
+    - `TXTDBG BUILD: D640`
+    - `BUILD_HASH: ebbecfe-58ec026f56e769292b85c7f7c13f00550bc5a920`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-17 (16:19 -03):
+  - a rodada mudou de alvo: em vez de continuar alterando a semantica do `V9990` sem prova, entrou a infraestrutura do plano de depuracao guiado por evidencia
+  - hotkeys novas em `DEBUG=1`:
+    - `F9` cicla `LIVE_BG_A`, `LIVE_BG_B`, `LIVE_BG_COMPOSITE`, `LIVE_BG_PROVENANCE`
+    - `F10` cicla `ROM_EXPECTED`, `ROM_SIDE_BY_SIDE`, `ROM_DIFF`
+  - o caminho `kernel -> backend -> fmsx_runtime -> fmsx_v9990` agora expone essas views; o `V9990` ja consegue entregar frame alternativo de debug no `P1`
+  - a view de referencia da ROM ainda esta em scaffold:
+    - frame alternativo preto
+    - UART `G9D ref unavailable dm:<modo>`
+  - checkpoints UART novos do `Ghost'n Goblins` entraram em `src/backend/msx/modules/fmsx/fmsx_runtime.c`:
+    - `G9R sel tag:key`
+    - `G9R sel tag:phase`
+    - `G9R sel tag:upload`
+    - `G9R sel tag:disp`
+    - com `PC` e ponteiros/flags de `C719/C1C1/C1C3/C1C5/C1C7/C088/C087/C947`
+  - padronizacao parcial da UART do `V9990`:
+    - `G9W` -> `G9M mode`
+    - `G9L` -> `G9U`
+    - `G9D b16` -> `G9B blk`
+  - entrou o builder dos discos de debug em `scripts/build-v9990-debug-disks.py`, usando `scripts/build-msx-disk.py`
+    - gera `GGDBG.DSK`
+    - gera `V9990CHK.DSK`
+    - copia as fontes host para `sdcard/disks/DEBUG/src/V9990/`
+  - docs sincronizadas:
+    - `docs/debug-layer.md`
+    - `scripts/README.md`
+    - `roms/games/disks/DEBUG/V9990/README.md`
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `python3 -m py_compile scripts/build-v9990-debug-disks.py scripts/build-msx-disk.py`
+    - `python3 scripts/build-v9990-debug-disks.py`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604171619-ebbecfe`
+    - `TXTDBG BUILD: AEE4`
+    - `BUILD_HASH: ebbecfe-8ab1f0f436415e9520b7ab6188eb00a100e6943c`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-17 (13:06 -03):
+  - a baseline `E7FB/2FD7` segue com o mesmo diagnostico de UART:
+    - apresentacao inicial nasce corrompida no `Bx`, antes do gameplay
+    - gameplay `P1` continua abrindo holes no proprio framebuffer final
+    - presenter segue limpo
+  - comparacao direta com `third_party/WebMSX/src/main/msx/video/V9990.js` mostrou que o proximo delta forte ainda era layout/endereco da `VRAM` fora de `P1`
+  - novo corte aplicado em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - mantida a storage fisica linear para preservar o boot estavel
+    - renderer `Bx/P2`, `port 0x60` e acessos lineares do command engine nao-`P1` passaram a enxergar a `VRAM` com interleaving virtual
+    - `transform_bx()` agora e tratado explicitamente como traducao de endereco interleaved logico para backing store linear
+    - `transform_p2()` passou a reutilizar a mesma semantica de `Bx`
+    - `G9D fb` foi ajustado para imprimir `map:vil cpu:vil` fora de `P1`, mantendo a evidencia UART alinhada ao corte
+  - racional tecnico:
+    - isso tenta reproduzir a semantica de `WebMSX` fora de `P1` sem voltar ao interleaving fisico que regressou o boot na `81B3`
+    - o alvo imediato continua sendo a apresentacao `Bx`; se ela estabilizar, o proximo passo fica mais estreito no `P1`
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604171306-ebbecfe`
+    - `TXTDBG BUILD: 1A67`
+    - `BUILD_HASH: ebbecfe-90fbab5c7cc24626faab5b77e11bcc498f7d6c08`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-16 (23:08 -03):
+  - leitura da UART da build `2FD7` voltou a confirmar que a apresentacao inicial ja nasce corrompida no `Bx`, antes do gameplay `P1`
+  - evidencias principais em `/private/tmp/msx2p-boot-serial.log`:
+    - `G9D vp src:256x212 ... dis:1 ... scan:0` em `Bx`, descartando presenter/postfx
+    - `G9D fb w:256 h:212 iw:512 bpl:256 mk:2 dm:3 sc:00 pc:00 map:lin cpu:lin ...` no primeiro frame util do boot
+    - `G9D fb w:256 h:212 iw:256 bpl:0 mk:0 dm:0 sc:00 pc:04 map:p1 cpu:lin ...` no gameplay, com `holes` ainda nascendo no framebuffer final
+  - conclusao desta rodada:
+    - o defeito remanescente continua dividido em dois blocos semanticos:
+      - `Bx` corrompido ja na apresentacao
+      - `P1` ainda com gaps no gameplay
+    - o maior delta restante contra `third_party/WebMSX/src/main/msx/video/V9990.js` voltou a ser o layout fisico da `VRAM` fora de `P1`
+  - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - `fmsx_v9990_update_vram_interleaving()` voltou a alternar fisicamente a `VRAM` entre:
+      - linear em `P1`
+      - interleaved em modos nao-`P1`
+    - `transform_bx()` e `transform_p2()` agora usam endereco cru quando `vram_interleaved=TRUE`
+    - `port 0x60` voltou a seguir a `VRAM` fisica com fallback legado apenas para states antigos lineares
+    - state do `V9990` promovido para `version 5`, persistindo `vram_interleaved`
+    - load de states `v1..v4` agora assume dump linear antigo e converte via `ld1/ld2/ld3/ld4`
+    - UART nova de evidencia:
+      - `G9V ilv <tag> <antes>-><depois> m:<modo> sc:<system_control> sm0:<...> sm1:<...> pc:<...>`
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604162305-ebbecfe`
+    - `TXTDBG BUILD: 81B3`
+    - `BUILD_HASH: ebbecfe-0d1f6c7ee0172bd4fda6710f74a2aa7b31cbfea6`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-16 (23:19 -03):
+  - a build `81B3` reintroduziu regressao de boot: o Raspberry travou antes da UART
+  - como nao houve boot, essa rodada foi tratada como regressao estrutural do ultimo corte de interleaving fisico da `VRAM`, nao como bug funcional do `V9990`
+  - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - `fmsx_v9990_update_vram_interleaving()` voltou a ser `no-op`
+    - `fmsx_v9990_transform_bx()` voltou ao mapeamento legado `transform_bx_linear_to_interleaved()`
+    - `fmsx_v9990_cpu_vram_physical_address()` voltou a usar `fmsx_v9990_map_vram_address()`
+  - mantido:
+    - state version `5`
+    - instrumentacao UART existente
+    - restante dos cortes anteriores do `V9990`
+  - objetivo tecnico:
+    - recuperar a ultima baseline que boota antes de continuar a trilha do `Bx/P1`
+    - evitar reintroduzir regressao fora da UART
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604162319-ebbecfe`
+    - `TXTDBG BUILD: E7FB`
+    - `BUILD_HASH: ebbecfe-d553792c3bc9de44d97dbc6317a888fffa5e6cdc`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-16 (00:12 -03):
+  - a UART local desta rodada nao ficou disponivel em arquivo (`/private/tmp/msx2p-boot-serial.log` veio vazio), entao o corte foi guiado por comparacao direta do caminho `Bx` com `third_party/WebMSX/src/main/msx/video/V9990.js`
+  - o defeito da apresentacao continuava nascendo antes do `P1`, no decode de tipo `Bx`
+  - divergencia concreta encontrada no core local:
+    - `fmsx_v9990_bytes_per_line()` ainda tratava `CLRM=2` como:
+      - `BP6`
+      - fallback 8-bit generico
+    - o `WebMSX` usa `PLTM/YAE` para distinguir:
+      - `BP6`
+      - `BD8`
+      - `BYJK`
+      - `BYJKP`
+      - `BYUV`
+      - `BYUVP`
+  - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - novo decode completo de `mode_kind` para `Bx`:
+      - `BP2`
+      - `BP4`
+      - `BP6`
+      - `BD8`
+      - `BD16`
+      - `BYJK`
+      - `BYJKP`
+      - `BYUV`
+      - `BYUVP`
+    - novos helpers:
+      - `fmsx_v9990_signed6()`
+      - `fmsx_v9990_clamp5_to_rgb565()`
+      - `fmsx_v9990_decode_byuv_pixel()`
+      - `fmsx_v9990_decode_byjk_pixel()`
+      - `fmsx_v9990_palette_offset_b_from_control()`
+    - `fmsx_v9990_render_bx_line()` passou a seguir o `WebMSX` para grupos de `4` bytes em `BYxx/BYxxP`, incluindo:
+      - chroma compartilhado por grupo
+      - caminho palette-vs-YUV/YJK nos modos `*P`
+      - offsets pares/impares de palette em modos hi-res
+    - `G9D fb` foi ampliado para UART com:
+      - `dm`
+      - `sc`
+      - `pc`
+      para evidenciar o tipo real do frame corrompido
+  - objetivo tecnico:
+    - atacar a apresentacao inicial corrompida no ponto em que o `WebMSX` diverge mais do nosso core: tipos `BYUV/BYUVP/BYJK/BYJKP`
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604160012-ebbecfe`
+    - `TXTDBG BUILD: 99FE`
+    - `BUILD_HASH: ebbecfe-a9ec5e6ae58859b18c794f77641b304343d6e3b2`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-15 (23:53 -03):
+  - leitura da UART da build `2FD7` confirmou que a apresentacao inicial ja nasce corrompida no caminho `Bx`, antes do gameplay `P1`
+  - evidencias principais em `/private/tmp/msx2p-boot-serial.log`:
+    - `G9D vp ... dis:1 ... scan:0` no `V9990`, descartando presenter/scanline host-side
+    - `G9D fb ... mk:2 ... gap:0 step:1-1` em `BP4`
+    - `G9D fb ... mk:3 ... nz:48 fst:32 lst:79` em `BP6`
+    - isso indica corrupcao horizontal/decode/layout de VRAM, nao gap vertical do frame
+  - comparacao com `third_party/WebMSX/src/main/msx/video/V9990.js` mostrou a divergencia estrutural mais forte restante:
+    - o `WebMSX` interleave/de-interleave a `vram[]` fisicamente quando troca entre `P1` e modos nao-`P1`
+    - o core local ainda misturava layout fixo com `transform_bx()` por acesso
+  - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - novo estado `vram_interleaved`
+    - novo buffer temporario `g_fmsx_v9990_vram_interleave_tmp`
+    - novos helpers:
+      - `fmsx_v9990_vram_enter_interleaving()`
+      - `fmsx_v9990_vram_exit_interleaving()`
+      - `fmsx_v9990_update_vram_interleaving()`
+      - `fmsx_v9990_debug_trace_vram_interleave()`
+    - `transform_bx()` passou a operar em dois modos:
+      - VRAM fisicamente interleaved: endereco cru
+      - fallback para layout linear antigo: transform legado
+    - acesso CPU por `0x60` passou a usar VRAM fisica crua, com fallback so para estados antigos lineares
+    - a troca de layout agora e acionada em:
+      - `SCREEN_MODE_0`
+      - `SYSTEM_CONTROL`
+      - `reset()`
+    - `load_state()` passou a restaurar `vram_interleaved` conforme o modo salvo
+  - objetivo tecnico:
+    - alinhar o caminho `Bx` ao `WebMSX` no nivel de layout fisico da VRAM
+    - atacar a tela de apresentacao corrompida no ponto em que ela nasce, antes do `P1`
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604152353-ebbecfe`
+    - `TXTDBG BUILD: 742A`
+    - `BUILD_HASH: ebbecfe-d86ef626962615524b471cec6f5fb708e21f987e`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-15 (23:04 -03):
+  - leitura da UART da build `1E2B` separou o defeito em dois estagios:
+    - apresentacao/boot corrompidos em caminho `Bx` (`mk:3/2`, `iw:512`)
+    - gameplay ainda corrompido em `P1`
+  - comparando o core local com `third_party/WebMSX/src/main/msx/video/V9990.js`, apareceu uma divergencia estrutural no decode de modo `Bx`:
+    - `fmsx_v9990_get_display_mode()` e as metricas de borda ainda usavam `status & 0x04`
+    - no `WebMSX`, a escolha `B0/B1/B2/B3/B4/B7` depende de `systemControl & 0x01` (`CSM`), nao do `STATUS`
+  - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - novo helper `fmsx_v9990_is_csm_mode()`
+    - `fmsx_v9990_get_display_mode()` agora usa `system_control`
+    - `fmsx_v9990_get_left_border_ticks()`
+    - `fmsx_v9990_get_right_border_ticks()`
+    - `fmsx_v9990_get_top_border_lines()`
+    - `fmsx_v9990_get_bottom_border_lines()`
+      tambem passaram a usar `system_control`
+  - racional tecnico:
+    - isso remove um erro semantico do bloco `Bx` que pode escolher renderer/largura/bordas errados logo na apresentacao, antes mesmo do gameplay `P1`
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604152304-ebbecfe`
+    - `TXTDBG BUILD: 2FD7`
+    - `BUILD_HASH: ebbecfe-8d95723ede31c798fce2b74737cfb0115a4364b0`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-15 (16:12 -03):
+  - comparando o command engine e o scheduler de scroll com `third_party/WebMSX/src/main/msx/video/V9990.js` e `V9990CommandProcessor.js`, ficaram dois desvios concretos no core local:
+    - `NX1` ainda aceitava `4` bits (`0x0F`), enquanto o `WebMSX` usa so `3` (`0x07`)
+    - `AY1/BY1` ainda nao atualizavam o frame ativo como no `WebMSX`; o core local so tratava parte do estado (`*SDA/*SDB`) e ignorava o offset alto no frame corrente
+  - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - `fmsx_v9990_cmd_get_total_nx()`, `fmsx_v9990_cmd_dims_are_zero()` e `fmsx_v9990_cmd_set_reg(NX1)` agora usam `NX1 & 0x07`
+    - novos eventos raster:
+      - `FMSX_V9990_RASTER_EVENT_AY1`
+      - `FMSX_V9990_RASTER_EVENT_BY1`
+    - `AY1` e `BY1` com display ativo agora atualizam:
+      - `scroll_*_frame_lines[]`
+      - `scroll_*1_lines[]`
+      - baseline das linhas seguintes
+    - `fmsx_v9990_get_p1_frame_initial_state()` passou a usar `scroll_ay1_lines[0]`, nao mais o latch global bruto
+  - racional tecnico:
+    - isso remove uma divergencia direta de semantica com o `WebMSX` justamente no bloco que controla:
+      - largura logica de `NX`
+      - offset alto de scroll do `P1`
+      - janelas de frame afetadas durante o gameplay
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604151612-ebbecfe`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-15 (15:27 -03):
+  - a engenharia reversa da `roms/games/roms/V9990/GHOSTGOBLINS.ROM` fechou um ponto forte no gameplay:
+    - a ROM usa `COMMAND_DATA` (`0x62`) em rajadas grandes de `0x2000` bytes
+    - e tambem depende de atualizacoes dinamicas da VRAM durante o gameplay
+  - comparando com `third_party/WebMSX/src/main/msx/video/V9990.js`, apareceu uma divergencia estrutural no core local:
+    - o `WebMSX` trata acesso da CPU a VRAM pelos ports `0x60` como VRAM linear crua
+    - o nosso caminho `read_vram_cpu()/write_vram_cpu()` ainda roteava isso por `fmsx_v9990_map_vram_address()`, dependendo do modo ativo
+  - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - `fmsx_v9990_read_vram_cpu()` agora le VRAM linear bruta
+    - `fmsx_v9990_write_vram_cpu()` agora escreve VRAM linear bruta
+    - renderer e command helpers continuam sendo os unicos lugares com transform `P1/P2/Bx`
+  - racional tecnico:
+    - isso pode afetar gameplay dinamico sem necessariamente quebrar telas estaticas carregadas por command engine
+    - e e semanticamente igual ao `WebMSX` para acesso da CPU a VRAM
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604151527-ebbecfe`
+    - `TXTDBG BUILD: 56AC`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-15 (15:05 -03):
+  - entrou um porte semantico importante da composicao de sprites `P1/P2`, comparado diretamente com `WebMSX`
+  - desvio corrigido em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - o core local ainda renderizava sprites com um atalho proprio por `info/level`
+    - tratava `attr & 0x10` como caso especial na coleta de sprites por linha
+    - desenhava todos os sprites em uma unica passada apos as planes
+  - o `WebMSX` faz diferente:
+    - coleta ate `16` sprites visiveis sem esse filtro extra
+    - renderiza em duas passadas por prioridade real:
+      - `0x20` entre back-plane e front-plane
+      - `0x00` depois da front-plane
+  - correcao aplicada:
+    - novo `fmsx_v9990_draw_sprite_pixel_direct()`
+    - novos coletores:
+      - `fmsx_v9990_collect_p1_sprites_on_line()`
+      - `fmsx_v9990_collect_p2_sprites_on_line()`
+    - novos renderizadores:
+      - `fmsx_v9990_render_p1_sprites_line_pass(..., pri)`
+      - `fmsx_v9990_render_p2_sprites_line_pass(..., pri)`
+    - `render_p1_frame()` agora segue a ordem do `WebMSX`:
+      - backdrop
+      - back plane
+      - sprites `0x20`
+      - front plane
+      - sprites `0x00`
+    - `render_p2_frame()` tambem passou a usar duas passadas por prioridade
+  - racional tecnico:
+    - isso ataca diretamente sprites trocados / ordem errada
+    - e remove mais uma divergencia estrutural do core local em relacao ao `WebMSX`
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604151505-ebbecfe`
+    - `TXTDBG BUILD: D3F1`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-15 (14:53 -03):
+  - entrou um corte estrutural no command engine `P1`, comparado diretamente com `WebMSX`
+  - desvio corrigido em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - os comandos `x/y` do `P1` (`normalPGETX`, `logicalPSETX`, `logicalPCOPYXX`) ainda passavam por `transform_linear_p1()`
+    - no `WebMSX`, esses caminhos usam VRAM crua:
+      - `pos = (sy * imageWidthBytes) + sx`
+      - a swizzle linear `((addr >>> 1) | ((addr & 1) << 18))` e reservada so para a familia de comandos por endereco linear (`BMLX/BMLL/CMMM` em `P1`)
+  - correcao aplicada:
+    - novo helper `fmsx_v9990_cmd_p1_xy_direct_address()`
+    - `fmsx_v9990_cmd_address_of(P1)` passou a gerar endereco cru por coordenada
+    - `fmsx_v9990_cmd_p1_logical_pcopyxx()`, `fmsx_v9990_cmd_p1_logical_psetx()` e `fmsx_v9990_cmd_p1_normal_pgetx()` passaram a usar endereco cru
+    - `fmsx_v9990_cmd_p1_logical_pcopylx()` passou a usar:
+      - source cru `x/y`
+      - destination linear swizzled
+    - `logicalPCOPYLLP1()` continua linear/swizzled, como no `WebMSX`
+  - racional tecnico:
+    - esse era o primeiro ponto forte que explicava ao mesmo tempo:
+      - background com blocos faltando no gameplay
+      - sprites/patterns parecendo buscar dados do lugar errado
+    - o defeito deixa de parecer presenter/raster e volta a apontar para escrita/leitura errada de VRAM no command engine `P1`
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604151453-ebbecfe`
+    - `TXTDBG BUILD: EEA4`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-15 (14:38 -03):
+  - entrou um corte estrutural consolidado no `P1` para aproximar o renderer do modelo vivo de frame do `WebMSX`
+  - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - novo baseline explicito de frame para o `P1` (`fmsx_v9990_get_p1_frame_initial_state()`)
+    - `render_p1_frame()` deixou de reconstruir cada scanline a partir de `scroll_*_lines[]`, `priority_control_lines[]`, `palette_control_lines[]` e `backdrop_color_lines[]` da propria linha
+    - o frame agora nasce do baseline do frame e reaplica `raster_events` em ordem de `y` enquanto avanca as scanlines
+    - `CONTROL` e `sprites enabled` passaram a ser latches do frame atual (`control_frame`, `display_enabled_frame`, `sprites_enabled_frame`), em vez de leituras vivas de `regs[CONTROL]`
+    - isso passa a usar os eventos raster como fonte primaria do gameplay, sem misturar estado vivo de registrador no mesmo frame
+  - racional tecnico:
+    - o `WebMSX` renderiza `PP1` a partir do estado vivo do frame, nao de snapshots por linha preexpandidos
+    - o core local ainda misturava baseline latched, arrays preexpandidos e leituras vivas de `CONTROL`; esse corte remove essa mistura no `P1`
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604151438-ebbecfe`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-15 (13:24 -03):
+  - entrou um corte maior no `P1`, saindo do modelo `displayYA/displayYB` e aproximando a semantica de `scrollYOffsetFrame/scrollYBOffsetFrame` do `WebMSX`
+  - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - novos baselines por frame:
+      - `scroll_ay_frame_lines[]`
+      - `scroll_by_frame_lines[]`
+    - `AY0/BY0` com display ativo agora passam a registrar e propagar offsets de frame (`scroll - split`), em vez de depender de `displayYA/displayYB` como fonte principal
+    - `render_p1_segment()` passou a calcular:
+      - `display_ay = (y + scroll_ay_frame) & scrollYMax`
+      - `display_by = (y + scroll_by_frame) & 511`
+      - isso substitui o caminho antigo baseado em `displayYA/displayYB + scroll`
+    - `render_p1_frame()` e o bloco de debug do `P1` foram migrados para o mesmo modelo
+  - racional tecnico:
+    - o `WebMSX` nao reconstrui o `P1` a partir de `displayYA/displayYB` por linha; ele usa offsets de frame vivos (`scrollYOffsetFrame/scrollYBOffsetFrame`)
+    - esse corte troca o nosso `P1` para esse mesmo eixo semantico antes do proximo reteste em hardware
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604151324-ebbecfe`
+    - `TXTDBG BUILD: 2B8C`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-15 (13:11 -03):
+  - a comparacao literal com `WebMSX` fechou uma divergencia forte no `P1`: `PRX` nao corta a linha nesse modo
+  - em `third_party/WebMSX/src/main/msx/video/V9990.js`, `renderLineTypePP1()` decide a ordem `A/B` apenas por `PRY` (`priBYLine`)
+  - o core local ainda usava `PRX` como `split_x`, o que e compativel exatamente com o sintoma de `3/4` correto + `1/4` faltando repetido
+  - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - `render_p1_segment()` deixou de usar `prio_x/split_x`
+    - a ordem de composicao `A/B` agora depende apenas de `display_y < prio_y`
+    - abaixo de `PRY`, `A` vira back plane e `B` vira front plane na linha inteira
+    - acima de `PRY`, `B` fica back plane e `A` fica front plane na linha inteira
+  - isso alinha a composicao do `P1` com a logica real do `WebMSX`, em vez do modelo hibrido local
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604151311-ebbecfe`
+    - `TXTDBG BUILD: A246`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-15 (12:57 -03):
+  - o porte da semantica do `WebMSX` avancou no ponto que ainda faltava no frame ativo do `P1`
+  - em `third_party/WebMSX/src/main/msx/video/V9990.js`, os writes de:
+    - `BY1` (`*SDA/*SDB`)
+    - `PALETTE_CONTROL`
+    - `BACK_DROP_COLOR`
+    sao efetivos durante o display e afetam apenas o restante da linha/frame
+  - o core local ainda aplicava esses 3 writes como estado de linha inteira, mesmo quando ocorriam com display ativo
+  - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+    - novos eventos raster `y/x`:
+      - `FMSX_V9990_RASTER_EVENT_BY1_PLANES`
+      - `FMSX_V9990_RASTER_EVENT_PALETTE_CONTROL`
+      - `FMSX_V9990_RASTER_EVENT_BACKDROP_COLOR`
+    - `fmsx_v9990_note_scroll_by_high_write()` passou a:
+      - registrar evento raster para `*SDA/*SDB`
+      - atualizar apenas as linhas seguintes como baseline
+    - `fmsx_v9990_note_palette_control_write()` e `fmsx_v9990_note_backdrop_color_write()` passaram a:
+      - registrar evento raster
+      - atualizar apenas as linhas seguintes como baseline
+    - `fmsx_v9990_apply_p1_raster_event()` agora aplica esses 3 estados no segmento horizontal correto da linha
+  - objetivo tecnico:
+    - continuar substituindo o modelo “estado por linha inteira” por um pipeline dirigido por eventos, como no `WebMSX`
+    - atacar o restante do defeito do gameplay no proprio framebuffer do `P1`, nao no presenter
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604151257-ebbecfe`
+    - `TXTDBG BUILD: 1E68`
+    - artefato: `artifacts/kernel8-issue251.img`
 - Atualizacao 2026-04-15 (02:42 -03):
   - a trilha do defeito dos `3` gaps no gameplay entrou no ponto mais forte das referencias: writes raster no `P1` estao sendo aplicados por tempo/pixel em `openMSX`, enquanto o core local ainda desenhava a linha inteira com um unico estado
   - a UART ja mostrava `AX` mudando exatamente nas linhas do gameplay (`54`, `126`, `160/161`, `176`, `194/195`), o que bate com as bandas horizontais corrompidas
@@ -1163,4 +1704,400 @@ Ponto de entrada rapido para contexto operacional do projeto.
       - `BUILD_BID: 202604142023-1e936ec`
       - `TXTDBG BUILD: A6F0`
       - `BUILD_HASH: 1e936ec-812c78295223b1b14b0dd96555e6c75580f88f18`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-15 11:14 -03:
+    - o porte local do `WebMSX` entrou em dois blocos maiores, sem voltar ao hardware:
+      - command engine `P1` com `WM/FC/BC` por plane nos caminhos que ainda usavam estado bruto
+      - renderer `P1` sem segmentacao horizontal artificial por evento `x`
+    - correcoes aplicadas:
+      - `src/backend/msx/modules/fmsx/fmsx_v9990.c`
+      - `LMMC`, `CMMC`, `LMMM` e `BMXL` em `P1` agora usam `getWM/getFC/getBC` por plane, como no `WebMSX`
+      - `render_p1_frame()` passou a renderizar a scanline inteira a partir do snapshot da linha, deixando os `raster_events` como telemetria em vez de cortar a linha em segmentos `x`
+    - racional tecnico:
+      - no `WebMSX`, o `P1` e construido por scanline inteira; os writes durante display alteram o baseline das linhas seguintes, nao subpartes horizontais da linha corrente
+      - o core local ainda misturava estado por linha com mascara/cor brutas no command engine e segmentacao `x` no renderer
+      - isso era uma divergencia estrutural mais forte do que presenter, paleta ou scanline host-side
+    - estado atual:
+      - o foco local ficou restrito ao porte semantico do `P1` contra `WebMSX`, sem novo teste em hardware nesta rodada
+      - o proximo bloco tecnico continua sendo:
+        - revisar `BMXL/BMLX/BMLL` e os uploads do gameplay contra o `V9990CommandProcessor.js`
+        - manter `P1/P2` no modelo line-based, sem reintroduzir cortes horizontais artificiais
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604151413-ebbecfe`
+      - `TXTDBG BUILD: 3E29`
+      - `BUILD_HASH: ebbecfe-6af258ceb9b5e2305b29a3bc103314f55db69833`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-15 16:20 -03:
+    - a trilha do defeito dos `3` blocos corrompidos passou a usar telemetria UART por blocos de `16` linhas no `P1`, em vez de amostras de frame inteiro.
+    - instrumentacao nova em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+      - `G9D clk`
+        - snapshot do relogio no momento do frame capturado
+        - `ScanLine`, linha/status tick do `V9990`, `status_uc_ticks`, `cpu_cycles_now()`, `raster_event_count`
+      - `G9D b16`
+        - resumo apenas dos blocos suspeitos de `16` linhas
+        - por bloco: linhas com plane `A`, plane `B`, frame final, linhas faltantes, linhas em backdrop, backdrop index, contagem de raster events, subtipo de events (`scroll/palette/backdrop`) e faixa `x` dos events
+    - objetivo tecnico:
+      - confirmar se o padrao `3 blocos bons + 1 ruim` nasce do fetch/composicao do background ou de eventos raster/timing exatamente nos boundaries de `16` linhas
+      - correlacionar o bloco corrompido com backdrop efetivo e com o relogio CPU/V9990 no mesmo snapshot
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604151620-ebbecfe`
+      - `TXTDBG BUILD: 3889`
+      - `BUILD_HASH: ebbecfe-92a95a729fd16186c46ee75d45cf59a4015d06f1`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-15 22:40 -03:
+    - o renderer `P1` deixou de usar o sampler por pixel e passou a seguir o fetch de `PP1A/PP1B` do `WebMSX` no nivel de linha/nome.
+    - mudanca em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+      - `fmsx_v9990_render_p1_plane_pass()` agora:
+        - calcula `scrollX` e fase de nibble como no `WebMSX`
+        - percorre `32` ou `33` names por linha
+        - le `name table` e `pattern data` diretamente da VRAM
+        - emite `8` pixels por name, em ordem identica a `renderLineTypePP1A/PP1B`
+    - racional tecnico:
+      - a apresentacao inicial corrompida sugere divergencia no fetch basico do `P1`, nao apenas no gameplay/raster
+      - o sampler por pixel era semanticamente proximo, mas nao literal
+      - o `WebMSX` constroi `PP1A/PP1B` por names e bytes sequenciais, com wrap de `namePos` em `127`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604152240-ebbecfe`
+      - `TXTDBG BUILD: 1E2B`
+      - `BUILD_HASH: ebbecfe-5d97e7149965ef75588f2c7225f30fe54e06f29d`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-16 00:28 -03:
+    - a depuracao do `Bx` encontrou uma divergencia semantica direta contra o `WebMSX`: o tipo de pixel ainda era derivado dos bits altos de `PALETTE_CONTROL`, quando o `CLRM` correto vem de `SCREEN_MODE_0`.
+    - impacto tecnico:
+      - o caminho `Bx` podia entrar em `BP6/BD8/BYJK/BYUV` errados antes mesmo do gameplay
+      - isso combina com a apresentacao inicial ja nascer corrompida
+    - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+      - `fmsx_v9990_bytes_per_line()` agora usa:
+        - `SCREEN_MODE_0 & 0x03` para `CLRM`
+        - `PALETTE_CONTROL` apenas para distinguir `BP6/BD8/BYJK/BYUV` quando `CLRM == 2`
+      - comentario explicito referenciando a semantica de `WebMSX/openMSX`
+    - observacao de depuracao:
+      - o arquivo local `/private/tmp/msx2p-boot-serial.log` estava vazio nesta rodada; a correcao foi guiada por diff semantico direto contra `V9990.js`
+      - a telemetria UART existente (`G9D fb` com `sm0/sc/pc`) continua suficiente para validar o tipo real do frame em campo
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604160028-ebbecfe`
+      - `TXTDBG BUILD: F576`
+      - `BUILD_HASH: ebbecfe-1de5e8c1686d953e0737b4c51d4e1381d314bcf7`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-16 00:35 -03:
+    - a regressao "nao boota antes da UART" foi tratada como problema de bootstrap introduzido pelo experimento de interleaving fisico da `VRAM`, nao como defeito funcional do `V9990`
+    - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+      - `fmsx_v9990_update_vram_interleaving()` virou no-op e fixa `vram_interleaved = FALSE`
+      - `fmsx_v9990_transform_bx()` voltou a usar sempre `transform_bx_linear_to_interleaved()`
+      - `fmsx_v9990_cpu_vram_physical_address()` voltou ao mapeamento legado por modo via `fmsx_v9990_map_vram_address()`
+    - objetivo:
+      - restaurar a ultima baseline conhecida que bootava
+      - manter apenas o ajuste semantico seguro do `Bx` (`CLRM` vindo de `SCREEN_MODE_0`)
+      - remover do caminho de boot o experimento de layout fisico de `VRAM` e acesso CPU cru
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604160035-ebbecfe`
+      - `TXTDBG BUILD: FC43`
+      - `BUILD_HASH: ebbecfe-9120900294996a5d4a9b35ecf4d9612a20bc9178`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-16 22:43 -03:
+    - a apresentacao inicial continua nascendo corrompida com `presenter` limpo, o que reforca que a divergencia restante esta no layout/logica de `VRAM` do `V9990`, nao no blit final
+    - comparacao direta com `third_party/WebMSX/src/main/msx/video/V9990.js` mostrou a diferenca estrutural:
+      - o `WebMSX` trata `VRAM` de `Bx/P2` como linear crua
+      - o `port 0x60` (`input60/output60`) tambem acessa `VRAM` linear crua, independente do modo
+      - o backend local ainda aplicava `transform_bx()` no renderer/command engine e mapeava o `port 0x60` por modo
+    - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+      - `fmsx_v9990_transform_bx()` agora e identidade logica (`VRAM` linear)
+      - `fmsx_v9990_transform_p2()` agora e linear
+      - `fmsx_v9990_cpu_vram_physical_address()` agora usa endereco cru do `port 0x60`
+      - `G9D fb` passou a emitir `map:` e `cpu:` para deixar explicito na UART que o frame foi gerado com `VRAM` linear
+    - objetivo:
+      - alinhar o `Bx/P2` ao modelo semantico do `WebMSX` sem voltar ao experimento de interleaving fisico que regrediu o boot
+      - atacar de uma vez o titulo corrompido e o gameplay com gaps de background
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604162242-ebbecfe`
+      - `TXTDBG BUILD: 703A`
+      - `BUILD_HASH: ebbecfe-9f47a08605fb5d01afe09a242b2901f83d7e162c`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-16 23:57 -03:
+    - a UART da build `2FD7` reforcou que o defeito do boot continua no `Bx`, antes do gameplay:
+      - `display-on` ocorre com presenter limpo
+      - o primeiro frame util do `Bx` ja sai errado com `mk:2`/`mk:3`
+      - ha eventos raster `AX/AY/PC/BD` na mesma linha, com `x` especifico, mas o renderer `Bx` ainda tratava isso so por `y`
+    - divergencia concreta contra o modelo vivo do `WebMSX`:
+      - `raster_events` carregam `y/x`
+      - o `P1` ja usa segmentos horizontais
+      - o `Bx` ignorava `x` e ainda empurrava eventos da propria linha para a linha seguinte
+    - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+      - `fmsx_v9990_render_bx_line()` foi substituido por `fmsx_v9990_render_bx_segment()`
+      - `fmsx_v9990_render_bx_firstlight()` agora:
+        - aplica eventos com `y < linha` como baseline
+        - processa eventos com `y == linha` no `x` correto
+        - desenha a linha em segmentos horizontais, atualizando `AX/AY/AY1/PALETTE/BACKDROP` dentro da propria linha
+      - `G9D bx` deixou de resumir apenas difs por linha e passou a mostrar os primeiros eventos raster relevantes com `y/x/k/v`
+    - objetivo:
+      - alinhar o `Bx` ao modelo por eventos do `WebMSX`
+      - atacar a tela de apresentacao corrompida sem reabrir regressao de boot
+      - manter toda a evidencia do `V9990` exclusivamente na UART
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604162357-ebbecfe`
+      - `TXTDBG BUILD: 30EB`
+      - `BUILD_HASH: ebbecfe-8028129f10d9c21970d937da835497d6958695dd`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-17 00:32 -03:
+    - a UART da baseline que voltou a bootar (`E7FB`) confirmou que:
+      - a apresentacao continua nascendo errada dentro do proprio `Bx`, com presenter limpo
+      - o gameplay `P1` continua abrindo holes no framebuffer final, com `A=0`, `B=0` e queda em backdrop nas linhas furadas
+    - divergencia semantica forte contra `WebMSX` encontrada no backend local:
+      - `AY1` (`SCAY12-8`) e `BY1` (`SCBY8`) altos ainda estavam alterando o frame corrente
+      - no `WebMSX`, o high scroll e deferido para a proxima entrada em display ativo
+      - alem disso, writes de `AY/BY/AX/BX/PRIORITY` com display desligado nao estavam refrescando a baseline que o proximo `display-on` consumia
+    - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+      - `fmsx_v9990_note_scroll_ay_high_write()`:
+        - deixou de recomputar `scroll_ay_frame` no frame atual
+        - agora so aplica imediatamente os bits de `scrollYMax` (`R512/R256`) combinando o high latched do frame com a mascara viva
+      - `fmsx_v9990_note_scroll_by_high_write()`:
+        - deixou de recomputar `scroll_by_frame` no frame atual
+        - agora aplica imediatamente apenas `*SDA/*SDB`, mantendo `SCBY8` antigo ate o proximo frame
+      - `AY0/AY1/AX/BY0/BY1/BX/PRIORITY` com display desligado agora chamam `fmsx_v9990_reset_scroll_line_state()` para atualizar a baseline imediatamente
+    - objetivo:
+      - alinhar o backend local ao modelo do `WebMSX` para writes de scroll high e baseline em `display-off`
+      - atacar tanto a apresentacao `Bx` errada quanto os holes do `P1` sem reabrir regressao de boot
+      - manter toda evidencia do `V9990` exclusivamente na UART
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604170032-ebbecfe`
+      - `TXTDBG BUILD: 4B42`
+      - `BUILD_HASH: ebbecfe-bc89f1103872a603fb8745aa070533d089275318`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-17 13:43 -03:
+    - corte semantico aplicado no command engine fora de `P1`, guiado por diff direto contra `third_party/WebMSX/src/main/msx/video/V9990CommandProcessor.js`
+    - divergencia encontrada:
+      - o renderer `Bx/P2` ja usava `VRAM` virtual-interleaved (`transform_bx()`)
+      - mas varios opcodes do command engine ainda liam/escreviam `VRAM` bruta linear fora de `P1`
+      - em `BPP16`, o command engine local ainda usava bancos `+0x40000`, enquanto o `WebMSX` usa bytes adjacentes
+    - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+      - novos helpers:
+        - `fmsx_v9990_cmd_read_vram_nonp1()`
+        - `fmsx_v9990_cmd_write_vram_nonp1()`
+        - `fmsx_v9990_cmd_read_vram_xy()`
+        - `fmsx_v9990_cmd_write_vram_xy()`
+      - `POINT/PSET` fora de `P1` agora usam o mesmo mapeamento virtual-interleaved do renderer
+      - `BPP16` do command engine passou a operar com bytes adjacentes (`addr/addr+1`), alinhado ao `WebMSX`
+      - `LMMC` (`0x08`) em `BPP16` agora le fonte por esse mesmo mapeamento
+      - `BMLL/CMMM` (`0x0A`) fora de `P1` agora leem e escrevem destino por mapeamento virtual-interleaved
+      - `SRCH` (`0x0C`) fora de `P1` agora compara contra o byte vindo do mesmo caminho de endereco do renderer
+    - objetivo:
+      - eliminar a divergencia entre o que o command engine grava em `Bx/P2` e o que o renderer le
+      - atacar ao mesmo tempo:
+        - a apresentacao `Bx` corrompida
+        - os holes do gameplay no `P1` originados por background/collision data incorretos
+      - manter a baseline de boot estavel, sem reabrir interleaving fisico regressivo
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604171343-ebbecfe`
+      - `TXTDBG BUILD: 9463`
+      - `BUILD_HASH: ebbecfe-d8dc83ac4ed59a584e0b90ccc87477f02e1ba2bb`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-17 15:01 -03:
+    - a UART da baseline que voltou a bootar (`E7FB`) confirmou uma regressao separada no `Bx`:
+      - a apresentacao ja nascia corrompida no primeiro frame util
+      - `G9D fb` marcava `map:vil cpu:vil`
+      - o presenter continuava limpo
+    - conclusao:
+      - o mapeamento virtual-interleaved fora de `P1` introduzido para aproximar `WebMSX` estava piorando a apresentacao sem resolver os holes do gameplay
+      - o defeito restante do gameplay continua separado e ainda nasce dentro do framebuffer `P1`
+    - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+      - `Bx/P2` voltaram a usar backing linear puro
+      - `port 0x60` fora de `P1` voltou a ler/escrever backing linear puro
+      - acessos lineares do command engine fora de `P1` voltaram ao mesmo backing linear puro
+      - UART do frame passou a marcar `map:lin cpu:lin` em modos nao-`P1`
+    - objetivo:
+      - recuperar a baseline funcional de boot + apresentacao
+      - manter toda a investigacao do `P1` guiada por UART, sem reintroduzir regressao no `Bx`
+  - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604171501-ebbecfe`
+      - `TXTDBG BUILD: B4A6`
+      - `BUILD_HASH: ebbecfe-46e878ac119236b8ad631b5a93cd43db251c1650`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-18 00:49 -03:
+    - a UART do `UNDERWATER` fechou que o repro ativo do `Bx` esta em `B1/BD16`, nao em `B5/B6`
+    - evidencias em campo:
+      - `G9M mode ... dm:B1`
+      - `G9D fb ... mn:B1 sm0:87 sm1:00`
+      - presenter continuando limpo
+    - divergencia direta contra `third_party/WebMSX/src/main/msx/video/V9990CommandProcessor.js`:
+      - no `WebMSX`, `SX/DX` sempre passam por `imageWidthMask`
+      - no `WebMSX`, `SY/DY` sempre passam por `imageHeightMask`
+      - no backend local, esses masks ainda devolviam `0` fora de `P1/P2`
+    - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+      - novo helper `fmsx_v9990_cmd_bits_per_pixel()`
+      - novo helper `fmsx_v9990_cmd_latched_image_height()`
+      - `imageHeight` fora de `P1/P2` agora segue `VRAM_BYTES / ((imageWidth * bpp) >> 3)`, como no `WebMSX`
+      - `fmsx_v9990_cmd_visible_width_mask()` agora cobre `BPP2/4/8/16`
+      - `fmsx_v9990_cmd_visible_height_mask()` e `fmsx_v9990_cmd_image_height_mask()` agora cobrem `BPP2/4/8/16`
+      - UART `G9U` ampliada para mostrar coordenadas efetivas e cruas: `sx/sy/dx/dy = masked/raw`
+    - objetivo:
+      - validar na proxima UART se os uploads/desenhos do `UNDERWATER` deixam de usar coordenadas fora do envelope vertical/horizontal do `B1`
+      - atacar o defeito do `Bx` sem tocar no presenter nem reabrir regressao de boot
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604180049-ebbecfe`
+      - `TXTDBG BUILD: 6F10`
+      - `BUILD_HASH: ebbecfe-78436dbed4cbf99ef946f1388fc94bdaff5bd1a6`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-18 01:10 -03:
+    - a UART do `UNDERWATER` fechou o desvio do command engine no `Bx/B1`:
+      - o demo entra em `B1/BD16` (`SCREEN_MODE_0 = 0x87`)
+      - o presenter continua limpo
+      - o primeiro frame util ja sai com meia altura efetiva (`nz:107`, `sig:106`)
+      - os comandos relevantes continuam saindo com `sy:848/848` e `dy:848/848`, ou seja, coordenadas verticais cruas, nao normalizadas
+      - depois disso o demo repete `op:80` alternando `dx=256` e `dx=0`, o que bate com a duplicacao horizontal observada
+    - comparacao direta com `third_party/WebMSX/src/main/msx/video/V9990CommandProcessor.js`:
+      - `getSX()/getSY()/getDX()/getDY()` do `WebMSX` aplicam `imageWidthMask/imageHeightMask` no inicio do opcode
+      - o backend local ainda so mascarava durante o advance do cursor, nao na coleta inicial do comando
+    - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+      - novos helpers:
+        - `fmsx_v9990_cmd_start_visible_sy()`
+        - `fmsx_v9990_cmd_start_visible_dy()`
+        - `fmsx_v9990_cmd_normalize_start_coordinates()`
+      - `fmsx_v9990_cmd_execute()` agora normaliza `SX/SY/DX/DY` logo apos `latch_geometry()`
+      - `P1` preserva os bits de plane em `SX/DX`, mas passa a iniciar o comando com coordenadas visiveis mascaradas como no `WebMSX`
+    - objetivo:
+      - fazer a UART do `UNDERWATER` sair de `sy:848/848 dy:848/848` para valores `masked/raw`
+      - eliminar a combinacao atual de meia-altura + duplicacao horizontal sem tocar no presenter
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604180110-ebbecfe`
+      - `TXTDBG BUILD: 67DE`
+      - `BUILD_HASH: ebbecfe-6ff64e626e107bb559acdc85ef8ff7ec0475c40b`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-18 13:45 -03:
+    - o repro mais recente do `UNDERWATER` confirmou um novo estreitamento do defeito:
+      - a normalizacao inicial de `SX/SY/DX/DY` tirou o erro bruto de envelope
+      - as cores de `BD16` ficaram corretas
+      - o presenter continua inocente
+      - o framebuffer do `V9990` ainda nasce embaralhado em `B1/BD16`
+    - comparacao direta com `third_party/WebMSX/src/main/msx/video/V9990CommandProcessor.js` mostrou divergencia no caminho linear `16-bit` do command engine:
+      - `BMXL` (`0x80`) usa fonte linear `16-bit` em ordem `big-endian`
+      - `BMLX` (`0x90`) combina origem XY e destino linear `16-bit` em ordem `big-endian`
+      - `BMLL` nao-`P1` tambem trata o lado linear em bytes/palavras lineares, nao pelo fetch transformado de `Bx`
+    - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+      - `fmsx_v9990_cmd_linear_pcopylx_bpp16()` agora:
+        - le a origem XY em `big-endian`
+        - le/escreve o destino linear em `big-endian`
+      - `fmsx_v9990_cmd_point()` / `fmsx_v9990_cmd_pset_color()` em `BPP16` passaram a usar ordem `big-endian`
+      - `BMXL` (`0x80`) `BPP16` fora de `P1` passou a ler a fonte por `fmsx_v9990_read_vram_linear()`
+      - `BMLL` fora de `P1` passou a ler/escrever o destino por `fmsx_v9990_read_vram_linear()` / `fmsx_v9990_write_vram_linear()`
+    - leitura objetiva:
+      - o problema restante do `UNDERWATER` saiu de decode de cor e ficou restrito ao pipeline linear `16-bit` do command engine em `B1/BD16`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604181345-ebbecfe`
+      - `TXTDBG BUILD: 0CE6`
+      - `BUILD_HASH: ebbecfe-723e8ab1eb5b76a11864e5f52c6896cb434a6eb2`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-18 14:02 -03:
+    - a UART do `UNDERWATER` apos a `0CE6` fechou a regressao:
+      - o presenter continuou limpo
+      - a geometria do `B1` permaneceu correta (`nz:212`, `sig:212`)
+      - as cores voltaram a corromper exatamente depois do corte de byte-order `BPP16`
+    - leitura objetiva:
+      - o patch `0CE6` foi largo demais
+      - ele mexeu no byte-order dos helpers centrais `BPP16` (`POINT/PSET/BMXL/BMLX`) e reintroduziu corrupcao de cor sem evidência nova de melhora estrutural
+    - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+      - `fmsx_v9990_cmd_linear_pcopylx_bpp16()` voltou a montar `src/dst/result` em `little-endian`
+      - `fmsx_v9990_cmd_point()` `BPP16` voltou a ler XY em `little-endian`
+      - `fmsx_v9990_cmd_pset_color()` `BPP16` voltou a ler/escrever XY em `little-endian`
+      - `BMXL` (`0x80`) `BPP16` voltou a ler a fonte linear em `little-endian`
+    - escopo:
+      - nenhum ajuste de geometria, mascara ou presenter foi tocado
+      - o corte desta rodada so remove a regressao de cor introduzida pela `0CE6`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604181402-ebbecfe`
+      - `TXTDBG BUILD: 9A9D`
+      - `BUILD_HASH: ebbecfe-ae2e42a202ea5b179123695b3390e472756312c6`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-18 14:43 -03:
+    - a UART da `9A9D` confirmou que o `UNDERWATER` ainda nao falha em presenter nem em decode de cor:
+      - `G9D fb ... nz:212 sig:212` manteve o `B1` com envelope completo
+      - `G9D vp ... scan:0` manteve o presenter limpo
+      - o framebuffer continuou embaralhado, mas com cores coerentes
+    - o desvio forte que restou ficou no command engine linear do `Bx`:
+      - os traces `G9U start/done` continuam mostrando `sa:86016 -> 194560` e `da:0 -> 54272`
+      - esses enderecos ainda estavam sendo reconstruidos a partir de `SX/SY/DX/DY` ja mascarados
+      - comparacao direta com `third_party/WebMSX/src/main/msx/video/V9990CommandProcessor.js` mostrou a divergencia:
+        - `SA = ((SY1 & 0x07) << 16) | (SY0 << 8) | SX0`
+        - `DA = ((DY1 & 0x07) << 16) | (DY0 << 8) | DX0`
+        - ou seja, `SA/DA` sao lineares crus, nao derivados do XY normalizado
+    - correcao aplicada em `src/backend/msx/modules/fmsx/fmsx_v9990.c`:
+      - `fmsx_v9990_cmd_linear_src_address()` agora monta `SA` direto de `SX0/SY0/SY1`
+      - `fmsx_v9990_cmd_linear_dst_address()` agora monta `DA` direto de `DX0/DY0/DY1`
+      - os comentarios desses helpers registram explicitamente a semantica do `WebMSX`
+    - leitura objetiva:
+      - o bug restante do `UNDERWATER` ficou estreito no uso de endereco linear errado nos opcodes `BMXL/BMLX/BMLL/CMMM` do `Bx`
+      - o proximo teste em campo deve mostrar `G9U sa/da` coerentes sem tocar em presenter, geometrias ou paleta
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604181443-ebbecfe`
+      - `TXTDBG BUILD: 8CC6`
+      - `BUILD_HASH: ebbecfe-5cd4000fb8e6a54db11d45da5e71ba6edbe31912`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-19 13:11 -03:
+    - engenharia reversa inicial de `roms/games/roms/V9990/CODEINTRUDER.ROM`:
+      - ROM de `512 KiB`, header `AB` em `0000h`, `INIT=4725h`, string `CODENAME:INTRUDER BITVISION 2016 BTV-002`
+      - heuristica local classifica como `KONAMI5`
+      - `INIT` troca `7000h=01` e chama banco 1
+      - rotina `7358h` testa presenca da V9990 escrevendo `A2h` na VRAM via porta `60h` e lendo de volta
+      - se o compare falha, chama `745Ah` e fica preso no loop `7466h`
+    - leitura objetiva:
+      - o jogo nao estava parado por falta de auto-switch visual; ele para antes, quando a V9990/GFX9000 nao esta ativa para responder ao teste de porta
+    - correcao aplicada:
+      - `src/kernel.cpp` agora ativa `GFX9000` automaticamente antes do hard reset quando a ROM configurada/selecionada parece ser V9990 (`V9990`, `GFX9000`, `CODEINTRUDER`, `GHOSTGOBLINS`, `UNDERWATER`)
+      - o menu/config recebe o estado `GFX9000 ON`, evitando o reset seguinte reaplicar `OFF`
+      - `src/backend/msx/modules/fmsx/fmsx_v9990.c` rearma uma janela curta de UART ao habilitar a V9990 e emite `G9P rd` com o valor real retornado pela leitura da porta `60h`
+    - evidencias esperadas na UART:
+      - `G9E cart-auto ON src:menu` ou `src:cfg`
+      - sequencia `G9P out` em `64h/63h/60h`
+      - `G9P rd p:60 v:A2 pc:736A` se o teste de presenca passar
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604191311-ebbecfe`
+      - `TXTDBG BUILD: 2CD7`
+      - `BUILD_HASH: ebbecfe-48663cc86dd3ab32f35d0970d305f6bcdf8f6d5d`
       - artefato: `artifacts/kernel8-issue251.img`

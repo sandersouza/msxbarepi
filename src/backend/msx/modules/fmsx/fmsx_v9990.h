@@ -12,6 +12,21 @@ extern "C" {
 #define FMSX_V9990_PORT_COUNT 0x10u
 #define FMSX_V9990_VRAM_BYTES (512u * 1024u)
 
+typedef enum {
+    FMSX_V9990_DEBUG_LIVE_VIEW_OFF = 0,
+    FMSX_V9990_DEBUG_LIVE_VIEW_BG_A,
+    FMSX_V9990_DEBUG_LIVE_VIEW_BG_B,
+    FMSX_V9990_DEBUG_LIVE_VIEW_BG_COMPOSITE,
+    FMSX_V9990_DEBUG_LIVE_VIEW_BG_PROVENANCE
+} TFmsxV9990DebugLiveView;
+
+typedef enum {
+    FMSX_V9990_DEBUG_REF_VIEW_OFF = 0,
+    FMSX_V9990_DEBUG_REF_VIEW_ROM_EXPECTED,
+    FMSX_V9990_DEBUG_REF_VIEW_ROM_SIDE_BY_SIDE,
+    FMSX_V9990_DEBUG_REF_VIEW_ROM_DIFF
+} TFmsxV9990DebugReferenceView;
+
 typedef struct {
     const uint16_t *pixels;
     unsigned width;
@@ -36,6 +51,10 @@ boolean fmsx_v9990_out_port(uint8_t port, uint8_t value);
 void fmsx_v9990_begin_frame(void);
 void fmsx_v9990_render_frame(unsigned sequence);
 void fmsx_v9990_get_video_frame(TFmsxV9990VideoFrame *frame);
+void fmsx_v9990_set_debug_live_view(TFmsxV9990DebugLiveView view);
+TFmsxV9990DebugLiveView fmsx_v9990_get_debug_live_view(void);
+void fmsx_v9990_set_debug_reference_view(TFmsxV9990DebugReferenceView view);
+TFmsxV9990DebugReferenceView fmsx_v9990_get_debug_reference_view(void);
 unsigned fmsx_v9990_save_state(void *dst, unsigned capacity);
 unsigned fmsx_v9990_load_state(const void *src, unsigned size);
 

@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <circle/types.h>
+#include "fmsx_v9990.h"
 #include "../../gamemaster_catalog.h"
 
 #ifdef __cplusplus
@@ -555,6 +556,10 @@ boolean fmsx_runtime_peek8(uint16_t address, uint8_t *value);
 boolean fmsx_runtime_peek16(uint16_t address, uint16_t *value);
 void fmsx_runtime_set_load_diag(unsigned stage);
 unsigned fmsx_runtime_get_load_diag(void);
+void fmsx_runtime_set_v9990_debug_live_view(TFmsxV9990DebugLiveView view);
+TFmsxV9990DebugLiveView fmsx_runtime_get_v9990_debug_live_view(void);
+void fmsx_runtime_set_v9990_debug_reference_view(TFmsxV9990DebugReferenceView view);
+TFmsxV9990DebugReferenceView fmsx_runtime_get_v9990_debug_reference_view(void);
 TFmsxRuntimeStatus fmsx_runtime_get_status(void);
 unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsigned *height);
 void fmsx_runtime_get_video_presentation(TFmsxVideoPresentation *presentation);

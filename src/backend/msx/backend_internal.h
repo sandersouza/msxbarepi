@@ -81,6 +81,10 @@ typedef struct {
 typedef struct {
     void (*set_load_diag)(unsigned stage);
     unsigned (*get_load_diag)(void);
+    void (*set_v9990_debug_live_view)(TFmsxV9990DebugLiveView view);
+    TFmsxV9990DebugLiveView (*get_v9990_debug_live_view)(void);
+    void (*set_v9990_debug_reference_view)(TFmsxV9990DebugReferenceView view);
+    TFmsxV9990DebugReferenceView (*get_v9990_debug_reference_view)(void);
     void (*get_video_host_debug)(TFmsxVideoHostDebug *debug);
     void (*get_audio_stats)(TFmsxAudioStats *stats);
     void (*get_audio_mix_debug)(TFmsxAudioMixDebug *stats);

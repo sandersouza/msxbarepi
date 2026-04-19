@@ -49,7 +49,18 @@ make DEBUG=0
 - `F6`: mute/unmute `Layer 1` (PSG + ruido).
 - `F7`: mute/unmute `Layer 2` (FM-PAC).
 - `F8`: mute/unmute `Layer 3` (Konami SCC+).
-- `F9`: sem uso na build atual.
+- `F9`: cicla a view viva do background do `V9990`.
+  - `OFF`
+  - `LIVE_BG_A`
+  - `LIVE_BG_B`
+  - `LIVE_BG_COMPOSITE`
+  - `LIVE_BG_PROVENANCE`
+- `F10`: cicla a view de referencia/diff do `V9990`.
+  - `OFF`
+  - `ROM_EXPECTED`
+  - `ROM_SIDE_BY_SIDE`
+  - `ROM_DIFF`
+- As views `F9/F10` so atuam em `DEBUG=1` e leem o estado do `V9990` diretamente, sem depender do presenter final.
 
 ## Tag de build na tela
 - No preset atual de diagnostico MSX2+, o painel tenta ficar contido entre as `linhas 1..15`.
@@ -271,6 +282,9 @@ Diretriz visual (overlay e menu):
 - Para o freeze do `SMANBOW2` em `PC:C698/C699`, `TM6C` e a linha de maior valor diagnostico: ela mostra se a pagina `4000h` continua apontando para o cart, quais bancos estao ativos e se a Flash realmente recebeu/programou/leu o offset esperado (`0x70000+`).
 - Em paralelo, o kernel emite telemetria UART adicional focada em VDP:
   - `VDP EVT`: eventos da janela rastreada com `PC`, scanline, fase de linha, alvo de `IE1`, `R#19/R#23` e I/O de VDP (`0x98`, `0x99` address/register). Em `Knightmare Gold`, a janela aparece como `W=KG` e fica ativa durante a gameplay em `screen mode 4` quando o disco carregado contem `kmaregold`/`kmare`.
+  - `G9E cart-auto`: ativacao automatica de `GFX9000` ao carregar/configurar uma ROM reconhecida como V9990.
+  - `G9P rd`: leitura real retornada por porta da V9990; usado para validar rotinas de presenca como o compare `A2h` do `CODEINTRUDER` em `60h`.
+  - `G9V cpu`: leitura/escrita de VRAM pelo caminho de CPU da V9990, limitada a janelas curtas para nao poluir a UART.
   - `CLK`: leitura do estado de clock/throttle do firmware:
     - `ARM:<mhz>`: clock ARM reportado pelo firmware.
     - `CORE:<mhz>`: clock CORE reportado pelo firmware.

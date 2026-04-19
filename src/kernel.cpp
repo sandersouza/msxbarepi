@@ -1221,6 +1221,45 @@ static boolean BootConfigKeyEquals(const char *line, unsigned key_len, const cha
 	return literal[key_len] == '\0' ? TRUE : FALSE;
 }
 
+static char AsciiUpperChar(char c)
+{
+	return (c >= 'a' && c <= 'z') ? (char) (c - ('a' - 'A')) : c;
+}
+
+static boolean StringContainsCaseFold(const char *text, const char *needle)
+{
+	if (text == 0 || needle == 0 || needle[0] == '\0')
+	{
+		return FALSE;
+	}
+
+	for (; *text != '\0'; ++text)
+	{
+		const char *a = text;
+		const char *b = needle;
+		while (*a != '\0' && *b != '\0' && AsciiUpperChar(*a) == AsciiUpperChar(*b))
+		{
+			++a;
+			++b;
+		}
+		if (*b == '\0')
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+static boolean RomPathLooksLikeGfx9000(const char *path)
+{
+	return StringContainsCaseFold(path, "V9990")
+		|| StringContainsCaseFold(path, "GFX9000")
+		|| StringContainsCaseFold(path, "CODEINTRUDER")
+		|| StringContainsCaseFold(path, "GHOSTGOBLINS")
+		|| StringContainsCaseFold(path, "UNDERWATER");
+}
+
 
 static void FlushDCacheRange(void *addr, unsigned bytes)
 {
@@ -1518,6 +1557,8 @@ CComboKernel::CComboKernel(void)
 	m_LastF6Pressed(FALSE),
 	m_LastF7Pressed(FALSE),
 	m_LastF8Pressed(FALSE),
+	m_LastF9Pressed(FALSE),
+	m_LastF10Pressed(FALSE),
 	m_LastFmGainUpPressed(FALSE),
 	m_LastFmGainDownPressed(FALSE),
 	m_LastPauseWasInSettings(FALSE),
@@ -2385,6 +2426,8 @@ TComboShutdownMode CComboKernel::Run(void)
 			m_LastF6Pressed = FALSE;
 			m_LastF7Pressed = FALSE;
 			m_LastF8Pressed = FALSE;
+			m_LastF9Pressed = FALSE;
+			m_LastF10Pressed = FALSE;
 			m_LastFmGainUpPressed = FALSE;
 			m_LastFmGainDownPressed = FALSE;
 	#if MSXBARE_ENABLE_FMSX
@@ -4721,6 +4764,17 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	}
 
 	NormalizeSettingsForBuild();
+#if MSXBARE_FEAT_GFX9000
+	if ((has_cfg_carta && RomPathLooksLikeGfx9000(cfg_carta_path))
+	 || (has_cfg_cartb && RomPathLooksLikeGfx9000(cfg_cartb_path)))
+	{
+		m_Gfx9000Enabled = TRUE;
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+		msxbare_uart_write("G9E cart-auto ON src:cfg\n");
+#endif
+		m_Logger.Write(FromKernel, LogNotice, "GFX9000 auto ON: ROM V9990 configurada");
+	}
+#endif
 	backend_runtime_set_requested_backend_id(has_backend_id && cfg_backend_id[0] != '\0' ? cfg_backend_id : 0);
 	if (has_joy_map)
 	{
@@ -5551,6 +5605,18 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 					m_Logger.Write(FromKernel, LogWarning, "Load ROM bloqueado: SLOT2 reservado por Konami SCC+ DUAL");
 					break;
 				}
+#if MSXBARE_FEAT_GFX9000
+				if (RomPathLooksLikeGfx9000(rom_path) && !m_Gfx9000Enabled)
+				{
+					m_Gfx9000Enabled = TRUE;
+					m_PauseMenu.SetGfx9000Enabled(TRUE);
+					backend_runtime_set_gfx9000_enabled(TRUE);
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+					msxbare_uart_write("G9E cart-auto ON src:menu\n");
+#endif
+					m_Logger.Write(FromKernel, LogNotice, "GFX9000 auto ON: ROM V9990 selecionada");
+				}
+#endif
 				if (!backend_runtime_set_cartridge_path(slot_index, rom_path))
 				{
 					UpdateLoadDiagTelemetry(9001u); /* set_cartridge_path failed */
@@ -6756,6 +6822,8 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	const boolean f6_edge = (key_state.f6_pressed && !m_LastF6Pressed) ? TRUE : FALSE;
 	const boolean f7_edge = (key_state.f7_pressed && !m_LastF7Pressed) ? TRUE : FALSE;
 	const boolean f8_edge = (key_state.f8_pressed && !m_LastF8Pressed) ? TRUE : FALSE;
+	const boolean f9_edge = (key_state.f9_pressed && !m_LastF9Pressed) ? TRUE : FALSE;
+	const boolean f10_edge = (key_state.f10_pressed && !m_LastF10Pressed) ? TRUE : FALSE;
 	const boolean fm_gain_up_edge = (key_state.debug_fm_gain_up_pressed && !m_LastFmGainUpPressed) ? TRUE : FALSE;
 	const boolean fm_gain_down_edge = (key_state.debug_fm_gain_down_pressed && !m_LastFmGainDownPressed) ? TRUE : FALSE;
 	if (f6_edge)
@@ -6772,6 +6840,31 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	{
 		const boolean muted = backend_runtime_get_audio_layer_muted(3u) ? FALSE : TRUE;
 		backend_runtime_set_audio_layer_muted(3u, muted);
+	}
+	if (f9_edge)
+	{
+		MsxBackendV9990DebugLiveView view = msx_backend_get_v9990_debug_live_view();
+		switch (view)
+		{
+		case FMSX_V9990_DEBUG_LIVE_VIEW_OFF:           view = FMSX_V9990_DEBUG_LIVE_VIEW_BG_A; break;
+		case FMSX_V9990_DEBUG_LIVE_VIEW_BG_A:          view = FMSX_V9990_DEBUG_LIVE_VIEW_BG_B; break;
+		case FMSX_V9990_DEBUG_LIVE_VIEW_BG_B:          view = FMSX_V9990_DEBUG_LIVE_VIEW_BG_COMPOSITE; break;
+		case FMSX_V9990_DEBUG_LIVE_VIEW_BG_COMPOSITE:  view = FMSX_V9990_DEBUG_LIVE_VIEW_BG_PROVENANCE; break;
+		default:                                       view = FMSX_V9990_DEBUG_LIVE_VIEW_OFF; break;
+		}
+		msx_backend_set_v9990_debug_live_view(view);
+	}
+	if (f10_edge)
+	{
+		MsxBackendV9990DebugReferenceView view = msx_backend_get_v9990_debug_reference_view();
+		switch (view)
+		{
+		case FMSX_V9990_DEBUG_REF_VIEW_OFF:               view = FMSX_V9990_DEBUG_REF_VIEW_ROM_EXPECTED; break;
+		case FMSX_V9990_DEBUG_REF_VIEW_ROM_EXPECTED:      view = FMSX_V9990_DEBUG_REF_VIEW_ROM_SIDE_BY_SIDE; break;
+		case FMSX_V9990_DEBUG_REF_VIEW_ROM_SIDE_BY_SIDE:  view = FMSX_V9990_DEBUG_REF_VIEW_ROM_DIFF; break;
+		default:                                          view = FMSX_V9990_DEBUG_REF_VIEW_OFF; break;
+		}
+		msx_backend_set_v9990_debug_reference_view(view);
 	}
 	if (fm_gain_up_edge)
 	{
@@ -6848,6 +6941,8 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 		m_LastF6Pressed = key_state.f6_pressed;
 		m_LastF7Pressed = key_state.f7_pressed;
 		m_LastF8Pressed = key_state.f8_pressed;
+		m_LastF9Pressed = key_state.f9_pressed;
+		m_LastF10Pressed = key_state.f10_pressed;
 		m_LastFmGainUpPressed = key_state.debug_fm_gain_up_pressed;
 		m_LastFmGainDownPressed = key_state.debug_fm_gain_down_pressed;
 		return;
@@ -6979,6 +7074,8 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	m_LastF6Pressed = key_state.f6_pressed;
 	m_LastF7Pressed = key_state.f7_pressed;
 	m_LastF8Pressed = key_state.f8_pressed;
+	m_LastF9Pressed = key_state.f9_pressed;
+	m_LastF10Pressed = key_state.f10_pressed;
 	m_LastFmGainUpPressed = key_state.debug_fm_gain_up_pressed;
 	m_LastFmGainDownPressed = key_state.debug_fm_gain_down_pressed;
 }

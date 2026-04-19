@@ -43,6 +43,8 @@ typedef TFmsxVDPTraceView MsxBackendVdpTraceView;
 typedef TFmsxSCCTraceView MsxBackendSccTraceView;
 typedef TFmsxAudioPortTraceView MsxBackendAudioPortTraceView;
 typedef TFmsxKmgTraceView MsxBackendKmgTraceView;
+typedef TFmsxV9990DebugLiveView MsxBackendV9990DebugLiveView;
+typedef TFmsxV9990DebugReferenceView MsxBackendV9990DebugReferenceView;
 
 const char *msx_backend_family_id(void);
 const char *msx_backend_default_id(void);
@@ -128,6 +130,10 @@ boolean msx_backend_peek16(uint16_t address, uint16_t *value);
 
 void msx_backend_set_load_diag(unsigned stage);
 unsigned msx_backend_get_load_diag(void);
+void msx_backend_set_v9990_debug_live_view(MsxBackendV9990DebugLiveView view);
+MsxBackendV9990DebugLiveView msx_backend_get_v9990_debug_live_view(void);
+void msx_backend_set_v9990_debug_reference_view(MsxBackendV9990DebugReferenceView view);
+MsxBackendV9990DebugReferenceView msx_backend_get_v9990_debug_reference_view(void);
 void msx_backend_get_video_host_debug(MsxBackendVideoHostDebug *debug);
 void msx_backend_get_audio_stats(MsxBackendAudioStats *stats);
 void msx_backend_get_audio_mix_debug(MsxBackendAudioMixDebug *stats);
