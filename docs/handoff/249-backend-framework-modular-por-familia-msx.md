@@ -1,6 +1,6 @@
 # Handoff Persistente da Branch 249-backend-framework-modular-por-familia-msx
 
-Ultima atualizacao: 10/04/2026 (15:56 -03)
+Ultima atualizacao: 10/04/2026 (16:03 -03)
 
 ## Objetivo da branch
 
@@ -12,7 +12,9 @@ Executar a issue `#249`, consolidando a arquitetura de backend modular por famil
 - A branch foi criada e vinculada via `gh issue develop`:
   - branch: `249-backend-framework-modular-por-familia-msx`
   - issue: `#249`
-- O item da issue no projeto `MSX BarePI` esta em `In progress`.
+- O PR associado desta trilha foi o `#250`, mergeado em `main`.
+- A issue `#249` agora esta fechada e o item no projeto `MSX BarePI` foi movido para `Done`.
+- A branch remota foi apagada apos o merge; a branch local foi preservada apenas como referencia ate limpeza explicita.
 
 ## Atualizacao desta iteracao
 
@@ -73,7 +75,7 @@ Executar a issue `#249`, consolidando a arquitetura de backend modular por famil
 
 ## Observacoes
 
-- Nao houve `commit` nem `push`.
+- O corte final desta trilha foi publicado no commit `b558752` e mergeado em `main` pelo PR `#250`.
 - O modulo continua gerado em `artifacts/backend/msx/msx.fmsx.mod.elf`.
 - Os builds `DEBUG=1` e `DEBUG=0` desta rodada foram refeitos em sequencia limpa; uma tentativa paralela anterior corrompeu temporariamente as libs do Circle e foi descartada.
 - Ajuste fino desta sub-iteracao validado novamente em `make DEBUG=1` e `make DEBUG=0`.

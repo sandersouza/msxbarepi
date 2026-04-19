@@ -43,10 +43,12 @@ static void msx_fmsx_get_video_presentation(BackendVideoPresentation *presentati
     {
         presentation->logical_width = source.logical_width;
         presentation->logical_height = source.logical_height;
+        presentation->pitch_pixels = source.pitch_pixels;
         presentation->hires_mode = source.hires_mode ? TRUE : FALSE;
         presentation->interlaced_mode = source.interlaced_mode ? TRUE : FALSE;
         presentation->woven_hires = source.woven_hires ? TRUE : FALSE;
         presentation->field_parity_odd = source.field_parity_odd ? TRUE : FALSE;
+        presentation->disable_scanline_postfx = source.disable_scanline_postfx ? TRUE : FALSE;
     }
 }
 
@@ -121,6 +123,8 @@ static const MsxBackendMachineOps k_msx_fmsx_machine_ops = {
     fmsx_runtime_set_kanji_rom_enabled,
     fmsx_runtime_get_kanji_rom_enabled,
     fmsx_runtime_get_kanji_rom_available,
+    fmsx_runtime_set_gfx9000_enabled,
+    fmsx_runtime_get_gfx9000_enabled,
     fmsx_runtime_set_boot_mode,
     fmsx_runtime_get_boot_mode,
     fmsx_runtime_get_active_boot_mode,
@@ -173,6 +177,10 @@ static const MsxBackendCheatOps k_msx_fmsx_cheat_ops = {
 static const MsxBackendDebugOps k_msx_fmsx_debug_ops = {
     fmsx_runtime_set_load_diag,
     fmsx_runtime_get_load_diag,
+    fmsx_runtime_set_v9990_debug_live_view,
+    fmsx_runtime_get_v9990_debug_live_view,
+    fmsx_runtime_set_v9990_debug_reference_view,
+    fmsx_runtime_get_v9990_debug_reference_view,
     fmsx_runtime_get_video_host_debug,
     fmsx_audio_get_stats,
     fmsx_runtime_get_audio_mix_debug,

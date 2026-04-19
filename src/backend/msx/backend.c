@@ -142,10 +142,12 @@ static void msx_backend_clear_video_presentation(BackendVideoPresentation *prese
     {
         presentation->logical_width = 0u;
         presentation->logical_height = 0u;
+        presentation->pitch_pixels = 0u;
         presentation->hires_mode = FALSE;
         presentation->interlaced_mode = FALSE;
         presentation->woven_hires = FALSE;
         presentation->field_parity_odd = FALSE;
+        presentation->disable_scanline_postfx = FALSE;
     }
 }
 
@@ -377,6 +379,8 @@ boolean msx_backend_get_disk_rom_enabled(void) { MSX_BACKEND_CALL_BOOL(machine, 
 void msx_backend_set_kanji_rom_enabled(boolean enabled) { MSX_BACKEND_CALL_VOID(machine, set_kanji_rom_enabled, enabled); }
 boolean msx_backend_get_kanji_rom_enabled(void) { MSX_BACKEND_CALL_BOOL(machine, get_kanji_rom_enabled); }
 boolean msx_backend_get_kanji_rom_available(void) { MSX_BACKEND_CALL_BOOL(machine, get_kanji_rom_available); }
+void msx_backend_set_gfx9000_enabled(boolean enabled) { MSX_BACKEND_CALL_VOID(machine, set_gfx9000_enabled, enabled); }
+boolean msx_backend_get_gfx9000_enabled(void) { MSX_BACKEND_CALL_BOOL(machine, get_gfx9000_enabled); }
 void msx_backend_set_boot_mode(unsigned mode) { MSX_BACKEND_CALL_VOID(machine, set_boot_mode, mode); }
 unsigned msx_backend_get_boot_mode(void) { MSX_BACKEND_CALL_UNSIGNED(machine, get_boot_mode, 0u); }
 unsigned msx_backend_get_active_boot_mode(void) { MSX_BACKEND_CALL_UNSIGNED(machine, get_active_boot_mode, 0u); }
@@ -423,6 +427,10 @@ boolean msx_backend_peek16(uint16_t address, uint16_t *value) { MSX_BACKEND_CALL
 
 void msx_backend_set_load_diag(unsigned stage) { MSX_BACKEND_CALL_VOID(debug, set_load_diag, stage); }
 unsigned msx_backend_get_load_diag(void) { MSX_BACKEND_CALL_UNSIGNED(debug, get_load_diag, 0u); }
+void msx_backend_set_v9990_debug_live_view(MsxBackendV9990DebugLiveView view) { MSX_BACKEND_CALL_VOID(debug, set_v9990_debug_live_view, view); }
+MsxBackendV9990DebugLiveView msx_backend_get_v9990_debug_live_view(void) { MSX_BACKEND_CALL_UNSIGNED(debug, get_v9990_debug_live_view, FMSX_V9990_DEBUG_LIVE_VIEW_OFF); }
+void msx_backend_set_v9990_debug_reference_view(MsxBackendV9990DebugReferenceView view) { MSX_BACKEND_CALL_VOID(debug, set_v9990_debug_reference_view, view); }
+MsxBackendV9990DebugReferenceView msx_backend_get_v9990_debug_reference_view(void) { MSX_BACKEND_CALL_UNSIGNED(debug, get_v9990_debug_reference_view, FMSX_V9990_DEBUG_REF_VIEW_OFF); }
 void msx_backend_get_video_host_debug(MsxBackendVideoHostDebug *debug) { MSX_BACKEND_CALL_VOID(debug, get_video_host_debug, debug); }
 void msx_backend_get_audio_stats(MsxBackendAudioStats *stats) { MSX_BACKEND_CALL_VOID(debug, get_audio_stats, stats); }
 void msx_backend_get_audio_mix_debug(MsxBackendAudioMixDebug *stats) { MSX_BACKEND_CALL_VOID(debug, get_audio_mix_debug, stats); }

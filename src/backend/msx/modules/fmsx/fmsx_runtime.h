@@ -3,6 +3,7 @@
 
 #include <stdint.h>
 #include <circle/types.h>
+#include "fmsx_v9990.h"
 #include "../../gamemaster_catalog.h"
 
 #ifdef __cplusplus
@@ -20,10 +21,12 @@ typedef struct {
 typedef struct {
     unsigned logical_width;
     unsigned logical_height;
+    unsigned pitch_pixels;
     unsigned hires_mode;
     unsigned interlaced_mode;
     unsigned woven_hires;
     unsigned field_parity_odd;
+    unsigned disable_scanline_postfx;
 } TFmsxVideoPresentation;
 
 typedef struct {
@@ -325,6 +328,7 @@ typedef struct {
     unsigned turbo_percent;
     unsigned scr_mode;
     unsigned reg2;
+    unsigned reg9;
     unsigned reg25;
     unsigned reg26;
     unsigned reg27;
@@ -499,6 +503,8 @@ boolean fmsx_runtime_get_disk_rom_enabled(void);
 void fmsx_runtime_set_kanji_rom_enabled(boolean enabled);
 boolean fmsx_runtime_get_kanji_rom_enabled(void);
 boolean fmsx_runtime_get_kanji_rom_available(void);
+void fmsx_runtime_set_gfx9000_enabled(boolean enabled);
+boolean fmsx_runtime_get_gfx9000_enabled(void);
 void fmsx_runtime_set_boot_mode(unsigned mode);
 unsigned fmsx_runtime_get_boot_mode(void);
 unsigned fmsx_runtime_get_active_boot_mode(void);
@@ -551,6 +557,10 @@ boolean fmsx_runtime_peek8(uint16_t address, uint8_t *value);
 boolean fmsx_runtime_peek16(uint16_t address, uint16_t *value);
 void fmsx_runtime_set_load_diag(unsigned stage);
 unsigned fmsx_runtime_get_load_diag(void);
+void fmsx_runtime_set_v9990_debug_live_view(TFmsxV9990DebugLiveView view);
+TFmsxV9990DebugLiveView fmsx_runtime_get_v9990_debug_live_view(void);
+void fmsx_runtime_set_v9990_debug_reference_view(TFmsxV9990DebugReferenceView view);
+TFmsxV9990DebugReferenceView fmsx_runtime_get_v9990_debug_reference_view(void);
 TFmsxRuntimeStatus fmsx_runtime_get_status(void);
 unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsigned *height);
 void fmsx_runtime_get_video_presentation(TFmsxVideoPresentation *presentation);

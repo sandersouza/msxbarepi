@@ -13,6 +13,10 @@
 #include <circle/util.h>
 #include <assert.h>
 
+#ifndef MSXBARE_V9990_UART_TRACE
+#define MSXBARE_V9990_UART_TRACE 0
+#endif
+
 extern "C" unsigned long long msxbare_monotonic_time_us(void)
 {
 	return CTimer::GetClockTicks64();
@@ -20,20 +24,325 @@ extern "C" unsigned long long msxbare_monotonic_time_us(void)
 
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
 static CSerialDevice *g_backend_uart_trace_serial = 0;
+static char g_backend_uart_trace_queue[16384];
+static unsigned g_backend_uart_trace_queue_len = 0u;
+static unsigned g_backend_uart_trace_dropped_bytes = 0u;
+static boolean g_backend_uart_trace_drop_notice_pending = FALSE;
+static unsigned g_backend_gfx9000_kernel_trace_remaining = 0u;
+static unsigned g_backend_gfx9000_present_snapshot_budget = 0u;
+static const unsigned kBackendUartTraceFlushChunkBytes = 128u;
+static const unsigned kBackendUartTraceFlushBudgetBytes = 256u;
+static const unsigned kBackendUartTraceTraceBudgetBytes = 2048u;
+extern "C" void msxbare_uart_write(const char *text);
 
-extern "C" void msxbare_uart_write(const char *text)
+static void BackendUartTraceWriteChar(char c)
 {
-	if (g_backend_uart_trace_serial == 0 || text == 0 || text[0] == '\0')
+	char text[2];
+	text[0] = c;
+	text[1] = '\0';
+	msxbare_uart_write(text);
+}
+
+static char BackendGfx9000KernelTraceCompactMarker(const char *text)
+{
+	if (text == 0)
+	{
+		return '\0';
+	}
+	if (strcmp(text, "G9K: step gate") == 0) return 'G';
+	if (strcmp(text, "G9K: input key end") == 0) return 'K';
+	if (strcmp(text, "G9K: input joy end") == 0) return 'J';
+	if (strcmp(text, "G9K: step call") == 0) return 'j';
+	if (strcmp(text, "G9K: step ret") == 0) return 'R';
+	if (strcmp(text, "G9K: status begin") == 0) return 's';
+	if (strcmp(text, "G9K: status end") == 0) return 'S';
+	if (strcmp(text, "G9K: sync begin") == 0) return 'y';
+	if (strcmp(text, "G9K: sync end") == 0) return 'Y';
+	if (strcmp(text, "G9K: flush begin") == 0) return 'u';
+	if (strcmp(text, "G9K: flush end") == 0) return 'U';
+	if (strcmp(text, "G9K: tick end") == 0) return 'T';
+	if (strcmp(text, "G9K: blit begin") == 0) return 'b';
+	if (strcmp(text, "G9K: blit end") == 0) return 'B';
+	if (strcmp(text, "G9K: present begin") == 0) return 'm';
+	if (strcmp(text, "G9K: present end") == 0) return 'M';
+	if (strcmp(text, "G9K: yield begin") == 0) return 'w';
+	if (strcmp(text, "G9K: yield end") == 0) return 'W';
+	if (strcmp(text, "G9K: post-yield consume begin") == 0) return 'c';
+	if (strcmp(text, "G9K: post-yield consume end") == 0) return 'C';
+	if (strcmp(text, "G9K: post-yield flush begin") == 0) return 'f';
+	if (strcmp(text, "G9K: post-yield flush end") == 0) return 'F';
+	if (strcmp(text, "G9K: loop top") == 0) return 'L';
+	if (strcmp(text, "G9K: top flush begin") == 0) return 'h';
+	if (strcmp(text, "G9K: top flush end") == 0) return 'H';
+	if (strcmp(text, "G9K: usb begin") == 0) return 'x';
+	if (strcmp(text, "G9K: usb end") == 0) return 'X';
+	if (strcmp(text, "G9K: deferred begin") == 0) return 'd';
+	if (strcmp(text, "G9K: deferred end") == 0) return 'D';
+	if (strcmp(text, "G9K: pace begin") == 0) return 'q';
+	if (strcmp(text, "G9K: pace end") == 0) return 'Q';
+	return '\0';
+}
+
+extern "C" void msxbare_debug_rearm_kernel_gfx9000_trace(unsigned frames)
+{
+#if MSXBARE_V9990_UART_TRACE
+	if (frames > g_backend_gfx9000_kernel_trace_remaining)
+	{
+		g_backend_gfx9000_kernel_trace_remaining = frames;
+	}
+#else
+	(void) frames;
+#endif
+}
+
+extern "C" void msxbare_debug_note_gfx9000_activation(void)
+{
+#if MSXBARE_V9990_UART_TRACE
+	g_backend_gfx9000_present_snapshot_budget = 4u;
+#endif
+}
+
+static boolean BackendGfx9000KernelTraceEnabled(void)
+{
+#if MSXBARE_V9990_UART_TRACE
+	return g_backend_gfx9000_kernel_trace_remaining > 0u ? TRUE : FALSE;
+#else
+	return FALSE;
+#endif
+}
+
+static void BackendGfx9000KernelTrace(const char *text)
+{
+	char marker;
+	if (text == 0 || text[0] == '\0' || !BackendGfx9000KernelTraceEnabled())
 	{
 		return;
 	}
 
-	g_backend_uart_trace_serial->Write(text, strlen(text));
+	marker = BackendGfx9000KernelTraceCompactMarker(text);
+	if (marker != '\0')
+	{
+		BackendUartTraceWriteChar(marker);
+		return;
+	}
+
+	msxbare_uart_write(text);
+	msxbare_uart_write("\n");
+}
+
+static void BackendGfx9000KernelTraceConsume(void)
+{
+	if (g_backend_gfx9000_kernel_trace_remaining > 0u)
+	{
+		--g_backend_gfx9000_kernel_trace_remaining;
+	}
+}
+
+static void FlushBackendUartTraceBufferBudget(unsigned budget)
+{
+	if (g_backend_uart_trace_serial == 0)
+	{
+		return;
+	}
+
+	if (g_backend_uart_trace_queue_len != 0u)
+	{
+		unsigned offset = 0u;
+		unsigned remaining = g_backend_uart_trace_queue_len;
+		while (remaining > 0u && budget > 0u)
+		{
+			unsigned request = remaining;
+			if (request > kBackendUartTraceFlushChunkBytes)
+			{
+				request = kBackendUartTraceFlushChunkBytes;
+			}
+			if (request > budget)
+			{
+				request = budget;
+			}
+
+			const int written = g_backend_uart_trace_serial->Write(g_backend_uart_trace_queue + offset, request);
+			if (written <= 0)
+			{
+				break;
+			}
+
+			offset += (unsigned) written;
+			remaining -= (unsigned) written;
+			if ((unsigned) written >= budget)
+			{
+				budget = 0u;
+			}
+			else
+			{
+				budget -= (unsigned) written;
+			}
+			if ((unsigned) written < request)
+			{
+				break;
+			}
+		}
+
+		if (offset != 0u)
+		{
+			if (remaining != 0u)
+			{
+				memmove(g_backend_uart_trace_queue, g_backend_uart_trace_queue + offset, remaining);
+			}
+			g_backend_uart_trace_queue_len = remaining;
+		}
+	}
+
+	if (g_backend_uart_trace_drop_notice_pending && g_backend_uart_trace_queue_len == 0u)
+	{
+		char line[48];
+		CString drop_line;
+		drop_line.Format("UARTDROP bytes=%u\n", g_backend_uart_trace_dropped_bytes);
+		strncpy(line, (const char *) drop_line, sizeof(line) - 1u);
+		line[sizeof(line) - 1u] = '\0';
+		(void) g_backend_uart_trace_serial->Write(line, strlen(line));
+		g_backend_uart_trace_dropped_bytes = 0u;
+		g_backend_uart_trace_drop_notice_pending = FALSE;
+	}
+}
+
+static void FlushBackendUartTraceBuffer(void)
+{
+	if (BackendGfx9000KernelTraceEnabled())
+	{
+		return;
+	}
+
+	FlushBackendUartTraceBufferBudget(kBackendUartTraceFlushBudgetBytes);
+}
+
+static void FlushBackendUartTraceBufferTraceWindow(void)
+{
+	if (BackendGfx9000KernelTraceEnabled())
+	{
+		return;
+	}
+
+	FlushBackendUartTraceBufferBudget(kBackendUartTraceFlushBudgetBytes);
+}
+
+static boolean BackendQueueKernelLogDuringGfx9000Trace(const char *prefix, const char *text)
+{
+	if (!BackendGfx9000KernelTraceEnabled() || text == 0 || text[0] == '\0')
+	{
+		return FALSE;
+	}
+
+	if (prefix != 0 && prefix[0] != '\0')
+	{
+		msxbare_uart_write(prefix);
+	}
+	msxbare_uart_write(text);
+	msxbare_uart_write("\n");
+	return TRUE;
+}
+
+extern "C" void msxbare_uart_write(const char *text)
+{
+	if (text == 0 || text[0] == '\0')
+	{
+		return;
+	}
+
+	while (*text != '\0')
+	{
+		if (g_backend_uart_trace_queue_len + 1u >= sizeof(g_backend_uart_trace_queue))
+		{
+			g_backend_uart_trace_dropped_bytes++;
+			g_backend_uart_trace_drop_notice_pending = TRUE;
+			++text;
+			continue;
+		}
+
+		g_backend_uart_trace_queue[g_backend_uart_trace_queue_len++] = *text++;
+	}
+}
+
+extern "C" void msxbare_debug_trace(const char *text)
+{
+	if (text == 0 || text[0] == '\0')
+	{
+		return;
+	}
+
+	if (BackendGfx9000KernelTraceEnabled())
+	{
+		msxbare_uart_write(text);
+		return;
+	}
+
+	CLogger *const logger = CLogger::Get();
+	if (logger != 0)
+	{
+		logger->Write("combo", LogNotice, "%s", text);
+		return;
+	}
+
+	msxbare_uart_write(text);
+}
+
+extern "C" unsigned msxbare_debug_timer_irq_binding(unsigned stage)
+{
+	return CComboKernel::DebugRepairTimerIrqBindingCurrent(stage);
 }
 #else
+extern "C" void msxbare_debug_rearm_kernel_gfx9000_trace(unsigned frames)
+{
+	(void) frames;
+}
+
+extern "C" void msxbare_debug_note_gfx9000_activation(void)
+{
+}
+
+static void FlushBackendUartTraceBuffer(void)
+{
+}
+
+static void FlushBackendUartTraceBufferTraceWindow(void)
+{
+}
+
 extern "C" void msxbare_uart_write(const char *text)
 {
 	(void) text;
+}
+
+extern "C" void msxbare_debug_trace(const char *text)
+{
+	(void) text;
+}
+
+extern "C" unsigned msxbare_debug_timer_irq_binding(unsigned stage)
+{
+	(void) stage;
+	return 0u;
+}
+
+static boolean BackendGfx9000KernelTraceEnabled(void)
+{
+	return FALSE;
+}
+
+static void BackendGfx9000KernelTrace(const char *text)
+{
+	(void) text;
+}
+
+static void BackendGfx9000KernelTraceConsume(void)
+{
+}
+
+static boolean BackendQueueKernelLogDuringGfx9000Trace(const char *prefix, const char *text)
+{
+	(void) prefix;
+	(void) text;
+	return FALSE;
 }
 #endif
 
@@ -59,6 +368,24 @@ static const unsigned kScanlineModeOff = 0u;
 static const unsigned kScanlineModeLcd = 1u;
 static const unsigned kBootModeNorm = 0u;
 static const unsigned kBootModeFast = 1u;
+
+namespace {
+struct InterruptSystemLayoutProbe
+{
+	TIRQHandler *handlers[IRQ_LINES];
+	void *params[IRQ_LINES];
+};
+
+struct InterruptBindingBaseline
+{
+	TIRQHandler *timer_handler;
+	TIRQHandler *usb_handler;
+	boolean timer_valid;
+	boolean usb_valid;
+};
+
+static InterruptBindingBaseline g_InterruptBindingBaseline = {0, 0, FALSE, FALSE};
+}
 static const unsigned kBootModeGame = 2u;
 static const unsigned kRamMapperKbDefault = 256u;
 static const unsigned kMegaRamKbDefault = 0u;
@@ -119,6 +446,74 @@ static unsigned BuildHash16(void)
 	}
 	return cached;
 }
+
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+static char HexNibble(unsigned value)
+{
+	value &= 0x0Fu;
+	return (char) (value < 10u ? ('0' + value) : ('A' + (value - 10u)));
+}
+
+static void AppendHexFixed(char *buffer, unsigned *offset, unsigned capacity, unsigned long long value, unsigned digits)
+{
+	unsigned shift_digits = digits;
+	while (shift_digits > 0u && *offset + 1u < capacity)
+	{
+		--shift_digits;
+		buffer[(*offset)++] = HexNibble((unsigned) (value >> (shift_digits * 4u)));
+	}
+}
+
+static void AppendText(char *buffer, unsigned *offset, unsigned capacity, const char *text)
+{
+	if (text == 0)
+	{
+		return;
+	}
+	while (*text != '\0' && *offset + 1u < capacity)
+	{
+		buffer[(*offset)++] = *text++;
+	}
+}
+
+static void EmitIrqProbeLog(const char *tag,
+                            unsigned stage,
+                            unsigned flags,
+                            uintptr handler,
+                            uintptr param,
+                            uintptr expected)
+{
+	char line[96];
+	unsigned offset = 0u;
+
+	AppendText(line, &offset, sizeof(line), tag);
+	AppendText(line, &offset, sizeof(line), " s:");
+	AppendHexFixed(line, &offset, sizeof(line), stage, 2u);
+	AppendText(line, &offset, sizeof(line), " f:");
+	AppendHexFixed(line, &offset, sizeof(line), flags, 2u);
+	AppendText(line, &offset, sizeof(line), " h:");
+	AppendHexFixed(line, &offset, sizeof(line), (unsigned long long) handler, (unsigned) (sizeof(uintptr) * 2u));
+	AppendText(line, &offset, sizeof(line), " p:");
+	AppendHexFixed(line, &offset, sizeof(line), (unsigned long long) param, (unsigned) (sizeof(uintptr) * 2u));
+	AppendText(line, &offset, sizeof(line), " e:");
+	AppendHexFixed(line, &offset, sizeof(line), (unsigned long long) expected, (unsigned) (sizeof(uintptr) * 2u));
+	if (offset + 1u < sizeof(line))
+	{
+		line[offset++] = '\n';
+	}
+	line[offset] = '\0';
+	msxbare_uart_write(line);
+}
+
+static unsigned DebugExpectedTimerIrqLine(void)
+{
+#ifdef USE_PHYSICAL_COUNTER
+	return ARM_IRQLOCAL0_CNTPNS;
+#else
+	return ARM_IRQ_TIMER3;
+#endif
+}
+#endif
 
 static unsigned ClampDebugOverlayMode(unsigned mode)
 {
@@ -840,6 +1235,45 @@ static boolean BootConfigKeyEquals(const char *line, unsigned key_len, const cha
 	return literal[key_len] == '\0' ? TRUE : FALSE;
 }
 
+static char AsciiUpperChar(char c)
+{
+	return (c >= 'a' && c <= 'z') ? (char) (c - ('a' - 'A')) : c;
+}
+
+static boolean StringContainsCaseFold(const char *text, const char *needle)
+{
+	if (text == 0 || needle == 0 || needle[0] == '\0')
+	{
+		return FALSE;
+	}
+
+	for (; *text != '\0'; ++text)
+	{
+		const char *a = text;
+		const char *b = needle;
+		while (*a != '\0' && *b != '\0' && AsciiUpperChar(*a) == AsciiUpperChar(*b))
+		{
+			++a;
+			++b;
+		}
+		if (*b == '\0')
+		{
+			return TRUE;
+		}
+	}
+
+	return FALSE;
+}
+
+static boolean RomPathLooksLikeGfx9000(const char *path)
+{
+	return StringContainsCaseFold(path, "V9990")
+		|| StringContainsCaseFold(path, "GFX9000")
+		|| StringContainsCaseFold(path, "CODEINTRUDER")
+		|| StringContainsCaseFold(path, "GHOSTGOBLINS")
+		|| StringContainsCaseFold(path, "UNDERWATER");
+}
+
 
 static void FlushDCacheRange(void *addr, unsigned bytes)
 {
@@ -1057,6 +1491,9 @@ static void FillRectScreen(CComboScreenDevice *screen,
 #ifndef MSXBARE_FEAT_SCC
 #define MSXBARE_FEAT_SCC 1
 #endif
+#ifndef MSXBARE_FEAT_GFX9000
+#define MSXBARE_FEAT_GFX9000 1
+#endif
 #ifndef MSXBARE_FEAT_FMPAC
 #define MSXBARE_FEAT_FMPAC 1
 #endif
@@ -1134,6 +1571,8 @@ CComboKernel::CComboKernel(void)
 	m_LastF6Pressed(FALSE),
 	m_LastF7Pressed(FALSE),
 	m_LastF8Pressed(FALSE),
+	m_LastF9Pressed(FALSE),
+	m_LastF10Pressed(FALSE),
 	m_LastFmGainUpPressed(FALSE),
 	m_LastFmGainDownPressed(FALSE),
 	m_LastPauseWasInSettings(FALSE),
@@ -1210,6 +1649,8 @@ CComboKernel::CComboKernel(void)
 	m_Language(ComboLanguagePT),
 	m_ResolutionMode(kResolutionModeAuto),
 	m_ScanlineMode(kScanlineModeOff),
+	m_Gfx9000Enabled(FALSE),
+	m_Gfx9000AutoCfgApplied(FALSE),
 	m_RefreshRateHz(60u),
 	m_DiskRomEnabled(MSXBARE_FEAT_DISK_ROM ? TRUE : FALSE),
 	m_BootMode((MSXBARE_BOOT_MODE_DEFAULT_ENUM <= 2u) ? MSXBARE_BOOT_MODE_DEFAULT_ENUM : kBootModeNorm),
@@ -1233,6 +1674,8 @@ CComboKernel::CComboKernel(void)
 	m_FmLayerGainPct(80u),
 	m_SccCartEnabled(MSXBARE_FEAT_SCC ? TRUE : FALSE),
 	m_SccDualCartEnabled(FALSE),
+	m_Gfx9000ToggleTracePending(FALSE),
+	m_Gfx9000ResumeTracePending(FALSE),
 	m_FrameIntervalUs(FrameIntervalFromRefreshHz(60u)),
 	m_FramePacingResetPending(FALSE),
 	m_BackendFallbackPattern(FALSE),
@@ -1270,8 +1713,180 @@ CComboKernel::CComboKernel(void)
 	ResetUartPerfTelemetry();
 }
 
+unsigned CComboKernel::DebugRepairTimerIrqBindingCurrent(unsigned stage)
+{
+	if (s_Instance == 0)
+	{
+		return 0xFFFFFFFFu;
+	}
+
+	return s_Instance->DebugRepairTimerIrqBinding(stage);
+}
+
+unsigned CComboKernel::DebugRepairTimerIrqBinding(unsigned stage)
+{
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+	CInterruptSystem *const live_interrupt = CInterruptSystem::Get();
+	InterruptSystemLayoutProbe *const irq = reinterpret_cast<InterruptSystemLayoutProbe *>(live_interrupt);
+	const unsigned timer_irq_line = DebugExpectedTimerIrqLine();
+	TIRQHandler *timer_handler = irq->handlers[timer_irq_line];
+	void *timer_param = irq->params[timer_irq_line];
+	TIRQHandler *usb_handler = irq->handlers[ARM_IRQ_USB];
+	void *usb_param = irq->params[ARM_IRQ_USB];
+	TIRQHandler *const timer_handler_observed = timer_handler;
+	void *const timer_param_observed = timer_param;
+	TIRQHandler *const usb_handler_observed = usb_handler;
+	void *const usb_param_observed = usb_param;
+	unsigned timer_result = 0u;
+	unsigned usb_result = 0u;
+	static boolean s_TimerIrqLineLogged = FALSE;
+	static unsigned s_LastTimerResult = 0u;
+	static unsigned s_LastTimerStage = 0xFFFFFFFFu;
+	static unsigned s_LastUsbResult = 0u;
+	static unsigned s_LastUsbStage = 0xFFFFFFFFu;
+
+	if (live_interrupt == 0)
+	{
+		EmitIrqProbeLog("IQLV",
+		                stage,
+		                1u,
+		                0u,
+		                0u,
+		                0u);
+		return 0xFFFFFFFFu;
+	}
+	if (!s_TimerIrqLineLogged)
+	{
+		EmitIrqProbeLog("TIQN",
+		                stage,
+		                timer_irq_line,
+		                0u,
+		                0u,
+		                0u);
+		s_TimerIrqLineLogged = TRUE;
+	}
+
+	if (!g_InterruptBindingBaseline.timer_valid && timer_handler != 0)
+	{
+		g_InterruptBindingBaseline.timer_handler = timer_handler;
+		g_InterruptBindingBaseline.timer_valid = TRUE;
+	}
+
+	if (!g_InterruptBindingBaseline.usb_valid && usb_handler != 0)
+	{
+		g_InterruptBindingBaseline.usb_handler = usb_handler;
+		g_InterruptBindingBaseline.usb_valid = TRUE;
+	}
+
+	if (timer_handler == 0)
+	{
+		timer_result |= 0x01u;
+	}
+	else if (g_InterruptBindingBaseline.timer_valid
+	      && timer_handler != g_InterruptBindingBaseline.timer_handler)
+	{
+		timer_result |= 0x10u;
+	}
+	if (timer_param != &m_Timer)
+	{
+		timer_result |= 0x02u;
+	}
+
+	if ((timer_result & 0x11u) != 0u && g_InterruptBindingBaseline.timer_valid)
+	{
+		DisableIRQs();
+		irq->handlers[timer_irq_line] = g_InterruptBindingBaseline.timer_handler;
+		EnableIRQs();
+		timer_handler = irq->handlers[timer_irq_line];
+		timer_result |= 0x04u;
+	}
+	if ((timer_result & 0x02u) != 0u && (timer_handler != 0 || g_InterruptBindingBaseline.timer_valid))
+	{
+		DisableIRQs();
+		irq->params[timer_irq_line] = &m_Timer;
+		EnableIRQs();
+		timer_param = irq->params[timer_irq_line];
+		timer_result |= 0x08u;
+	}
+
+	if (m_UsbReady || g_InterruptBindingBaseline.usb_valid || usb_handler != 0 || usb_param != 0)
+	{
+		if (usb_handler == 0)
+		{
+			usb_result |= 0x01u;
+		}
+		else if (g_InterruptBindingBaseline.usb_valid
+		      && usb_handler != g_InterruptBindingBaseline.usb_handler)
+		{
+			usb_result |= 0x10u;
+		}
+		if (usb_param != &m_USBHCI)
+		{
+			usb_result |= 0x02u;
+		}
+
+		if ((usb_result & 0x11u) != 0u && g_InterruptBindingBaseline.usb_valid)
+		{
+			DisableIRQs();
+			irq->handlers[ARM_IRQ_USB] = g_InterruptBindingBaseline.usb_handler;
+			EnableIRQs();
+			usb_handler = irq->handlers[ARM_IRQ_USB];
+			usb_result |= 0x04u;
+		}
+		if ((usb_result & 0x02u) != 0u && (usb_handler != 0 || g_InterruptBindingBaseline.usb_valid))
+		{
+			DisableIRQs();
+			irq->params[ARM_IRQ_USB] = &m_USBHCI;
+			EnableIRQs();
+			usb_param = irq->params[ARM_IRQ_USB];
+			usb_result |= 0x08u;
+		}
+	}
+
+	if (timer_result != 0u && (timer_result != s_LastTimerResult || stage != s_LastTimerStage))
+	{
+		EmitIrqProbeLog("TIRQ",
+		                stage,
+		                timer_result,
+		                (uintptr) timer_handler_observed,
+		                (uintptr) timer_param_observed,
+		                (uintptr) &m_Timer);
+		s_LastTimerResult = timer_result;
+		s_LastTimerStage = stage;
+	}
+	else if (timer_result == 0u)
+	{
+		s_LastTimerResult = 0u;
+	}
+
+	if (usb_result != 0u && (usb_result != s_LastUsbResult || stage != s_LastUsbStage))
+	{
+		EmitIrqProbeLog("UIRQ",
+		                stage,
+		                usb_result,
+		                (uintptr) usb_handler_observed,
+		                (uintptr) usb_param_observed,
+		                (uintptr) &m_USBHCI);
+		s_LastUsbResult = usb_result;
+		s_LastUsbStage = stage;
+	}
+	else if (usb_result == 0u)
+	{
+		s_LastUsbResult = 0u;
+	}
+
+	return (usb_result << 16) | timer_result;
+#else
+	(void) stage;
+	return 0u;
+#endif
+}
+
 void CComboKernel::NormalizeSettingsForBuild(void)
 {
+#if !MSXBARE_FEAT_GFX9000
+	m_Gfx9000Enabled = FALSE;
+#endif
 	/*
 	 * If build defines an explicit machine profile, lock boot to that profile.
 	 * Otherwise preserve persisted/user-selected machine profile and only clamp
@@ -1369,6 +1984,7 @@ boolean CComboKernel::Initialize(void)
 			SystemThrottledHandler,
 			this);
 		LogCpuClockStatus("BT1");
+		(void) DebugRepairTimerIrqBinding(0x01u);
 	}
 
 	return ok;
@@ -1410,6 +2026,7 @@ void CComboKernel::InitializeDebugRuntime(void)
 	}
 
 	g_backend_uart_trace_serial = &m_Serial;
+	FlushBackendUartTraceBuffer();
 	(void) m_Logger.Initialize(&m_Serial);
 	BootPhase(m_Logger, "BT11", "UART + Logger... OK");
 	m_Logger.Write(FromKernel, LogNotice, "Compile time: " __DATE__ " " __TIME__);
@@ -1555,6 +2172,7 @@ TComboShutdownMode CComboKernel::Run(void)
 			backend_runtime_set_refresh_hz(m_RefreshRateHz);
 			backend_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 			backend_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
+			backend_runtime_set_gfx9000_enabled(m_Gfx9000Enabled);
 			backend_runtime_set_boot_mode(m_BootMode);
 			backend_runtime_set_model_profile(m_MachineProfile);
 			backend_runtime_set_rammapper_kb(m_RamMapperKb);
@@ -1650,6 +2268,12 @@ TComboShutdownMode CComboKernel::Run(void)
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
 	BootPhase(m_Logger, "BT12", "debug overlay... READY");
 	m_Logger.Write(FromKernel, LogNotice, "Overlay: F11 | Pause: F12");
+#if MSXBARE_V9990_UART_TRACE
+	if (m_Gfx9000AutoCfgApplied)
+	{
+		msxbare_uart_write("G9E cart-auto ON src:cfg\n");
+	}
+#endif
 #else
 	BootPhase(m_Logger, "BT12", "debug overlay... OFF");
 #endif
@@ -1663,6 +2287,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetLanguage(m_Language);
 	m_PauseMenu.SetResolutionMode(m_ResolutionMode);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
+	m_PauseMenu.SetGfx9000Enabled(m_Gfx9000Enabled);
 	m_RefreshRateHz = 60u;
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 	m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
@@ -1711,9 +2336,11 @@ TComboShutdownMode CComboKernel::Run(void)
 			if (m_USBHCI.Initialize())
 			{
 				m_UsbReady = TRUE;
+				(void) DebugRepairTimerIrqBinding(0x90u);
 				m_Logger.Write(FromKernel, LogNotice, "USB host ready");
 				m_Logger.Write(FromKernel, LogNotice, "Attach USB keyboard/gamepad");
 				BootPhase(m_Logger, "BT13", "USB Host... OK");
+				(void) ApplyGfx9000AutoForActiveCartridge("boot", TRUE);
 			}
 			else
 			{
@@ -1738,6 +2365,13 @@ TComboShutdownMode CComboKernel::Run(void)
 	for (unsigned tick = 0; ; ++tick)
 	{
 		u64 now_us = CTimer::GetClockTicks64();
+		if (!m_EmulationPaused && m_BackendReady)
+		{
+			BackendGfx9000KernelTrace("G9K: loop top");
+			BackendGfx9000KernelTrace("G9K: top flush begin");
+			FlushBackendUartTraceBufferTraceWindow();
+			BackendGfx9000KernelTrace("G9K: top flush end");
+		}
 		if (m_FramePacingResetPending)
 		{
 			next_frame_us = now_us + m_FrameIntervalUs;
@@ -1758,8 +2392,10 @@ TComboShutdownMode CComboKernel::Run(void)
 				if (m_USBHCI.Initialize())
 				{
 					m_UsbReady = TRUE;
+					(void) DebugRepairTimerIrqBinding(0x91u);
 					m_Logger.Write(FromKernel, LogNotice, "USB host ready");
 					m_Logger.Write(FromKernel, LogNotice, "Attach USB keyboard/gamepad");
+					(void) ApplyGfx9000AutoForActiveCartridge("usb-retry", TRUE);
 				}
 				else
 				{
@@ -1769,7 +2405,15 @@ TComboShutdownMode CComboKernel::Run(void)
 			}
 		}
 
+		if (!m_EmulationPaused && m_BackendReady && m_UsbReady)
+		{
+			BackendGfx9000KernelTrace("G9K: usb begin");
+		}
 		const boolean updated = m_UsbReady ? m_USBHCI.UpdatePlugAndPlay() : FALSE;
+		if (!m_EmulationPaused && m_BackendReady && m_UsbReady)
+		{
+			BackendGfx9000KernelTrace("G9K: usb end");
+		}
 		if (updated)
 		{
 			m_PlugAndPlayCount++;
@@ -1805,6 +2449,8 @@ TComboShutdownMode CComboKernel::Run(void)
 			m_LastF6Pressed = FALSE;
 			m_LastF7Pressed = FALSE;
 			m_LastF8Pressed = FALSE;
+			m_LastF9Pressed = FALSE;
+			m_LastF10Pressed = FALSE;
 			m_LastFmGainUpPressed = FALSE;
 			m_LastFmGainDownPressed = FALSE;
 	#if MSXBARE_ENABLE_FMSX
@@ -1851,7 +2497,15 @@ TComboShutdownMode CComboKernel::Run(void)
 			UpdateJoystickFromRaw(m_LastKeyboardModifiers, m_LastKeyboardRawKeys);
 		}
 
+		if (!m_EmulationPaused && m_BackendReady)
+		{
+			BackendGfx9000KernelTrace("G9K: deferred begin");
+		}
 		ProcessDeferredBootTasks();
+		if (!m_EmulationPaused && m_BackendReady)
+		{
+			BackendGfx9000KernelTrace("G9K: deferred end");
+		}
 
 		if (m_SettingsSavePending)
 		{
@@ -1902,6 +2556,10 @@ TComboShutdownMode CComboKernel::Run(void)
 		}
 
 		/* Hybrid wait: coarse sleep first, then short busy delay for tighter frame deadline. */
+		if (!m_EmulationPaused && m_BackendReady)
+		{
+			BackendGfx9000KernelTrace("G9K: pace begin");
+		}
 		if (m_BackendReady && !m_EmulationPaused)
 		{
 			now_us = CTimer::GetClockTicks64();
@@ -1920,14 +2578,20 @@ TComboShutdownMode CComboKernel::Run(void)
 				}
 			}
 		}
+		if (!m_EmulationPaused && m_BackendReady)
+		{
+			BackendGfx9000KernelTrace("G9K: pace end");
+		}
 
 		#if MSXBARE_ENABLE_FMSX
 		if (m_BackendReady && !m_EmulationPaused)
 		{
+			BackendGfx9000KernelTrace("G9K: step gate");
 			now_us = CTimer::GetClockTicks64();
 			boolean stepped_backend = FALSE;
 			unsigned catchup_steps = 0;
-			const unsigned max_catchup_steps = 2u;
+			const unsigned max_catchup_steps =
+				backend_runtime_get_gfx9000_enabled() ? 1u : 2u;
 			const boolean uart_perf_enabled = FALSE;
 			while (now_us >= next_frame_us && catchup_steps < max_catchup_steps)
 			{
@@ -1991,10 +2655,22 @@ TComboShutdownMode CComboKernel::Run(void)
 					m_RenshaPhase = 0u;
 				}
 				PushKeyboardStateToRuntime(rensha_fire_on);
+				BackendGfx9000KernelTrace("G9K: input key end");
 				backend_runtime_input_push_joystick(joy_bits_runtime);
+				BackendGfx9000KernelTrace("G9K: input joy end");
+				BackendGfx9000KernelTrace("G9K: step call");
+				FlushBackendUartTraceBufferTraceWindow();
 				const u64 step_start_us = uart_perf_enabled ? CTimer::GetClockTicks64() : 0u;
+				if (m_Gfx9000ResumeTracePending)
+				{
+					if (!BackendQueueKernelLogDuringGfx9000Trace(0, "G9R: step begin"))
+					{
+						m_Logger.Write(FromKernel, LogNotice, "G9R: step begin");
+					}
+				}
 				if (backend_runtime_step_frame())
 				{
+					BackendGfx9000KernelTrace("G9K: step ret");
 					if (uart_perf_enabled)
 					{
 						const u64 step_elapsed_us64 = CTimer::GetClockTicks64() - step_start_us;
@@ -2006,10 +2682,14 @@ TComboShutdownMode CComboKernel::Run(void)
 						}
 					}
 					stepped_backend = TRUE;
+					BackendGfx9000KernelTrace("G9K: status begin");
 					const BackendRuntimeStatus runtime_status = backend_runtime_get_status();
+					BackendGfx9000KernelTrace("G9K: status end");
 					m_BackendFrames = runtime_status.frames;
 					m_BackendLastError = runtime_status.last_error;
+					BackendGfx9000KernelTrace("G9K: sync begin");
 					SyncRefreshRateStateFromRuntime();
+					BackendGfx9000KernelTrace("G9K: sync end");
 
 					if (m_BackendFpsWindowStartUs == 0u)
 					{
@@ -2026,6 +2706,17 @@ TComboShutdownMode CComboKernel::Run(void)
 							m_BackendFpsWindowStartUs = now_us;
 							m_BackendFpsWindowStartFrames = m_BackendFrames;
 							m_FramePacingErrMaxUs = 0u;
+						}
+					}
+					if (m_Gfx9000ResumeTracePending)
+					{
+						CString resume_line;
+						resume_line.Format("G9R: step OK frame=%lu err=%u",
+							(unsigned long) m_BackendFrames,
+							(unsigned) m_BackendLastError);
+						if (!BackendQueueKernelLogDuringGfx9000Trace(0, (const char *) resume_line))
+						{
+							m_Logger.Write(FromKernel, LogNotice, resume_line);
 						}
 					}
 
@@ -2052,8 +2743,12 @@ TComboShutdownMode CComboKernel::Run(void)
 					}
 
 				}
+				BackendGfx9000KernelTrace("G9K: flush begin");
+				FlushBackendUartTraceBufferTraceWindow();
+				BackendGfx9000KernelTrace("G9K: flush end");
 				next_frame_us += m_FrameIntervalUs;
 				catchup_steps++;
+				BackendGfx9000KernelTrace("G9K: tick end");
 				now_us = CTimer::GetClockTicks64();
 			}
 			if (uart_perf_enabled)
@@ -2072,14 +2767,30 @@ TComboShutdownMode CComboKernel::Run(void)
 				}
 			}
 
-			if (stepped_backend)
-			{
-				const boolean force_viewport_clear = m_ForceViewportFullClearNextFrame;
-				m_ForceViewportFullClearNextFrame = FALSE;
-				const u64 blit_start_us = uart_perf_enabled ? CTimer::GetClockTicks64() : 0u;
-				BlitBackendFrame(force_viewport_clear ? TRUE : FALSE);
-				if (uart_perf_enabled)
+				if (stepped_backend)
 				{
+					const boolean force_viewport_clear = m_ForceViewportFullClearNextFrame;
+					m_ForceViewportFullClearNextFrame = FALSE;
+					const u64 blit_start_us = uart_perf_enabled ? CTimer::GetClockTicks64() : 0u;
+					BackendGfx9000KernelTrace("G9K: blit begin");
+					if (m_Gfx9000ResumeTracePending)
+					{
+						if (!BackendQueueKernelLogDuringGfx9000Trace(0, "G9R: blit begin"))
+						{
+							m_Logger.Write(FromKernel, LogNotice, "G9R: blit begin");
+						}
+					}
+					BlitBackendFrame(force_viewport_clear ? TRUE : FALSE);
+					BackendGfx9000KernelTrace("G9K: blit end");
+					if (m_Gfx9000ResumeTracePending)
+					{
+						if (!BackendQueueKernelLogDuringGfx9000Trace(0, "G9R: blit OK"))
+						{
+							m_Logger.Write(FromKernel, LogNotice, "G9R: blit OK");
+						}
+					}
+					if (uart_perf_enabled)
+					{
 					const u64 blit_elapsed_us64 = CTimer::GetClockTicks64() - blit_start_us;
 					const unsigned blit_elapsed_us = (unsigned) (blit_elapsed_us64 > 9999u ? 9999u : blit_elapsed_us64);
 					m_UartVideoBlitUsLast = blit_elapsed_us;
@@ -2137,9 +2848,10 @@ TComboShutdownMode CComboKernel::Run(void)
 					&crop_x, &crop_y);
 				(void) combo_viewport_screenshot_capture_from_emulator(
 					src_pixels, src_w, src_h,
+					(presentation.pitch_pixels != 0u) ? presentation.pitch_pixels : src_w,
 					m_BackendBoxX, m_BackendBoxY, m_BackendBoxW, m_BackendBoxH,
 					full_snap_w, full_snap_h, crop_x, crop_y,
-					m_ScanlineMode);
+					(presentation.disable_scanline_postfx == 0u) ? m_ScanlineMode : kScanlineModeOff);
 			}
 			m_PauseMenu.RequestRedraw();
 		}
@@ -2213,13 +2925,66 @@ TComboShutdownMode CComboKernel::Run(void)
 		const unsigned menu_anchor_h = (m_BackendBoxH > 0u) ? m_BackendBoxH : m_Screen.GetHeight();
 		if (!(m_PauseRenderSuppressed && !m_EmulationPaused))
 		{
+			if (m_Gfx9000ToggleTracePending)
+			{
+				if (!BackendQueueKernelLogDuringGfx9000Trace(0, "G9A: pause render begin"))
+				{
+					m_Logger.Write(FromKernel, LogNotice, "G9A: pause render begin");
+				}
+			}
+			if (m_Gfx9000ResumeTracePending && !m_EmulationPaused)
+			{
+				if (!BackendQueueKernelLogDuringGfx9000Trace(0, "G9R: present begin"))
+				{
+					m_Logger.Write(FromKernel, LogNotice, "G9R: present begin");
+				}
+			}
 			m_PauseMenu.Render(m_EmulationPaused, &m_GfxText,
 				m_Screen.GetWidth(), m_Screen.GetHeight(),
 				menu_anchor_x, menu_anchor_y, menu_anchor_w, menu_anchor_h);
 		}
 		m_Screen.Rotor(0, tick);
+		if (!m_EmulationPaused && m_BackendReady)
+		{
+			BackendGfx9000KernelTrace("G9K: present begin");
+		}
 		(void) m_Screen.PresentIfDirty(m_DCacheEnabled, TRUE);
+		if (!m_EmulationPaused && m_BackendReady)
+		{
+			BackendGfx9000KernelTrace("G9K: present end");
+		}
+		FlushBackendUartTraceBuffer();
+		if (m_Gfx9000ToggleTracePending)
+		{
+			if (!BackendQueueKernelLogDuringGfx9000Trace(0, "G9A: pause present OK"))
+			{
+				m_Logger.Write(FromKernel, LogNotice, "G9A: pause present OK");
+			}
+			m_Gfx9000ToggleTracePending = FALSE;
+		}
+		if (m_Gfx9000ResumeTracePending && !m_EmulationPaused)
+		{
+			if (!BackendQueueKernelLogDuringGfx9000Trace(0, "G9R: present OK"))
+			{
+				m_Logger.Write(FromKernel, LogNotice, "G9R: present OK");
+			}
+			m_Gfx9000ResumeTracePending = FALSE;
+		}
+		if (!m_EmulationPaused && m_BackendReady)
+		{
+			BackendGfx9000KernelTrace("G9K: yield begin");
+		}
 		m_Scheduler.Yield();
+		if (!m_EmulationPaused && m_BackendReady)
+		{
+			BackendGfx9000KernelTrace("G9K: yield end");
+			BackendGfx9000KernelTrace("G9K: post-yield consume begin");
+			BackendGfx9000KernelTraceConsume();
+			BackendGfx9000KernelTrace("G9K: post-yield consume end");
+			BackendGfx9000KernelTrace("G9K: post-yield flush begin");
+			FlushBackendUartTraceBufferTraceWindow();
+			BackendGfx9000KernelTrace("G9K: post-yield flush end");
+		}
 	}
 
 	return ComboShutdownHalt;
@@ -2868,7 +3633,7 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 	{
 		const unsigned build_hash16 = BuildHash16();
 		const unsigned cpu_mhz = m_CPUThrottle.GetClockRate() / 1000000u;
-		const char *dfs_label = timing_stats.pal_video ? "PAL " : "NTSC";
+		const char *dfs_label = (timing_stats.reg9 & 0x02u) ? "PAL " : "NTSC";
 		const char *mode_label = VideoModeLabelFromPresentation(presentation);
 
 		line.Format("TXTDBG BUILD:%04X FREQ:%4uMHz",
@@ -2970,7 +3735,7 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		timing_stats.v_period > 99999u ? 99999u : timing_stats.v_period,
 		timing_stats.i_period > 99999u ? 99999u : timing_stats.i_period,
 		timing_stats.scanline > 999u ? 999u : timing_stats.scanline,
-		timing_stats.pal_video ? "PAL " : "NTSC",
+		(timing_stats.reg9 & 0x02u) ? "PAL " : "NTSC",
 		timing_stats.lines_212 ? 1u : 0u,
 		timing_stats.turbo_percent > 999u ? 999u : timing_stats.turbo_percent,
 		timing_stats.scr_mode > 99u ? 99u : timing_stats.scr_mode,
@@ -3191,8 +3956,12 @@ void CComboKernel::BlitBackendFrame(boolean force_redraw)
 		&& (height == (presentation.logical_height << 1));
 	const unsigned logical_src_height =
 		woven_hires ? presentation.logical_height : height;
+	const unsigned src_pitch = (presentation.pitch_pixels != 0u) ? presentation.pitch_pixels : width;
 
-	const unsigned scanline_mode = (m_ScanlineMode != kScanlineModeOff) ? kScanlineModeLcd : kScanlineModeOff;
+	const unsigned scanline_mode =
+		((presentation.disable_scanline_postfx == 0u) && (m_ScanlineMode != kScanlineModeOff))
+			? kScanlineModeLcd
+			: kScanlineModeOff;
 	unsigned offset_x = 0u;
 	unsigned offset_y = 0u;
 	{
@@ -3209,6 +3978,26 @@ void CComboKernel::BlitBackendFrame(boolean force_redraw)
 			&full_dst_width, &full_dst_height,
 			&crop_x, &crop_y);
 	}
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
+	if (g_backend_gfx9000_present_snapshot_budget != 0u)
+	{
+		CString line;
+		line.Format("G9D vp src:%ux%u log:%ux%u pitch:%u woven:%u fld:%u dis:%u dst:%ux%u full:%ux%u crop:%u,%u scan:%u",
+			width, height,
+			presentation.logical_width, presentation.logical_height,
+			presentation.pitch_pixels,
+			presentation.woven_hires ? 1u : 0u,
+			presentation.field_parity_odd ? 1u : 0u,
+			presentation.disable_scanline_postfx ? 1u : 0u,
+			dst_width, dst_height,
+			full_dst_width, full_dst_height,
+			crop_x, crop_y,
+			scanline_mode);
+		msxbare_uart_write((const char *) line);
+		msxbare_uart_write("\n");
+		--g_backend_gfx9000_present_snapshot_budget;
+	}
+#endif
 	const boolean hires_mode = width >= 512u ? TRUE : FALSE;
 	const unsigned old_box_x = m_BackendBoxX;
 	const unsigned old_box_y = m_BackendBoxY;
@@ -3229,7 +4018,10 @@ void CComboKernel::BlitBackendFrame(boolean force_redraw)
 	{
 		u16 *dst_base = m_Screen.GetDrawBuffer16();
 		const unsigned pitch_pixels = m_Screen.GetPitchPixels();
-		const unsigned scanline_mode = (m_ScanlineMode != kScanlineModeOff) ? kScanlineModeLcd : kScanlineModeOff;
+		const unsigned scanline_mode =
+			((presentation.disable_scanline_postfx == 0u) && (m_ScanlineMode != kScanlineModeOff))
+				? kScanlineModeLcd
+				: kScanlineModeOff;
 		u16 *present_base = dst_base;
 		const unsigned present_pitch_pixels = pitch_pixels;
 		const unsigned present_offset_pixels = (offset_y * pitch_pixels) + offset_x;
@@ -3308,7 +4100,7 @@ void CComboKernel::BlitBackendFrame(boolean force_redraw)
 				}
 				else
 				{
-					const u16 *src_line = pixels + (src_y * width) + src_x0;
+					const u16 *src_line = pixels + (src_y * src_pitch) + src_x0;
 					BlitLineExpandNxRgb565NoDim(dst_line, src_line + (crop_x / scale), dst_width / scale + ((dst_width % scale) != 0u ? 1u : 0u), scale);
 				}
 				prev_src_y = src_y;
@@ -3384,7 +4176,7 @@ void CComboKernel::BlitBackendFrame(boolean force_redraw)
 			{
 				const unsigned src_rel_y = m_BlitYMap[y];
 				const unsigned src_y = src_y0 + src_rel_y;
-				const u16 *src_line = pixels + (src_y * width);
+				const u16 *src_line = pixels + (src_y * src_pitch);
 				u16 *dst_line = present_base + present_offset_pixels + (y * present_pitch_pixels);
 				const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
 				const unsigned dim_mode = dark_lcd ? 1u : 0u;
@@ -3426,7 +4218,7 @@ void CComboKernel::BlitBackendFrame(boolean force_redraw)
 						presentation.field_parity_odd)
 					: (unsigned) (((u64) (y + crop_y) * (u64) src_h) / (u64) full_dst_height);
 				const unsigned src_y = src_y0 + src_rel_y;
-				const u16 *src_line = pixels + (src_y * width);
+				const u16 *src_line = pixels + (src_y * src_pitch);
 				u16 *dst_line = present_base + present_offset_pixels + (y * present_pitch_pixels);
 				const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
 				const unsigned dim_mode = dark_lcd ? 1u : 0u;
@@ -3497,7 +4289,7 @@ void CComboKernel::BlitBackendFrame(boolean force_redraw)
 	{
 		const unsigned src_rel_y = (unsigned) (((u64) y * (u64) src_h) / (u64) dst_height);
 		const unsigned src_y = src_y0 + src_rel_y;
-		const u16 *line = pixels + (src_y * width);
+		const u16 *line = pixels + (src_y * src_pitch);
 		const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
 		for (unsigned x = 0; x < dst_width; ++x)
 		{
@@ -3594,6 +4386,7 @@ void CComboKernel::ApplyRuntimeSettingsToBackend(void)
 	}
 	backend_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 	backend_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
+	backend_runtime_set_gfx9000_enabled(m_Gfx9000Enabled);
 	backend_runtime_set_boot_mode(m_BootMode);
 	backend_runtime_set_model_profile(m_MachineProfile);
 	backend_runtime_set_rammapper_kb(m_RamMapperKb);
@@ -3608,6 +4401,60 @@ void CComboKernel::ApplyRuntimeSettingsToBackend(void)
 	}
 	SyncKanjiRomStateFromRuntime();
 	SyncRefreshRateStateFromRuntime();
+#endif
+}
+
+boolean CComboKernel::ApplyGfx9000AutoForActiveCartridge(const char *source, boolean reset_backend)
+{
+#if MSXBARE_ENABLE_FMSX && MSXBARE_FEAT_GFX9000
+	if (!m_BackendReady)
+	{
+		return FALSE;
+	}
+
+	const char *cart_a = backend_runtime_get_cartridge_path(0u);
+	const char *cart_b = backend_runtime_get_cartridge_path(1u);
+	if (!RomPathLooksLikeGfx9000(cart_a) && !RomPathLooksLikeGfx9000(cart_b))
+	{
+		return FALSE;
+	}
+
+	if (m_Gfx9000Enabled && backend_runtime_get_gfx9000_enabled())
+	{
+		return FALSE;
+	}
+
+	m_Gfx9000Enabled = TRUE;
+	m_PauseMenu.SetGfx9000Enabled(TRUE);
+	backend_runtime_set_gfx9000_enabled(TRUE);
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
+	msxbare_uart_write("G9E cart-auto ON src:");
+	msxbare_uart_write(source != 0 ? source : "?");
+	msxbare_uart_write("\n");
+#endif
+	m_Logger.Write(FromKernel, LogNotice, "GFX9000 auto ON: ROM V9990 ativa");
+
+	if (reset_backend)
+	{
+		backend_runtime_set_boot_mode(m_BootMode);
+		backend_runtime_set_model_profile(m_MachineProfile);
+		if (backend_runtime_reset())
+		{
+			ResetEmulationRuntimeState();
+			ApplyRuntimeSettingsToBackend();
+			m_Logger.Write(FromKernel, LogNotice, "GFX9000 auto reset OK");
+		}
+		else
+		{
+			m_Logger.Write(FromKernel, LogWarning, "GFX9000 auto reset falhou");
+		}
+	}
+
+	return TRUE;
+#else
+	(void) source;
+	(void) reset_backend;
+	return FALSE;
 #endif
 }
 
@@ -3852,6 +4699,10 @@ void CComboKernel::LoadSettingsFromStorage(void)
 				{
 					m_ScanlineMode = value != 0u ? kScanlineModeLcd : kScanlineModeOff;
 				}
+			else if (SettingsKeyEquals(line, key_len, "gfx9000"))
+			{
+				m_Gfx9000Enabled = value ? TRUE : FALSE;
+			}
 			else if (SettingsKeyEquals(line, key_len, "refresh"))
 			{
 				m_RefreshRateHz = ClampRefreshRateHz(value);
@@ -3990,6 +4841,14 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	}
 
 	NormalizeSettingsForBuild();
+#if MSXBARE_FEAT_GFX9000
+	if ((has_cfg_carta && RomPathLooksLikeGfx9000(cfg_carta_path))
+	 || (has_cfg_cartb && RomPathLooksLikeGfx9000(cfg_cartb_path)))
+	{
+		m_Gfx9000Enabled = TRUE;
+		m_Gfx9000AutoCfgApplied = TRUE;
+	}
+#endif
 	backend_runtime_set_requested_backend_id(has_backend_id && cfg_backend_id[0] != '\0' ? cfg_backend_id : 0);
 	if (has_joy_map)
 	{
@@ -4003,6 +4862,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetLanguage(m_Language);
 	m_PauseMenu.SetResolutionMode(m_ResolutionMode);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
+	m_PauseMenu.SetGfx9000Enabled(m_Gfx9000Enabled);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 	m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
 	m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
@@ -4046,6 +4906,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	backend_runtime_set_refresh_hz(m_RefreshRateHz);
 	backend_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 	backend_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
+	backend_runtime_set_gfx9000_enabled(m_Gfx9000Enabled);
 	backend_runtime_set_boot_mode(m_BootMode);
 	backend_runtime_set_model_profile(m_MachineProfile);
 	backend_runtime_set_rammapper_kb(m_RamMapperKb);
@@ -4137,6 +4998,7 @@ void CComboKernel::SaveSettingsToStorage(void)
 		APPEND_LINE_FMT("language=%u\n", m_Language);
 		APPEND_LINE_FMT("resolution=%u\n", m_ResolutionMode);
 		APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
+		APPEND_LINE_FMT("gfx9000=%u\n", (MSXBARE_FEAT_GFX9000 && m_Gfx9000Enabled) ? 1u : 0u);
 	APPEND_LINE_FMT("refresh=%u\n", ClampRefreshRateHz(m_RefreshRateHz));
 	APPEND_LINE_FMT("disk_rom=%u\n", m_DiskRomEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("kanji_rom=%u\n", m_KanjiRomEnabled ? 1u : 0u);
@@ -4817,6 +5679,19 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 					m_Logger.Write(FromKernel, LogWarning, "Load ROM bloqueado: SLOT2 reservado por Konami SCC+ DUAL");
 					break;
 				}
+#if MSXBARE_FEAT_GFX9000
+				if (RomPathLooksLikeGfx9000(rom_path)
+				 && (!m_Gfx9000Enabled || !backend_runtime_get_gfx9000_enabled()))
+				{
+					m_Gfx9000Enabled = TRUE;
+					m_PauseMenu.SetGfx9000Enabled(TRUE);
+					backend_runtime_set_gfx9000_enabled(TRUE);
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
+					msxbare_uart_write("G9E cart-auto ON src:menu\n");
+#endif
+					m_Logger.Write(FromKernel, LogNotice, "GFX9000 auto ON: ROM V9990 selecionada");
+				}
+#endif
 				if (!backend_runtime_set_cartridge_path(slot_index, rom_path))
 				{
 					UpdateLoadDiagTelemetry(9001u); /* set_cartridge_path failed */
@@ -5186,6 +6061,71 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 			m_Logger.Write(FromKernel, LogNotice, "Settings: Scanlines ON");
 		}
 		break;
+
+	case ComboMenuActionToggleGfx9000:
+#if !MSXBARE_FEAT_GFX9000
+		m_Gfx9000Enabled = FALSE;
+		m_PauseMenu.SetGfx9000Enabled(FALSE);
+		RefreshSettingsUiAfterAction();
+		m_Logger.Write(FromKernel, LogNotice, "Settings: GFX9000 indisponivel neste build");
+		break;
+#else
+		m_Gfx9000Enabled = m_Gfx9000Enabled ? FALSE : TRUE;
+		if (!m_Gfx9000Enabled)
+		{
+			m_Gfx9000ResumeTracePending = FALSE;
+		}
+		#if MSXBARE_ENABLE_FMSX
+		if (m_BackendReady && backend_runtime_is_capability_available(BACKEND_CAP_MACHINE))
+		{
+			if (MSXBARE_V9990_UART_TRACE)
+			{
+				m_Logger.Write(FromKernel, LogNotice,
+					m_Gfx9000Enabled ? "G9A: config apply ON" : "G9A: config apply OFF");
+			}
+			backend_runtime_set_gfx9000_enabled(m_Gfx9000Enabled);
+			if (MSXBARE_V9990_UART_TRACE)
+			{
+				m_Logger.Write(FromKernel, LogNotice,
+					m_Gfx9000Enabled ? "G9A: config applied ON" : "G9A: config applied OFF");
+				m_Logger.Write(FromKernel, LogNotice,
+					m_Gfx9000Enabled ? "G9A: menu reset begin ON" : "G9A: menu reset begin OFF");
+			}
+			if (backend_runtime_menu_reset())
+			{
+				if (MSXBARE_V9990_UART_TRACE)
+				{
+					m_Logger.Write(FromKernel, LogNotice,
+						m_Gfx9000Enabled ? "G9A: menu reset OK ON" : "G9A: menu reset OK OFF");
+				}
+				PushKeyboardStateToRuntime(TRUE);
+				backend_runtime_input_push_joystick(ResolveRuntimeJoystickBits());
+				BlitBackendFrame(TRUE);
+				m_PauseNeedsBackgroundRedraw = TRUE;
+				m_PauseNeedsFullViewportClear = TRUE;
+				m_ForceViewportFullClearNextFrame = TRUE;
+				if (MSXBARE_V9990_UART_TRACE)
+				{
+					m_Logger.Write(FromKernel, LogNotice,
+						m_Gfx9000Enabled ? "G9A: prime deferred ON" : "G9A: prime deferred OFF");
+				}
+			}
+			else
+			{
+				if (MSXBARE_V9990_UART_TRACE)
+				{
+					m_Logger.Write(FromKernel, LogWarning,
+						m_Gfx9000Enabled ? "G9A: menu reset FAIL ON" : "G9A: menu reset FAIL OFF");
+				}
+			}
+		}
+	#endif
+		m_PauseMenu.SetGfx9000Enabled(m_Gfx9000Enabled);
+		RefreshSettingsUiAfterAction();
+		m_Gfx9000ToggleTracePending = MSXBARE_V9990_UART_TRACE ? TRUE : FALSE;
+		m_Logger.Write(FromKernel, LogNotice, m_Gfx9000Enabled ? "Settings: GFX9000 ON" : "Settings: GFX9000 OFF");
+		break;
+#endif
 
 	case ComboMenuActionCycleRefreshRate:
 #if !MSXBARE_ENABLE_DEBUG_OVERLAY
@@ -5755,7 +6695,10 @@ void CComboKernel::HandleSystemThrottled(TSystemThrottledState state)
 	line.Format("Throttle event: %s state=0x%08X",
 		ThrottleStateLabel(state),
 		(unsigned) state);
-	m_Logger.Write(FromKernel, LogWarning, line);
+	if (!BackendQueueKernelLogDuringGfx9000Trace("KTHR: ", (const char *) line))
+	{
+		m_Logger.Write(FromKernel, LogWarning, line);
+	}
 	LogCpuClockStatus("THR");
 }
 
@@ -5781,7 +6724,10 @@ void CComboKernel::LogCpuClockStatus(const char *phase)
 		min_hz / 1000000u,
 		max_hz / 1000000u,
 		throttled_ok ? throttled.nValue : 0u);
-	m_Logger.Write(FromKernel, LogNotice, line);
+	if (!BackendQueueKernelLogDuringGfx9000Trace("KCLK: ", (const char *) line))
+	{
+		m_Logger.Write(FromKernel, LogNotice, line);
+	}
 }
 
 void CComboKernel::BootTrace(const char *tag)
@@ -5966,6 +6912,8 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	const boolean f6_edge = (key_state.f6_pressed && !m_LastF6Pressed) ? TRUE : FALSE;
 	const boolean f7_edge = (key_state.f7_pressed && !m_LastF7Pressed) ? TRUE : FALSE;
 	const boolean f8_edge = (key_state.f8_pressed && !m_LastF8Pressed) ? TRUE : FALSE;
+	const boolean f9_edge = (key_state.f9_pressed && !m_LastF9Pressed) ? TRUE : FALSE;
+	const boolean f10_edge = (key_state.f10_pressed && !m_LastF10Pressed) ? TRUE : FALSE;
 	const boolean fm_gain_up_edge = (key_state.debug_fm_gain_up_pressed && !m_LastFmGainUpPressed) ? TRUE : FALSE;
 	const boolean fm_gain_down_edge = (key_state.debug_fm_gain_down_pressed && !m_LastFmGainDownPressed) ? TRUE : FALSE;
 	if (f6_edge)
@@ -5982,6 +6930,31 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	{
 		const boolean muted = backend_runtime_get_audio_layer_muted(3u) ? FALSE : TRUE;
 		backend_runtime_set_audio_layer_muted(3u, muted);
+	}
+	if (f9_edge)
+	{
+		MsxBackendV9990DebugLiveView view = msx_backend_get_v9990_debug_live_view();
+		switch (view)
+		{
+		case FMSX_V9990_DEBUG_LIVE_VIEW_OFF:           view = FMSX_V9990_DEBUG_LIVE_VIEW_BG_A; break;
+		case FMSX_V9990_DEBUG_LIVE_VIEW_BG_A:          view = FMSX_V9990_DEBUG_LIVE_VIEW_BG_B; break;
+		case FMSX_V9990_DEBUG_LIVE_VIEW_BG_B:          view = FMSX_V9990_DEBUG_LIVE_VIEW_BG_COMPOSITE; break;
+		case FMSX_V9990_DEBUG_LIVE_VIEW_BG_COMPOSITE:  view = FMSX_V9990_DEBUG_LIVE_VIEW_BG_PROVENANCE; break;
+		default:                                       view = FMSX_V9990_DEBUG_LIVE_VIEW_OFF; break;
+		}
+		msx_backend_set_v9990_debug_live_view(view);
+	}
+	if (f10_edge)
+	{
+		MsxBackendV9990DebugReferenceView view = msx_backend_get_v9990_debug_reference_view();
+		switch (view)
+		{
+		case FMSX_V9990_DEBUG_REF_VIEW_OFF:               view = FMSX_V9990_DEBUG_REF_VIEW_ROM_EXPECTED; break;
+		case FMSX_V9990_DEBUG_REF_VIEW_ROM_EXPECTED:      view = FMSX_V9990_DEBUG_REF_VIEW_ROM_SIDE_BY_SIDE; break;
+		case FMSX_V9990_DEBUG_REF_VIEW_ROM_SIDE_BY_SIDE:  view = FMSX_V9990_DEBUG_REF_VIEW_ROM_DIFF; break;
+		default:                                          view = FMSX_V9990_DEBUG_REF_VIEW_OFF; break;
+		}
+		msx_backend_set_v9990_debug_reference_view(view);
 	}
 	if (fm_gain_up_edge)
 	{
@@ -6009,23 +6982,37 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	{
 		if (m_LastPauseToggleUs == 0u || (now_us - m_LastPauseToggleUs) >= 200000ull)
 		{
-			m_EmulationPaused = m_EmulationPaused ? FALSE : TRUE;
-			if (!m_EmulationPaused)
+				m_EmulationPaused = m_EmulationPaused ? FALSE : TRUE;
+				if (!m_EmulationPaused)
+				{
+					m_PauseNeedsBackgroundRedraw = FALSE;
+					m_PauseNeedsFullViewportClear = FALSE;
+					m_PauseRenderSuppressed = TRUE;
+#if MSXBARE_V9990_UART_TRACE
+					if (m_Gfx9000Enabled)
+					{
+						m_Gfx9000ResumeTracePending = TRUE;
+						if (!BackendQueueKernelLogDuringGfx9000Trace(0, "G9R: armed"))
+						{
+							m_Logger.Write(FromKernel, LogNotice, "G9R: armed");
+						}
+					}
+#endif
+				}
+				else
+				{
+					/* Reset only on pause-enter to avoid one-frame root-layout flash on pause-exit. */
+					m_PauseMenu.Reset();
+					m_LastPauseWasInSettings = FALSE;
+					m_PauseNeedsBackgroundRedraw = TRUE;
+					m_PauseNeedsFullViewportClear = FALSE;
+					m_PauseRenderSuppressed = FALSE;
+					m_Gfx9000ResumeTracePending = FALSE;
+				}
+			if (!BackendQueueKernelLogDuringGfx9000Trace(0, m_EmulationPaused ? "Emulation PAUSED" : "Emulation RESUMED"))
 			{
-				m_PauseNeedsBackgroundRedraw = FALSE;
-				m_PauseNeedsFullViewportClear = FALSE;
-				m_PauseRenderSuppressed = TRUE;
+				m_Logger.Write(FromKernel, LogNotice, m_EmulationPaused ? "Emulation PAUSED" : "Emulation RESUMED");
 			}
-			else
-			{
-				/* Reset only on pause-enter to avoid one-frame root-layout flash on pause-exit. */
-				m_PauseMenu.Reset();
-				m_LastPauseWasInSettings = FALSE;
-				m_PauseNeedsBackgroundRedraw = TRUE;
-				m_PauseNeedsFullViewportClear = FALSE;
-				m_PauseRenderSuppressed = FALSE;
-			}
-			m_Logger.Write(FromKernel, LogNotice, m_EmulationPaused ? "Emulation PAUSED" : "Emulation RESUMED");
 			m_LastPauseToggleUs = now_us;
 			pause_toggled = TRUE;
 		}
@@ -6046,6 +7033,8 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 		m_LastF6Pressed = key_state.f6_pressed;
 		m_LastF7Pressed = key_state.f7_pressed;
 		m_LastF8Pressed = key_state.f8_pressed;
+		m_LastF9Pressed = key_state.f9_pressed;
+		m_LastF10Pressed = key_state.f10_pressed;
 		m_LastFmGainUpPressed = key_state.debug_fm_gain_up_pressed;
 		m_LastFmGainDownPressed = key_state.debug_fm_gain_down_pressed;
 		return;
@@ -6092,6 +7081,7 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 		|| (menu_action == ComboMenuActionCartridgeB)
 		|| (menu_action == ComboMenuActionDiskDriveA)
 		|| (menu_action == ComboMenuActionDiskDriveB)
+		|| (menu_action == ComboMenuActionToggleGfx9000)
 		|| (menu_action == ComboMenuActionReset)
 		|| (menu_action == ComboMenuActionMsxBasic);
 	if (menu_action == ComboMenuActionCartridgeA || menu_action == ComboMenuActionCartridgeB)
@@ -6176,6 +7166,8 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	m_LastF6Pressed = key_state.f6_pressed;
 	m_LastF7Pressed = key_state.f7_pressed;
 	m_LastF8Pressed = key_state.f8_pressed;
+	m_LastF9Pressed = key_state.f9_pressed;
+	m_LastF10Pressed = key_state.f10_pressed;
 	m_LastFmGainUpPressed = key_state.debug_fm_gain_up_pressed;
 	m_LastFmGainDownPressed = key_state.debug_fm_gain_down_pressed;
 }

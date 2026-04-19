@@ -183,6 +183,7 @@ resolution=0
 language=0
 widescreen=0
 scanline=0
+gfx9000=0
 refresh=60
 disk_rom=1
 boot_mode=0

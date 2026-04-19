@@ -100,6 +100,7 @@ boolean combo_viewport_screenshot_capture(CGfxTextBoxRenderer *renderer,
 boolean combo_viewport_screenshot_capture_from_emulator(const u16 *src_pixels,
                                                         unsigned src_w,
                                                         unsigned src_h,
+                                                        unsigned src_pitch_pixels,
                                                         unsigned dst_x,
                                                         unsigned dst_y,
                                                         unsigned dst_w,
@@ -144,12 +145,16 @@ boolean combo_viewport_screenshot_capture_from_emulator(const u16 *src_pixels,
     {
         crop_y = 0u;
     }
+    if (src_pitch_pixels == 0u)
+    {
+        src_pitch_pixels = src_w;
+    }
 
     for (unsigned y = 0u; y < dst_h; ++y)
     {
         const unsigned src_y =
             (unsigned) (((u64) (y + crop_y) * (u64) src_h) / (u64) full_dst_h);
-        const u16 *src_row = src_pixels + (src_y * src_w);
+        const u16 *src_row = src_pixels + (src_y * src_pitch_pixels);
         TScreenColor *dst_row = g_ViewportScreenshotBuffer + (y * dst_w);
         const boolean dark_lcd = (scanline_mode == 1u) && ((y & 1u) != 0u);
         for (unsigned x = 0u; x < dst_w; ++x)

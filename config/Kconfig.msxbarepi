@@ -49,6 +49,10 @@ config MSXBARE_ONE_ROM_PATH
 endmenu
 
 menu "Expansion support"
+config MSXBARE_FEAT_GFX9000
+    bool "Suporte a GFX9000"
+    default y
+
 config MSXBARE_FEAT_SCC
     bool "Suporte a SCC"
     default y

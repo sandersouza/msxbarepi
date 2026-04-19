@@ -23,6 +23,7 @@
 #include "MCF.h"
 #include "../fmsx_carts_sha_fallback.h"
 #include "../fmsx_mapper_ext.h"
+#include "../fmsx_v9990.h"
 
 #define FMSX_LOCAL_MAXMAPPERS (MAP_MANBOW2_2 + 1)
 
@@ -90,6 +91,8 @@ static unsigned fmsx_megaram_mask(void)
 }
 
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
+extern uint8_t *RAM[8];
+
 static uint8_t fmsx_debug_peek_ram_byte(uint16_t addr)
 {
   return RAM[addr >> 13][addr & 0x1FFF];
@@ -3331,6 +3334,123 @@ static void FreeAllMemory(void)
   NChunks=0;
 }
 
+#define FMSX_MSXDOS2_SYSTEM_SLOT MAXCARTS
+
+static int fmsx_find_slot_map(uint8_t slot,uint8_t *ps_out,uint8_t *ss_out)
+{
+  uint8_t PS,SS;
+
+  for(PS=0;PS<4;++PS)
+  {
+    for(SS=0;(SS<4)&&(CartMap[PS][SS]!=slot);++SS);
+    if(SS<4) break;
+  }
+
+  if(PS>=4) return 0;
+  if(ps_out) *ps_out = PS;
+  if(ss_out) *ss_out = SS;
+  return 1;
+}
+
+static int fmsx_system_cart_slot_is_available(uint8_t slot)
+{
+  uint8_t PS,SS;
+  uint8_t page;
+
+  if((slot<MAXCARTS)||(slot>=MAXSLOTS)) return 0;
+  if(ROMData[slot]) return 0;
+  if(!fmsx_find_slot_map(slot,&PS,&SS)) return 0;
+
+  /*
+   * System helper cartridges must not be mapped on top of occupied
+   * internal subslots. This matters on MSX2+ HB-F1XDJ derived layouts,
+   * where 3-0/3-1/3-2/3-3 are already used by RAM/SubROM+Kanji/FDC/FM.
+   */
+  for(page=2;page<6;++page)
+    if(MemMap[PS][SS][page]!=EmptyRAM)
+      return 0;
+
+  return 1;
+}
+
+static int fmsx_find_next_free_system_cart_slot(uint8_t first_slot)
+{
+  uint8_t slot;
+
+  if(first_slot<MAXCARTS) first_slot=MAXCARTS;
+  for(slot=first_slot;slot<MAXSLOTS;++slot)
+    if(fmsx_system_cart_slot_is_available(slot))
+      return slot;
+
+  return -1;
+}
+
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+static int fmsx_msxdos2_rom_visible(void)
+{
+  RFILE *file;
+
+  file = rfopen("MSXDOS2.ROM","rb");
+  if(!file) return 0;
+
+  rfclose(file);
+  return 1;
+}
+
+static void fmsx_trace_msxdos2_boot(const char *phase,int option_enabled,int file_visible,int diskrom_mapped,int slot_free,int system_slot,uint8_t slot_ps,uint8_t slot_ss,int attempted,int loaded)
+{
+  char line[128];
+
+  snprintf(line,sizeof(line),
+    "DOS2 %s opt:%d vis:%d dsk:%d free:%d slot:%d ps:%u ss:%u try:%d ok:%d mask:%u dss:%u\n",
+    phase? phase:"boot",
+    option_enabled? 1:0,
+    file_visible? 1:0,
+    diskrom_mapped? 1:0,
+    slot_free? 1:0,
+    system_slot,
+    (unsigned)slot_ps,
+    (unsigned)slot_ss,
+    attempted? 1:0,
+    loaded? 1:0,
+    (unsigned)((system_slot>=0)? ROMMask[system_slot]:0u),
+    (unsigned)DiskROMSubSlot());
+  msxbare_uart_write(line);
+}
+#endif
+
+static void fmsx_try_load_msxdos2_system_cart(const char *phase)
+{
+  const int option_enabled = !MODEL(MSX_MSX1) && OPTION(MSX_MSXDOS2);
+  const int diskrom_mapped = MemMap[3][DiskROMSubSlot()][2]!=EmptyRAM;
+  const int system_slot = fmsx_find_next_free_system_cart_slot(FMSX_MSXDOS2_SYSTEM_SLOT);
+  const int slot_free = system_slot>=0;
+  int attempted = 0;
+  int loaded = 0;
+  uint8_t slot_ps = 0xFFu;
+  uint8_t slot_ss = 0xFFu;
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+  const int file_visible = fmsx_msxdos2_rom_visible();
+#endif
+
+  if(system_slot>=0)
+    fmsx_find_slot_map((uint8_t)system_slot,&slot_ps,&slot_ss);
+
+  if(option_enabled&&diskrom_mapped&&slot_free)
+  {
+    attempted = 1;
+    loaded = LoadCart("MSXDOS2.ROM",system_slot,MAP_GEN16);
+    if(loaded)
+      SetMegaROM(system_slot,0,1,ROMMask[system_slot]-1,ROMMask[system_slot]);
+  }
+
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+  fmsx_trace_msxdos2_boot(phase,option_enabled,file_visible,diskrom_mapped,slot_free,system_slot,slot_ps,slot_ss,attempted,loaded);
+#else
+  (void)phase;
+#endif
+}
+
 /** StartMSX() ***********************************************/
 /** Allocate memory, load ROM images, initialize hardware,  **/
 /** CPU and start the emulation. This function returns 0 in **/
@@ -3440,6 +3560,7 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   Mode      = ~NewMode;
   RAMPages  = 0;
   VRAMPages = 0;
+  fmsx_v9990_power_on();
 
   /* Try resetting MSX, allocating memory, loading ROMs */
   if((ResetMSX(NewMode,NewRAMPages,NewVRAMPages)^NewMode)&MSX_MODEL) return(0);
@@ -3490,24 +3611,22 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   /* Start loading system cartridges */
   J=MAXCARTS;
 
-  /* If MSX2 or better and DiskROM present...  */
-  /* ...try loading MSXDOS2 cartridge into 3:0 */
-  if(!MODEL(MSX_MSX1)&&OPTION(MSX_MSXDOS2)&&(MemMap[3][DiskROMSubSlot()][2]!=EmptyRAM)&&!ROMData[2])
-    if(LoadCart("MSXDOS2.ROM",2,MAP_GEN16))
-      SetMegaROM(2,0,1,ROMMask[J]-1,ROMMask[J]);
+  /* If MSX2 or better and DiskROM present... */
+  /* ...try loading MSXDOS2 into the first safe system-cart slot. */
+  fmsx_try_load_msxdos2_system_cart("full");
 
   /* If MSX2 or better, load PAINTER cartridge */
   if(!MODEL(MSX_MSX1))
   {
-    for(;(J<MAXSLOTS)&&ROMData[J];++J);
-    if((J<MAXSLOTS)&&LoadCart("PAINTER.ROM",J,0)) ++J;
+    J=fmsx_find_next_free_system_cart_slot(MAXCARTS);
+    if((J>=MAXCARTS)&&(J<MAXSLOTS)&&LoadCart("PAINTER.ROM",J,0)) ++J;
   }
 
   /* Load FMPAC cartridge when runtime FM-PAC is enabled. */
   if(g_fmsx_fmpac_enabled)
   {
-    for(;(J<MAXSLOTS)&&ROMData[J];++J);
-    if((J<MAXSLOTS)&&LoadCart("FMPAC.ROM",J,MAP_FMPAC)) ++J;
+    J=fmsx_find_next_free_system_cart_slot((J<MAXCARTS)? MAXCARTS:(uint8_t)J);
+    if((J>=MAXCARTS)&&(J<MAXSLOTS)&&LoadCart("FMPAC.ROM",J,MAP_FMPAC)) ++J;
   }
 
   /* Load Konami GameMaster2/GameMaster cartridges */
@@ -3535,13 +3654,13 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
       FirstCart=1; // load game in slot B
   }
 #else
-  if(log_cb) log_cb(1,"StartMSX: minimal startup (skip optional ROM probes)\n");
+  if(log_cb) log_cb(1,"StartMSX: minimal startup (skip optional ROM probes except MSXDOS2)\n");
+  fmsx_try_load_msxdos2_system_cart("minimal");
   /* Keep FM-PAC available in minimal startup only when enabled. */
   if(g_fmsx_fmpac_enabled)
   {
-    J=MAXCARTS;
-    for(;(J<MAXSLOTS)&&ROMData[J];++J);
-    if((J<MAXSLOTS)&&LoadCart("FMPAC.ROM",J,MAP_FMPAC)) ++J;
+    J=fmsx_find_next_free_system_cart_slot(MAXCARTS);
+    if((J>=MAXCARTS)&&(J<MAXSLOTS)&&LoadCart("FMPAC.ROM",J,MAP_FMPAC)) ++J;
   }
 #endif
 
@@ -4087,6 +4206,7 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
     if(log_cb && J==0) log_cb(1,"ResetMSX: palette SetColor first\n");
     SetColor(J,(Palette[J]>>16)&0xFF,(Palette[J]>>8)&0xFF,Palette[J]&0xFF);
   }
+  fmsx_v9990_reset();
   if(log_cb) log_cb(1,"ResetMSX: palette init ok\n");
 
   /* Reset mouse coordinates/counters */
@@ -4373,8 +4493,11 @@ void WrZ80(uint16_t A,uint8_t V)
 /*************************************************************/
 uint8_t InZ80(uint16_t Port)
 {
+  uint8_t v9990_value = 0xFFu;
   /* MSX only uses 256 IO ports */
   Port&=0xFF;
+  if(fmsx_v9990_in_port((uint8_t)Port,&v9990_value))
+    return(v9990_value);
 
   /* Return an appropriate port value */
   switch(Port)
@@ -4626,6 +4749,8 @@ void OutZ80(uint16_t Port,uint8_t Value)
   uint8_t I,J;
 
   Port&=0xFF;
+  if(fmsx_v9990_out_port((uint8_t)Port,Value))
+    return;
   switch(Port)
   {
 case 0x7C:

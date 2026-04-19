@@ -41,6 +41,7 @@ public:
 
     boolean Initialize(void);
     TComboShutdownMode Run(void);
+    static unsigned DebugRepairTimerIrqBindingCurrent(unsigned stage);
 
 private:
     void RefillAudioQueue(void);
@@ -76,6 +77,7 @@ private:
     void BlitBackendFrame(boolean force_redraw);
     void HandleMenuAction(TComboMenuAction action);
     void ApplyRuntimeSettingsToBackend(void);
+    boolean ApplyGfx9000AutoForActiveCartridge(const char *source, boolean reset_backend);
     void SyncRefreshRateStateFromRuntime(void);
     void SyncKanjiRomStateFromRuntime(void);
     void RefreshSettingsUiAfterAction(void);
@@ -101,6 +103,7 @@ private:
     void SaveEmulatorStateToStorage(void);
     void LoadEmulatorStateFromStorage(void);
     void NormalizeSettingsForBuild(void);
+    unsigned DebugRepairTimerIrqBinding(unsigned stage);
 
     static void KeyPressedHandler(const char *text);
     static void SystemThrottledHandler(TSystemThrottledState state, void *param);
@@ -164,6 +167,8 @@ private:
     boolean m_LastF6Pressed;
     boolean m_LastF7Pressed;
     boolean m_LastF8Pressed;
+    boolean m_LastF9Pressed;
+    boolean m_LastF10Pressed;
     boolean m_LastFmGainUpPressed;
     boolean m_LastFmGainDownPressed;
     boolean m_LastPauseWasInSettings;
@@ -247,6 +252,8 @@ private:
     unsigned m_Language;
     unsigned m_ResolutionMode;
     unsigned m_ScanlineMode;
+    boolean m_Gfx9000Enabled;
+    boolean m_Gfx9000AutoCfgApplied;
     unsigned m_RefreshRateHz;
     boolean m_DiskRomEnabled;
     unsigned m_BootMode;
@@ -270,6 +277,8 @@ private:
     unsigned m_FmLayerGainPct;
     boolean m_SccCartEnabled;
     boolean m_SccDualCartEnabled;
+    boolean m_Gfx9000ToggleTracePending;
+    boolean m_Gfx9000ResumeTracePending;
     u64 m_FrameIntervalUs;
     boolean m_FramePacingResetPending;
     boolean m_BackendFallbackPattern;

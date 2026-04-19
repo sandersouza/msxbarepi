@@ -49,7 +49,18 @@ make DEBUG=0
 - `F6`: mute/unmute `Layer 1` (PSG + ruido).
 - `F7`: mute/unmute `Layer 2` (FM-PAC).
 - `F8`: mute/unmute `Layer 3` (Konami SCC+).
-- `F9`: sem uso na build atual.
+- `F9`: cicla a view viva do background do `V9990`.
+  - `OFF`
+  - `LIVE_BG_A`
+  - `LIVE_BG_B`
+  - `LIVE_BG_COMPOSITE`
+  - `LIVE_BG_PROVENANCE`
+- `F10`: cicla a view de referencia/diff do `V9990`.
+  - `OFF`
+  - `ROM_EXPECTED`
+  - `ROM_SIDE_BY_SIDE`
+  - `ROM_DIFF`
+- As views `F9/F10` so atuam em `DEBUG=1` e leem o estado do `V9990` diretamente, sem depender do presenter final.
 
 ## Tag de build na tela
 - No preset atual de diagnostico MSX2+, o painel tenta ficar contido entre as `linhas 1..15`.
@@ -152,6 +163,7 @@ Diretriz visual (overlay e menu):
   - `Linha 1`: `TXTDBG BUILD:XXXX CPU FREQ:<MHz>`
   - `Linha 2`: `DFS:NTSC|PAL FPS:<fps> F:<frame>`
   - `Linha 3`: `Screen:<scr_mode> Mode:Normal|Hires|Interlaced`
+  - `DFS`: `NTSC/PAL` lido diretamente de `VDP R#9 bit1`.
   - a limpeza do overlay agora e feita por comprimento real de cada linha renderizada; ao atualizar ou desligar o painel, o kernel limpa apenas a quantidade de caracteres previamente desenhada em cada linha, sem preencher colunas extras com espacos
 - `TXTDBG`: estado geral (MMU/cache/pause).
   - `BUILD`: hash de 16 bits calculado a partir de `MSXBARE_BUILD_BID` para rastreio visual da build em teste.
@@ -186,7 +198,7 @@ Diretriz visual (overlay e menu):
 - `TM` linha 1 (`TM1 + TM2`): timing base do core e telemetria VDP/timing útil para MSX2+ (parte 1):
   - `HP/VP/IP`: periodos inteiros atualmente em uso no scheduler.
   - `SL`: scanline atual.
-  - `PAL/NTSC`: modo efetivo do VDP.
+  - `PAL/NTSC`: modo lido diretamente de `VDP R#9 bit1`.
   - `L212`: flag de 212 linhas.
   - `T`: turbo configurado no menu (`OFF=100`, `PAN=150`, `MAX=200`); nao reflete o turbo Panasonic virtual ligado por software.
   - `SM`: screen mode atual.
@@ -269,8 +281,25 @@ Diretriz visual (overlay e menu):
   - eventos de `IE0`, `IE1`, writes em `R#19/R#23`, reads de `S#1/S#2`, writes em `0x98`, endereço/registrador via `0x99` e início/fim de comando VDP.
 - O overlay agora exibe apenas o **ultimo** evento relevante dessa trilha em `TM6B`, para facilitar captura por screenshot em hardware.
 - Para o freeze do `SMANBOW2` em `PC:C698/C699`, `TM6C` e a linha de maior valor diagnostico: ela mostra se a pagina `4000h` continua apontando para o cart, quais bancos estao ativos e se a Flash realmente recebeu/programou/leu o offset esperado (`0x70000+`).
-- Em paralelo, o kernel emite telemetria UART adicional focada em VDP:
+- Em paralelo, o kernel pode emitir telemetria UART adicional focada em VDP. A trilha do `V9990/GFX9000` (`G9*`) fica desligada por padrao para evitar custo e poluicao da UART nas builds de teste comuns.
+- Para reativar a telemetria UART do `V9990/GFX9000`, compile explicitamente com:
+
+```bash
+make DEBUG=1 MSXBARE_V9990_UART_TRACE=1
+```
+
+- A lista abaixo resume as familias principais; as entradas `G9*` dependem de `MSXBARE_V9990_UART_TRACE=1`:
   - `VDP EVT`: eventos da janela rastreada com `PC`, scanline, fase de linha, alvo de `IE1`, `R#19/R#23` e I/O de VDP (`0x98`, `0x99` address/register). Em `Knightmare Gold`, a janela aparece como `W=KG` e fica ativa durante a gameplay em `screen mode 4` quando o disco carregado contem `kmaregold`/`kmare`.
+  - `G9E cart-auto`: ativacao automatica de `GFX9000` ao carregar/configurar uma ROM reconhecida como V9990.
+  - `G9E rt-cart-auto`: autoativacao feita dentro do `fmsx_runtime_start()`, no ultimo ponto antes de `StartMSX()`, quando o kernel/menu ainda nao deixaram `GFX9000` ligado.
+  - `G9C start`: estado de boot do `CODEINTRUDER`, incluindo `g9:<0|1>` para confirmar se a ROM iniciou com `GFX9000` ativo.
+  - `G9C pc`: checkpoint do `CODEINTRUDER`; `vram-test` marca a rotina `7358h`, `after-test` marca passagem do teste e `no-v9990-loop` marca o loop de falha em `7466h`.
+  - `G9C pal`: resumo compacto do loop de carga de paleta do `CODEINTRUDER` em `pc:739C`, substituindo centenas de linhas `G9P out p:61`.
+  - `G9C sts`: leituras de `STATUS` da V9990 em loops conhecidos do `CODEINTRUDER`, com `CE/VR/HR` para diagnosticar espera infinita por comando ou vertical retrace.
+  - `G9C vram`: progresso compacto de upload CPU VRAM do `CODEINTRUDER`, cobrindo boundaries de `0x1000`, mudanca de rotina e uploads/decompress conhecidos sem saturar a UART.
+  - `G9P rd`: leitura real retornada por porta da V9990; usado para validar rotinas de presenca como o compare `A2h` do `CODEINTRUDER` em `60h`.
+  - `G9P miss-in` / `G9P miss-out`: acesso do Z80 a uma porta `60h..6Fh` enquanto a V9990 esta desligada; usado para separar falha de autoativacao de falha semantica de VRAM/porta.
+  - `G9V cpu`: leitura/escrita de VRAM pelo caminho de CPU da V9990, limitada a janelas curtas para nao poluir a UART.
   - `CLK`: leitura do estado de clock/throttle do firmware:
     - `ARM:<mhz>`: clock ARM reportado pelo firmware.
     - `CORE:<mhz>`: clock CORE reportado pelo firmware.

@@ -5,11 +5,40 @@
 #include "Sound.h"
 #include "fmsx_audio_layout.h"
 #include "fmsx_local_scc_render.h"
+#include "fmsx_v9990.h"
 #include "fmsx_compat/stdio.h"
 #include "fmsx_virtual_fs.h"
 #include "fmsx_initramfs.h"
 #include <ctype.h>
 #include <string.h>
+
+static boolean fmsx_runtime_name_contains_casefold(const char *text, const char *needle)
+{
+    if (text == 0 || needle == 0 || *needle == '\0')
+    {
+        return FALSE;
+    }
+
+    for (; *text != '\0'; ++text)
+    {
+        const char *a = text;
+        const char *b = needle;
+
+        while (*a != '\0' && *b != '\0'
+            && toupper((unsigned char) *a) == toupper((unsigned char) *b))
+        {
+            ++a;
+            ++b;
+        }
+
+        if (*b == '\0')
+        {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
 
 #ifndef MSXBARE_FMSX_FAST_CUTOFF_FRAMES_MSX1
 #define MSXBARE_FMSX_FAST_CUTOFF_FRAMES_MSX1 154u
@@ -53,6 +82,185 @@
 
 #ifndef MSXBARE_ENABLE_DEBUG_OVERLAY
 #define MSXBARE_ENABLE_DEBUG_OVERLAY 0
+#endif
+
+#ifndef MSXBARE_V9990_UART_TRACE
+#define MSXBARE_V9990_UART_TRACE 0
+#endif
+
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+extern void msxbare_uart_write(const char *text);
+extern void msxbare_debug_trace(const char *text);
+
+typedef struct TFmsxRuntimeGhostGoblinsTraceState
+{
+    boolean active;
+    boolean key_logged;
+    boolean select_logged;
+    boolean upload_logged;
+    boolean upload_poll_logged;
+} TFmsxRuntimeGhostGoblinsTraceState;
+
+typedef enum FmsxRuntimeGfx9000TraceStepId
+{
+    FmsxRuntimeGfx9000TraceFrameBegin = 0,
+    FmsxRuntimeGfx9000TraceRunZ80Begin,
+    FmsxRuntimeGfx9000TraceRunZ80End,
+    FmsxRuntimeGfx9000TraceV9990End,
+    FmsxRuntimeGfx9000TraceAudioAccCall,
+    FmsxRuntimeGfx9000TraceAudioAccRet0,
+    FmsxRuntimeGfx9000TraceAudioAccRetNz,
+    FmsxRuntimeGfx9000TraceAudioPlayCall,
+    FmsxRuntimeGfx9000TraceAudioPlayEnd,
+    FmsxRuntimeGfx9000TraceFrameEnd
+} FmsxRuntimeGfx9000TraceStepId;
+
+static void fmsx_runtime_trace_gfx9000_char(char c)
+{
+    char text[2];
+    text[0] = c;
+    text[1] = '\0';
+    msxbare_uart_write(text);
+}
+
+static char fmsx_runtime_trace_gfx9000_step_marker(FmsxRuntimeGfx9000TraceStepId id)
+{
+    switch (id)
+    {
+    case FmsxRuntimeGfx9000TraceFrameBegin:    return '{';
+    case FmsxRuntimeGfx9000TraceRunZ80Begin:   return '<';
+    case FmsxRuntimeGfx9000TraceRunZ80End:     return '>';
+    case FmsxRuntimeGfx9000TraceV9990End:      return 'v';
+    case FmsxRuntimeGfx9000TraceAudioAccCall:  return 'a';
+    case FmsxRuntimeGfx9000TraceAudioAccRet0:  return 'e';
+    case FmsxRuntimeGfx9000TraceAudioAccRetNz: return 'n';
+    case FmsxRuntimeGfx9000TraceAudioPlayCall: return 'p';
+    case FmsxRuntimeGfx9000TraceAudioPlayEnd:  return 'o';
+    case FmsxRuntimeGfx9000TraceFrameEnd:      return '|';
+    default:                                   return '\0';
+    }
+}
+
+static TFmsxRuntimeGhostGoblinsTraceState g_fmsx_gg_trace = { FALSE, FALSE, FALSE, FALSE, FALSE };
+
+static void fmsx_runtime_reset_ghostgoblins_trace(void)
+{
+    memset(&g_fmsx_gg_trace, 0, sizeof(g_fmsx_gg_trace));
+}
+
+static boolean fmsx_runtime_is_ghostgoblins_active(void)
+{
+    unsigned slot;
+
+    for (slot = 0u; slot < 2u; ++slot)
+    {
+        if (fmsx_runtime_name_contains_casefold(ROMName[slot], "GHOSTGOBLINS"))
+        {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+static void fmsx_runtime_trace_ghostgoblins_selection(const char *tag)
+{
+#if MSXBARE_V9990_UART_TRACE
+    char line[192];
+    unsigned pos = 0u;
+    uint8_t state = 0u;
+    uint8_t f088 = 0u;
+    uint8_t f087 = 0u;
+    uint8_t f947 = 0u;
+    uint16_t r0 = 0u;
+    uint16_t r1 = 0u;
+    uint16_t r2 = 0u;
+    uint16_t r3 = 0u;
+
+    if (tag == 0)
+    {
+        return;
+    }
+
+    (void) fmsx_runtime_peek8(0xC719u, &state);
+    (void) fmsx_runtime_peek8(0xC088u, &f088);
+    (void) fmsx_runtime_peek8(0xC087u, &f087);
+    (void) fmsx_runtime_peek8(0xC947u, &f947);
+    (void) fmsx_runtime_peek16(0xC1C1u, &r0);
+    (void) fmsx_runtime_peek16(0xC1C3u, &r1);
+    (void) fmsx_runtime_peek16(0xC1C5u, &r2);
+    (void) fmsx_runtime_peek16(0xC1C7u, &r3);
+
+    pos += (unsigned) snprintf(
+        line + pos, sizeof(line) - pos,
+        "G9R sel tag:%s pc:%04X st:%02X r0:%04X/%04X r1:%04X/%04X fl:%02X/%02X/%02X\n",
+        tag,
+        CPU.PC.W,
+        state,
+        r0,
+        r1,
+        r2,
+        r3,
+        f088,
+        f087,
+        f947);
+
+    if (pos < sizeof(line))
+    {
+        msxbare_uart_write(line);
+    }
+#else
+    (void) tag;
+#endif
+}
+
+static void fmsx_runtime_trace_ghostgoblins_checkpoint(void)
+{
+#if MSXBARE_V9990_UART_TRACE
+    const uint16_t pc = CPU.PC.W;
+
+    if (!g_fmsx_gg_trace.active)
+    {
+        g_fmsx_gg_trace.active = fmsx_runtime_is_ghostgoblins_active();
+        if (!g_fmsx_gg_trace.active)
+        {
+            return;
+        }
+    }
+
+    if (!g_fmsx_gg_trace.key_logged && pc >= 0x4A62u && pc <= 0x4ABFu)
+    {
+        g_fmsx_gg_trace.key_logged = TRUE;
+        fmsx_runtime_trace_ghostgoblins_selection("key");
+    }
+
+    if (!g_fmsx_gg_trace.select_logged && pc >= 0x4902u && pc <= 0x495Eu)
+    {
+        g_fmsx_gg_trace.select_logged = TRUE;
+        fmsx_runtime_trace_ghostgoblins_selection("phase");
+    }
+
+    if (!g_fmsx_gg_trace.upload_logged && pc >= 0x4EFCu && pc <= 0x4F51u)
+    {
+        g_fmsx_gg_trace.upload_logged = TRUE;
+        fmsx_runtime_trace_ghostgoblins_selection("upload");
+    }
+
+    if (!g_fmsx_gg_trace.upload_poll_logged && pc >= 0x5080u && pc <= 0x50B0u)
+    {
+        g_fmsx_gg_trace.upload_poll_logged = TRUE;
+        fmsx_runtime_trace_ghostgoblins_selection("disp");
+    }
+#endif
+}
+#else
+static void fmsx_runtime_reset_ghostgoblins_trace(void)
+{
+}
+
+static void fmsx_runtime_trace_ghostgoblins_checkpoint(void)
+{
+}
 #endif
 
 extern Z80 CPU;
@@ -172,6 +380,12 @@ extern uint64_t msxbare_monotonic_time_us(void);
 
 static TFmsxRuntimeStatus g_fmsx_status = { FALSE, FALSE, 0u, 0, 0 };
 static TFmsxFramePerfStats g_frame_perf_stats = { 0 };
+static const u16 *g_cached_video_pixels = 0;
+static unsigned g_cached_video_width = 0u;
+static unsigned g_cached_video_height = 0u;
+static unsigned g_cached_video_sequence = 0u;
+static TFmsxVideoPresentation g_cached_video_presentation = { 0 };
+static boolean g_cached_video_valid = FALSE;
 static char g_cartridge_path[2][192] = {{0}};
 static char g_disk_path[2][192] = {{0}};
 static volatile unsigned g_load_diag_stage = 0u;
@@ -181,6 +395,7 @@ static boolean g_boot_forced_turbo = FALSE;
 static unsigned g_boot_video_gate_frames_remaining = 0u;
 static boolean g_disk_rom_enabled = TRUE;
 static boolean g_kanji_rom_enabled = TRUE;
+static boolean g_gfx9000_enabled = FALSE;
 static unsigned g_boot_mode = 0u;
 static unsigned g_active_boot_mode = 0u;
 static unsigned g_model_profile = FMSX_MODEL_PROFILE_MSX1;
@@ -205,6 +420,136 @@ uint8_t g_fmsx_scc_dual_slot = 0xFFu;
 static unsigned g_vdp_prev_ce = 0u;
 static unsigned g_vdp_cmd_starts = 0u;
 static unsigned g_vdp_copy_starts = 0u;
+
+static boolean fmsx_runtime_name_looks_like_gfx9000_cart(const char *name)
+{
+    return (fmsx_runtime_name_contains_casefold(name, "V9990")
+         || fmsx_runtime_name_contains_casefold(name, "GFX9000")
+         || fmsx_runtime_name_contains_casefold(name, "CODEINTRUDER")
+         || fmsx_runtime_name_contains_casefold(name, "GHOSTGOBLINS")
+         || fmsx_runtime_name_contains_casefold(name, "UNDERWATER")) ? TRUE : FALSE;
+}
+
+static boolean fmsx_runtime_name_looks_like_codeintruder(const char *name)
+{
+    return (fmsx_runtime_name_contains_casefold(name, "CODEINTRUDER")
+         || fmsx_runtime_name_contains_casefold(name, "CODEINTR")
+         || fmsx_runtime_name_contains_casefold(name, "INTRUDER")) ? TRUE : FALSE;
+}
+
+static boolean fmsx_runtime_rom_slot_contains_text(unsigned slot, const char *needle)
+{
+    const uint8_t *rom;
+    unsigned rom_size;
+    unsigned needle_len = 0u;
+
+    if (needle == 0 || slot >= 2u || ROMData[slot] == 0)
+    {
+        return FALSE;
+    }
+
+    while (needle[needle_len] != '\0')
+    {
+        ++needle_len;
+    }
+    if (needle_len == 0u)
+    {
+        return FALSE;
+    }
+
+    rom = ROMData[slot];
+    rom_size = ((unsigned) ROMMask[slot] + 1u) << 13;
+    if (rom_size < needle_len)
+    {
+        return FALSE;
+    }
+
+    for (unsigned i = 0u; i <= rom_size - needle_len; ++i)
+    {
+        unsigned j = 0u;
+        while (j < needle_len && rom[i + j] == (uint8_t) needle[j])
+        {
+            ++j;
+        }
+        if (j == needle_len)
+        {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+static boolean fmsx_runtime_active_cart_looks_like_gfx9000(void)
+{
+    for (unsigned slot = 0u; slot < 2u; ++slot)
+    {
+        if (fmsx_runtime_name_looks_like_gfx9000_cart(ROMName[slot])
+         || fmsx_runtime_name_looks_like_gfx9000_cart(g_cartridge_path[slot]))
+        {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+static boolean fmsx_runtime_active_cart_looks_like_codeintruder(void)
+{
+    for (unsigned slot = 0u; slot < 2u; ++slot)
+    {
+        if (fmsx_runtime_rom_slot_contains_text(slot, "CODENAME:INTRUDER")
+         || fmsx_runtime_name_looks_like_codeintruder(ROMName[slot])
+         || fmsx_runtime_name_looks_like_codeintruder(g_cartridge_path[slot]))
+        {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+static const char *fmsx_runtime_trace_cart_name(unsigned slot)
+{
+    if (slot > 1u)
+    {
+        return "-";
+    }
+    if (g_cartridge_path[slot][0] != '\0')
+    {
+        return g_cartridge_path[slot];
+    }
+    return ROMName[slot] != 0 ? ROMName[slot] : "-";
+}
+
+static void fmsx_runtime_invalidate_video_cache(void)
+{
+    g_cached_video_pixels = 0;
+    g_cached_video_width = 0u;
+    g_cached_video_height = 0u;
+    g_cached_video_sequence = 0u;
+    memset(&g_cached_video_presentation, 0, sizeof(g_cached_video_presentation));
+    g_cached_video_valid = FALSE;
+}
+
+static void fmsx_runtime_cache_video_snapshot(const u16 *pixels,
+                                              unsigned width,
+                                              unsigned height,
+                                              unsigned sequence,
+                                              const TFmsxVideoPresentation *presentation)
+{
+    g_cached_video_pixels = pixels;
+    g_cached_video_width = width;
+    g_cached_video_height = height;
+    g_cached_video_sequence = sequence;
+    if (presentation != 0)
+    {
+        g_cached_video_presentation = *presentation;
+    }
+    else
+    {
+        memset(&g_cached_video_presentation, 0, sizeof(g_cached_video_presentation));
+    }
+    g_cached_video_valid = TRUE;
+}
 static unsigned g_game_master_sequence = 0u;
 
 typedef struct
@@ -277,6 +622,179 @@ static void fmsx_runtime_apply_msx2p_kanji_mappings(void)
         FmsxMSX2PKanjiBasicLoaded = 0u;
     }
 }
+
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
+static void fmsx_runtime_trace_gfx9000_event(const char *tag, boolean enabled)
+{
+    if (tag == 0)
+    {
+        return;
+    }
+    msxbare_uart_write("G9E ");
+    msxbare_uart_write(tag);
+    msxbare_uart_write(enabled ? " ON\n" : " OFF\n");
+}
+#else
+static void fmsx_runtime_trace_gfx9000_event(const char *tag, boolean enabled)
+{
+    (void) tag;
+    (void) enabled;
+}
+#endif
+
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
+typedef struct TFmsxRuntimeCodeIntruderTraceState
+{
+    boolean probed;
+    boolean active;
+    boolean test_logged;
+    boolean after_test_logged;
+    boolean no_v9990_logged;
+} TFmsxRuntimeCodeIntruderTraceState;
+
+static TFmsxRuntimeCodeIntruderTraceState g_fmsx_ci_trace = { FALSE, FALSE, FALSE, FALSE, FALSE };
+
+static void fmsx_runtime_trace_codeintruder_start(const char *tag)
+{
+    char line[320];
+    const boolean active = fmsx_runtime_active_cart_looks_like_codeintruder();
+
+    g_fmsx_ci_trace.probed = TRUE;
+    g_fmsx_ci_trace.active = active;
+    if (!active)
+    {
+        return;
+    }
+
+    (void) snprintf(line, sizeof(line),
+        "G9C start tag:%s g9:%u pc:%04X a:%s b:%s\n",
+        tag != 0 ? tag : "-",
+        g_gfx9000_enabled ? 1u : 0u,
+        CPU.PC.W,
+        fmsx_runtime_trace_cart_name(0u),
+        fmsx_runtime_trace_cart_name(1u));
+    msxbare_uart_write(line);
+}
+
+static void fmsx_runtime_reset_codeintruder_trace(void)
+{
+    memset(&g_fmsx_ci_trace, 0, sizeof(g_fmsx_ci_trace));
+}
+
+static void fmsx_runtime_trace_codeintruder_checkpoint(void)
+{
+    char line[96];
+    const uint16_t pc = CPU.PC.W;
+
+    if (!g_fmsx_ci_trace.probed)
+    {
+        g_fmsx_ci_trace.active = fmsx_runtime_active_cart_looks_like_codeintruder();
+        g_fmsx_ci_trace.probed = TRUE;
+    }
+    if (!g_fmsx_ci_trace.active)
+    {
+        return;
+    }
+
+    if (!g_fmsx_ci_trace.test_logged && pc >= 0x7358u && pc <= 0x736Cu)
+    {
+        g_fmsx_ci_trace.test_logged = TRUE;
+        (void) snprintf(line, sizeof(line), "G9C pc tag:vram-test g9:%u pc:%04X\n",
+            g_gfx9000_enabled ? 1u : 0u,
+            pc);
+        msxbare_uart_write(line);
+    }
+
+    if (!g_fmsx_ci_trace.after_test_logged && pc >= 0x736Du && pc <= 0x745Fu)
+    {
+        g_fmsx_ci_trace.after_test_logged = TRUE;
+        (void) snprintf(line, sizeof(line), "G9C pc tag:after-test g9:%u pc:%04X\n",
+            g_gfx9000_enabled ? 1u : 0u,
+            pc);
+        msxbare_uart_write(line);
+    }
+
+    if (!g_fmsx_ci_trace.no_v9990_logged && pc >= 0x7460u && pc <= 0x7468u)
+    {
+        g_fmsx_ci_trace.no_v9990_logged = TRUE;
+        (void) snprintf(line, sizeof(line), "G9C pc tag:no-v9990-loop g9:%u pc:%04X\n",
+            g_gfx9000_enabled ? 1u : 0u,
+            pc);
+        msxbare_uart_write(line);
+    }
+}
+#else
+static void fmsx_runtime_trace_codeintruder_start(const char *tag)
+{
+    (void) tag;
+}
+
+static void fmsx_runtime_reset_codeintruder_trace(void)
+{
+}
+
+static void fmsx_runtime_trace_codeintruder_checkpoint(void)
+{
+}
+#endif
+
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
+static unsigned g_fmsx_runtime_gfx9000_step_trace_remaining = 0u;
+
+void fmsx_runtime_debug_rearm_gfx9000_step_trace(unsigned frames)
+{
+    if (frames > g_fmsx_runtime_gfx9000_step_trace_remaining)
+    {
+        g_fmsx_runtime_gfx9000_step_trace_remaining = frames;
+    }
+}
+
+static void fmsx_runtime_trace_gfx9000_step(FmsxRuntimeGfx9000TraceStepId id)
+{
+    if (g_fmsx_runtime_gfx9000_step_trace_remaining == 0u)
+    {
+        return;
+    }
+
+    const char marker = fmsx_runtime_trace_gfx9000_step_marker(id);
+    if (marker != '\0')
+    {
+        fmsx_runtime_trace_gfx9000_char(marker);
+    }
+}
+
+static boolean fmsx_runtime_trace_gfx9000_step_enabled(void)
+{
+    return g_fmsx_runtime_gfx9000_step_trace_remaining > 0u ? TRUE : FALSE;
+}
+
+static void fmsx_runtime_trace_gfx9000_step_consume(void)
+{
+    if (g_fmsx_runtime_gfx9000_step_trace_remaining > 0u)
+    {
+        --g_fmsx_runtime_gfx9000_step_trace_remaining;
+    }
+}
+#else
+void fmsx_runtime_debug_rearm_gfx9000_step_trace(unsigned frames)
+{
+    (void) frames;
+}
+
+static void fmsx_runtime_trace_gfx9000_step(int id)
+{
+    (void) id;
+}
+
+static boolean fmsx_runtime_trace_gfx9000_step_enabled(void)
+{
+    return FALSE;
+}
+
+static void fmsx_runtime_trace_gfx9000_step_consume(void)
+{
+}
+#endif
 
 static boolean fmsx_runtime_apply_kanji_rom_enabled(void)
 {
@@ -783,8 +1301,11 @@ static int fmsx_runtime_machine_mode_bits_for_profile(unsigned profile)
 {
     switch (profile)
     {
-    case FMSX_MODEL_PROFILE_MSX2:  return MSX_MSX2;
-    case FMSX_MODEL_PROFILE_MSX2P: return MSX_MSX2P;
+    case FMSX_MODEL_PROFILE_MSX2:
+        /* DOS2 is a separate fMSX boot option bit, not implied by the model enum. */
+        return MSX_MSX2 | MSX_MSXDOS2;
+    case FMSX_MODEL_PROFILE_MSX2P:
+        return MSX_MSX2P | MSX_MSXDOS2;
     case FMSX_MODEL_PROFILE_MSX1:
     default: return MSX_MSX1;
     }
@@ -966,8 +1487,11 @@ static void fmsx_runtime_apply_audio_channels(void)
 static boolean fmsx_runtime_start(boolean boot_basic)
 {
     fmsx_runtime_set_load_diag(2100u); /* runtime_start begin */
+    fmsx_runtime_reset_ghostgoblins_trace();
+    fmsx_runtime_reset_codeintruder_trace();
     fmsx_runtime_game_master_clear_tables();
     fmsx_runtime_reset_frame_perf_stats_window();
+    fmsx_runtime_invalidate_video_cache();
     g_boot_video_gate_frames_remaining = 0u;
     g_active_boot_mode = g_boot_mode;
     g_fmsx_fmpac_enabled = g_fm_music_enabled ? 1 : 0;
@@ -1023,9 +1547,29 @@ static boolean fmsx_runtime_start(boolean boot_basic)
 
     g_use_embedded_bios = FALSE;
     fmsx_runtime_refresh_scc_virtual_slots();
+    if (!boot_basic
+     && !g_gfx9000_enabled
+     && fmsx_runtime_active_cart_looks_like_gfx9000())
+    {
+        /*
+         * Last line of defense: this runs after ROMName[] has been settled and
+         * immediately before StartMSX(), so V9990 carts cannot miss the device
+         * because of menu/kernel ordering.
+         */
+        g_gfx9000_enabled = TRUE;
+        fmsx_runtime_invalidate_video_cache();
+        fmsx_runtime_trace_gfx9000_event("rt-cart-auto", TRUE);
+    }
+    fmsx_runtime_trace_codeintruder_start("pre-start");
+    fmsx_runtime_trace_gfx9000_event("start-set", g_gfx9000_enabled);
+    fmsx_v9990_set_enabled(g_gfx9000_enabled);
     fmsx_runtime_set_load_diag(2101u); /* before StartMSX */
     boolean started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages(), 2) ? TRUE : FALSE;
     fmsx_runtime_set_load_diag(started ? 2102u : 9102u); /* after StartMSX */
+    if (started)
+    {
+        fmsx_runtime_trace_codeintruder_start("post-start");
+    }
     g_use_embedded_bios = FALSE;
 
     if (!started && game_mode && requested_model_profile == FMSX_MODEL_PROFILE_MSX1)
@@ -1156,6 +1700,7 @@ boolean fmsx_runtime_reboot_basic(void)
         TrashMSX();
     }
 
+    fmsx_runtime_invalidate_video_cache();
     g_fmsx_status.initialized = FALSE;
     g_fmsx_status.running = FALSE;
     return fmsx_runtime_start(TRUE);
@@ -1169,6 +1714,7 @@ boolean fmsx_runtime_menu_reset(void)
     }
 
     fmsx_runtime_reset_game_master_session();
+    fmsx_runtime_invalidate_video_cache();
 
     const boolean disk_rom_effective = fmsx_runtime_disk_rom_effective(g_active_model_profile);
     int new_mode = Mode & ~MSX_PATCHBDOS;
@@ -1184,6 +1730,8 @@ boolean fmsx_runtime_menu_reset(void)
         new_mode = Mode & ~MSX_PATCHBDOS;
     }
 
+    fmsx_runtime_trace_gfx9000_event("menu-set", g_gfx9000_enabled);
+    fmsx_v9990_set_enabled(g_gfx9000_enabled);
     (void) ResetMSX(new_mode, RAMPages, VRAMPages);
     if (!disk_rom_effective)
     {
@@ -1289,6 +1837,16 @@ boolean fmsx_runtime_step_frame(void)
         {
             steps = g_boot_warmup_frames_remaining;
         }
+
+        /*
+         * GFX9000 bring-up is not compatible with boot-time multi-frame burst.
+         * Once the optional video device is enabled, keep the runtime strictly
+         * single-frame per call until warmup drains naturally.
+         */
+        if (g_gfx9000_enabled)
+        {
+            steps = 1u;
+        }
     }
     const boolean perf_enabled = g_frame_perf_telemetry_enabled ? TRUE : FALSE;
     unsigned frames_done = 0u;
@@ -1301,11 +1859,20 @@ boolean fmsx_runtime_step_frame(void)
     {
         const unsigned seq_before = fmsx_video_get_latest(0, 0, 0);
         const boolean audio_enabled_this_frame = fmsx_runtime_audio_render_enabled();
+        unsigned audio_frame_debt = 1u;
         unsigned slices = 0u;
         boolean frame_done = FALSE;
         const uint64_t z80_start_us = perf_enabled ? msxbare_monotonic_time_us() : 0u;
 
         fmsx_audio_begin_frame_render_accounting();
+        if (g_gfx9000_enabled && fmsx_runtime_trace_gfx9000_step_enabled())
+        {
+            fmsx_runtime_trace_gfx9000_step(FmsxRuntimeGfx9000TraceFrameBegin);
+        }
+        if (g_gfx9000_enabled)
+        {
+            fmsx_v9990_begin_frame();
+        }
 
         if (g_boot_warmup_frames_remaining > 0u)
         {
@@ -1315,7 +1882,17 @@ boolean fmsx_runtime_step_frame(void)
 
         while (slices < MSXBARE_FMSX_Z80_SLICES_PER_FRAME_MAX)
         {
+            if (g_gfx9000_enabled && fmsx_runtime_trace_gfx9000_step_enabled() && slices == 0u)
+            {
+                fmsx_runtime_trace_gfx9000_step(FmsxRuntimeGfx9000TraceRunZ80Begin);
+            }
             g_fmsx_status.last_pc = (int) RunZ80(&CPU);
+            if (g_gfx9000_enabled && fmsx_runtime_trace_gfx9000_step_enabled() && slices == 0u)
+            {
+                fmsx_runtime_trace_gfx9000_step(FmsxRuntimeGfx9000TraceRunZ80End);
+            }
+            fmsx_runtime_trace_ghostgoblins_checkpoint();
+            fmsx_runtime_trace_codeintruder_checkpoint();
             ++slices;
 
             if (fmsx_video_get_latest(0, 0, 0) != seq_before)
@@ -1349,8 +1926,31 @@ boolean fmsx_runtime_step_frame(void)
 
         ++frames_done;
         ++g_fmsx_status.frames;
+        if (g_gfx9000_enabled)
+        {
+            fmsx_v9990_render_frame((unsigned) g_fmsx_status.frames);
+            if (fmsx_runtime_trace_gfx9000_step_enabled())
+            {
+                fmsx_runtime_trace_gfx9000_step(FmsxRuntimeGfx9000TraceV9990End);
+            }
+        }
 
-        if (audio_enabled_this_frame && (fmsx_audio_end_frame_render_accounting() == 0u))
+        if (audio_enabled_this_frame)
+        {
+            if (g_gfx9000_enabled && fmsx_runtime_trace_gfx9000_step_enabled())
+            {
+                fmsx_runtime_trace_gfx9000_step(FmsxRuntimeGfx9000TraceAudioAccCall);
+            }
+            audio_frame_debt = fmsx_audio_end_frame_render_accounting();
+            if (g_gfx9000_enabled && fmsx_runtime_trace_gfx9000_step_enabled())
+            {
+                fmsx_runtime_trace_gfx9000_step(audio_frame_debt == 0u
+                    ? FmsxRuntimeGfx9000TraceAudioAccRet0
+                    : FmsxRuntimeGfx9000TraceAudioAccRetNz);
+            }
+        }
+
+        if (audio_enabled_this_frame && (audio_frame_debt == 0u))
         {
             const uint64_t cpu_hz = (uint64_t) fmsx_runtime_get_base_cpu_clock_hz();
             const uint64_t frame_cycles = (uint64_t) (unsigned) ((PALVideo ? VPERIOD_PAL : VPERIOD_NTSC) / 6);
@@ -1367,7 +1967,15 @@ boolean fmsx_runtime_step_frame(void)
             if (perf_enabled)
             {
                 const uint64_t audio_start_us = msxbare_monotonic_time_us();
+                if (g_gfx9000_enabled && fmsx_runtime_trace_gfx9000_step_enabled())
+                {
+                    fmsx_runtime_trace_gfx9000_step(FmsxRuntimeGfx9000TraceAudioPlayCall);
+                }
                 RenderAndPlayAudio(samples_per_frame);
+                if (g_gfx9000_enabled && fmsx_runtime_trace_gfx9000_step_enabled())
+                {
+                    fmsx_runtime_trace_gfx9000_step(FmsxRuntimeGfx9000TraceAudioPlayEnd);
+                }
                 call_audio_us += msxbare_monotonic_time_us() - audio_start_us;
                 call_audio_samples = call_audio_samples > (9999u - samples_per_frame)
                     ? 9999u
@@ -1375,7 +1983,15 @@ boolean fmsx_runtime_step_frame(void)
             }
             else
             {
+                if (g_gfx9000_enabled && fmsx_runtime_trace_gfx9000_step_enabled())
+                {
+                    fmsx_runtime_trace_gfx9000_step(FmsxRuntimeGfx9000TraceAudioPlayCall);
+                }
                 RenderAndPlayAudio(samples_per_frame);
+                if (g_gfx9000_enabled && fmsx_runtime_trace_gfx9000_step_enabled())
+                {
+                    fmsx_runtime_trace_gfx9000_step(FmsxRuntimeGfx9000TraceAudioPlayEnd);
+                }
             }
         }
 
@@ -1391,6 +2007,12 @@ boolean fmsx_runtime_step_frame(void)
         if (g_boot_video_gate_frames_remaining > 0u)
         {
             g_boot_video_gate_frames_remaining--;
+        }
+
+        if (g_gfx9000_enabled && fmsx_runtime_trace_gfx9000_step_enabled())
+        {
+            fmsx_runtime_trace_gfx9000_step(FmsxRuntimeGfx9000TraceFrameEnd);
+            fmsx_runtime_trace_gfx9000_step_consume();
         }
     }
 
@@ -1432,6 +2054,8 @@ boolean fmsx_runtime_step_frame(void)
 void fmsx_runtime_shutdown(void)
 {
     fmsx_runtime_reset_frame_perf_stats_window();
+    fmsx_runtime_invalidate_video_cache();
+    fmsx_runtime_reset_ghostgoblins_trace();
     if (g_fmsx_status.running)
     {
         fmsx_runtime_reset_game_master_session();
@@ -1445,6 +2069,8 @@ void fmsx_runtime_shutdown(void)
 
 boolean fmsx_runtime_save_state(void *dst, unsigned capacity, unsigned *saved_size)
 {
+    unsigned total_bytes;
+
     if (saved_size != 0)
     {
         *saved_size = 0u;
@@ -1454,27 +2080,50 @@ boolean fmsx_runtime_save_state(void *dst, unsigned capacity, unsigned *saved_si
         return FALSE;
     }
 
-    const unsigned bytes = SaveState((unsigned char *) dst, capacity);
+    total_bytes = SaveState((unsigned char *) dst, capacity);
+    if (total_bytes == 0u || total_bytes > capacity)
+    {
+        return FALSE;
+    }
+
+    if (total_bytes < capacity)
+    {
+        const unsigned ext_bytes = fmsx_v9990_save_state((uint8_t *) dst + total_bytes, capacity - total_bytes);
+        if (ext_bytes > 0u)
+        {
+            total_bytes += ext_bytes;
+        }
+    }
+
     if (saved_size != 0)
     {
-        *saved_size = bytes;
+        *saved_size = total_bytes;
     }
-    return (bytes > 0u && bytes <= capacity) ? TRUE : FALSE;
+    return TRUE;
 }
 
 boolean fmsx_runtime_load_state(const void *src, unsigned size)
 {
+    const uint8_t *state_bytes = (const uint8_t *) src;
     if (!g_fmsx_status.running || src == 0 || size == 0u)
     {
         return FALSE;
     }
 
     fmsx_runtime_reset_game_master_session();
+    fmsx_runtime_invalidate_video_cache();
+    fmsx_runtime_reset_ghostgoblins_trace();
 
     const unsigned consumed = LoadState((unsigned char *) src, size);
     if (consumed == 0u || consumed > size)
     {
         return FALSE;
+    }
+
+    fmsx_v9990_reset();
+    if (consumed < size)
+    {
+        (void) fmsx_v9990_load_state(state_bytes + consumed, size - consumed);
     }
 
     g_boot_warmup_frames_remaining = 0u;
@@ -1619,6 +2268,28 @@ boolean fmsx_runtime_get_kanji_rom_enabled(void)
 boolean fmsx_runtime_get_kanji_rom_available(void)
 {
     return FmsxKanjiBase != 0 ? TRUE : FALSE;
+}
+
+void fmsx_runtime_set_gfx9000_enabled(boolean enabled)
+{
+    g_gfx9000_enabled = enabled ? TRUE : FALSE;
+    fmsx_runtime_invalidate_video_cache();
+
+    if (!g_fmsx_status.initialized)
+    {
+        return;
+    }
+
+    fmsx_runtime_trace_gfx9000_event("cfg-set", g_gfx9000_enabled);
+    fmsx_v9990_set_enabled(g_gfx9000_enabled);
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
+    g_fmsx_runtime_gfx9000_step_trace_remaining = g_gfx9000_enabled ? 4u : 0u;
+#endif
+}
+
+boolean fmsx_runtime_get_gfx9000_enabled(void)
+{
+    return g_gfx9000_enabled ? TRUE : FALSE;
 }
 
 void fmsx_runtime_set_boot_mode(unsigned mode)
@@ -2276,6 +2947,26 @@ unsigned fmsx_runtime_get_load_diag(void)
     return g_load_diag_stage;
 }
 
+void fmsx_runtime_set_v9990_debug_live_view(TFmsxV9990DebugLiveView view)
+{
+    fmsx_v9990_set_debug_live_view(view);
+}
+
+TFmsxV9990DebugLiveView fmsx_runtime_get_v9990_debug_live_view(void)
+{
+    return fmsx_v9990_get_debug_live_view();
+}
+
+void fmsx_runtime_set_v9990_debug_reference_view(TFmsxV9990DebugReferenceView view)
+{
+    fmsx_v9990_set_debug_reference_view(view);
+}
+
+TFmsxV9990DebugReferenceView fmsx_runtime_get_v9990_debug_reference_view(void)
+{
+    return fmsx_v9990_get_debug_reference_view();
+}
+
 void fmsx_runtime_set_frame_perf_telemetry_enabled(boolean enabled)
 {
     g_frame_perf_telemetry_enabled = enabled ? TRUE : FALSE;
@@ -2325,6 +3016,7 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
     stats->turbo_percent = fmsx_runtime_effective_turbo_percent();
     stats->scr_mode = (unsigned) ScrMode;
     stats->reg2 = (unsigned) VDP[2];
+    stats->reg9 = (unsigned) VDP[9];
     stats->reg25 = (unsigned) VDP[25];
     stats->reg26 = (unsigned) VDP[26];
     stats->reg27 = (unsigned) VDP[27];
@@ -2664,8 +3356,13 @@ void fmsx_runtime_reset_audio_mix_debug_window(void)
 
 unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsigned *height)
 {
+    TFmsxV9990VideoFrame v9990_frame;
+    TFmsxVideoPresentation presentation;
+    unsigned sequence = 0u;
+
     if (g_boot_video_gate_frames_remaining > 0u)
     {
+        fmsx_runtime_invalidate_video_cache();
         if (pixels != 0)
         {
             *pixels = 0;
@@ -2680,7 +3377,52 @@ unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsig
         }
         return 0u;
     }
-    return fmsx_video_get_latest(pixels, width, height);
+
+    if (g_gfx9000_enabled)
+    {
+        memset(&v9990_frame, 0, sizeof(v9990_frame));
+        fmsx_v9990_get_video_frame(&v9990_frame);
+        if (v9990_frame.active)
+        {
+            memset(&presentation, 0, sizeof(presentation));
+            presentation.logical_width = v9990_frame.logical_width;
+            presentation.logical_height = v9990_frame.logical_height;
+            presentation.pitch_pixels = v9990_frame.pitch_pixels;
+            presentation.hires_mode = v9990_frame.hires_mode ? 1u : 0u;
+            presentation.interlaced_mode = v9990_frame.interlaced_mode ? 1u : 0u;
+            presentation.woven_hires = v9990_frame.woven_hires ? 1u : 0u;
+            presentation.field_parity_odd = v9990_frame.field_parity_odd ? 1u : 0u;
+            presentation.disable_scanline_postfx = TRUE;
+            fmsx_runtime_cache_video_snapshot(v9990_frame.pixels,
+                                              v9990_frame.width,
+                                              v9990_frame.height,
+                                              v9990_frame.sequence,
+                                              &presentation);
+            if (pixels != 0)
+            {
+                *pixels = v9990_frame.pixels;
+            }
+            if (width != 0)
+            {
+                *width = v9990_frame.width;
+            }
+            if (height != 0)
+            {
+                *height = v9990_frame.height;
+            }
+            return v9990_frame.sequence;
+        }
+    }
+
+    memset(&presentation, 0, sizeof(presentation));
+    sequence = fmsx_video_get_latest(pixels, width, height);
+    fmsx_video_get_presentation(&presentation);
+    fmsx_runtime_cache_video_snapshot((pixels != 0) ? *pixels : 0,
+                                      (width != 0) ? *width : 0u,
+                                      (height != 0) ? *height : 0u,
+                                      sequence,
+                                      &presentation);
+    return sequence;
 }
 
 void fmsx_runtime_get_video_presentation(TFmsxVideoPresentation *presentation)
@@ -2693,6 +3435,17 @@ void fmsx_runtime_get_video_presentation(TFmsxVideoPresentation *presentation)
     memset(presentation, 0, sizeof(*presentation));
     if (g_boot_video_gate_frames_remaining > 0u)
     {
+        fmsx_runtime_invalidate_video_cache();
+        return;
+    }
+
+    if (g_cached_video_valid
+        && (g_cached_video_pixels != 0
+            || g_cached_video_width != 0u
+            || g_cached_video_height != 0u
+            || g_cached_video_sequence != 0u))
+    {
+        *presentation = g_cached_video_presentation;
         return;
     }
 

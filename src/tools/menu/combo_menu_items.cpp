@@ -5,6 +5,9 @@
 #ifndef MSXBARE_FEAT_SCC
 #define MSXBARE_FEAT_SCC 1
 #endif
+#ifndef MSXBARE_FEAT_GFX9000
+#define MSXBARE_FEAT_GFX9000 1
+#endif
 #ifndef MSXBARE_FEAT_FMPAC
 #define MSXBARE_FEAT_FMPAC 1
 #endif
@@ -375,6 +378,7 @@ const TComboMenuItem *combo_menu_load_disk_items_get(unsigned language,
 const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
                                                      unsigned resolution_mode,
                                                      unsigned scanline_mode,
+                                                     boolean gfx9000_enabled,
                                                      unsigned refresh_rate_hz,
                                                      boolean disk_rom_enabled,
                                                      unsigned boot_mode,
@@ -396,6 +400,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     static char language_label[32];
     static char resolution_label[32];
     static char scanline_label[32];
+    static char gfx9000_label[32];
     static char boot_label[32];
     static char machine_label[32];
     static char mapper_label[32];
@@ -435,6 +440,8 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
                    : (resolution_mode == 2u ? locale->resolution_720 : locale->resolution_768)));
     BuildLabelFlag(scanline_label, sizeof(scanline_label), locale->settings_scanlines,
                    scanline_mode == 0u ? locale->flag_off : locale->flag_on);
+    BuildLabelFlag(gfx9000_label, sizeof(gfx9000_label), locale->settings_gfx9000,
+                   gfx9000_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(boot_label, sizeof(boot_label), locale->settings_boot_mode,
                    boot_mode == 0u ? "NORM" : (boot_mode == 1u ? "FAST" : "GAME"));
     BuildLabelFlag(machine_label, sizeof(machine_label), locale->settings_machine,
@@ -492,6 +499,10 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
     ADD_SETTING_ITEM(resolution_label, ComboMenuActionCycleResolution, ComboMenuRedrawMenuOnly, TRUE);
     ADD_SETTING_ITEM(scanline_label, ComboMenuActionCycleScanlines, ComboMenuRedrawMenuAndViewport, TRUE);
+    if (MSXBARE_FEAT_GFX9000)
+    {
+        ADD_SETTING_ITEM(gfx9000_label, ComboMenuActionToggleGfx9000, ComboMenuRedrawMenuOnly, TRUE);
+    }
     if (MSXBARE_FEAT_FMPAC || MSXBARE_FEAT_SCC)
     {
         ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);

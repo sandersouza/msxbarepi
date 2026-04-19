@@ -1593,6 +1593,7 @@ void fmsx_video_get_presentation(TFmsxVideoPresentation *presentation)
 
     presentation->logical_width = g_image_logical_width;
     presentation->logical_height = g_image_logical_height;
+    presentation->pitch_pixels = g_image_buffer_width;
     presentation->hires_mode = g_image_hires_mode;
     presentation->interlaced_mode = g_image_interlaced_mode;
     presentation->woven_hires = g_image_woven_hires;

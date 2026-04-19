@@ -14,6 +14,7 @@ Este diretorio concentra utilitarios operacionais de build, validacao de ambient
 - Exporta a build em um pacote ZIP: `make-sdcard-package.sh`
 - Suite de benchmark/regressao: `perf-regression.sh`
 - Gera discos `.DSK` de debug V9958: `build-v9958-debug-disks.py`
+- Gera imagens `.dsk` MSX FAT12 720KB a partir de um diretorio: `build-msx-disk.py`
 - Fluxo oficial de preparo de SD (formatando): `prepare-sd.sh`
 - Atualizacao incremental de SD (sem formatar): `update-sd-incremental.sh`
 
@@ -83,7 +84,7 @@ Sincronizar `build/config.mk` a partir de `.config` sem abrir menu:
 
 - O script compila `build/tools/kconfig-linux/mconf` localmente a partir de `tools/kconfig-linux/` quando necessario.
 - Interface e atalhos sao os mesmos do menuconfig classico do Linux (setas, `Enter`, `Y/N`, `Space`, `Esc Esc`, `<Save>`, `<Load>`, `<Help>`).
-- Opcoes atuais: SCC, FM-PAC, DISK ROM, MegaRAM, MSX2, Boot Screen, MSX2+, LOAD ROM, LOAD DISK, Boot Mode, DEBUG, One ROM Mode e Patreon/Owner tag.
+- Opcoes atuais: GFX9000, SCC, FM-PAC, DISK ROM, MegaRAM, MSX2, Boot Screen, MSX2+, LOAD ROM, LOAD DISK, Boot Mode, DEBUG, One ROM Mode e Patreon/Owner tag.
 - Em One ROM Mode o script aplica presets de seguranca (MSX2+, boot GAME e desativa load dinamico).
 - Em `One ROM Mode`, o caminho de `CARTA.ROM` e definido diretamente no campo `MSXBARE_ONE_ROM_PATH` do proprio `menuconfig` (entrada digitada).
 - `Boot Screen` (visivel quando `Suporte a MSX2+` estiver ativo):
@@ -252,6 +253,81 @@ python3 scripts/build-v9958-debug-disks.py \
 - Se `CONFIG_MSXBARE_ONE_ROM_MODE=y` em `.config`:
   - com `CONFIG_MSXBARE_ONE_ROM_PATH` valido, injeta essa ROM como `CARTA.ROM` no CPIO;
   - sem caminho selecionado, garante que `CARTA.ROM` nao exista no CPIO.
+
+## 5.2) build-msx-disk.py
+
+### Funcao
+
+Gera uma imagem `.dsk` FAT12 de `720KB` para MSX a partir de um diretorio local, usando `scripts/DISKBASE.DSK` apenas como fonte do setor de boot.
+
+### Como usar
+
+Saida automatica (`<diretorio>.dsk` ao lado da pasta):
+
+```bash
+python3 scripts/build-msx-disk.py <diretorio_de_entrada>
+```
+
+Saida customizada:
+
+```bash
+python3 scripts/build-msx-disk.py <diretorio_de_entrada> <arquivo_saida.dsk>
+```
+
+Com label FAT explicito:
+
+```bash
+python3 scripts/build-msx-disk.py <diretorio_de_entrada> <arquivo_saida.dsk> --label MSXTOOLS
+```
+
+Sobrescrevendo a imagem existente:
+
+```bash
+python3 scripts/build-msx-disk.py <diretorio_de_entrada> <arquivo_saida.dsk> --force
+```
+
+### Observacoes
+
+- A imagem gerada tem tamanho fixo de `737280` bytes (`720KB`).
+- O script copia byte a byte apenas o setor de boot de `scripts/DISKBASE.DSK`.
+- FATs, diretorio raiz e area de dados sao recriados do zero, deixando a nova imagem limpa antes de inserir os arquivos do diretorio informado.
+- Isso reaproveita o boot loader funcional da imagem-base sem carregar junto o conteudo antigo dela.
+- O script filtra qualquer entrada cujo nome-base comece com `.` em qualquer nivel da arvore, cobrindo `._*`, `.DS_Store` e demais ocultos do macOS.
+- Como o fluxo escreve FAT12 diretamente em Python, ele evita o problema de AppleDouble/metadata que costuma aparecer ao montar/copiar arquivos para volumes FAT no macOS.
+- O conteudo e copiado de forma recursiva, preservando subdiretorios.
+- Os nomes precisam caber no formato DOS `8.3`; quando um arquivo/diretorio nao cabe, o script falha com erro claro em vez de renomear silenciosamente.
+- O arquivo de saida nao pode ficar dentro do diretorio de origem.
+- O arquivo de saida tambem nao pode sobrescrever `scripts/DISKBASE.DSK`.
+
+## 5.3) build-v9990-debug-disks.py
+
+### Funcao
+
+Gera imagens MSX FAT12 `720KB` em `sdcard/disks/DEBUG/` para a trilha de depuracao do `V9990`, usando `build-msx-disk.py` como builder canonico.
+
+### Como usar
+
+Default:
+
+```bash
+python3 scripts/build-v9990-debug-disks.py
+```
+
+Diretorios customizados:
+
+```bash
+python3 scripts/build-v9990-debug-disks.py \
+  --output-dir sdcard/disks/DEBUG \
+  --source-copy-dir sdcard/disks/DEBUG/src/V9990
+```
+
+### Observacoes
+
+- Gera atualmente:
+  - `GGDBG.DSK`
+  - `V9990CHK.DSK`
+- Cada disco e montado a partir de um staging host e tambem deixa uma copia das fontes em `sdcard/disks/DEBUG/src/V9990/`.
+- O fluxo oficial de `make sdcard` ignora `sdcard/disks/` por design; esses discos sao artefatos de debug/hardware, nao payload automatico do boot.
 
 ## 6) make-sdcard-package.sh
 
