@@ -1,10 +1,26 @@
 # Handoff Persistente da Branch main
 
-Ultima atualizacao: 10/04/2026 (16:11 -03)
+Ultima atualizacao: 19/04/2026 (handoff da #251 para pausa)
 
 ## Objetivo da branch
 
 Manter a baseline principal do `msxbarepi` coerente entre codigo, fluxo operacional e documentacao.
+
+## Atualizacao 19/04/2026 - checkpoint local da issue #251
+
+- A branch `251-suporte-cartucho-vdp-v9990` foi preparada para merge local em `main` como checkpoint de trabalho.
+- A issue `#251` e a branch correspondente continuam abertas; nao fechar/remover ate a trilha `V9990/GFX9000` ser retomada e concluida.
+- A telemetria UART do `V9990/GFX9000` (`G9*`) foi desinstrumentada por padrao:
+  - macro canonica: `MSXBARE_V9990_UART_TRACE`
+  - default: `0`
+  - reativacao futura:
+
+```bash
+make DEBUG=1 MSXBARE_V9990_UART_TRACE=1
+```
+
+- O `DEBUG [MIN]` continua usando `VDP R#9 bit1` para exibir `PAL/NTSC`, sem depender dos logs `G9*`.
+- A issue `#251` ficou pausada com os problemas remanescentes de fidelidade V9990 documentados em `docs/handoff/251-suporte-cartucho-vdp-v9990.md`.
 
 ## Atualizacao desta iteracao
 

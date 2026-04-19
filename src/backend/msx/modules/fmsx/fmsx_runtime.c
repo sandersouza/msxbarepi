@@ -12,6 +12,34 @@
 #include <ctype.h>
 #include <string.h>
 
+static boolean fmsx_runtime_name_contains_casefold(const char *text, const char *needle)
+{
+    if (text == 0 || needle == 0 || *needle == '\0')
+    {
+        return FALSE;
+    }
+
+    for (; *text != '\0'; ++text)
+    {
+        const char *a = text;
+        const char *b = needle;
+
+        while (*a != '\0' && *b != '\0'
+            && toupper((unsigned char) *a) == toupper((unsigned char) *b))
+        {
+            ++a;
+            ++b;
+        }
+
+        if (*b == '\0')
+        {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
 #ifndef MSXBARE_FMSX_FAST_CUTOFF_FRAMES_MSX1
 #define MSXBARE_FMSX_FAST_CUTOFF_FRAMES_MSX1 154u
 #endif
@@ -54,6 +82,10 @@
 
 #ifndef MSXBARE_ENABLE_DEBUG_OVERLAY
 #define MSXBARE_ENABLE_DEBUG_OVERLAY 0
+#endif
+
+#ifndef MSXBARE_V9990_UART_TRACE
+#define MSXBARE_V9990_UART_TRACE 0
 #endif
 
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
@@ -109,34 +141,6 @@ static char fmsx_runtime_trace_gfx9000_step_marker(FmsxRuntimeGfx9000TraceStepId
     }
 }
 
-static boolean fmsx_runtime_name_contains_casefold(const char *text, const char *needle)
-{
-    if (text == 0 || needle == 0 || *needle == '\0')
-    {
-        return FALSE;
-    }
-
-    for (; *text != '\0'; ++text)
-    {
-        const char *a = text;
-        const char *b = needle;
-
-        while (*a != '\0' && *b != '\0'
-            && toupper((unsigned char) *a) == toupper((unsigned char) *b))
-        {
-            ++a;
-            ++b;
-        }
-
-        if (*b == '\0')
-        {
-            return TRUE;
-        }
-    }
-
-    return FALSE;
-}
-
 static TFmsxRuntimeGhostGoblinsTraceState g_fmsx_gg_trace = { FALSE, FALSE, FALSE, FALSE, FALSE };
 
 static void fmsx_runtime_reset_ghostgoblins_trace(void)
@@ -161,6 +165,7 @@ static boolean fmsx_runtime_is_ghostgoblins_active(void)
 
 static void fmsx_runtime_trace_ghostgoblins_selection(const char *tag)
 {
+#if MSXBARE_V9990_UART_TRACE
     char line[192];
     unsigned pos = 0u;
     uint8_t state = 0u;
@@ -204,10 +209,14 @@ static void fmsx_runtime_trace_ghostgoblins_selection(const char *tag)
     {
         msxbare_uart_write(line);
     }
+#else
+    (void) tag;
+#endif
 }
 
 static void fmsx_runtime_trace_ghostgoblins_checkpoint(void)
 {
+#if MSXBARE_V9990_UART_TRACE
     const uint16_t pc = CPU.PC.W;
 
     if (!g_fmsx_gg_trace.active)
@@ -242,6 +251,7 @@ static void fmsx_runtime_trace_ghostgoblins_checkpoint(void)
         g_fmsx_gg_trace.upload_poll_logged = TRUE;
         fmsx_runtime_trace_ghostgoblins_selection("disp");
     }
+#endif
 }
 #else
 static void fmsx_runtime_reset_ghostgoblins_trace(void)
@@ -411,6 +421,105 @@ static unsigned g_vdp_prev_ce = 0u;
 static unsigned g_vdp_cmd_starts = 0u;
 static unsigned g_vdp_copy_starts = 0u;
 
+static boolean fmsx_runtime_name_looks_like_gfx9000_cart(const char *name)
+{
+    return (fmsx_runtime_name_contains_casefold(name, "V9990")
+         || fmsx_runtime_name_contains_casefold(name, "GFX9000")
+         || fmsx_runtime_name_contains_casefold(name, "CODEINTRUDER")
+         || fmsx_runtime_name_contains_casefold(name, "GHOSTGOBLINS")
+         || fmsx_runtime_name_contains_casefold(name, "UNDERWATER")) ? TRUE : FALSE;
+}
+
+static boolean fmsx_runtime_name_looks_like_codeintruder(const char *name)
+{
+    return (fmsx_runtime_name_contains_casefold(name, "CODEINTRUDER")
+         || fmsx_runtime_name_contains_casefold(name, "CODEINTR")
+         || fmsx_runtime_name_contains_casefold(name, "INTRUDER")) ? TRUE : FALSE;
+}
+
+static boolean fmsx_runtime_rom_slot_contains_text(unsigned slot, const char *needle)
+{
+    const uint8_t *rom;
+    unsigned rom_size;
+    unsigned needle_len = 0u;
+
+    if (needle == 0 || slot >= 2u || ROMData[slot] == 0)
+    {
+        return FALSE;
+    }
+
+    while (needle[needle_len] != '\0')
+    {
+        ++needle_len;
+    }
+    if (needle_len == 0u)
+    {
+        return FALSE;
+    }
+
+    rom = ROMData[slot];
+    rom_size = ((unsigned) ROMMask[slot] + 1u) << 13;
+    if (rom_size < needle_len)
+    {
+        return FALSE;
+    }
+
+    for (unsigned i = 0u; i <= rom_size - needle_len; ++i)
+    {
+        unsigned j = 0u;
+        while (j < needle_len && rom[i + j] == (uint8_t) needle[j])
+        {
+            ++j;
+        }
+        if (j == needle_len)
+        {
+            return TRUE;
+        }
+    }
+
+    return FALSE;
+}
+
+static boolean fmsx_runtime_active_cart_looks_like_gfx9000(void)
+{
+    for (unsigned slot = 0u; slot < 2u; ++slot)
+    {
+        if (fmsx_runtime_name_looks_like_gfx9000_cart(ROMName[slot])
+         || fmsx_runtime_name_looks_like_gfx9000_cart(g_cartridge_path[slot]))
+        {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+static boolean fmsx_runtime_active_cart_looks_like_codeintruder(void)
+{
+    for (unsigned slot = 0u; slot < 2u; ++slot)
+    {
+        if (fmsx_runtime_rom_slot_contains_text(slot, "CODENAME:INTRUDER")
+         || fmsx_runtime_name_looks_like_codeintruder(ROMName[slot])
+         || fmsx_runtime_name_looks_like_codeintruder(g_cartridge_path[slot]))
+        {
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+static const char *fmsx_runtime_trace_cart_name(unsigned slot)
+{
+    if (slot > 1u)
+    {
+        return "-";
+    }
+    if (g_cartridge_path[slot][0] != '\0')
+    {
+        return g_cartridge_path[slot];
+    }
+    return ROMName[slot] != 0 ? ROMName[slot] : "-";
+}
+
 static void fmsx_runtime_invalidate_video_cache(void)
 {
     g_cached_video_pixels = 0;
@@ -514,7 +623,7 @@ static void fmsx_runtime_apply_msx2p_kanji_mappings(void)
     }
 }
 
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
 static void fmsx_runtime_trace_gfx9000_event(const char *tag, boolean enabled)
 {
     if (tag == 0)
@@ -533,7 +642,103 @@ static void fmsx_runtime_trace_gfx9000_event(const char *tag, boolean enabled)
 }
 #endif
 
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
+typedef struct TFmsxRuntimeCodeIntruderTraceState
+{
+    boolean probed;
+    boolean active;
+    boolean test_logged;
+    boolean after_test_logged;
+    boolean no_v9990_logged;
+} TFmsxRuntimeCodeIntruderTraceState;
+
+static TFmsxRuntimeCodeIntruderTraceState g_fmsx_ci_trace = { FALSE, FALSE, FALSE, FALSE, FALSE };
+
+static void fmsx_runtime_trace_codeintruder_start(const char *tag)
+{
+    char line[320];
+    const boolean active = fmsx_runtime_active_cart_looks_like_codeintruder();
+
+    g_fmsx_ci_trace.probed = TRUE;
+    g_fmsx_ci_trace.active = active;
+    if (!active)
+    {
+        return;
+    }
+
+    (void) snprintf(line, sizeof(line),
+        "G9C start tag:%s g9:%u pc:%04X a:%s b:%s\n",
+        tag != 0 ? tag : "-",
+        g_gfx9000_enabled ? 1u : 0u,
+        CPU.PC.W,
+        fmsx_runtime_trace_cart_name(0u),
+        fmsx_runtime_trace_cart_name(1u));
+    msxbare_uart_write(line);
+}
+
+static void fmsx_runtime_reset_codeintruder_trace(void)
+{
+    memset(&g_fmsx_ci_trace, 0, sizeof(g_fmsx_ci_trace));
+}
+
+static void fmsx_runtime_trace_codeintruder_checkpoint(void)
+{
+    char line[96];
+    const uint16_t pc = CPU.PC.W;
+
+    if (!g_fmsx_ci_trace.probed)
+    {
+        g_fmsx_ci_trace.active = fmsx_runtime_active_cart_looks_like_codeintruder();
+        g_fmsx_ci_trace.probed = TRUE;
+    }
+    if (!g_fmsx_ci_trace.active)
+    {
+        return;
+    }
+
+    if (!g_fmsx_ci_trace.test_logged && pc >= 0x7358u && pc <= 0x736Cu)
+    {
+        g_fmsx_ci_trace.test_logged = TRUE;
+        (void) snprintf(line, sizeof(line), "G9C pc tag:vram-test g9:%u pc:%04X\n",
+            g_gfx9000_enabled ? 1u : 0u,
+            pc);
+        msxbare_uart_write(line);
+    }
+
+    if (!g_fmsx_ci_trace.after_test_logged && pc >= 0x736Du && pc <= 0x745Fu)
+    {
+        g_fmsx_ci_trace.after_test_logged = TRUE;
+        (void) snprintf(line, sizeof(line), "G9C pc tag:after-test g9:%u pc:%04X\n",
+            g_gfx9000_enabled ? 1u : 0u,
+            pc);
+        msxbare_uart_write(line);
+    }
+
+    if (!g_fmsx_ci_trace.no_v9990_logged && pc >= 0x7460u && pc <= 0x7468u)
+    {
+        g_fmsx_ci_trace.no_v9990_logged = TRUE;
+        (void) snprintf(line, sizeof(line), "G9C pc tag:no-v9990-loop g9:%u pc:%04X\n",
+            g_gfx9000_enabled ? 1u : 0u,
+            pc);
+        msxbare_uart_write(line);
+    }
+}
+#else
+static void fmsx_runtime_trace_codeintruder_start(const char *tag)
+{
+    (void) tag;
+}
+
+static void fmsx_runtime_reset_codeintruder_trace(void)
+{
+}
+
+static void fmsx_runtime_trace_codeintruder_checkpoint(void)
+{
+}
+#endif
+
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
 static unsigned g_fmsx_runtime_gfx9000_step_trace_remaining = 0u;
 
 void fmsx_runtime_debug_rearm_gfx9000_step_trace(unsigned frames)
@@ -1283,6 +1488,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
 {
     fmsx_runtime_set_load_diag(2100u); /* runtime_start begin */
     fmsx_runtime_reset_ghostgoblins_trace();
+    fmsx_runtime_reset_codeintruder_trace();
     fmsx_runtime_game_master_clear_tables();
     fmsx_runtime_reset_frame_perf_stats_window();
     fmsx_runtime_invalidate_video_cache();
@@ -1341,11 +1547,29 @@ static boolean fmsx_runtime_start(boolean boot_basic)
 
     g_use_embedded_bios = FALSE;
     fmsx_runtime_refresh_scc_virtual_slots();
+    if (!boot_basic
+     && !g_gfx9000_enabled
+     && fmsx_runtime_active_cart_looks_like_gfx9000())
+    {
+        /*
+         * Last line of defense: this runs after ROMName[] has been settled and
+         * immediately before StartMSX(), so V9990 carts cannot miss the device
+         * because of menu/kernel ordering.
+         */
+        g_gfx9000_enabled = TRUE;
+        fmsx_runtime_invalidate_video_cache();
+        fmsx_runtime_trace_gfx9000_event("rt-cart-auto", TRUE);
+    }
+    fmsx_runtime_trace_codeintruder_start("pre-start");
     fmsx_runtime_trace_gfx9000_event("start-set", g_gfx9000_enabled);
     fmsx_v9990_set_enabled(g_gfx9000_enabled);
     fmsx_runtime_set_load_diag(2101u); /* before StartMSX */
     boolean started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages(), 2) ? TRUE : FALSE;
     fmsx_runtime_set_load_diag(started ? 2102u : 9102u); /* after StartMSX */
+    if (started)
+    {
+        fmsx_runtime_trace_codeintruder_start("post-start");
+    }
     g_use_embedded_bios = FALSE;
 
     if (!started && game_mode && requested_model_profile == FMSX_MODEL_PROFILE_MSX1)
@@ -1668,6 +1892,7 @@ boolean fmsx_runtime_step_frame(void)
                 fmsx_runtime_trace_gfx9000_step(FmsxRuntimeGfx9000TraceRunZ80End);
             }
             fmsx_runtime_trace_ghostgoblins_checkpoint();
+            fmsx_runtime_trace_codeintruder_checkpoint();
             ++slices;
 
             if (fmsx_video_get_latest(0, 0, 0) != seq_before)
@@ -2049,9 +2274,15 @@ void fmsx_runtime_set_gfx9000_enabled(boolean enabled)
 {
     g_gfx9000_enabled = enabled ? TRUE : FALSE;
     fmsx_runtime_invalidate_video_cache();
+
+    if (!g_fmsx_status.initialized)
+    {
+        return;
+    }
+
     fmsx_runtime_trace_gfx9000_event("cfg-set", g_gfx9000_enabled);
     fmsx_v9990_set_enabled(g_gfx9000_enabled);
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
     g_fmsx_runtime_gfx9000_step_trace_remaining = g_gfx9000_enabled ? 4u : 0u;
 #endif
 }
@@ -2785,6 +3016,7 @@ void fmsx_runtime_get_timing_debug(TFmsxTimingDebug *stats)
     stats->turbo_percent = fmsx_runtime_effective_turbo_percent();
     stats->scr_mode = (unsigned) ScrMode;
     stats->reg2 = (unsigned) VDP[2];
+    stats->reg9 = (unsigned) VDP[9];
     stats->reg25 = (unsigned) VDP[25];
     stats->reg26 = (unsigned) VDP[26];
     stats->reg27 = (unsigned) VDP[27];

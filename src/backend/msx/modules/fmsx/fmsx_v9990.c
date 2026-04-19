@@ -9,8 +9,12 @@ extern int ScanLine;
 #define MSXBARE_ENABLE_DEBUG_OVERLAY 0
 #endif
 
+#ifndef MSXBARE_V9990_UART_TRACE
+#define MSXBARE_V9990_UART_TRACE 0
+#endif
+
 #ifndef MSXBARE_V9990_PHASE_TRACE_UART
-#define MSXBARE_V9990_PHASE_TRACE_UART MSXBARE_ENABLE_DEBUG_OVERLAY
+#define MSXBARE_V9990_PHASE_TRACE_UART MSXBARE_V9990_UART_TRACE
 #endif
 
 #ifndef MSXBARE_V9990_PHASE_VISUAL_DEBUG
@@ -450,6 +454,7 @@ static unsigned g_fmsx_v9990_debug_reg_logs_remaining = 0u;
 static unsigned g_fmsx_v9990_debug_active_logs_remaining = 0u;
 static unsigned g_fmsx_v9990_debug_scroll_logs_remaining = 0u;
 static unsigned g_fmsx_v9990_debug_vram_cpu_logs_remaining = 0u;
+static unsigned g_fmsx_v9990_debug_disabled_port_logs_remaining = 64u;
 static unsigned g_fmsx_v9990_debug_active_phase = 0u;
 static unsigned g_fmsx_v9990_debug_frame_snapshot_pending = 0u;
 static boolean g_fmsx_v9990_debug_compact_trace = FALSE;
@@ -462,6 +467,16 @@ static unsigned g_fmsx_v9990_debug_lmmc_image_width = 0u;
 static unsigned g_fmsx_v9990_debug_lmmc_row_bytes = 0u;
 static uint8_t g_fmsx_v9990_debug_lmmc_mode = 0u;
 static uint8_t g_fmsx_v9990_debug_lmmc_opcode = 0u;
+static unsigned g_fmsx_v9990_debug_ci_status_logs_remaining = 96u;
+static unsigned g_fmsx_v9990_debug_ci_palette_logs_remaining = 4u;
+static unsigned g_fmsx_v9990_debug_ci_vram_logs_remaining = 32u;
+static uint16_t g_fmsx_v9990_debug_ci_status_last_pc = 0xFFFFu;
+static uint8_t g_fmsx_v9990_debug_ci_status_last_value = 0xFFu;
+static unsigned g_fmsx_v9990_debug_ci_status_repeat = 0u;
+static unsigned g_fmsx_v9990_debug_ci_palette_count = 0u;
+static unsigned g_fmsx_v9990_debug_ci_vram_count = 0u;
+static uint16_t g_fmsx_v9990_debug_ci_vram_last_pc = 0xFFFFu;
+static unsigned g_fmsx_v9990_debug_ci_vram_last_raw = 0xFFFFFFFFu;
 static uint16_t g_fmsx_v9990_debug_p1_plane_a_lines[FMSX_V9990_FB_MAX_HEIGHT];
 static uint16_t g_fmsx_v9990_debug_p1_plane_b_lines[FMSX_V9990_FB_MAX_HEIGHT];
 static uint16_t g_fmsx_v9990_debug_p1_final_lines[FMSX_V9990_FB_MAX_HEIGHT];
@@ -526,10 +541,18 @@ static boolean fmsx_v9990_cmd_should_abort(uint8_t opcode);
 static TFmsxV9990CommandMode fmsx_v9990_get_command_mode(void);
 static unsigned fmsx_v9990_cmd_get_pitch(TFmsxV9990CommandMode mode, unsigned width);
 static void fmsx_v9990_debug_trace_port(const char *prefix, uint8_t port, uint8_t value);
+static void fmsx_v9990_debug_trace_disabled_port(const char *prefix, uint8_t port, uint8_t value);
+static void fmsx_v9990_debug_trace_codeintruder_status(uint8_t value);
+static void fmsx_v9990_debug_trace_codeintruder_palette(uint8_t value);
+static void fmsx_v9990_debug_trace_codeintruder_vram_out(unsigned raw, unsigned phys, uint8_t value);
+static boolean fmsx_v9990_debug_is_codeintruder_palette_bulk(void);
+static boolean fmsx_v9990_debug_is_codeintruder_vram_bulk(uint8_t port);
+static void fmsx_v9990_debug_reset_codeintruder_windows(void);
 static void fmsx_v9990_debug_trace_command(const char *prefix, uint8_t opcode);
 static void fmsx_v9990_debug_trace_render(unsigned width, unsigned height, TFmsxV9990DisplayMode mode);
 static void fmsx_v9990_debug_trace_enable(const char *tag, boolean enabled);
 static void fmsx_v9990_debug_trace_regs(const char *prefix);
+static void fmsx_v9990_debug_trace_core_reg_write(uint8_t reg, uint8_t prev, uint8_t value);
 static void fmsx_v9990_debug_trace_guard(const char *tag);
 static void fmsx_v9990_debug_trace_active(const char *prefix, unsigned width, unsigned height, TFmsxV9990DisplayMode mode);
 static void fmsx_v9990_debug_rearm_port_window(void);
@@ -543,6 +566,11 @@ static void fmsx_v9990_debug_trace_p1_plane_profile(unsigned height);
 static void fmsx_v9990_debug_trace_p1_hole_state(unsigned height);
 static void fmsx_v9990_debug_trace_p1_hole_samples(unsigned height);
 static void fmsx_v9990_debug_trace_lmmc(const char *tag);
+static void fmsx_v9990_debug_begin_linear_trace(uint8_t opcode,
+                                                TFmsxV9990CommandMode mode,
+                                                unsigned image_width,
+                                                unsigned pitch,
+                                                uint32_t total_bytes);
 static void fmsx_v9990_debug_trace_p1_block_timing(unsigned height);
 static void fmsx_v9990_debug_trace_p1_block_profile(unsigned height);
 static void fmsx_v9990_debug_trace_vram_cpu(const char *tag, unsigned raw, unsigned phys, uint8_t value);
@@ -1126,7 +1154,7 @@ static boolean fmsx_v9990_cmd_should_abort(uint8_t opcode)
     return FALSE;
 }
 
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
 static void fmsx_v9990_debug_trace_port(const char *prefix, uint8_t port, uint8_t value)
 {
     char line[80];
@@ -1152,6 +1180,199 @@ static void fmsx_v9990_debug_trace_port(const char *prefix, uint8_t port, uint8_
     fmsx_v9990_tracebuf_push_hex16(&tb, CPU.PC.W);
     fmsx_v9990_tracebuf_push_char(&tb, '\n');
     msxbare_uart_write(line);
+}
+
+static void fmsx_v9990_debug_trace_disabled_port(const char *prefix, uint8_t port, uint8_t value)
+{
+    char line[80];
+    TFmsxV9990TraceBuffer tb;
+
+    if (g_fmsx_v9990_debug_disabled_port_logs_remaining == 0u)
+    {
+        return;
+    }
+
+    --g_fmsx_v9990_debug_disabled_port_logs_remaining;
+    fmsx_v9990_tracebuf_init(&tb, line, sizeof(line));
+    fmsx_v9990_tracebuf_push_text(&tb, prefix);
+    fmsx_v9990_tracebuf_push_text(&tb, " p:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, port);
+    fmsx_v9990_tracebuf_push_text(&tb, " v:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, value);
+    fmsx_v9990_tracebuf_push_text(&tb, " pc:");
+    fmsx_v9990_tracebuf_push_hex16(&tb, CPU.PC.W);
+    fmsx_v9990_tracebuf_push_char(&tb, '\n');
+    msxbare_uart_write(line);
+}
+
+static boolean fmsx_v9990_debug_codeintruder_status_pc(uint16_t pc)
+{
+    return ((pc >= 0x4C38u && pc <= 0x4C42u)
+         || (pc >= 0x4EBEu && pc <= 0x4EC8u)
+         || (pc >= 0x7150u && pc <= 0x7158u)
+         || (pc >= 0x7418u && pc <= 0x7435u)
+         || (pc >= 0x6785u && pc <= 0x6835u)
+         || (pc >= 0x6860u && pc <= 0x68B0u)
+         || (pc >= 0x78B0u && pc <= 0x7935u)
+         || (pc >= 0x6A65u && pc <= 0x6AC0u)) ? TRUE : FALSE;
+}
+
+static void fmsx_v9990_debug_trace_codeintruder_status(uint8_t value)
+{
+    char line[96];
+    TFmsxV9990TraceBuffer tb;
+    const uint16_t pc = CPU.PC.W;
+    const boolean emit_repeat = (g_fmsx_v9990_debug_ci_status_repeat >= 512u) ? TRUE : FALSE;
+
+    if (!fmsx_v9990_debug_codeintruder_status_pc(pc))
+    {
+        return;
+    }
+
+    ++g_fmsx_v9990_debug_ci_status_repeat;
+    if (g_fmsx_v9990_debug_ci_status_logs_remaining == 0u)
+    {
+        return;
+    }
+    if (!emit_repeat
+     && pc == g_fmsx_v9990_debug_ci_status_last_pc
+     && value == g_fmsx_v9990_debug_ci_status_last_value)
+    {
+        return;
+    }
+
+    --g_fmsx_v9990_debug_ci_status_logs_remaining;
+    fmsx_v9990_tracebuf_init(&tb, line, sizeof(line));
+    fmsx_v9990_tracebuf_push_text(&tb, "G9C sts pc:");
+    fmsx_v9990_tracebuf_push_hex16(&tb, pc);
+    fmsx_v9990_tracebuf_push_text(&tb, " v:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, value);
+    fmsx_v9990_tracebuf_push_text(&tb, " ce:");
+    fmsx_v9990_tracebuf_push_uint(&tb, (value & FMSX_V9990_CMD_STATUS_CE) ? 1u : 0u);
+    fmsx_v9990_tracebuf_push_text(&tb, " vr:");
+    fmsx_v9990_tracebuf_push_uint(&tb, (value & 0x40u) ? 1u : 0u);
+    fmsx_v9990_tracebuf_push_text(&tb, " hr:");
+    fmsx_v9990_tracebuf_push_uint(&tb, (value & 0x20u) ? 1u : 0u);
+    fmsx_v9990_tracebuf_push_text(&tb, " rep:");
+    fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990_debug_ci_status_repeat);
+    fmsx_v9990_tracebuf_push_text(&tb, " uc:");
+    fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990.status_uc_ticks);
+    fmsx_v9990_tracebuf_push_char(&tb, '\n');
+    msxbare_uart_write(line);
+
+    g_fmsx_v9990_debug_ci_status_last_pc = pc;
+    g_fmsx_v9990_debug_ci_status_last_value = value;
+    g_fmsx_v9990_debug_ci_status_repeat = 0u;
+}
+
+static boolean fmsx_v9990_debug_is_codeintruder_palette_bulk(void)
+{
+    return CPU.PC.W == 0x739Cu ? TRUE : FALSE;
+}
+
+static boolean fmsx_v9990_debug_codeintruder_vram_pc(uint16_t pc)
+{
+    return ((pc >= 0x71B0u && pc <= 0x7335u)
+         || (pc >= 0x7474u && pc <= 0x74ACu)
+         || (pc >= 0x50D0u && pc <= 0x5110u)
+         || (pc >= 0x6C80u && pc <= 0x6F10u)
+         || (pc >= 0x6770u && pc <= 0x6810u)) ? TRUE : FALSE;
+}
+
+static boolean fmsx_v9990_debug_is_codeintruder_vram_bulk(uint8_t port)
+{
+    return (port == FMSX_V9990_PORT_VRAM_DATA
+         && fmsx_v9990_debug_codeintruder_vram_pc(CPU.PC.W)) ? TRUE : FALSE;
+}
+
+static void fmsx_v9990_debug_trace_codeintruder_palette(uint8_t value)
+{
+    char line[80];
+    TFmsxV9990TraceBuffer tb;
+
+    if (!fmsx_v9990_debug_is_codeintruder_palette_bulk())
+    {
+        return;
+    }
+
+    ++g_fmsx_v9990_debug_ci_palette_count;
+    if (g_fmsx_v9990_debug_ci_palette_logs_remaining == 0u)
+    {
+        return;
+    }
+    if (g_fmsx_v9990_debug_ci_palette_count != 1u
+     && (g_fmsx_v9990_debug_ci_palette_count & 0x3Fu) != 0u)
+    {
+        return;
+    }
+
+    --g_fmsx_v9990_debug_ci_palette_logs_remaining;
+    fmsx_v9990_tracebuf_init(&tb, line, sizeof(line));
+    fmsx_v9990_tracebuf_push_text(&tb, "G9C pal pc:739C n:");
+    fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990_debug_ci_palette_count);
+    fmsx_v9990_tracebuf_push_text(&tb, " v:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, value);
+    fmsx_v9990_tracebuf_push_text(&tb, " pp:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, g_fmsx_v9990.regs[FMSX_V9990_REG_PALETTE_POINTER]);
+    fmsx_v9990_tracebuf_push_char(&tb, '\n');
+    msxbare_uart_write(line);
+}
+
+static void fmsx_v9990_debug_trace_codeintruder_vram_out(unsigned raw, unsigned phys, uint8_t value)
+{
+    char line[96];
+    TFmsxV9990TraceBuffer tb;
+    const uint16_t pc = CPU.PC.W;
+    const boolean pc_changed = (pc != g_fmsx_v9990_debug_ci_vram_last_pc) ? TRUE : FALSE;
+    const boolean raw_wrapped = (raw < g_fmsx_v9990_debug_ci_vram_last_raw) ? TRUE : FALSE;
+    const boolean raw_boundary = ((raw & 0x0FFFu) == 0u) ? TRUE : FALSE;
+    const boolean count_boundary = ((g_fmsx_v9990_debug_ci_vram_count & 0x1FFFu) == 0u) ? TRUE : FALSE;
+
+    if (!fmsx_v9990_debug_codeintruder_vram_pc(pc))
+    {
+        return;
+    }
+    ++g_fmsx_v9990_debug_ci_vram_count;
+    if (g_fmsx_v9990_debug_ci_vram_logs_remaining == 0u)
+    {
+        return;
+    }
+    if (!pc_changed && !raw_wrapped && !raw_boundary && !count_boundary)
+    {
+        return;
+    }
+
+    --g_fmsx_v9990_debug_ci_vram_logs_remaining;
+    fmsx_v9990_tracebuf_init(&tb, line, sizeof(line));
+    fmsx_v9990_tracebuf_push_text(&tb, "G9C vram pc:");
+    fmsx_v9990_tracebuf_push_hex16(&tb, pc);
+    fmsx_v9990_tracebuf_push_text(&tb, " raw:");
+    fmsx_v9990_tracebuf_push_hex32(&tb, raw);
+    fmsx_v9990_tracebuf_push_text(&tb, " phys:");
+    fmsx_v9990_tracebuf_push_hex32(&tb, phys);
+    fmsx_v9990_tracebuf_push_text(&tb, " v:");
+    fmsx_v9990_tracebuf_push_hex8(&tb, value);
+    fmsx_v9990_tracebuf_push_text(&tb, " n:");
+    fmsx_v9990_tracebuf_push_uint(&tb, g_fmsx_v9990_debug_ci_vram_count);
+    fmsx_v9990_tracebuf_push_char(&tb, '\n');
+    msxbare_uart_write(line);
+
+    g_fmsx_v9990_debug_ci_vram_last_pc = pc;
+    g_fmsx_v9990_debug_ci_vram_last_raw = raw;
+}
+
+static void fmsx_v9990_debug_reset_codeintruder_windows(void)
+{
+    g_fmsx_v9990_debug_ci_status_logs_remaining = 96u;
+    g_fmsx_v9990_debug_ci_palette_logs_remaining = 4u;
+    g_fmsx_v9990_debug_ci_vram_logs_remaining = 32u;
+    g_fmsx_v9990_debug_ci_status_last_pc = 0xFFFFu;
+    g_fmsx_v9990_debug_ci_status_last_value = 0xFFu;
+    g_fmsx_v9990_debug_ci_status_repeat = 0u;
+    g_fmsx_v9990_debug_ci_palette_count = 0u;
+    g_fmsx_v9990_debug_ci_vram_count = 0u;
+    g_fmsx_v9990_debug_ci_vram_last_pc = 0xFFFFu;
+    g_fmsx_v9990_debug_ci_vram_last_raw = 0xFFFFFFFFu;
 }
 
 static void fmsx_v9990_debug_trace_vram_cpu(const char *tag, unsigned raw, unsigned phys, uint8_t value)
@@ -2376,7 +2597,7 @@ static void fmsx_v9990_debug_begin_linear_trace(
     unsigned pitch,
     uint32_t total_bytes)
 {
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
     unsigned row_bytes = 0u;
 
     switch (mode)
@@ -2489,6 +2710,76 @@ static void fmsx_v9990_debug_trace_port(const char *prefix, uint8_t port, uint8_
     (void) value;
 }
 
+static void fmsx_v9990_debug_trace_disabled_port(const char *prefix, uint8_t port, uint8_t value)
+{
+    (void) prefix;
+    (void) port;
+    (void) value;
+}
+
+static void fmsx_v9990_debug_trace_codeintruder_status(uint8_t value)
+{
+    (void) value;
+}
+
+static void fmsx_v9990_debug_trace_codeintruder_palette(uint8_t value)
+{
+    (void) value;
+}
+
+static void fmsx_v9990_debug_trace_codeintruder_vram_out(unsigned raw, unsigned phys, uint8_t value)
+{
+    (void) raw;
+    (void) phys;
+    (void) value;
+}
+
+static void fmsx_v9990_debug_begin_linear_trace(uint8_t opcode,
+                                                TFmsxV9990CommandMode mode,
+                                                unsigned image_width,
+                                                unsigned pitch,
+                                                uint32_t total_bytes)
+{
+    (void) opcode;
+    (void) mode;
+    (void) image_width;
+    (void) pitch;
+    (void) total_bytes;
+}
+
+static void fmsx_v9990_debug_trace_frame_profile(unsigned width,
+                                                 unsigned height,
+                                                 unsigned image_width,
+                                                 unsigned bytes_per_line,
+                                                 uint8_t mode_kind)
+{
+    (void) width;
+    (void) height;
+    (void) image_width;
+    (void) bytes_per_line;
+    (void) mode_kind;
+}
+
+static void fmsx_v9990_debug_trace_lmmc(const char *tag)
+{
+    (void) tag;
+}
+
+static boolean fmsx_v9990_debug_is_codeintruder_palette_bulk(void)
+{
+    return FALSE;
+}
+
+static boolean fmsx_v9990_debug_is_codeintruder_vram_bulk(uint8_t port)
+{
+    (void) port;
+    return FALSE;
+}
+
+static void fmsx_v9990_debug_reset_codeintruder_windows(void)
+{
+}
+
 static void fmsx_v9990_debug_trace_command(const char *prefix, uint8_t opcode)
 {
     (void) prefix;
@@ -2526,6 +2817,13 @@ static void fmsx_v9990_debug_trace_enable(const char *tag, boolean enabled)
 static void fmsx_v9990_debug_trace_regs(const char *prefix)
 {
     (void) prefix;
+}
+
+static void fmsx_v9990_debug_trace_core_reg_write(uint8_t reg, uint8_t prev, uint8_t value)
+{
+    (void) reg;
+    (void) prev;
+    (void) value;
 }
 
 static void fmsx_v9990_debug_trace_guard(const char *tag)
@@ -3351,7 +3649,7 @@ static void fmsx_v9990_cmd_fill_lmcm_read(TFmsxV9990CommandMode mode, unsigned p
 
 static void fmsx_v9990_cmd_consume_lmmc(TFmsxV9990CommandMode mode, unsigned pitch, uint8_t value)
 {
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
     if (g_fmsx_v9990_debug_lmmc_trace_active)
     {
         ++g_fmsx_v9990_debug_lmmc_bytes;
@@ -4633,6 +4931,7 @@ static void fmsx_v9990_reset_registers_keep_memory(void)
     g_fmsx_v9990.status_cpu_cycle_frac = 0u;
     fmsx_v9990_cmd_reset();
     fmsx_v9990_update_host_irq();
+    fmsx_v9990_debug_reset_codeintruder_windows();
 }
 
 static void fmsx_v9990_init_palette_defaults(void)
@@ -4870,7 +5169,11 @@ static void fmsx_v9990_write_vram_cpu(unsigned address, uint8_t value)
 {
     const unsigned phys = fmsx_v9990_cpu_vram_physical_address(address);
     g_fmsx_v9990.vram[phys] = value;
-    fmsx_v9990_debug_trace_vram_cpu("G9V cpu out", address, phys, value);
+    fmsx_v9990_debug_trace_codeintruder_vram_out(address, phys, value);
+    if (!fmsx_v9990_debug_is_codeintruder_vram_bulk(FMSX_V9990_PORT_VRAM_DATA))
+    {
+        fmsx_v9990_debug_trace_vram_cpu("G9V cpu out", address, phys, value);
+    }
 }
 
 static uint16_t fmsx_v9990_rgb555_to_rgb565(uint16_t value)
@@ -6444,7 +6747,7 @@ static void fmsx_v9990_render_bx_segment(uint16_t *dst,
 
 static void fmsx_v9990_debug_trace_bx_line_state(unsigned height)
 {
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
     char line[256];
     TFmsxV9990TraceBuffer tb;
     unsigned i;
@@ -7021,7 +7324,7 @@ static void fmsx_v9990_render_reference_debug_frame(uint16_t *base,
         fmsx_v9990_fill_scanline(dst, width, 0u);
     }
 
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
     if (!g_fmsx_v9990_debug_reference_valid && !g_fmsx_v9990_debug_reference_unavailable_logged)
     {
         char line[96];
@@ -7318,6 +7621,11 @@ void fmsx_v9990_power_on(void)
     g_fmsx_v9990_debug_active_logs_remaining = 0u;
     g_fmsx_v9990_debug_active_phase = 0u;
     g_fmsx_v9990_debug_frame_snapshot_pending = 0u;
+    g_fmsx_v9990_debug_disabled_port_logs_remaining = enabled ? 0u : 64u;
+    if (enabled)
+    {
+        fmsx_v9990_debug_rearm_port_window();
+    }
 #endif
 }
 
@@ -7348,6 +7656,9 @@ void fmsx_v9990_set_enabled(boolean enabled)
     {
         fmsx_v9990_debug_rearm_port_window();
     }
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+    g_fmsx_v9990_debug_disabled_port_logs_remaining = desired ? 0u : 64u;
+#endif
 
     if (g_fmsx_v9990.enabled == desired)
     {
@@ -7646,10 +7957,15 @@ boolean fmsx_v9990_in_port(uint8_t port, uint8_t *value)
     uint8_t out = 0xFFu;
     const uint8_t local_port = (uint8_t) (port - FMSX_V9990_PORT_BASE);
 
-    if (!g_fmsx_v9990.enabled
-     || port < FMSX_V9990_PORT_BASE
+    if (port < FMSX_V9990_PORT_BASE
      || port >= (FMSX_V9990_PORT_BASE + FMSX_V9990_PORT_COUNT))
     {
+        return FALSE;
+    }
+
+    if (!g_fmsx_v9990.enabled)
+    {
+        fmsx_v9990_debug_trace_disabled_port("G9P miss-in", port, 0xFFu);
         return FALSE;
     }
 
@@ -7692,6 +8008,7 @@ boolean fmsx_v9990_in_port(uint8_t port, uint8_t *value)
 
     case FMSX_V9990_PORT_STATUS:
         out = fmsx_v9990_read_status_port();
+        fmsx_v9990_debug_trace_codeintruder_status(out);
         fmsx_v9990_debug_trace_port("G9P sts", port, out);
         break;
 
@@ -7716,15 +8033,31 @@ boolean fmsx_v9990_out_port(uint8_t port, uint8_t value)
 {
     const uint8_t local_port = (uint8_t) (port - FMSX_V9990_PORT_BASE);
 
-    if (!g_fmsx_v9990.enabled
-     || port < FMSX_V9990_PORT_BASE
+    if (port < FMSX_V9990_PORT_BASE
      || port >= (FMSX_V9990_PORT_BASE + FMSX_V9990_PORT_COUNT))
     {
         return FALSE;
     }
 
+    if (!g_fmsx_v9990.enabled)
+    {
+        fmsx_v9990_debug_trace_disabled_port("G9P miss-out", port, value);
+        return FALSE;
+    }
+
     g_fmsx_v9990.io_writes++;
-    fmsx_v9990_debug_trace_port("G9P out", port, value);
+    if (fmsx_v9990_debug_is_codeintruder_palette_bulk())
+    {
+        fmsx_v9990_debug_trace_codeintruder_palette(value);
+    }
+    else if (fmsx_v9990_debug_is_codeintruder_vram_bulk(local_port))
+    {
+        /* Compact Code Intruder VRAM upload logging happens after address mapping. */
+    }
+    else
+    {
+        fmsx_v9990_debug_trace_port("G9P out", port, value);
+    }
 
     switch (local_port)
     {

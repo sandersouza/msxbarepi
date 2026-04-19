@@ -13,6 +13,10 @@
 #include <circle/util.h>
 #include <assert.h>
 
+#ifndef MSXBARE_V9990_UART_TRACE
+#define MSXBARE_V9990_UART_TRACE 0
+#endif
+
 extern "C" unsigned long long msxbare_monotonic_time_us(void)
 {
 	return CTimer::GetClockTicks64();
@@ -81,20 +85,30 @@ static char BackendGfx9000KernelTraceCompactMarker(const char *text)
 
 extern "C" void msxbare_debug_rearm_kernel_gfx9000_trace(unsigned frames)
 {
+#if MSXBARE_V9990_UART_TRACE
 	if (frames > g_backend_gfx9000_kernel_trace_remaining)
 	{
 		g_backend_gfx9000_kernel_trace_remaining = frames;
 	}
+#else
+	(void) frames;
+#endif
 }
 
 extern "C" void msxbare_debug_note_gfx9000_activation(void)
 {
+#if MSXBARE_V9990_UART_TRACE
 	g_backend_gfx9000_present_snapshot_budget = 4u;
+#endif
 }
 
 static boolean BackendGfx9000KernelTraceEnabled(void)
 {
+#if MSXBARE_V9990_UART_TRACE
 	return g_backend_gfx9000_kernel_trace_remaining > 0u ? TRUE : FALSE;
+#else
+	return FALSE;
+#endif
 }
 
 static void BackendGfx9000KernelTrace(const char *text)
@@ -1636,6 +1650,7 @@ CComboKernel::CComboKernel(void)
 	m_ResolutionMode(kResolutionModeAuto),
 	m_ScanlineMode(kScanlineModeOff),
 	m_Gfx9000Enabled(FALSE),
+	m_Gfx9000AutoCfgApplied(FALSE),
 	m_RefreshRateHz(60u),
 	m_DiskRomEnabled(MSXBARE_FEAT_DISK_ROM ? TRUE : FALSE),
 	m_BootMode((MSXBARE_BOOT_MODE_DEFAULT_ENUM <= 2u) ? MSXBARE_BOOT_MODE_DEFAULT_ENUM : kBootModeNorm),
@@ -2253,6 +2268,12 @@ TComboShutdownMode CComboKernel::Run(void)
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
 	BootPhase(m_Logger, "BT12", "debug overlay... READY");
 	m_Logger.Write(FromKernel, LogNotice, "Overlay: F11 | Pause: F12");
+#if MSXBARE_V9990_UART_TRACE
+	if (m_Gfx9000AutoCfgApplied)
+	{
+		msxbare_uart_write("G9E cart-auto ON src:cfg\n");
+	}
+#endif
 #else
 	BootPhase(m_Logger, "BT12", "debug overlay... OFF");
 #endif
@@ -2319,6 +2340,7 @@ TComboShutdownMode CComboKernel::Run(void)
 				m_Logger.Write(FromKernel, LogNotice, "USB host ready");
 				m_Logger.Write(FromKernel, LogNotice, "Attach USB keyboard/gamepad");
 				BootPhase(m_Logger, "BT13", "USB Host... OK");
+				(void) ApplyGfx9000AutoForActiveCartridge("boot", TRUE);
 			}
 			else
 			{
@@ -2373,6 +2395,7 @@ TComboShutdownMode CComboKernel::Run(void)
 					(void) DebugRepairTimerIrqBinding(0x91u);
 					m_Logger.Write(FromKernel, LogNotice, "USB host ready");
 					m_Logger.Write(FromKernel, LogNotice, "Attach USB keyboard/gamepad");
+					(void) ApplyGfx9000AutoForActiveCartridge("usb-retry", TRUE);
 				}
 				else
 				{
@@ -3610,7 +3633,7 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 	{
 		const unsigned build_hash16 = BuildHash16();
 		const unsigned cpu_mhz = m_CPUThrottle.GetClockRate() / 1000000u;
-		const char *dfs_label = timing_stats.pal_video ? "PAL " : "NTSC";
+		const char *dfs_label = (timing_stats.reg9 & 0x02u) ? "PAL " : "NTSC";
 		const char *mode_label = VideoModeLabelFromPresentation(presentation);
 
 		line.Format("TXTDBG BUILD:%04X FREQ:%4uMHz",
@@ -3712,7 +3735,7 @@ void CComboKernel::DrawDebugOverlay(unsigned tick)
 		timing_stats.v_period > 99999u ? 99999u : timing_stats.v_period,
 		timing_stats.i_period > 99999u ? 99999u : timing_stats.i_period,
 		timing_stats.scanline > 999u ? 999u : timing_stats.scanline,
-		timing_stats.pal_video ? "PAL " : "NTSC",
+		(timing_stats.reg9 & 0x02u) ? "PAL " : "NTSC",
 		timing_stats.lines_212 ? 1u : 0u,
 		timing_stats.turbo_percent > 999u ? 999u : timing_stats.turbo_percent,
 		timing_stats.scr_mode > 99u ? 99u : timing_stats.scr_mode,
@@ -3955,7 +3978,7 @@ void CComboKernel::BlitBackendFrame(boolean force_redraw)
 			&full_dst_width, &full_dst_height,
 			&crop_x, &crop_y);
 	}
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
 	if (g_backend_gfx9000_present_snapshot_budget != 0u)
 	{
 		CString line;
@@ -4381,6 +4404,60 @@ void CComboKernel::ApplyRuntimeSettingsToBackend(void)
 #endif
 }
 
+boolean CComboKernel::ApplyGfx9000AutoForActiveCartridge(const char *source, boolean reset_backend)
+{
+#if MSXBARE_ENABLE_FMSX && MSXBARE_FEAT_GFX9000
+	if (!m_BackendReady)
+	{
+		return FALSE;
+	}
+
+	const char *cart_a = backend_runtime_get_cartridge_path(0u);
+	const char *cart_b = backend_runtime_get_cartridge_path(1u);
+	if (!RomPathLooksLikeGfx9000(cart_a) && !RomPathLooksLikeGfx9000(cart_b))
+	{
+		return FALSE;
+	}
+
+	if (m_Gfx9000Enabled && backend_runtime_get_gfx9000_enabled())
+	{
+		return FALSE;
+	}
+
+	m_Gfx9000Enabled = TRUE;
+	m_PauseMenu.SetGfx9000Enabled(TRUE);
+	backend_runtime_set_gfx9000_enabled(TRUE);
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
+	msxbare_uart_write("G9E cart-auto ON src:");
+	msxbare_uart_write(source != 0 ? source : "?");
+	msxbare_uart_write("\n");
+#endif
+	m_Logger.Write(FromKernel, LogNotice, "GFX9000 auto ON: ROM V9990 ativa");
+
+	if (reset_backend)
+	{
+		backend_runtime_set_boot_mode(m_BootMode);
+		backend_runtime_set_model_profile(m_MachineProfile);
+		if (backend_runtime_reset())
+		{
+			ResetEmulationRuntimeState();
+			ApplyRuntimeSettingsToBackend();
+			m_Logger.Write(FromKernel, LogNotice, "GFX9000 auto reset OK");
+		}
+		else
+		{
+			m_Logger.Write(FromKernel, LogWarning, "GFX9000 auto reset falhou");
+		}
+	}
+
+	return TRUE;
+#else
+	(void) source;
+	(void) reset_backend;
+	return FALSE;
+#endif
+}
+
 void CComboKernel::SyncRefreshRateStateFromRuntime(void)
 {
 #if MSXBARE_ENABLE_FMSX
@@ -4769,10 +4846,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	 || (has_cfg_cartb && RomPathLooksLikeGfx9000(cfg_cartb_path)))
 	{
 		m_Gfx9000Enabled = TRUE;
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
-		msxbare_uart_write("G9E cart-auto ON src:cfg\n");
-#endif
-		m_Logger.Write(FromKernel, LogNotice, "GFX9000 auto ON: ROM V9990 configurada");
+		m_Gfx9000AutoCfgApplied = TRUE;
 	}
 #endif
 	backend_runtime_set_requested_backend_id(has_backend_id && cfg_backend_id[0] != '\0' ? cfg_backend_id : 0);
@@ -5606,12 +5680,13 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 					break;
 				}
 #if MSXBARE_FEAT_GFX9000
-				if (RomPathLooksLikeGfx9000(rom_path) && !m_Gfx9000Enabled)
+				if (RomPathLooksLikeGfx9000(rom_path)
+				 && (!m_Gfx9000Enabled || !backend_runtime_get_gfx9000_enabled()))
 				{
 					m_Gfx9000Enabled = TRUE;
 					m_PauseMenu.SetGfx9000Enabled(TRUE);
 					backend_runtime_set_gfx9000_enabled(TRUE);
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
+#if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
 					msxbare_uart_write("G9E cart-auto ON src:menu\n");
 #endif
 					m_Logger.Write(FromKernel, LogNotice, "GFX9000 auto ON: ROM V9990 selecionada");
@@ -6000,39 +6075,54 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		{
 			m_Gfx9000ResumeTracePending = FALSE;
 		}
-	#if MSXBARE_ENABLE_FMSX
+		#if MSXBARE_ENABLE_FMSX
 		if (m_BackendReady && backend_runtime_is_capability_available(BACKEND_CAP_MACHINE))
 		{
-			m_Logger.Write(FromKernel, LogNotice,
-				m_Gfx9000Enabled ? "G9A: config apply ON" : "G9A: config apply OFF");
-			backend_runtime_set_gfx9000_enabled(m_Gfx9000Enabled);
-			m_Logger.Write(FromKernel, LogNotice,
-				m_Gfx9000Enabled ? "G9A: config applied ON" : "G9A: config applied OFF");
-			m_Logger.Write(FromKernel, LogNotice,
-				m_Gfx9000Enabled ? "G9A: menu reset begin ON" : "G9A: menu reset begin OFF");
-			if (backend_runtime_menu_reset())
+			if (MSXBARE_V9990_UART_TRACE)
 			{
 				m_Logger.Write(FromKernel, LogNotice,
-					m_Gfx9000Enabled ? "G9A: menu reset OK ON" : "G9A: menu reset OK OFF");
+					m_Gfx9000Enabled ? "G9A: config apply ON" : "G9A: config apply OFF");
+			}
+			backend_runtime_set_gfx9000_enabled(m_Gfx9000Enabled);
+			if (MSXBARE_V9990_UART_TRACE)
+			{
+				m_Logger.Write(FromKernel, LogNotice,
+					m_Gfx9000Enabled ? "G9A: config applied ON" : "G9A: config applied OFF");
+				m_Logger.Write(FromKernel, LogNotice,
+					m_Gfx9000Enabled ? "G9A: menu reset begin ON" : "G9A: menu reset begin OFF");
+			}
+			if (backend_runtime_menu_reset())
+			{
+				if (MSXBARE_V9990_UART_TRACE)
+				{
+					m_Logger.Write(FromKernel, LogNotice,
+						m_Gfx9000Enabled ? "G9A: menu reset OK ON" : "G9A: menu reset OK OFF");
+				}
 				PushKeyboardStateToRuntime(TRUE);
 				backend_runtime_input_push_joystick(ResolveRuntimeJoystickBits());
 				BlitBackendFrame(TRUE);
 				m_PauseNeedsBackgroundRedraw = TRUE;
 				m_PauseNeedsFullViewportClear = TRUE;
 				m_ForceViewportFullClearNextFrame = TRUE;
-				m_Logger.Write(FromKernel, LogNotice,
-					m_Gfx9000Enabled ? "G9A: prime deferred ON" : "G9A: prime deferred OFF");
+				if (MSXBARE_V9990_UART_TRACE)
+				{
+					m_Logger.Write(FromKernel, LogNotice,
+						m_Gfx9000Enabled ? "G9A: prime deferred ON" : "G9A: prime deferred OFF");
+				}
 			}
 			else
 			{
-				m_Logger.Write(FromKernel, LogWarning,
-					m_Gfx9000Enabled ? "G9A: menu reset FAIL ON" : "G9A: menu reset FAIL OFF");
+				if (MSXBARE_V9990_UART_TRACE)
+				{
+					m_Logger.Write(FromKernel, LogWarning,
+						m_Gfx9000Enabled ? "G9A: menu reset FAIL ON" : "G9A: menu reset FAIL OFF");
+				}
 			}
 		}
 	#endif
 		m_PauseMenu.SetGfx9000Enabled(m_Gfx9000Enabled);
 		RefreshSettingsUiAfterAction();
-		m_Gfx9000ToggleTracePending = TRUE;
+		m_Gfx9000ToggleTracePending = MSXBARE_V9990_UART_TRACE ? TRUE : FALSE;
 		m_Logger.Write(FromKernel, LogNotice, m_Gfx9000Enabled ? "Settings: GFX9000 ON" : "Settings: GFX9000 OFF");
 		break;
 #endif
@@ -6898,6 +6988,7 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 					m_PauseNeedsBackgroundRedraw = FALSE;
 					m_PauseNeedsFullViewportClear = FALSE;
 					m_PauseRenderSuppressed = TRUE;
+#if MSXBARE_V9990_UART_TRACE
 					if (m_Gfx9000Enabled)
 					{
 						m_Gfx9000ResumeTracePending = TRUE;
@@ -6906,6 +6997,7 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 							m_Logger.Write(FromKernel, LogNotice, "G9R: armed");
 						}
 					}
+#endif
 				}
 				else
 				{

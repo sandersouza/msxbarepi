@@ -77,6 +77,7 @@ private:
     void BlitBackendFrame(boolean force_redraw);
     void HandleMenuAction(TComboMenuAction action);
     void ApplyRuntimeSettingsToBackend(void);
+    boolean ApplyGfx9000AutoForActiveCartridge(const char *source, boolean reset_backend);
     void SyncRefreshRateStateFromRuntime(void);
     void SyncKanjiRomStateFromRuntime(void);
     void RefreshSettingsUiAfterAction(void);
@@ -252,6 +253,7 @@ private:
     unsigned m_ResolutionMode;
     unsigned m_ScanlineMode;
     boolean m_Gfx9000Enabled;
+    boolean m_Gfx9000AutoCfgApplied;
     unsigned m_RefreshRateHz;
     boolean m_DiskRomEnabled;
     unsigned m_BootMode;

@@ -328,6 +328,7 @@ typedef struct {
     unsigned turbo_percent;
     unsigned scr_mode;
     unsigned reg2;
+    unsigned reg9;
     unsigned reg25;
     unsigned reg26;
     unsigned reg27;

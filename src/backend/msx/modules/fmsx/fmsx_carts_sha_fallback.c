@@ -34,6 +34,8 @@ static int local_hex_sha1_equals_ignore_case(const char *a, const char *b)
 }
 
 static const TFmsxCartShaEntry kFmsxCartShaFallback[] = {
+    /* Codename: INTRUDER. openMSX softwaredb.xml classifies this V9990 ROM as ASCII16. */
+    {"f7039ebd100695d9a40188d7a3117c0fcc11d442", 5},
     {"00a81872d548a7278b8901608bf12e8f79009bee", MAP_MANBOW2},
     {"7ba4725a6c0f11f009ed2a333f9951f22cc5b4c7", 3},
     {"0733cd627467a866846e15caf1770a5594eaf4cc", 4},

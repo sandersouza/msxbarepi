@@ -2,10 +2,103 @@
 
 Ponto de entrada rapido para contexto operacional do projeto.
 
-- Contexto completo e historico de handoff da branch atual: [docs/handoff/251-suporte-cartucho-vdp-v9990.md](docs/handoff/251-suporte-cartucho-vdp-v9990.md)
-- Guardrail ativo: a issue `#251` acabou de entrar em execucao; manter a trilha experimental no worktree ate voce declarar estabilidade suficiente para commit/push adicionais.
-- Branch ativa da rodada: `251-suporte-cartucho-vdp-v9990`
-- Issue ativa: `#251 [P1] Implementar suporte ao cartucho/VDP V9990 (GFX9000) no backend MSX`
+- Contexto completo e historico de handoff da branch atual: [docs/handoff/main.md](docs/handoff/main.md)
+- Guardrail ativo: a branch `251-suporte-cartucho-vdp-v9990` foi consolidada localmente em `main` como checkpoint de trabalho, mas a issue `#251` continua aberta/pausada e a branch nao deve ser removida.
+- Branch ativa da rodada: `main`
+- Issue em pausa: `#251 [P1] Implementar suporte ao cartucho/VDP V9990 (GFX9000) no backend MSX`
+- Atualizacao 2026-04-19 (handoff para main):
+  - a telemetria UART do `V9990/GFX9000` (`G9*`) foi desligada por padrao por `MSXBARE_V9990_UART_TRACE=0`
+  - para reativar a trilha em uma futura retomada da issue, usar `make DEBUG=1 MSXBARE_V9990_UART_TRACE=1`
+  - a branch/issue `#251` permanecem abertas; a proxima rodada deve retomar a partir de `docs/handoff/251-suporte-cartucho-vdp-v9990.md`
+- Atualizacao 2026-04-19 (17:30 -03):
+  - sintomas reportados apos a correcao do `CODEINTRUDER`:
+    - overlay `DEBUG [MIN]` mostrava `DFS:NTSC` mesmo quando o software deveria alternar o modo via VDP
+    - algumas ROMs V9990, incluindo `GHOSTGOBLINS.ROM`, cairam para cerca de `30 FPS` ou menos
+  - causa da queda de FPS:
+    - a instrumentacao do `CODEINTRUDER` chamava a deteccao por assinatura `CODENAME:INTRUDER` em cada slice de Z80 enquanto a ROM ativa nao era CodeIntruder
+    - em ROMs como `GHOSTGOBLINS`, isso varria o cartucho repetidamente no caminho quente do frame
+  - correcoes aplicadas:
+    - `fmsx_runtime_trace_codeintruder_checkpoint()` agora usa decisao cacheada por reset/load; ROM nao CodeIntruder e descartada uma vez e nao volta a fazer scan por slice
+    - `G9C start` tambem preenche esse cache no inicio do runtime
+    - `TFmsxTimingDebug` agora expõe `reg9`
+    - `DEBUG [MIN]` e `TM` exibem `PAL/NTSC` diretamente a partir de `VDP R#9 bit1`, nao de estado indireto
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `git diff --check`
+    - `make -j4 DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604191730-659cef4`
+    - `TXTDBG BUILD: 8ADA`
+    - `BUILD_HASH: 659cef4-a1023396f68d717fef0fd5d1bd1118f24291e59e`
+    - tamanho `kernel8.img`: `821064` bytes, abaixo de `KERNEL_MAX_SIZE=0x400000`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-19 (16:52 -03):
+  - alvo: `roms/games/roms/V9990/CODEINTRUDER.ROM` continua sem entrar na build `9F50`
+  - leitura UART da `9F50`:
+    - `G9E cart-auto ON src:cfg` e `G9E cfg-set ON` confirmam `GFX9000` ativa
+    - `G9P rd p:60 v:A2 pc:736C` confirma que o teste de presenca da V9990 passou
+    - a ROM configura `P1`, zera a paleta, ativa `SCREEN_MODE_0=01` e inicia upload CPU VRAM em `07C000`
+    - `G9C vram raw:0007C000` e `raw:0007D000` correspondem ao upload esperado da rotina `7474h`, que escreve blocos ate antes de `07E000`; isso nao prova travamento por si so
+  - causa corrigida:
+    - `third_party/openMSX/share/softwaredb.xml` classifica `Codename: INTRUDER` (`SHA1=f7039ebd100695d9a40188d7a3117c0fcc11d442`) como `ASCII16`
+    - o fallback local anterior estava forçando mapper `KONAMI5` (`2`), fazendo writes em `7000h` selecionarem o banco errado
+    - `src/backend/msx/modules/fmsx/fmsx_carts_sha_fallback.c` agora classifica essa ROM como `ASCII16` (`5`)
+    - `roms/initramfs/CARTS.SHA` tambem recebeu a entrada `f7039ebd100695d9a40188d7a3117c0fcc11d442 5`, para a classificacao normal do initramfs
+  - instrumentacao mantida:
+    - o reconhecimento runtime de `CODEINTRUDER` tambem usa assinatura interna `CODENAME:INTRUDER`, nao apenas nome/caminho
+    - `G9C vram` agora cobre uploads CPU VRAM compactos em rotinas de decompress/upload alem de `7487/748A`
+    - logs genericos `G9P/G9V` sao suprimidos durante uploads bulk conhecidos para nao esconder o proximo ponto real
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `git diff --check`
+    - `make -j4 DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604191652-659cef4`
+    - `TXTDBG BUILD: 5A33`
+    - `BUILD_HASH: 659cef4-690b959dfbda735cfa0703e5a49c405ea27dd960`
+    - tamanho `kernel8.img`: `821064` bytes, abaixo de `KERNEL_MAX_SIZE=0x400000`
+    - artefato: `artifacts/kernel8-issue251.img`
+- Atualizacao 2026-04-19 (16:29 -03):
+  - alvo: `roms/games/roms/V9990/CODEINTRUDER.ROM` segue travando logo depois da carga
+  - leitura UART da build `8E52`:
+    - boot passa por `BT14`
+    - `G9E cart-auto ON src:cfg` e `G9E cfg-set ON` confirmam `GFX9000` ligada
+    - `G9P rd p:60 v:A2 pc:736C` confirma que o teste de presenca da V9990 passou
+    - nao houve `G9P miss-*`, portanto nao e mais falha de autoativacao
+    - a UART ficou cega depois dos primeiros writes CPU VRAM em `07C000`, porque o budget foi consumido por writes repetidos de paleta em `p:61 pc:739C`
+  - ajuste aplicado:
+    - o proprio `fmsx_runtime_start()` agora detecta ROMs V9990 ativas por `ROMName[]`/caminho e liga `GFX9000` imediatamente antes de `StartMSX()`
+    - nova linha UART `G9E rt-cart-auto ON` identifica essa autoativacao de ultima defesa, sem depender da ordem kernel/menu
+    - nova linha UART `G9C start tag:pre-start/post-start g9:<0|1> ...` registra o estado efetivo ao iniciar `CODEINTRUDER.ROM`
+    - nova linha UART `G9C pc tag:vram-test/after-test/no-v9990-loop` marca se a ROM entrou no teste `7358h`, passou dele, ou caiu no loop `7466h`
+    - reconhecimento de `CODEINTRUDER` agora tambem aceita nomes truncados `CODEINTR`/`INTRUDER`
+    - `G9P out p:61 pc:739C` repetitivo foi trocado por resumo `G9C pal`
+    - adicionados logs compactos `G9C sts` para leituras de `STATUS` em loops conhecidos da ROM, com `CE/VR/HR`
+    - adicionados logs `G9C vram` em boundaries de `0x1000` durante upload CPU VRAM em `pc:7487/748A`
+    - autoativacao por `.cfg` voltou a acontecer antes do `StartMSX`, mas sem escrever UART antes de `BT11/BT12`
+    - o log `G9E cart-auto ON src:cfg` agora e emitido somente depois do logger/overlay estarem prontos
+    - selecao via menu agora força sincronizacao se `m_Gfx9000Enabled` e `backend_runtime_get_gfx9000_enabled()` divergirem
+    - antes do runtime inicializar, `fmsx_runtime_set_gfx9000_enabled()` agora so registra a intencao; a ativacao interna da V9990 acontece em `fmsx_runtime_start()` imediatamente antes do `StartMSX`
+    - `CODEINTRUDER.ROM` foi fixado no fallback SHA1 local como mapper `KONAMI5` (`2`)
+    - a UART da V9990 agora diferencia `G9P miss-in/miss-out` quando o Z80 acessa `60h..6Fh` com V9990 desligada, e `G9P rd` quando a V9990 respondeu ao read real
+  - criterio de leitura em hardware:
+    - `G9C start ... g9:1` deve aparecer para `CODEINTRUDER`; se aparecer `g9:0`, a falha ainda e ativacao
+    - `G9C pc tag:no-v9990-loop` indica que a propria ROM concluiu que a V9990 nao respondeu corretamente
+    - `G9C pc tag:after-test` indica que o teste de presenca passou e o bloqueio e posterior
+    - `G9C sts ... vr:<0|1>` deve mostrar se a ROM esta presa esperando transicao vertical em `STATUS bit 0x40`
+    - `G9C vram raw:0007C000/0007D000/...` deve mostrar se o suposto travamento e apenas upload longo para VRAM
+    - `G9E rt-cart-auto ON` confirma que o runtime ligou `GFX9000` no ultimo ponto antes do `StartMSX`
+    - se aparecer `G9P miss-out p:60/63/64` ou `G9P miss-in p:60`, o problema ainda e ativacao ausente
+    - se aparecer `G9P rd p:60 v:A2 pc:736A`, o teste de presenca da ROM passou e o bloqueio remanescente esta depois disso
+    - se aparecer `G9P rd p:60` com outro valor, o desvio esta no caminho CPU VRAM read/write da V9990
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `make DEBUG=1`
+  - build atual:
+    - `BUILD_BID: 202604191629-659cef4`
+    - `TXTDBG BUILD: 9F50`
+    - `BUILD_HASH: 659cef4-6564dc6d37e5d96033b69c8d83289cd2458080fe`
+    - artefato: `artifacts/kernel8-issue251.img`
 - Atualizacao 2026-04-18 (02:18 -03):
   - a UART da build `67DE` confirmou que o repro `UNDERWATER` segue em `B1/BD16`, com presenter limpo e framebuffer ja nascendo corrompido no `V9990`
   - evidencias principais:
@@ -2100,4 +2193,42 @@ Ponto de entrada rapido para contexto operacional do projeto.
       - `BUILD_BID: 202604191311-ebbecfe`
       - `TXTDBG BUILD: 2CD7`
       - `BUILD_HASH: ebbecfe-48663cc86dd3ab32f35d0970d305f6bcdf8f6d5d`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-19 13:25 -03:
+    - hardware reportou travamento no boot em `Boot step: init USB`, antes de qualquer cartucho/V9990 executar
+    - ajuste de contencao:
+      - removida a autoativacao de `GFX9000` durante carga do `.cfg`
+      - mantida a autoativacao apenas no fluxo de selecao de ROM pelo menu, depois de o USB ja estar inicializado
+    - leitura objetiva:
+      - a proxima validacao deve primeiro confirmar boot ate `BT14/main loop`
+      - depois carregar `CODEINTRUDER.ROM` pelo menu para acionar `G9E cart-auto ON src:menu`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604191325-659cef4`
+      - `TXTDBG BUILD: 705D`
+      - `BUILD_HASH: 659cef4-d8e23dcc8b9514ac31b59a0c1be35ff77013114b`
+      - artefato: `artifacts/kernel8-issue251.img`
+  - atualizacao 2026-04-19 13:35 -03:
+    - hardware reportou que `CODEINTRUDER.ROM` ainda nao entra e aparenta nao ativar a V9990
+    - ajuste aplicado:
+      - criado `ApplyGfx9000AutoForActiveCartridge()`
+      - apos `BT13/USB Host... OK`, o kernel verifica cartuchos ativos ja configurados no slot
+      - se algum caminho ativo parece V9990, liga `GFX9000`, sincroniza o menu e reinicia o backend uma vez
+      - o mesmo caminho roda se o USB inicializar em retry (`src:usb-retry`)
+    - leitura objetiva:
+      - cobre o caso de `CODEINTRUDER.ROM` persistido em `msxbarepi.cfg`, sem ligar V9990 antes do USB
+      - fluxo por menu continua com `G9E cart-auto ON src:menu`
+    - evidencias esperadas:
+      - boot com ROM V9990 persistida: `G9E cart-auto ON src:boot` depois de `BT13`
+      - selecao via menu: `G9E cart-auto ON src:menu`
+      - teste da ROM: `G9P rd p:60 v:A2 ... pc:736A`
+    - validacao local:
+      - `scripts/check-third-party-pristine.sh`
+      - `make DEBUG=1`
+    - build atual:
+      - `BUILD_BID: 202604191335-659cef4`
+      - `TXTDBG BUILD: DB66`
+      - `BUILD_HASH: 659cef4-50dd86bb04fbc5f69c6a9891fe41709037c7c941`
       - artefato: `artifacts/kernel8-issue251.img`
