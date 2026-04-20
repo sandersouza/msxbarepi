@@ -88,19 +88,6 @@ static boolean fmsx_runtime_name_contains_casefold(const char *text, const char 
 #define MSXBARE_V9990_UART_TRACE 0
 #endif
 
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
-extern void msxbare_uart_write(const char *text);
-extern void msxbare_debug_trace(const char *text);
-
-typedef struct TFmsxRuntimeGhostGoblinsTraceState
-{
-    boolean active;
-    boolean key_logged;
-    boolean select_logged;
-    boolean upload_logged;
-    boolean upload_poll_logged;
-} TFmsxRuntimeGhostGoblinsTraceState;
-
 typedef enum FmsxRuntimeGfx9000TraceStepId
 {
     FmsxRuntimeGfx9000TraceFrameBegin = 0,
@@ -114,6 +101,19 @@ typedef enum FmsxRuntimeGfx9000TraceStepId
     FmsxRuntimeGfx9000TraceAudioPlayEnd,
     FmsxRuntimeGfx9000TraceFrameEnd
 } FmsxRuntimeGfx9000TraceStepId;
+
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+extern void msxbare_uart_write(const char *text);
+extern void msxbare_debug_trace(const char *text);
+
+typedef struct TFmsxRuntimeGhostGoblinsTraceState
+{
+    boolean active;
+    boolean key_logged;
+    boolean select_logged;
+    boolean upload_logged;
+    boolean upload_poll_logged;
+} TFmsxRuntimeGhostGoblinsTraceState;
 
 static void fmsx_runtime_trace_gfx9000_char(char c)
 {

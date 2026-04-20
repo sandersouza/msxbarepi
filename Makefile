@@ -27,9 +27,10 @@ MSXBARE_ONE_ROM_MODE ?= 0
 MSXBARE_ONE_ROM_PATH ?=
 MSXBARE_V9990_UART_TRACE ?= 0
 MSXBARE_BOOT_MODE_DEFAULT ?= NORM
+MSXBARE_EMBED_INITRAMFS ?= 1
 FIRMWARE_DIR ?= ./rpi-firmware
 BUILD_BID ?= $(shell date +%Y%m%d%H%M)-$(shell git rev-parse --short HEAD 2>/dev/null || echo nogit)
-CIRCLE_KERNEL_MAX_SIZE ?= 0x400000
+CIRCLE_KERNEL_MAX_SIZE ?= 0x500000
 CIRCLE_EXTRAINCLUDE ?= -DKERNEL_MAX_SIZE=$(CIRCLE_KERNEL_MAX_SIZE)
 FATFS_COMPAT_INCLUDE := -I$(CURDIR)/src/fatfs_compat
 
@@ -89,6 +90,7 @@ BOOTSTRAP_ARTIFACT := artifacts/kernel8-bootstrap.img
 DEFAULT_ARTIFACT := artifacts/kernel8-default.img
 INITRAMFS_IN ?= roms/initramfs
 INITRAMFS_OUT ?= sdcard/msx.cpio
+EMBEDDED_INITRAMFS_OUT ?= $(BUILD_DIR)/initramfs/msx-embedded.cpio
 THIRD_PARTY_GUARD := ./scripts/check-third-party-pristine.sh
 CIRCLE_REQUIRED_LIBS := \
 	third_party/circle/lib/libcircle.a \
@@ -103,13 +105,21 @@ CIRCLE_MAKE_FLAGS := PREFIX64=$(CROSS)
 CIRCLE_CONFIG_STAMP := $(BUILD_DIR)/circle-build.stamp
 CIRCLE_ASM_COMMAND := AS='$(CROSS)gcc $(CIRCLE_EXTRAINCLUDE)'
 
-.PHONY: all default backend-module clean help guard-third-party circle-configure circle-configure-force circle-libs circle sdcard sdcard-update initramfs package menuconfig syncconfig config-header
+.PHONY: all default backend-module clean help guard-third-party circle-configure circle-configure-force circle-libs circle sdcard sdcard-update initramfs embedded-initramfs package menuconfig syncconfig config-header
 
 all: default
 
 default: config-header circle-libs
 	@mkdir -p artifacts
 	@mkdir -p artifacts build/src
+	@if [ "$(MSXBARE_EMBED_INITRAMFS)" = "1" ]; then \
+		$(MAKE) embedded-initramfs \
+			INITRAMFS_IN="$(INITRAMFS_IN)" \
+			EMBEDDED_INITRAMFS_OUT="$(EMBEDDED_INITRAMFS_OUT)" \
+			MSXBARE_ONE_ROM_MODE="$(MSXBARE_ONE_ROM_MODE)" \
+			MSXBARE_ONE_ROM_PATH="$(MSXBARE_ONE_ROM_PATH)" \
+			MSXBARE_BOOT_SCREEN="$(MSXBARE_BOOT_SCREEN)"; \
+	fi
 	$(MAKE) -C src $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 clean >/dev/null
 	$(MAKE) -C src $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 \
 		EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' \
@@ -135,6 +145,8 @@ default: config-header circle-libs
 		MSXBARE_ONE_ROM_MODE=$(MSXBARE_ONE_ROM_MODE) \
 		MSXBARE_ONE_ROM_PATH="$(MSXBARE_ONE_ROM_PATH)" \
 		MSXBARE_V9990_UART_TRACE=$(MSXBARE_V9990_UART_TRACE) \
+		MSXBARE_EMBED_INITRAMFS=$(MSXBARE_EMBED_INITRAMFS) \
+		MSXBARE_EMBED_INITRAMFS_PATH="$(abspath $(EMBEDDED_INITRAMFS_OUT))" \
 		MSXBARE_PATREON_TAG="$(EFFECTIVE_OWNER)" \
 		MSXBARE_BOOT_MODE_DEFAULT_ENUM=$(MSXBARE_BOOT_MODE_DEFAULT_ENUM) \
 		MSXBARE_BOOT_MODE_LOCKED=$(MSXBARE_BOOT_MODE_LOCKED)
@@ -145,6 +157,29 @@ default: config-header circle-libs
 	fi; \
 	cp "$$img" build/src/kernel8.img; \
 	cp build/src/kernel8.img $(BOOTSTRAP_ARTIFACT)
+	@kernel_bytes=$$(wc -c < "$(BOOTSTRAP_ARTIFACT)" | tr -d ' '); \
+	max_bytes=$$(( $(CIRCLE_KERNEL_MAX_SIZE) )); \
+	mem_end=$$(( 0x80000 + max_bytes )); \
+	echo "Kernel size: $$kernel_bytes / $$max_bytes bytes"; \
+	if [ "$$kernel_bytes" -gt "$$max_bytes" ]; then \
+		echo "Erro: kernel8.img excede KERNEL_MAX_SIZE=$$max_bytes"; \
+		exit 1; \
+	fi; \
+	if command -v "$(CROSS)nm" >/dev/null 2>&1 && [ -f src/kernel8.elf ]; then \
+		end_hex=$$("$(CROSS)nm" -n src/kernel8.elf | awk '$$3 == "_end" { print $$1; exit }'); \
+		if [ -n "$$end_hex" ]; then \
+			end_addr=$$(( 0x$$end_hex )); \
+			printf 'Kernel memory _end: 0x%X / 0x%X\n' "$$end_addr" "$$mem_end"; \
+			if [ "$$end_addr" -gt "$$mem_end" ]; then \
+				echo "Erro: footprint do kernel excede MEM_KERNEL_END; aumente CIRCLE_KERNEL_MAX_SIZE"; \
+				exit 1; \
+			fi; \
+		fi; \
+	fi; \
+	if [ "$(MSXBARE_EMBED_INITRAMFS)" = "1" ] && [ -f "$(EMBEDDED_INITRAMFS_OUT)" ]; then \
+		cpio_bytes=$$(wc -c < "$(EMBEDDED_INITRAMFS_OUT)" | tr -d ' '); \
+		echo "Initramfs embedded: $(EMBEDDED_INITRAMFS_OUT) ($$cpio_bytes bytes)"; \
+	fi
 	$(MAKE) -C src $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 clean >/dev/null
 	cp $(BOOTSTRAP_ARTIFACT) $(DEFAULT_ARTIFACT)
 	@issue_branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true); \
@@ -158,6 +193,14 @@ default: config-header circle-libs
 
 backend-module: config-header
 	@mkdir -p artifacts
+	@if [ "$(MSXBARE_EMBED_INITRAMFS)" = "1" ]; then \
+		$(MAKE) embedded-initramfs \
+			INITRAMFS_IN="$(INITRAMFS_IN)" \
+			EMBEDDED_INITRAMFS_OUT="$(EMBEDDED_INITRAMFS_OUT)" \
+			MSXBARE_ONE_ROM_MODE="$(MSXBARE_ONE_ROM_MODE)" \
+			MSXBARE_ONE_ROM_PATH="$(MSXBARE_ONE_ROM_PATH)" \
+			MSXBARE_BOOT_SCREEN="$(MSXBARE_BOOT_SCREEN)"; \
+	fi
 	$(MAKE) -C src $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 \
 		EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' \
 		DEBUG=$(DEBUG_BOOL) \
@@ -182,6 +225,8 @@ backend-module: config-header
 		MSXBARE_ONE_ROM_MODE=$(MSXBARE_ONE_ROM_MODE) \
 		MSXBARE_ONE_ROM_PATH="$(MSXBARE_ONE_ROM_PATH)" \
 		MSXBARE_V9990_UART_TRACE=$(MSXBARE_V9990_UART_TRACE) \
+		MSXBARE_EMBED_INITRAMFS=$(MSXBARE_EMBED_INITRAMFS) \
+		MSXBARE_EMBED_INITRAMFS_PATH="$(abspath $(EMBEDDED_INITRAMFS_OUT))" \
 		MSXBARE_PATREON_TAG="$(EFFECTIVE_OWNER)" \
 		MSXBARE_BOOT_MODE_DEFAULT_ENUM=$(MSXBARE_BOOT_MODE_DEFAULT_ENUM) \
 		MSXBARE_BOOT_MODE_LOCKED=$(MSXBARE_BOOT_MODE_LOCKED) \
@@ -319,7 +364,14 @@ sdcard-update:
 initramfs:
 	./scripts/make-initramfs.sh $(INITRAMFS_IN) $(INITRAMFS_OUT)
 
-package: default initramfs
+embedded-initramfs:
+	@mkdir -p "$(dir $(EMBEDDED_INITRAMFS_OUT))"
+	./scripts/make-initramfs.sh "$(INITRAMFS_IN)" "$(EMBEDDED_INITRAMFS_OUT)"
+
+package: default
+	@if [ "$(MSXBARE_EMBED_INITRAMFS)" != "1" ]; then \
+		$(MAKE) initramfs INITRAMFS_IN="$(INITRAMFS_IN)" INITRAMFS_OUT="$(INITRAMFS_OUT)"; \
+	fi
 	@issue_branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true); \
 	issue_id=$$(printf "%s" "$$issue_branch" | sed -n 's/^\([0-9][0-9]*\)-.*/\1/p'); \
 	owner_slug=$$(printf "%s" "$(EFFECTIVE_OWNER)" | tr '[:space:]' '_' | tr -cd '[:alnum:]_.-'); \
@@ -338,8 +390,9 @@ package: default initramfs
 	fi; \
 	DRY_RUN=1 NON_INTERACTIVE=1 AUTO_CONFIRM=1 \
 	COPY_GAMES_TO_ROOT=1 \
-	DEBUG=$(DEBUG_BOOL) \
-	OFFLINE_DRY_PACKAGE=1 \
+		DEBUG=$(DEBUG_BOOL) \
+		MSXBARE_EMBED_INITRAMFS=$(MSXBARE_EMBED_INITRAMFS) \
+		OFFLINE_DRY_PACKAGE=1 \
 	KERNEL_IMG="$$kernel_img" \
 	PACKAGE_ZIP="$$package_zip" \
 	FIRMWARE_DIR="$(FIRMWARE_DIR)" \
@@ -355,6 +408,7 @@ help:
 	@echo "SD card prep: make sdcard"
 	@echo "SD incremental update (sem formatar): make sdcard-update"
 	@echo "Initramfs: make initramfs INITRAMFS_IN=roms/initramfs INITRAMFS_OUT=sdcard/msx.cpio"
+	@echo "Embedded initramfs default: MSXBARE_EMBED_INITRAMFS=1 (fallback externo: 0)"
 	@echo "SD package zip (via prepare-sd dry-run offline): make package -> artifacts/sdcard-package-YYYYMMDDHHMM.zip"
 	@echo "Flags uteis: make package DEBUG=0|1 OWNER=<nome> FIRMWARE_DIR=./rpi-firmware"
 	@echo "Precedencia: flags da linha de comando vencem .config; .config vence os defaults"

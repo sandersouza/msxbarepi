@@ -16,6 +16,7 @@ DRY_RUN="${DRY_RUN:-0}"
 NON_INTERACTIVE="${NON_INTERACTIVE:-0}"
 AUTO_CONFIRM="${AUTO_CONFIRM:-0}"
 DEBUG="${DEBUG:-0}"
+MSXBARE_EMBED_INITRAMFS="${MSXBARE_EMBED_INITRAMFS:-1}"
 VIDEO_MODE_PRESET="${VIDEO_MODE_PRESET:-auto}"
 COPY_GAMES_TO_ROOT="${COPY_GAMES_TO_ROOT:-}"
 OFFLINE_DRY_PACKAGE="${OFFLINE_DRY_PACKAGE:-0}"
@@ -233,6 +234,7 @@ generate_dry_run_package() {
   PACKAGE_CONFIG_TXT="$CONFIG_EFFECTIVE_SRC" \
   PACKAGE_CMDLINE_TXT="$CMDLINE_TXT" \
   PACKAGE_INITRAMFS_IMG="$INITRAMFS_IMG" \
+  PACKAGE_EMBED_INITRAMFS="$MSXBARE_EMBED_INITRAMFS" \
   PACKAGE_SETTINGS_CFG="$SETTINGS_CFG" \
   PACKAGE_FIRMWARE_DIR="$FIRMWARE_DIR" \
   PACKAGE_COPY_GAMES_TO_ROOT="$copy_games_flag" \
@@ -262,6 +264,22 @@ drop_config_key_if_present() {
   if grep -Eq "^[[:space:]]*${key}=" "$file"; then
     sed -E "/^[[:space:]]*${key}=.*/d" "$file" > "${file}.new"
     mv "${file}.new" "$file"
+  fi
+}
+
+drop_initramfs_line_if_present() {
+  local file="$1"
+  if grep -Eq '^[[:space:]]*initramfs[[:space:]]+' "$file"; then
+    sed -E '/^[[:space:]]*initramfs[[:space:]]+.*/d' "$file" > "${file}.new"
+    mv "${file}.new" "$file"
+  fi
+}
+
+ensure_config_tmp() {
+  if [ -z "$CONFIG_TMP" ]; then
+    CONFIG_TMP="$(mktemp)"
+    cp "$CONFIG_TXT" "$CONFIG_TMP"
+    CONFIG_EFFECTIVE_SRC="$CONFIG_TMP"
   fi
 }
 
@@ -642,7 +660,9 @@ else
   fi
 fi
 
-if [ -n "$INITRAMFS_IMG" ] && [ -d "$INITRAMFS_SRC_DIR" ]; then
+if is_yes "$MSXBARE_EMBED_INITRAMFS"; then
+  echo "[INFO] Initramfs embutido ativo; nao gerando msx.cpio para o SD."
+elif [ -n "$INITRAMFS_IMG" ] && [ -d "$INITRAMFS_SRC_DIR" ]; then
   if is_ignored_sd_payload_path "$INITRAMFS_SRC_DIR"; then
     echo "[INFO] Ignorando INITRAMFS_SRC_DIR em payload bloqueado: ${INITRAMFS_SRC_DIR}"
   elif [ -x "${PROJECT_ROOT}/scripts/make-initramfs.sh" ]; then
@@ -675,15 +695,23 @@ else
 fi
 
 if [ -f "$CONFIG_TXT" ]; then
-  if ! grep -Eq '^[[:space:]]*initramfs[[:space:]]+msx\.cpio([[:space:]]+|$)' "$CONFIG_TXT"; then
+  config_tmp=""
+  if ! is_yes "$MSXBARE_EMBED_INITRAMFS" && ! grep -Eq '^[[:space:]]*initramfs[[:space:]]+msx\.cpio([[:space:]]+|$)' "$CONFIG_TXT"; then
     echo "[ERRO] config.txt sem linha obrigatoria de initramfs (ex.: 'initramfs msx.cpio followkernel')."
     echo "[ERRO] Ajuste ${CONFIG_TXT} antes de preparar o SD."
     exit 1
   fi
   config_src="$CONFIG_TXT"
+  CONFIG_EFFECTIVE_SRC="$config_src"
+  if is_yes "$MSXBARE_EMBED_INITRAMFS"; then
+    ensure_config_tmp
+    drop_initramfs_line_if_present "$CONFIG_TMP"
+    config_src="$CONFIG_TMP"
+    echo "[INFO] Initramfs embutido: removendo linha initramfs do config.txt efetivo"
+  fi
   if [ "$DEBUG" = "1" ]; then
-    config_tmp="$(mktemp)"
-    cp "$CONFIG_TXT" "$config_tmp"
+    ensure_config_tmp
+    config_tmp="$CONFIG_TMP"
     if grep -Eq '^[[:space:]]*disable_splash=' "$config_tmp"; then
       sed -E 's/^[[:space:]]*disable_splash=.*/disable_splash=0/' "$config_tmp" > "${config_tmp}.new"
       mv "${config_tmp}.new" "$config_tmp"
@@ -695,8 +723,8 @@ if [ -f "$CONFIG_TXT" ]; then
   fi
   if [ "$VIDEO_MODE_PRESET" != "auto" ]; then
     if [ -z "$config_tmp" ]; then
-      config_tmp="$(mktemp)"
-      cp "$CONFIG_TXT" "$config_tmp"
+      ensure_config_tmp
+      config_tmp="$CONFIG_TMP"
       config_src="$config_tmp"
     fi
     apply_video_mode_preset "$config_src" "$VIDEO_MODE_PRESET"
@@ -719,7 +747,9 @@ else
   echo "[INFO] cmdline.txt nao encontrado: ${CMDLINE_TXT} (opcional)"
 fi
 
-if [ -f "$INITRAMFS_IMG" ]; then
+if is_yes "$MSXBARE_EMBED_INITRAMFS"; then
+  echo "[SKIP] msx.cpio (initramfs embutido no kernel)"
+elif [ -f "$INITRAMFS_IMG" ]; then
   run_or_echo cp "$INITRAMFS_IMG" "${TARGET_VOLUME}/msx.cpio"
   echo "[OK] Copiado: msx.cpio"
 else

@@ -22,6 +22,7 @@ FIRMWARE_DIR="${FIRMWARE_DIR:-${PROJECT_ROOT}/rpi-firmware}"
 GAMES_SRC_DIR="${GAMES_SRC_DIR:-${PROJECT_ROOT}/roms/games}"
 COPY_GAMES_TO_ROOT="${COPY_GAMES_TO_ROOT:-0}"
 DEBUG="${DEBUG:-0}"
+MSXBARE_EMBED_INITRAMFS="${MSXBARE_EMBED_INITRAMFS:-1}"
 VIDEO_MODE_PRESET="${VIDEO_MODE_PRESET:-auto}"
 EJECT_AT_END="${EJECT_AT_END:-0}"
 
@@ -132,6 +133,14 @@ drop_config_key_if_present() {
   local key="$2"
   if grep -Eq "^[[:space:]]*${key}=" "$file"; then
     sed -E "/^[[:space:]]*${key}=.*/d" "$file" > "${file}.new"
+    mv "${file}.new" "$file"
+  fi
+}
+
+drop_initramfs_line_if_present() {
+  local file="$1"
+  if grep -Eq '^[[:space:]]*initramfs[[:space:]]+' "$file"; then
+    sed -E '/^[[:space:]]*initramfs[[:space:]]+.*/d' "$file" > "${file}.new"
     mv "${file}.new" "$file"
   fi
 }
@@ -247,7 +256,9 @@ cleanup_macos_junk() {
     >/dev/null 2>&1 || true
 }
 
-if [ -d "$INITRAMFS_SRC_DIR" ] && [ -x "${PROJECT_ROOT}/scripts/make-initramfs.sh" ]; then
+if is_yes "$MSXBARE_EMBED_INITRAMFS"; then
+  echo "[INFO] Initramfs embutido ativo; nao gerando msx.cpio para update incremental."
+elif [ -d "$INITRAMFS_SRC_DIR" ] && [ -x "${PROJECT_ROOT}/scripts/make-initramfs.sh" ]; then
   "${PROJECT_ROOT}/scripts/make-initramfs.sh" "$INITRAMFS_SRC_DIR" "$INITRAMFS_IMG"
 fi
 
@@ -256,10 +267,13 @@ ensure_settings_cfg
 config_src="$CONFIG_TXT"
 config_tmp=""
 if [ -f "$CONFIG_TXT" ]; then
-  if [ "$DEBUG" = "1" ] || [ "$VIDEO_MODE_PRESET" != "auto" ]; then
+  if [ "$DEBUG" = "1" ] || [ "$VIDEO_MODE_PRESET" != "auto" ] || is_yes "$MSXBARE_EMBED_INITRAMFS"; then
     config_tmp="$(mktemp)"
     cp "$CONFIG_TXT" "$config_tmp"
     config_src="$config_tmp"
+  fi
+  if is_yes "$MSXBARE_EMBED_INITRAMFS"; then
+    drop_initramfs_line_if_present "$config_src"
   fi
   if [ "$DEBUG" = "1" ]; then
     if grep -Eq '^[[:space:]]*disable_splash=' "$config_src"; then
@@ -277,7 +291,11 @@ fi
 copy_if_changed "$KERNEL_IMG" "${TARGET_VOLUME}/kernel8.img" "kernel8.img"
 copy_if_changed "$config_src" "${TARGET_VOLUME}/config.txt" "config.txt"
 copy_if_changed "$CMDLINE_TXT" "${TARGET_VOLUME}/cmdline.txt" "cmdline.txt"
-copy_if_changed "$INITRAMFS_IMG" "${TARGET_VOLUME}/msx.cpio" "msx.cpio"
+if is_yes "$MSXBARE_EMBED_INITRAMFS"; then
+  echo "[SKIP] msx.cpio (initramfs embutido no kernel)"
+else
+  copy_if_changed "$INITRAMFS_IMG" "${TARGET_VOLUME}/msx.cpio" "msx.cpio"
+fi
 copy_if_changed "$SETTINGS_CFG" "${TARGET_VOLUME}/msxbarepi.cfg" "msxbarepi.cfg"
 
 for fw in bootcode.bin start.elf fixup.dat bcm2710-rpi-3-b.dtb; do

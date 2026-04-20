@@ -7,6 +7,7 @@ PACKAGE_KERNEL_IMG="${PACKAGE_KERNEL_IMG:-${PROJECT_ROOT}/artifacts/kernel8-defa
 PACKAGE_CONFIG_TXT="${PACKAGE_CONFIG_TXT:-${PROJECT_ROOT}/sdcard/config.txt}"
 PACKAGE_CMDLINE_TXT="${PACKAGE_CMDLINE_TXT:-${PROJECT_ROOT}/sdcard/cmdline.txt}"
 PACKAGE_INITRAMFS_IMG="${PACKAGE_INITRAMFS_IMG:-${PROJECT_ROOT}/sdcard/msx.cpio}"
+PACKAGE_EMBED_INITRAMFS="${PACKAGE_EMBED_INITRAMFS:-1}"
 PACKAGE_SETTINGS_CFG="${PACKAGE_SETTINGS_CFG:-${PROJECT_ROOT}/sdcard/msxbarepi.cfg}"
 PACKAGE_FIRMWARE_DIR="${PACKAGE_FIRMWARE_DIR:-${PROJECT_ROOT}/rpi-firmware/}"
 PACKAGE_COPY_GAMES_TO_ROOT="${PACKAGE_COPY_GAMES_TO_ROOT:-0}"
@@ -88,7 +89,9 @@ require_cmd zip
 require_file "$PACKAGE_KERNEL_IMG"
 require_file "$PACKAGE_CONFIG_TXT"
 require_file "$PACKAGE_CMDLINE_TXT"
-require_file "$PACKAGE_INITRAMFS_IMG"
+if [ "$PACKAGE_EMBED_INITRAMFS" != "1" ]; then
+  require_file "$PACKAGE_INITRAMFS_IMG"
+fi
 ensure_settings_cfg
 require_file "$PACKAGE_SETTINGS_CFG"
 
@@ -103,7 +106,9 @@ mkdir -p "$(dirname "$PACKAGE_ZIP")"
 cp "$PACKAGE_KERNEL_IMG" "${PACKAGE_STAGE_DIR}/kernel8.img"
 cp "$PACKAGE_CONFIG_TXT" "${PACKAGE_STAGE_DIR}/config.txt"
 cp "$PACKAGE_CMDLINE_TXT" "${PACKAGE_STAGE_DIR}/cmdline.txt"
-cp "$PACKAGE_INITRAMFS_IMG" "${PACKAGE_STAGE_DIR}/msx.cpio"
+if [ "$PACKAGE_EMBED_INITRAMFS" != "1" ]; then
+  cp "$PACKAGE_INITRAMFS_IMG" "${PACKAGE_STAGE_DIR}/msx.cpio"
+fi
 cp "$PACKAGE_SETTINGS_CFG" "${PACKAGE_STAGE_DIR}/msxbarepi.cfg"
 
 for fw in $required_fw_files; do

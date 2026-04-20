@@ -2,10 +2,43 @@
 
 Ponto de entrada rapido para contexto operacional do projeto.
 
-- Contexto completo e historico de handoff da branch atual: [docs/handoff/main.md](docs/handoff/main.md)
-- Guardrail ativo: a branch `251-suporte-cartucho-vdp-v9990` foi consolidada localmente em `main` como checkpoint de trabalho, mas a issue `#251` continua aberta/pausada e a branch nao deve ser removida.
-- Branch ativa da rodada: `main`
+- Contexto completo e historico de handoff da branch atual: [docs/handoff/252-remover-hotkeys-diretas-otimizar-kernel.md](docs/handoff/252-remover-hotkeys-diretas-otimizar-kernel.md)
+- Guardrail ativo: a issue `#251` continua aberta/pausada e a branch `251-suporte-cartucho-vdp-v9990` nao deve ser removida.
+- Branch ativa da rodada: `252-remover-hotkeys-diretas-otimizar-kernel`
+- Issue ativa: `#252 [P1] Remover hotkeys diretas e reduzir overhead do kernel/runtime`
 - Issue em pausa: `#251 [P1] Implementar suporte ao cartucho/VDP V9990 (GFX9000) no backend MSX`
+- Atualizacao 2026-04-20 (boot fast path):
+  - initramfs embutido virou default de build via `MSXBARE_EMBED_INITRAMFS=1`
+  - o build gera `build/initramfs/msx-embedded.cpio` e embute no `kernel8.img`; `MSXBARE_EMBED_INITRAMFS=0` preserva o fallback externo `msx.cpio`
+  - `sdcard/config.txt` nao usa mais `initramfs msx.cpio followkernel` no default
+  - settings de boot passam a ter snapshot raw espelhado antes da particao FAT do SD, carregado antes de `FatFs`
+  - `FatFs` fica deferido quando o raw BootConfig e valido; sem raw, o caminho legado monta FAT antes do backend e semeia o snapshot raw
+  - `DEBUG=1` emite UART `BOOT_TIME start_to_backend_start_ms`, `start_to_backend_ready_ms`, `initramfs_source`, `initramfs_bytes`, `raw_cfg_ms` e `fat_deferred_ms`
+  - causa do nao boot com initramfs embutido: o `.img` estava abaixo de `KERNEL_MAX_SIZE=0x400000`, mas o footprint real do ELF nao; `_end=0x004BCA75` ultrapassava `MEM_KERNEL_END=0x00480000`, fazendo o Circle parar em `sysinit()` antes da UART
+  - `CIRCLE_KERNEL_MAX_SIZE` foi elevado para `0x500000`, e o build agora valida tambem `_end` contra `MEM_KERNEL_END`, nao apenas o tamanho do `.img`
+- Atualizacao 2026-04-19 (issue #252):
+  - `main` local foi publicado antes da criacao da branch da issue
+  - criada issue avulsa `#252` e branch vinculada `252-remover-hotkeys-diretas-otimizar-kernel`
+  - objetivo: remover hotkeys diretas `F6-F10`, `+` e `-`, mantendo `F11`, `F12`, START do gamepad e navegacao do menu
+  - a Debug Layer completa, menu, file browser e APIs internas de debug permanecem preservadas
+  - baseline antes do corte:
+    - `DEBUG=1`: `770744` bytes (`BUILD_BID: 202604191844-1717e80`)
+    - `DEBUG=0`: `737816` bytes (`BUILD_BID: 202604191854-1717e80`)
+  - candidato pos-corte:
+    - `DEBUG=1`: `768696` bytes (`BUILD_BID: 202604191904-1717e80`, `TXTDBG BUILD: 1C5A`)
+    - `DEBUG=0`: `735768` bytes (`BUILD_BID: 202604191905-1717e80`, `TXTDBG BUILD: ED4D`)
+    - reducao: `2048` bytes em cada perfil
+  - artefato atual para hardware:
+    - `artifacts/kernel8-issue252.img`
+    - `DEBUG=1 MSXBARE_FEAT_GFX9000=1`
+    - `BUILD_BID: 202604191928-1717e80`
+    - `TXTDBG BUILD: 0192`
+    - `BUILD_HASH: 1717e80-c930417953fc7ee097468cea1929273c5b528618`
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `git diff --check`
+    - `make -j4 DEBUG=1`
+    - `make -j4 DEBUG=0`
 - Atualizacao 2026-04-19 (handoff para main):
   - a telemetria UART do `V9990/GFX9000` (`G9*`) foi desligada por padrao por `MSXBARE_V9990_UART_TRACE=0`
   - para reativar a trilha em uma futura retomada da issue, usar `make DEBUG=1 MSXBARE_V9990_UART_TRACE=1`

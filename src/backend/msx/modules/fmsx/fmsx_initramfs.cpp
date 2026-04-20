@@ -11,6 +11,8 @@ static const u64 kMaxInitrdSize = 64ull * 1024ull * 1024ull;
 static const unsigned kMaxCpioEntries = 512u;
 static const unsigned kMaxCpioNameSize = 4096u;
 static unsigned g_fmsx_initramfs_files_mounted = 0u;
+static const char *g_fmsx_initramfs_source = "none";
+static unsigned g_fmsx_initramfs_bytes = 0u;
 
 extern "C" const unsigned char fmsx_embedded_initramfs_start[];
 extern "C" const unsigned char fmsx_embedded_initramfs_end[];
@@ -354,6 +356,8 @@ static unsigned fmsx_initramfs_mount_internal(int reset_vfs, int minimal_only)
     {
         fmsx_vfs_reset();
         g_fmsx_initramfs_files_mounted = 0u;
+        g_fmsx_initramfs_source = "none";
+        g_fmsx_initramfs_bytes = 0u;
     }
 
     const unsigned char *cursor = 0;
@@ -363,6 +367,8 @@ static unsigned fmsx_initramfs_mount_internal(int reset_vfs, int minimal_only)
     {
         cursor = fmsx_embedded_initramfs_start;
         limit = fmsx_embedded_initramfs_end;
+        g_fmsx_initramfs_source = "embedded";
+        g_fmsx_initramfs_bytes = (unsigned) (limit - cursor);
     }
     else
     {
@@ -388,6 +394,8 @@ static unsigned fmsx_initramfs_mount_internal(int reset_vfs, int minimal_only)
 
         cursor = (const unsigned char *) (uintptr) initrd_start;
         limit = (const unsigned char *) (uintptr) initrd_end;
+        g_fmsx_initramfs_source = "external";
+        g_fmsx_initramfs_bytes = (unsigned) (limit - cursor);
     }
 
     unsigned mounted = 0;
@@ -494,4 +502,14 @@ unsigned fmsx_initramfs_mount_remaining(void)
 unsigned fmsx_initramfs_files_mounted(void)
 {
     return g_fmsx_initramfs_files_mounted;
+}
+
+const char *fmsx_initramfs_source(void)
+{
+    return g_fmsx_initramfs_source;
+}
+
+unsigned fmsx_initramfs_bytes(void)
+{
+    return g_fmsx_initramfs_bytes;
 }

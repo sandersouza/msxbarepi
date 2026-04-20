@@ -399,6 +399,11 @@ static const char kSettingsLegacyPath[] = "SD:/MSXBARE.CFG";
 static const char kBootConfigPath[] = "SD:/config.txt";
 static const char kStateDirPath[] = "SD:/states";
 static const char kStatePath[] = "SD:/states/slot-last.sav";
+static const unsigned kRawBootConfigSlotBytes = 4096u;
+static const unsigned kRawBootConfigPayloadOffset = 64u;
+static const unsigned kRawBootConfigMaxPayload = kRawBootConfigSlotBytes - kRawBootConfigPayloadOffset;
+static const unsigned kRawBootConfigVersion = 1u;
+static const char kRawBootConfigMagic[8] = {'M', 'S', 'X', 'B', 'C', 'F', 'G', '1'};
 static const unsigned kStateBufferMaxBytes = 2u * 1024u * 1024u;
 static const unsigned kZ80TurboModeDes = 0u;
 static const unsigned kZ80TurboModePan = 1u;
@@ -1235,6 +1240,38 @@ static boolean BootConfigKeyEquals(const char *line, unsigned key_len, const cha
 	return literal[key_len] == '\0' ? TRUE : FALSE;
 }
 
+static u32 ReadLe32(const u8 *p)
+{
+	return ((u32) p[0])
+		| ((u32) p[1] << 8)
+		| ((u32) p[2] << 16)
+		| ((u32) p[3] << 24);
+}
+
+static void WriteLe32(u8 *p, u32 value)
+{
+	p[0] = (u8) (value & 0xFFu);
+	p[1] = (u8) ((value >> 8) & 0xFFu);
+	p[2] = (u8) ((value >> 16) & 0xFFu);
+	p[3] = (u8) ((value >> 24) & 0xFFu);
+}
+
+static u32 Crc32Bytes(const void *data, unsigned len)
+{
+	const u8 *p = (const u8 *) data;
+	u32 crc = 0xFFFFFFFFu;
+	for (unsigned i = 0u; i < len; ++i)
+	{
+		crc ^= (u32) p[i];
+		for (unsigned bit = 0u; bit < 8u; ++bit)
+		{
+			const u32 mask = 0u - (crc & 1u);
+			crc = (crc >> 1) ^ (0xEDB88320u & mask);
+		}
+	}
+	return ~crc;
+}
+
 static char AsciiUpperChar(char c)
 {
 	return (c >= 'a' && c <= 'z') ? (char) (c - ('a' - 'A')) : c;
@@ -1568,13 +1605,6 @@ CComboKernel::CComboKernel(void)
 	m_ScreenReady(FALSE),
 	m_EmulationPaused(FALSE),
 	m_LastF12Pressed(FALSE),
-	m_LastF6Pressed(FALSE),
-	m_LastF7Pressed(FALSE),
-	m_LastF8Pressed(FALSE),
-	m_LastF9Pressed(FALSE),
-	m_LastF10Pressed(FALSE),
-	m_LastFmGainUpPressed(FALSE),
-	m_LastFmGainDownPressed(FALSE),
 	m_LastPauseWasInSettings(FALSE),
 	m_LastPausePressed(FALSE),
 	m_LastMenuBackPressed(FALSE),
@@ -1680,11 +1710,14 @@ CComboKernel::CComboKernel(void)
 	m_FramePacingResetPending(FALSE),
 	m_BackendFallbackPattern(FALSE),
 	m_TestToneEnabled(FALSE),
-	m_MmuEnabled(FALSE),
-	m_DCacheEnabled(FALSE),
-	m_ICacheEnabled(FALSE),
-	m_SettingsStorageReady(FALSE),
-	m_UartTelemetryEnabled(FALSE),
+		m_MmuEnabled(FALSE),
+		m_DCacheEnabled(FALSE),
+		m_ICacheEnabled(FALSE),
+		m_SettingsStorageReady(FALSE),
+		m_SettingsFatFsMounted(FALSE),
+		m_SettingsFatFsMountPending(FALSE),
+		m_RawBootConfigLoaded(FALSE),
+		m_UartTelemetryEnabled(FALSE),
 	m_KanjiRomEnabled(TRUE),
 	m_KanjiRomAvailable(FALSE),
 	m_SettingsLoadPending(FALSE),
@@ -1698,10 +1731,13 @@ CComboKernel::CComboKernel(void)
 	m_PendingMenuAction((unsigned) ComboMenuActionNone),
 	m_SettingsSaveStage(0u),
 	m_SettingsSaveCode(0u),
-	m_SettingsSaveAux(0u),
-	m_BootStartUs(0u),
-	m_BootToBackendMs(0u),
-	m_StateIoBuffer(0),
+		m_SettingsSaveAux(0u),
+		m_BootStartUs(0u),
+		m_BootToBackendStartMs(0u),
+		m_BootToBackendMs(0u),
+		m_BootRawConfigMs(0u),
+		m_BootFatDeferredMs(0u),
+		m_StateIoBuffer(0),
 	m_StateIoBufferCapacity(0u),
 	m_BackendPresentBuffer(0),
 	m_BackendPresentBufferPixels(0u)
@@ -2009,6 +2045,493 @@ boolean CComboKernel::InitializeSettingsStorage(void)
 	return TRUE;
 }
 
+boolean CComboKernel::MountSettingsFileSystem(const char *phase)
+{
+	if (!m_SettingsStorageReady)
+	{
+		return FALSE;
+	}
+	if (m_SettingsFatFsMounted)
+	{
+		return TRUE;
+	}
+
+	const FRESULT mount_result = f_mount(&m_SettingsFileSystem, kSettingsDrive, 1);
+	if (mount_result == FR_OK)
+	{
+		m_SettingsFatFsMounted = TRUE;
+		BootPhase(m_Logger, phase != 0 ? phase : "BT5", "FATFS mount... OK");
+		return TRUE;
+	}
+
+	BootPhaseWarn(m_Logger, phase != 0 ? phase : "BT5", "FATFS mount... FAIL");
+	LogSdOpResult(m_Logger, "FAT:MOUNT", mount_result, kSettingsDrive, TRUE);
+	return FALSE;
+}
+
+boolean CComboKernel::ResolveRawBootConfigSlots(u64 *slot_a, u64 *slot_b)
+{
+	if (!m_SettingsStorageReady || slot_a == 0 || slot_b == 0)
+	{
+		return FALSE;
+	}
+
+	u8 sector[512];
+	memset(sector, 0, sizeof(sector));
+	m_EMMC.Seek(0);
+	if (m_EMMC.Read(sector, sizeof(sector)) != (int) sizeof(sector))
+	{
+		return FALSE;
+	}
+	if (!(sector[510] == 0x55u && sector[511] == 0xAAu))
+	{
+		return FALSE;
+	}
+
+	u32 first_lba = 0u;
+	for (unsigned i = 0u; i < 4u; ++i)
+	{
+		const u8 *entry = sector + 446u + (i * 16u);
+		const u32 lba = ReadLe32(entry + 8u);
+		const u32 sectors = ReadLe32(entry + 12u);
+		if (lba == 0u || sectors == 0u)
+		{
+			continue;
+		}
+		if (first_lba == 0u || lba < first_lba)
+		{
+			first_lba = lba;
+		}
+	}
+	if (first_lba < 32u)
+	{
+		return FALSE;
+	}
+
+	const u64 partition_start = (u64) first_lba * 512ull;
+	if (partition_start < (u64) (kRawBootConfigSlotBytes * 2u))
+	{
+		return FALSE;
+	}
+
+	*slot_a = partition_start - (u64) (kRawBootConfigSlotBytes * 2u);
+	*slot_b = partition_start - (u64) kRawBootConfigSlotBytes;
+	return TRUE;
+}
+
+static boolean DecodeRawBootConfigRecord(const u8 record[kRawBootConfigSlotBytes], char *payload, unsigned payload_size, unsigned *payload_len, u32 *seq)
+{
+	if (memcmp(record, kRawBootConfigMagic, sizeof(kRawBootConfigMagic)) != 0)
+	{
+		return FALSE;
+	}
+	if (ReadLe32(record + 8u) != kRawBootConfigVersion)
+	{
+		return FALSE;
+	}
+
+	const u32 record_seq = ReadLe32(record + 12u);
+	const u32 len = ReadLe32(record + 16u);
+	const u32 crc = ReadLe32(record + 20u);
+	if (len == 0u || len > kRawBootConfigMaxPayload || len >= payload_size)
+	{
+		return FALSE;
+	}
+	if (Crc32Bytes(record + kRawBootConfigPayloadOffset, len) != crc)
+	{
+		return FALSE;
+	}
+	memcpy(payload, record + kRawBootConfigPayloadOffset, len);
+	payload[len] = '\0';
+	if (payload_len != 0)
+	{
+		*payload_len = len;
+	}
+	if (seq != 0)
+	{
+		*seq = record_seq;
+	}
+	return TRUE;
+}
+
+static boolean RawBootSeqNewer(u32 a, u32 b)
+{
+	return (a != b && (u32) (a - b) < 0x80000000u) ? TRUE : FALSE;
+}
+
+boolean CComboKernel::ApplyRawSettingsText(char *buffer)
+{
+	if (buffer == 0 || strstr(buffer, "#END") == 0)
+	{
+		return FALSE;
+	}
+
+	boolean has_cfg_carta = FALSE;
+	boolean has_cfg_cartb = FALSE;
+	boolean has_cfg_diska = FALSE;
+	boolean has_cfg_diskb = FALSE;
+	boolean has_backend_id = FALSE;
+	boolean has_scc_plus = FALSE;
+	boolean has_joy_map = FALSE;
+	char cfg_carta_path[192];
+	char cfg_cartb_path[192];
+	char cfg_diska_path[192];
+	char cfg_diskb_path[192];
+	char cfg_backend_id[32];
+	u16 joy_map_codes[CUsbHidGamepad::MapSlotCount];
+	cfg_carta_path[0] = '\0';
+	cfg_cartb_path[0] = '\0';
+	cfg_diska_path[0] = '\0';
+	cfg_diskb_path[0] = '\0';
+	cfg_backend_id[0] = '\0';
+	m_UsbGamepad.GetMappingCodes(joy_map_codes, CUsbHidGamepad::MapSlotCount);
+
+	char *line = buffer;
+	while (*line != '\0')
+	{
+		while (*line == '\r' || *line == '\n')
+		{
+			++line;
+		}
+		if (*line == '\0')
+		{
+			break;
+		}
+
+		char *line_end = line;
+		while (*line_end != '\0' && *line_end != '\r' && *line_end != '\n')
+		{
+			++line_end;
+		}
+
+		char *eq = line;
+		while (eq < line_end && *eq != '=')
+		{
+			++eq;
+		}
+		if (eq < line_end)
+		{
+			const unsigned key_len = (unsigned) (eq - line);
+			const unsigned value = ParseUintValue(eq + 1);
+			if (SettingsKeyEquals(line, key_len, "resolution"))
+			{
+				m_ResolutionMode = (value > kResolutionMode768) ? kResolutionModeAuto : value;
+			}
+			else if (SettingsKeyEquals(line, key_len, "scale"))
+			{
+				unsigned clamped = value;
+				if (clamped == 500u)
+				{
+					clamped = kScalePercentHardMax;
+				}
+				else
+				{
+					const unsigned max_saved_factor = ScaleFactorFromPercent(kScalePercentHardMax);
+					if (clamped > 0u && clamped <= max_saved_factor)
+					{
+						clamped = ScalePercentFromFactor(clamped);
+					}
+				}
+				if (clamped != kScalePercentNone && clamped < kScalePercentMin) clamped = kScalePercentMin;
+				if (clamped > kScalePercentHardMax) clamped = kScalePercentHardMax;
+				m_OverscanPercent = (clamped == kScalePercentNone)
+					? kScalePercentNone
+					: ((clamped / kScalePercentStep) * kScalePercentStep);
+			}
+			else if (SettingsKeyEquals(line, key_len, "language"))
+			{
+				m_Language = combo_locale_clamp_language(value);
+			}
+			else if (SettingsKeyEquals(line, key_len, "scanline"))
+			{
+				m_ScanlineMode = value != 0u ? kScanlineModeLcd : kScanlineModeOff;
+			}
+			else if (SettingsKeyEquals(line, key_len, "gfx9000"))
+			{
+				m_Gfx9000Enabled = value ? TRUE : FALSE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "refresh"))
+			{
+				m_RefreshRateHz = ClampRefreshRateHz(value);
+			}
+			else if (SettingsKeyEquals(line, key_len, "disk_rom"))
+			{
+				m_DiskRomEnabled = value ? TRUE : FALSE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "kanji_rom"))
+			{
+				m_KanjiRomEnabled = value ? TRUE : FALSE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "boot_mode"))
+			{
+				m_BootMode = (value > 2u) ? kBootModeNorm : value;
+			}
+			else if (SettingsKeyEquals(line, key_len, "machine"))
+			{
+				m_MachineProfile = ClampMachineProfileForBuild(value);
+			}
+			else if (SettingsKeyEquals(line, key_len, "rammapper_kb"))
+			{
+				m_RamMapperKb = ClampRamMapperKb(value);
+			}
+			else if (SettingsKeyEquals(line, key_len, "megaram_kb"))
+			{
+				m_MegaRamKb = ClampMegaRamKb(value);
+			}
+			else if (SettingsKeyEquals(line, key_len, "z80_turbo"))
+			{
+				m_Z80TurboMode = value > 3u ? 0u : value;
+			}
+			else if (SettingsKeyEquals(line, key_len, "rensha"))
+			{
+				m_RenshaMode = (value > 3u) ? 0u : value;
+			}
+			else if (SettingsKeyEquals(line, key_len, "scc_plus"))
+			{
+				m_SccCartEnabled = value ? TRUE : FALSE;
+				has_scc_plus = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "scc_dual"))
+			{
+				m_SccDualCartEnabled = value ? TRUE : FALSE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "scc_cart"))
+			{
+				if (!has_scc_plus)
+				{
+					m_SccCartEnabled = value ? TRUE : FALSE;
+				}
+			}
+			else if (SettingsKeyEquals(line, key_len, "fm_music"))
+			{
+				m_FmMusicEnabled = value ? TRUE : FALSE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "debugger"))
+			{
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+				m_DebugOverlayMode = ClampDebugOverlayMode(value);
+#else
+				(void) value;
+				m_DebugOverlayMode = ComboDebugOverlayOff;
+#endif
+			}
+			else if (SettingsKeyEquals(line, key_len, "audio_gain"))
+			{
+				m_AudioOutputGainPct = (value > 100u) ? 100u : value;
+			}
+			else if (SettingsKeyEquals(line, key_len, "backend_id"))
+			{
+				ParseTextValueLine(eq + 1, line_end, cfg_backend_id, sizeof(cfg_backend_id));
+				has_backend_id = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "joy_map_up"))
+			{
+				joy_map_codes[CUsbHidGamepad::MapSlotUp] = CUsbHidGamepad::ClampControlCode((u16) value);
+				has_joy_map = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "joy_map_down"))
+			{
+				joy_map_codes[CUsbHidGamepad::MapSlotDown] = CUsbHidGamepad::ClampControlCode((u16) value);
+				has_joy_map = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "joy_map_left"))
+			{
+				joy_map_codes[CUsbHidGamepad::MapSlotLeft] = CUsbHidGamepad::ClampControlCode((u16) value);
+				has_joy_map = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "joy_map_right"))
+			{
+				joy_map_codes[CUsbHidGamepad::MapSlotRight] = CUsbHidGamepad::ClampControlCode((u16) value);
+				has_joy_map = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "joy_map_button1"))
+			{
+				joy_map_codes[CUsbHidGamepad::MapSlotButton1] = CUsbHidGamepad::ClampControlCode((u16) value);
+				has_joy_map = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "joy_map_button2"))
+			{
+				joy_map_codes[CUsbHidGamepad::MapSlotButton2] = CUsbHidGamepad::ClampControlCode((u16) value);
+				has_joy_map = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "cart_a_path"))
+			{
+				ParseTextValueLine(eq + 1, line_end, cfg_carta_path, sizeof(cfg_carta_path));
+				has_cfg_carta = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "cart_b_path"))
+			{
+				ParseTextValueLine(eq + 1, line_end, cfg_cartb_path, sizeof(cfg_cartb_path));
+				has_cfg_cartb = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "disk_a_path"))
+			{
+				ParseTextValueLine(eq + 1, line_end, cfg_diska_path, sizeof(cfg_diska_path));
+				has_cfg_diska = TRUE;
+			}
+			else if (SettingsKeyEquals(line, key_len, "disk_b_path"))
+			{
+				ParseTextValueLine(eq + 1, line_end, cfg_diskb_path, sizeof(cfg_diskb_path));
+				has_cfg_diskb = TRUE;
+			}
+		}
+		line = line_end;
+	}
+
+	NormalizeSettingsForBuild();
+#if MSXBARE_FEAT_GFX9000
+	if ((has_cfg_carta && RomPathLooksLikeGfx9000(cfg_carta_path))
+	 || (has_cfg_cartb && RomPathLooksLikeGfx9000(cfg_cartb_path)))
+	{
+		m_Gfx9000Enabled = TRUE;
+		m_Gfx9000AutoCfgApplied = TRUE;
+	}
+#endif
+	backend_runtime_set_requested_backend_id(has_backend_id && cfg_backend_id[0] != '\0' ? cfg_backend_id : 0);
+	if (has_joy_map)
+	{
+		m_UsbGamepad.SetMappingCodes(joy_map_codes, CUsbHidGamepad::MapSlotCount, TRUE);
+	}
+
+	m_RefreshRateHz = ClampRefreshRateHz(m_RefreshRateHz);
+	m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
+	m_PauseMenu.SetScalePercent(m_OverscanPercent);
+	m_PauseMenu.SetScaleMaxFitEnabled(m_ScaleMaxFitEnabled);
+	m_PauseMenu.SetLanguage(m_Language);
+	m_PauseMenu.SetResolutionMode(m_ResolutionMode);
+	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
+	m_PauseMenu.SetGfx9000Enabled(m_Gfx9000Enabled);
+	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
+	m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
+	m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
+	m_PauseMenu.SetKanjiRomAvailable(m_KanjiRomAvailable);
+	m_PauseMenu.SetBootMode(m_BootMode);
+	m_PauseMenu.SetMachineProfile(m_MachineProfile);
+	m_PauseMenu.SetRamMapperKb(m_RamMapperKb);
+	m_PauseMenu.SetMegaRamKb(m_MegaRamKb);
+	m_PauseMenu.SetZ80TurboMode(m_Z80TurboMode);
+	m_PauseMenu.SetRenshaMode(m_RenshaMode);
+	{
+		u16 joy_codes[CUsbHidGamepad::MapSlotCount];
+		m_UsbGamepad.GetMappingCodes(joy_codes, CUsbHidGamepad::MapSlotCount);
+		m_PauseMenu.SetJoystickMapCodes(joy_codes, CUsbHidGamepad::MapSlotCount);
+	}
+	m_PauseMenu.SetFmMusicEnabled(m_FmMusicEnabled);
+	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
+	m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled, has_cfg_cartb && cfg_cartb_path[0] ? FALSE : TRUE);
+	m_PauseMenu.SetOverlayMode(
+		MSXBARE_ENABLE_DEBUG_OVERLAY ? m_DebugOverlayMode : ComboDebugOverlayOff,
+		MSXBARE_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
+	m_PauseMenu.SetAudioGainPercent(m_AudioOutputGainPct);
+	{
+		const unsigned max_scale = ComputeViewportUiMaxScalePercent(m_Screen.GetHeight());
+		m_PauseMenu.SetMaxScalePercent(max_scale);
+		m_ScaleMaxFitEnabled = FALSE;
+		m_OverscanPercent = ClampScalePercent(m_OverscanPercent, max_scale);
+		m_PauseMenu.SetScalePercent(m_OverscanPercent);
+		m_PauseMenu.SetScaleMaxFitEnabled(FALSE);
+	}
+#if MSXBARE_ENABLE_FMSX
+	{
+		const unsigned effective_scale = ComputeEffectiveViewportScalePercent(
+			m_OverscanPercent,
+			ComputeViewportUiMaxScalePercent(m_Screen.GetHeight()),
+			m_Screen.GetHeight(),
+			m_DebugOverlayMode);
+		backend_runtime_set_overscan(EffectiveOverscanEnabled(effective_scale));
+	}
+	backend_runtime_set_refresh_hz(m_RefreshRateHz);
+	backend_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
+	backend_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
+	backend_runtime_set_gfx9000_enabled(m_Gfx9000Enabled);
+	backend_runtime_set_boot_mode(m_BootMode);
+	backend_runtime_set_model_profile(m_MachineProfile);
+	backend_runtime_set_rammapper_kb(m_RamMapperKb);
+	backend_runtime_set_megaram_kb(m_MegaRamKb);
+	backend_runtime_set_z80_turbo_mode(m_Z80TurboMode);
+	backend_runtime_set_fm_music_enabled(m_FmMusicEnabled);
+	backend_runtime_set_fm_layer_gain_pct(m_FmLayerGainPct);
+	backend_runtime_set_scc_plus_enabled(m_SccCartEnabled);
+#if MSXBARE_FEAT_LOAD_ROM
+	if (has_cfg_carta) (void) backend_runtime_set_cartridge_path(0u, cfg_carta_path[0] ? cfg_carta_path : 0);
+	if (has_cfg_cartb) (void) backend_runtime_set_cartridge_path(1u, cfg_cartb_path[0] ? cfg_cartb_path : 0);
+#else
+	(void) has_cfg_carta;
+	(void) has_cfg_cartb;
+#endif
+#if MSXBARE_FEAT_LOAD_DISK
+	if (has_cfg_diska) (void) backend_runtime_set_disk_path(0u, cfg_diska_path[0] ? cfg_diska_path : 0);
+	if (has_cfg_diskb) (void) backend_runtime_set_disk_path(1u, cfg_diskb_path[0] ? cfg_diskb_path : 0);
+#else
+	(void) has_cfg_diska;
+	(void) has_cfg_diskb;
+#endif
+	if (!backend_runtime_set_scc_dual_cart_enabled(m_SccDualCartEnabled))
+	{
+		m_SccDualCartEnabled = FALSE;
+	}
+	SyncKanjiRomStateFromRuntime();
+	m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled, backend_runtime_get_scc_dual_cart_available());
+#endif
+	return TRUE;
+}
+
+boolean CComboKernel::LoadRawBootConfig(void)
+{
+	u64 slot_a = 0u;
+	u64 slot_b = 0u;
+	if (!ResolveRawBootConfigSlots(&slot_a, &slot_b))
+	{
+		return FALSE;
+	}
+
+	static u8 record_a[kRawBootConfigSlotBytes];
+	static u8 record_b[kRawBootConfigSlotBytes];
+	static char payload_a[kRawBootConfigMaxPayload + 1u];
+	static char payload_b[kRawBootConfigMaxPayload + 1u];
+	unsigned len_a = 0u;
+	unsigned len_b = 0u;
+	u32 seq_a = 0u;
+	u32 seq_b = 0u;
+	memset(record_a, 0, sizeof(record_a));
+	memset(record_b, 0, sizeof(record_b));
+
+	m_EMMC.Seek(slot_a);
+	const boolean read_a = (m_EMMC.Read(record_a, sizeof(record_a)) == (int) sizeof(record_a))
+		? DecodeRawBootConfigRecord(record_a, payload_a, sizeof(payload_a), &len_a, &seq_a)
+		: FALSE;
+	m_EMMC.Seek(slot_b);
+	const boolean read_b = (m_EMMC.Read(record_b, sizeof(record_b)) == (int) sizeof(record_b))
+		? DecodeRawBootConfigRecord(record_b, payload_b, sizeof(payload_b), &len_b, &seq_b)
+		: FALSE;
+
+	char *chosen_payload = 0;
+	unsigned chosen_len = 0u;
+	if (read_a && (!read_b || RawBootSeqNewer(seq_a, seq_b)))
+	{
+		chosen_payload = payload_a;
+		chosen_len = len_a;
+	}
+	else if (read_b)
+	{
+		chosen_payload = payload_b;
+		chosen_len = len_b;
+	}
+	if (chosen_payload == 0 || chosen_len == 0u)
+	{
+		return FALSE;
+	}
+
+	if (!ApplyRawSettingsText(chosen_payload))
+	{
+		return FALSE;
+	}
+
+	m_RawBootConfigLoaded = TRUE;
+	BootPhase(m_Logger, "BT6", "raw BootConfig... OK");
+	return TRUE;
+}
+
 void CComboKernel::InitializeDebugRuntime(void)
 {
 #if !MSXBARE_ENABLE_DEBUG_OVERLAY
@@ -2068,6 +2591,29 @@ void CComboKernel::InitializeDebugRuntime(void)
 		boot_line.Format("Fastboot to backend: %ums", m_BootToBackendMs);
 		m_Logger.Write(FromKernel, LogNotice, boot_line);
 	}
+	{
+		CString line;
+		line.Format("BOOT_TIME start_to_backend_start_ms=%u", m_BootToBackendStartMs);
+		m_Logger.Write(FromKernel, LogNotice, line);
+		line.Format("BOOT_TIME start_to_backend_ready_ms=%u", m_BootToBackendMs);
+		m_Logger.Write(FromKernel, LogNotice, line);
+#if MSXBARE_ENABLE_FMSX
+		line.Format("BOOT_TIME initramfs_source=%s", backend_runtime_initramfs_source());
+		m_Logger.Write(FromKernel, LogNotice, line);
+		line.Format("BOOT_TIME initramfs_bytes=%u", backend_runtime_initramfs_bytes());
+		m_Logger.Write(FromKernel, LogNotice, line);
+#else
+		m_Logger.Write(FromKernel, LogNotice, "BOOT_TIME initramfs_source=none");
+		m_Logger.Write(FromKernel, LogNotice, "BOOT_TIME initramfs_bytes=0");
+#endif
+		line.Format("BOOT_TIME raw_cfg_ms=%u", m_BootRawConfigMs);
+		m_Logger.Write(FromKernel, LogNotice, line);
+		if (!m_SettingsFatFsMountPending)
+		{
+			line.Format("BOOT_TIME fat_deferred_ms=%u", m_BootFatDeferredMs);
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
+	}
 	LogCpuClockStatus("BT11");
 #endif
 }
@@ -2088,6 +2634,20 @@ void CComboKernel::ProcessDeferredBootTasks(void)
 		}
 	}
 #endif
+	if (m_SettingsFatFsMountPending)
+	{
+		const u64 fat_start_us = CTimer::GetClockTicks64();
+		(void) MountSettingsFileSystem("BT5D");
+		m_BootFatDeferredMs = (unsigned) ((CTimer::GetClockTicks64() - fat_start_us) / 1000u);
+		m_SettingsFatFsMountPending = FALSE;
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+		{
+			CString line;
+			line.Format("BOOT_TIME fat_deferred_ms=%u", m_BootFatDeferredMs);
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
+#endif
+	}
 }
 
 TComboShutdownMode CComboKernel::Run(void)
@@ -2097,7 +2657,10 @@ TComboShutdownMode CComboKernel::Run(void)
 		BootTrace("R0");
 	}
 	m_BootStartUs = CTimer::GetClockTicks64();
+	m_BootToBackendStartMs = 0u;
 	m_BootToBackendMs = 0u;
+	m_BootRawConfigMs = 0u;
+	m_BootFatDeferredMs = 0u;
 	u64 sctlr_el1 = 0;
 	asm volatile ("mrs %0, sctlr_el1" : "=r" (sctlr_el1));
 	m_MmuEnabled = (sctlr_el1 & (1u << 0)) ? TRUE : FALSE;
@@ -2126,17 +2689,33 @@ TComboShutdownMode CComboKernel::Run(void)
 
 	if (InitializeSettingsStorage())
 	{
-		/* Must be applied before backend init so boot/runtime settings take effect on first boot. */
-		if (f_mount(&m_SettingsFileSystem, kSettingsDrive, 1) == FR_OK)
+		boolean raw_loaded = FALSE;
 		{
-			BootPhase(m_Logger, "BT5", "FATFS mount... OK");
-			LoadSettingsFromStorage();
+			const u64 raw_start_us = CTimer::GetClockTicks64();
+			raw_loaded = LoadRawBootConfig();
+			m_BootRawConfigMs = (unsigned) ((CTimer::GetClockTicks64() - raw_start_us) / 1000u);
+		}
+
+		if (raw_loaded)
+		{
+			m_SettingsFatFsMountPending = TRUE;
+			BootPhase(m_Logger, "BT5", "FATFS mount... DEFER");
 		}
 		else
 		{
-			m_SettingsStorageReady = FALSE;
-			BootPhaseWarn(m_Logger, "BT5", "FATFS mount... FAIL");
-			m_Logger.Write(FromKernel, LogWarning, "Settings mount failed on SD:; persistence disabled");
+			/* First boot or raw snapshot missing: keep compatibility and seed raw before backend. */
+			const u64 fat_start_us = CTimer::GetClockTicks64();
+			if (MountSettingsFileSystem("BT5"))
+			{
+				LoadSettingsFromStorage();
+				char seed[1024];
+				const unsigned seed_len = BuildSettingsPayload(seed, sizeof(seed));
+				if (seed_len != 0u)
+				{
+					SaveRawBootConfigBuffer(seed, seed_len);
+				}
+			}
+			m_BootFatDeferredMs = (unsigned) ((CTimer::GetClockTicks64() - fat_start_us) / 1000u);
 		}
 	}
 	else
@@ -2187,6 +2766,10 @@ TComboShutdownMode CComboKernel::Run(void)
 			}
 		}
 		BootPhase(m_Logger, "BT9", "runtime config... OK");
+		{
+			const u64 boot_elapsed_us = CTimer::GetClockTicks64() - m_BootStartUs;
+			m_BootToBackendStartMs = (unsigned) (boot_elapsed_us / 1000u);
+		}
 		m_BackendReady = backend_runtime_init();
 		{
 			const BackendInfo backend_info = backend_runtime_get_info();
@@ -2446,13 +3029,6 @@ TComboShutdownMode CComboKernel::Run(void)
 			}
 			m_LastPausePressed = FALSE;
 			m_LastMenuBackPressed = FALSE;
-			m_LastF6Pressed = FALSE;
-			m_LastF7Pressed = FALSE;
-			m_LastF8Pressed = FALSE;
-			m_LastF9Pressed = FALSE;
-			m_LastF10Pressed = FALSE;
-			m_LastFmGainUpPressed = FALSE;
-			m_LastFmGainDownPressed = FALSE;
 	#if MSXBARE_ENABLE_FMSX
 			if (m_BackendReady)
 			{
@@ -4534,7 +5110,7 @@ void CComboKernel::UpdateLoadDiagTelemetry(unsigned stage)
 
 void CComboKernel::LoadSettingsFromStorage(void)
 {
-	if (!m_SettingsStorageReady)
+	if (!m_SettingsFatFsMounted)
 	{
 		return;
 	}
@@ -4943,17 +5519,13 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	BootPhase(m_Logger, "BT6", "msxbarepi.cfg... OK");
 }
 
-void CComboKernel::SaveSettingsToStorage(void)
+unsigned CComboKernel::BuildSettingsPayload(char *buffer, unsigned buffer_size)
 {
-	UpdateSettingsSaveTelemetry(1u, 0u, 0u); /* begin */
-	if (!m_SettingsStorageReady)
+	if (buffer == 0 || buffer_size < 1024u)
 	{
-		UpdateSettingsSaveTelemetry(90u, 0u, 0u); /* storage unavailable */
-		m_Logger.Write(FromKernel, LogWarning, "Settings save unavailable (storage not mounted)");
-		return;
+		return 0u;
 	}
 
-	char buffer[1024];
 	unsigned offset = 0u;
 	const char *saved_backend_id = backend_runtime_selected_backend_id();
 	if (saved_backend_id == 0 || saved_backend_id[0] == '\0')
@@ -4969,7 +5541,7 @@ void CComboKernel::SaveSettingsToStorage(void)
 		if (text != 0) \
 		{ \
 			const unsigned len = (unsigned) strlen(text); \
-			if (offset + len < sizeof(buffer)) \
+			if (offset + len < buffer_size) \
 			{ \
 				memcpy(buffer + offset, text, len); \
 				offset += len; \
@@ -4982,7 +5554,7 @@ void CComboKernel::SaveSettingsToStorage(void)
 		const char *v = (text_value) != 0 ? (text_value) : ""; \
 		const unsigned key_len = (unsigned) strlen(key); \
 		const unsigned value_len = (unsigned) strlen(v); \
-		if (offset + key_len + value_len + 2u < sizeof(buffer)) \
+		if (offset + key_len + value_len + 2u < buffer_size) \
 		{ \
 			memcpy(buffer + offset, key, key_len); \
 			offset += key_len; \
@@ -4993,12 +5565,12 @@ void CComboKernel::SaveSettingsToStorage(void)
 		} \
 	} while (0)
 
-		APPEND_LINE_TEXT("backend_id", saved_backend_id);
-		APPEND_LINE_FMT("scale=%u\n", ScaleFactorFromPercent(m_OverscanPercent));
-		APPEND_LINE_FMT("language=%u\n", m_Language);
-		APPEND_LINE_FMT("resolution=%u\n", m_ResolutionMode);
-		APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
-		APPEND_LINE_FMT("gfx9000=%u\n", (MSXBARE_FEAT_GFX9000 && m_Gfx9000Enabled) ? 1u : 0u);
+	APPEND_LINE_TEXT("backend_id", saved_backend_id);
+	APPEND_LINE_FMT("scale=%u\n", ScaleFactorFromPercent(m_OverscanPercent));
+	APPEND_LINE_FMT("language=%u\n", m_Language);
+	APPEND_LINE_FMT("resolution=%u\n", m_ResolutionMode);
+	APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
+	APPEND_LINE_FMT("gfx9000=%u\n", (MSXBARE_FEAT_GFX9000 && m_Gfx9000Enabled) ? 1u : 0u);
 	APPEND_LINE_FMT("refresh=%u\n", ClampRefreshRateHz(m_RefreshRateHz));
 	APPEND_LINE_FMT("disk_rom=%u\n", m_DiskRomEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("kanji_rom=%u\n", m_KanjiRomEnabled ? 1u : 0u);
@@ -5023,34 +5595,122 @@ void CComboKernel::SaveSettingsToStorage(void)
 	APPEND_LINE_FMT("scc_dual=%u\n", m_SccDualCartEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("debugger=%u\n", ClampDebugOverlayMode(m_DebugOverlayMode));
 	APPEND_LINE_FMT("audio_gain=%u\n", m_AudioOutputGainPct > 100u ? 100u : m_AudioOutputGainPct);
-	#if MSXBARE_ENABLE_FMSX
-		APPEND_LINE_TEXT("cart_a_path", backend_runtime_get_cartridge_path(0u));
-		APPEND_LINE_TEXT("cart_b_path", backend_runtime_get_cartridge_path(1u));
-		APPEND_LINE_TEXT("disk_a_path", backend_runtime_get_disk_path(0u));
-		APPEND_LINE_TEXT("disk_b_path", backend_runtime_get_disk_path(1u));
-	#endif
+#if MSXBARE_ENABLE_FMSX
+	APPEND_LINE_TEXT("cart_a_path", backend_runtime_get_cartridge_path(0u));
+	APPEND_LINE_TEXT("cart_b_path", backend_runtime_get_cartridge_path(1u));
+	APPEND_LINE_TEXT("disk_a_path", backend_runtime_get_disk_path(0u));
+	APPEND_LINE_TEXT("disk_b_path", backend_runtime_get_disk_path(1u));
+#endif
 
-	#undef APPEND_LINE_FMT
-	#undef APPEND_LINE_TEXT
+#undef APPEND_LINE_FMT
+#undef APPEND_LINE_TEXT
 
+	static const char kEndMarker[] = "#END\n";
+	const unsigned end_len = (unsigned) (sizeof(kEndMarker) - 1u);
+	if (offset + end_len >= buffer_size)
 	{
-		static const char kEndMarker[] = "#END\n";
-		const unsigned end_len = (unsigned) (sizeof(kEndMarker) - 1u);
-		if (offset + end_len >= sizeof(buffer))
-		{
-			offset = (sizeof(buffer) > (end_len + 1u)) ? (unsigned) (sizeof(buffer) - end_len - 1u) : 0u;
-		}
-		memcpy(buffer + offset, kEndMarker, end_len);
-		offset += end_len;
+		offset = (buffer_size > (end_len + 1u)) ? (unsigned) (buffer_size - end_len - 1u) : 0u;
 	}
+	memcpy(buffer + offset, kEndMarker, end_len);
+	offset += end_len;
 
-	/* Persist fixed-size block to keep parser/overwrite deterministic. */
 	const unsigned fixed_write_bytes = 1024u;
 	if (offset > fixed_write_bytes)
 	{
 		offset = fixed_write_bytes;
 	}
 	memset(buffer + offset, '\n', fixed_write_bytes - offset);
+	return fixed_write_bytes;
+}
+
+void CComboKernel::SaveRawBootConfigBuffer(const char *payload, unsigned payload_len)
+{
+	if (!m_SettingsStorageReady || payload == 0 || payload_len == 0u || payload_len > kRawBootConfigMaxPayload)
+	{
+		return;
+	}
+
+	u64 slot_a = 0u;
+	u64 slot_b = 0u;
+	if (!ResolveRawBootConfigSlots(&slot_a, &slot_b))
+	{
+		return;
+	}
+
+	static u8 record_a[kRawBootConfigSlotBytes];
+	static u8 record_b[kRawBootConfigSlotBytes];
+	static char payload_tmp[kRawBootConfigMaxPayload + 1u];
+	unsigned ignored_len = 0u;
+	u32 seq_a = 0u;
+	u32 seq_b = 0u;
+	memset(record_a, 0, sizeof(record_a));
+	memset(record_b, 0, sizeof(record_b));
+
+	m_EMMC.Seek(slot_a);
+	const boolean valid_a = (m_EMMC.Read(record_a, sizeof(record_a)) == (int) sizeof(record_a))
+		? DecodeRawBootConfigRecord(record_a, payload_tmp, sizeof(payload_tmp), &ignored_len, &seq_a)
+		: FALSE;
+	m_EMMC.Seek(slot_b);
+	const boolean valid_b = (m_EMMC.Read(record_b, sizeof(record_b)) == (int) sizeof(record_b))
+		? DecodeRawBootConfigRecord(record_b, payload_tmp, sizeof(payload_tmp), &ignored_len, &seq_b)
+		: FALSE;
+
+	u32 next_seq = 1u;
+	u64 target_slot = slot_a;
+	if (valid_a && (!valid_b || RawBootSeqNewer(seq_a, seq_b)))
+	{
+		next_seq = seq_a + 1u;
+		target_slot = slot_b;
+	}
+	else if (valid_b)
+	{
+		next_seq = seq_b + 1u;
+		target_slot = slot_a;
+	}
+
+	static u8 record[kRawBootConfigSlotBytes];
+	memset(record, 0, sizeof(record));
+	memcpy(record, kRawBootConfigMagic, sizeof(kRawBootConfigMagic));
+	WriteLe32(record + 8u, kRawBootConfigVersion);
+	WriteLe32(record + 12u, next_seq);
+	WriteLe32(record + 16u, payload_len);
+	WriteLe32(record + 20u, Crc32Bytes(payload, payload_len));
+	memcpy(record + kRawBootConfigPayloadOffset, payload, payload_len);
+
+	m_EMMC.Seek(target_slot);
+	if (m_EMMC.Write(record, sizeof(record)) == (int) sizeof(record))
+	{
+		m_Logger.Write(FromKernel, LogNotice, "Raw BootConfig saved");
+	}
+	else
+	{
+		m_Logger.Write(FromKernel, LogWarning, "Raw BootConfig save failed");
+	}
+}
+
+void CComboKernel::SaveSettingsToStorage(void)
+{
+	UpdateSettingsSaveTelemetry(1u, 0u, 0u); /* begin */
+	char buffer[1024];
+	const unsigned fixed_write_bytes = BuildSettingsPayload(buffer, sizeof(buffer));
+	if (fixed_write_bytes == 0u)
+	{
+		UpdateSettingsSaveTelemetry(90u, 1u, 0u); /* payload build failed */
+		m_Logger.Write(FromKernel, LogWarning, "Settings save unavailable (payload build failed)");
+		return;
+	}
+	SaveRawBootConfigBuffer(buffer, fixed_write_bytes);
+
+	if (!m_SettingsFatFsMounted && m_SettingsStorageReady)
+	{
+		(void) MountSettingsFileSystem("BT5S");
+	}
+	if (!m_SettingsFatFsMounted)
+	{
+		UpdateSettingsSaveTelemetry(90u, 0u, 0u); /* storage unavailable */
+		m_Logger.Write(FromKernel, LogWarning, "Settings FAT save unavailable (raw saved if SD is ready)");
+		return;
+	}
 
 	UpdateSettingsSaveTelemetry(2u, fixed_write_bytes, 0u); /* open/create */
 	FIL file;
@@ -5112,7 +5772,7 @@ void CComboKernel::SaveSettingsToStorage(void)
 
 unsigned CComboKernel::LoadResolutionModeFromBootConfig(void)
 {
-	if (!m_SettingsStorageReady)
+	if (!m_SettingsFatFsMounted)
 	{
 		return kResolutionModeAuto;
 	}
@@ -5222,7 +5882,7 @@ unsigned CComboKernel::LoadResolutionModeFromBootConfig(void)
 
 void CComboKernel::PersistResolutionModeToBootConfig(unsigned mode)
 {
-	if (!m_SettingsStorageReady)
+	if (!m_SettingsFatFsMounted)
 	{
 		return;
 	}
@@ -5410,7 +6070,7 @@ boolean CComboKernel::EnsureBackendPresentBuffer(unsigned min_pixels)
 
 boolean CComboKernel::EnsureStateStorageDirectory(void)
 {
-	if (!m_SettingsStorageReady)
+	if (!m_SettingsFatFsMounted)
 	{
 		return FALSE;
 	}
@@ -5534,7 +6194,7 @@ void CComboKernel::LoadEmulatorStateFromStorage(void)
 		m_Logger.Write(FromKernel, LogWarning, "Load State falhou: runtime backend inativo");
 		return;
 	}
-	if (!m_SettingsStorageReady)
+	if (!m_SettingsFatFsMounted)
 	{
 		UpdateSettingsSaveTelemetry(94u, 3u, 0u);
 		m_Logger.Write(FromKernel, LogWarning, "Load State falhou: armazenamento SD indisponivel");
@@ -6909,71 +7569,6 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	}
 	m_LastF12Pressed = key_state.f1_pressed;
 
-	const boolean f6_edge = (key_state.f6_pressed && !m_LastF6Pressed) ? TRUE : FALSE;
-	const boolean f7_edge = (key_state.f7_pressed && !m_LastF7Pressed) ? TRUE : FALSE;
-	const boolean f8_edge = (key_state.f8_pressed && !m_LastF8Pressed) ? TRUE : FALSE;
-	const boolean f9_edge = (key_state.f9_pressed && !m_LastF9Pressed) ? TRUE : FALSE;
-	const boolean f10_edge = (key_state.f10_pressed && !m_LastF10Pressed) ? TRUE : FALSE;
-	const boolean fm_gain_up_edge = (key_state.debug_fm_gain_up_pressed && !m_LastFmGainUpPressed) ? TRUE : FALSE;
-	const boolean fm_gain_down_edge = (key_state.debug_fm_gain_down_pressed && !m_LastFmGainDownPressed) ? TRUE : FALSE;
-	if (f6_edge)
-	{
-		const boolean muted = backend_runtime_get_audio_layer_muted(1u) ? FALSE : TRUE;
-		backend_runtime_set_audio_layer_muted(1u, muted);
-	}
-	if (f7_edge)
-	{
-		const boolean muted = backend_runtime_get_audio_layer_muted(2u) ? FALSE : TRUE;
-		backend_runtime_set_audio_layer_muted(2u, muted);
-	}
-	if (f8_edge)
-	{
-		const boolean muted = backend_runtime_get_audio_layer_muted(3u) ? FALSE : TRUE;
-		backend_runtime_set_audio_layer_muted(3u, muted);
-	}
-	if (f9_edge)
-	{
-		MsxBackendV9990DebugLiveView view = msx_backend_get_v9990_debug_live_view();
-		switch (view)
-		{
-		case FMSX_V9990_DEBUG_LIVE_VIEW_OFF:           view = FMSX_V9990_DEBUG_LIVE_VIEW_BG_A; break;
-		case FMSX_V9990_DEBUG_LIVE_VIEW_BG_A:          view = FMSX_V9990_DEBUG_LIVE_VIEW_BG_B; break;
-		case FMSX_V9990_DEBUG_LIVE_VIEW_BG_B:          view = FMSX_V9990_DEBUG_LIVE_VIEW_BG_COMPOSITE; break;
-		case FMSX_V9990_DEBUG_LIVE_VIEW_BG_COMPOSITE:  view = FMSX_V9990_DEBUG_LIVE_VIEW_BG_PROVENANCE; break;
-		default:                                       view = FMSX_V9990_DEBUG_LIVE_VIEW_OFF; break;
-		}
-		msx_backend_set_v9990_debug_live_view(view);
-	}
-	if (f10_edge)
-	{
-		MsxBackendV9990DebugReferenceView view = msx_backend_get_v9990_debug_reference_view();
-		switch (view)
-		{
-		case FMSX_V9990_DEBUG_REF_VIEW_OFF:               view = FMSX_V9990_DEBUG_REF_VIEW_ROM_EXPECTED; break;
-		case FMSX_V9990_DEBUG_REF_VIEW_ROM_EXPECTED:      view = FMSX_V9990_DEBUG_REF_VIEW_ROM_SIDE_BY_SIDE; break;
-		case FMSX_V9990_DEBUG_REF_VIEW_ROM_SIDE_BY_SIDE:  view = FMSX_V9990_DEBUG_REF_VIEW_ROM_DIFF; break;
-		default:                                          view = FMSX_V9990_DEBUG_REF_VIEW_OFF; break;
-		}
-		msx_backend_set_v9990_debug_reference_view(view);
-	}
-	if (fm_gain_up_edge)
-	{
-		if (m_FmLayerGainPct < 100u)
-		{
-			m_FmLayerGainPct += 5u;
-			if (m_FmLayerGainPct > 100u) m_FmLayerGainPct = 100u;
-			backend_runtime_set_fm_layer_gain_pct(m_FmLayerGainPct);
-		}
-	}
-	if (fm_gain_down_edge)
-	{
-		if (m_FmLayerGainPct > 0u)
-		{
-			m_FmLayerGainPct = (m_FmLayerGainPct >= 5u) ? (m_FmLayerGainPct - 5u) : 0u;
-			backend_runtime_set_fm_layer_gain_pct(m_FmLayerGainPct);
-		}
-	}
-
 	const boolean pause_edge = (key_state.pause_pressed && !m_LastPausePressed) ? TRUE : FALSE;
 	const boolean esc_resume_edge =
 		(key_state.menu_back_pressed && !m_LastMenuBackPressed && m_EmulationPaused && !m_PauseMenu.IsInSettings()) ? TRUE : FALSE;
@@ -7030,13 +7625,6 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 		{
 			m_LastKeyboardRawKeys[i] = raw_keys[i];
 		}
-		m_LastF6Pressed = key_state.f6_pressed;
-		m_LastF7Pressed = key_state.f7_pressed;
-		m_LastF8Pressed = key_state.f8_pressed;
-		m_LastF9Pressed = key_state.f9_pressed;
-		m_LastF10Pressed = key_state.f10_pressed;
-		m_LastFmGainUpPressed = key_state.debug_fm_gain_up_pressed;
-		m_LastFmGainDownPressed = key_state.debug_fm_gain_down_pressed;
 		return;
 	}
 
@@ -7163,11 +7751,4 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	{
 		m_LastKeyboardRawKeys[i] = raw_keys[i];
 	}
-	m_LastF6Pressed = key_state.f6_pressed;
-	m_LastF7Pressed = key_state.f7_pressed;
-	m_LastF8Pressed = key_state.f8_pressed;
-	m_LastF9Pressed = key_state.f9_pressed;
-	m_LastF10Pressed = key_state.f10_pressed;
-	m_LastFmGainUpPressed = key_state.debug_fm_gain_up_pressed;
-	m_LastFmGainDownPressed = key_state.debug_fm_gain_down_pressed;
 }

@@ -104,6 +104,7 @@ Flags publicas principais:
 - `MSXBARE_PATREON_TAG="<nome>"` (faz a mesma coisa que `OWNER` quando `OWNER` nao for informado)
 - `FIRMWARE_DIR=<dir>`
 - `EMULATOR_BACKEND=fmsx|bluemsx`
+- `MSXBARE_EMBED_INITRAMFS=1|0` (default `1`; embute `msx.cpio` no kernel e dispensa a linha `initramfs` no `config.txt`)
 - `CROSS=<prefixo>`
 - Precedencia no `make`: flags da linha de comando vencem `.config`; `.config` vence os defaults do `Makefile`.
 
@@ -112,34 +113,36 @@ Flags publicas principais:
 Fluxo oficial (interativo, com formatacao):
 
 ```bash
-./scripts/prepare-sd.sh
+make sdcard
 ```
 
 Com kernel customizado:
 
 ```bash
-KERNEL_IMG=artifacts/kernel8-default.img FIRMWARE_DIR=./rpi-firmware ./scripts/prepare-sd.sh
+KERNEL_IMG=artifacts/kernel8-default.img FIRMWARE_DIR=./rpi-firmware make sdcard
 ```
 
 Dry-run (sem persistencia em disco):
 
 ```bash
-DRY_RUN=1 ./scripts/prepare-sd.sh
+DRY_RUN=1 make sdcard
+```
 
 No macOS, o fluxo usa `diskutil`. No Linux, usa `lsblk` para deteccao e `parted` + `mkfs.vfat` + `udisksctl` para formatacao/montagem.
-```
 
 Atualizacao incremental sem formatar SD:
 
 ```bash
-./scripts/update-sd-incremental.sh
+make sdcard-update
 ```
 
 O fluxo incremental executa `sync` ao final e tenta desmontar automaticamente o SD; com `EJECT_AT_END=1`, faz ejeção segura quando o disco alvo puder ser identificado.
 
 ## Initramfs
 
-Geracao direta do `msx.cpio`:
+O default do build gera `build/initramfs/msx-embedded.cpio` e embute o CPIO no `kernel8.img`. Para voltar ao modelo externo de SD, use `MSXBARE_EMBED_INITRAMFS=0`.
+
+Geracao direta do `msx.cpio` externo:
 
 ```bash
 ./scripts/make-initramfs.sh roms/initramfs sdcard/msx.cpio
