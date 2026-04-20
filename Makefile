@@ -352,8 +352,21 @@ clean:
 	rm -f artifacts/kernel8-bootstrap.img artifacts/kernel8-default.img artifacts/kernel8-issue*.img
 	rm -f src/kernel8*.img src/kernel8.elf src/kernel8.lst
 
-sdcard:
-	./scripts/prepare-sd.sh
+sdcard: default
+	@issue_branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true); \
+	issue_id=$$(printf "%s" "$$issue_branch" | sed -n 's/^\([0-9][0-9]*\)-.*/\1/p'); \
+	kernel_img="$(KERNEL_IMG)"; \
+	if [ -z "$$kernel_img" ]; then \
+		kernel_img="$${KERNEL_IMG:-}"; \
+	fi; \
+	if [ -z "$$kernel_img" ] && [ -n "$$issue_id" ] && [ -f "artifacts/kernel8-issue$${issue_id}.img" ]; then \
+		kernel_img="artifacts/kernel8-issue$${issue_id}.img"; \
+	fi; \
+	if [ -z "$$kernel_img" ]; then \
+		kernel_img="$(DEFAULT_ARTIFACT)"; \
+	fi; \
+	echo "SD usando kernel: $$kernel_img"; \
+	KERNEL_IMG="$$kernel_img" ./scripts/prepare-sd.sh
 
 logserial:
 	./scripts/logserial.sh
@@ -369,34 +382,38 @@ embedded-initramfs:
 	./scripts/make-initramfs.sh "$(INITRAMFS_IN)" "$(EMBEDDED_INITRAMFS_OUT)"
 
 package: default
-	@if [ "$(MSXBARE_EMBED_INITRAMFS)" != "1" ]; then \
-		$(MAKE) initramfs INITRAMFS_IN="$(INITRAMFS_IN)" INITRAMFS_OUT="$(INITRAMFS_OUT)"; \
-	fi
 	@issue_branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true); \
 	issue_id=$$(printf "%s" "$$issue_branch" | sed -n 's/^\([0-9][0-9]*\)-.*/\1/p'); \
 	owner_slug=$$(printf "%s" "$(EFFECTIVE_OWNER)" | tr '[:space:]' '_' | tr -cd '[:alnum:]_.-'); \
-	package_zip=""; \
-	if [ -n "$$owner_slug" ]; then \
+	package_zip="$(PACKAGE_ZIP)"; \
+	if [ -z "$$package_zip" ] && [ -n "$$owner_slug" ]; then \
 		package_zip="artifacts/sdcard-package-$${owner_slug}.zip"; \
 	fi; \
-	if [ -n "$$issue_id" ] && [ -f "artifacts/kernel8-issue$${issue_id}.img" ]; then \
+	kernel_img="$(KERNEL_IMG)"; \
+	if [ -z "$$kernel_img" ]; then \
+		kernel_img="$${KERNEL_IMG:-}"; \
+	fi; \
+	if [ -z "$$kernel_img" ] && [ -n "$$issue_id" ] && [ -f "artifacts/kernel8-issue$${issue_id}.img" ]; then \
 		kernel_img="artifacts/kernel8-issue$${issue_id}.img"; \
-	else \
+	fi; \
+	if [ -z "$$kernel_img" ]; then \
 		kernel_img="$(DEFAULT_ARTIFACT)"; \
 	fi; \
-	echo "Pacote (DRY_RUN) usando kernel: $$kernel_img"; \
+	echo "Package usando fluxo SD offline com kernel: $$kernel_img"; \
 	if [ -n "$$package_zip" ]; then \
 		echo "Pacote (OWNER) em: $$package_zip"; \
 	fi; \
-	DRY_RUN=1 NON_INTERACTIVE=1 AUTO_CONFIRM=1 \
-	COPY_GAMES_TO_ROOT=1 \
+	DRY_RUN=1 \
+		NON_INTERACTIVE="$(if $(NON_INTERACTIVE),$(NON_INTERACTIVE),1)" \
+		AUTO_CONFIRM=1 \
+		COPY_GAMES_TO_ROOT="$(COPY_GAMES_TO_ROOT)" \
 		DEBUG=$(DEBUG_BOOL) \
 		MSXBARE_EMBED_INITRAMFS=$(MSXBARE_EMBED_INITRAMFS) \
 		OFFLINE_DRY_PACKAGE=1 \
-	KERNEL_IMG="$$kernel_img" \
-	PACKAGE_ZIP="$$package_zip" \
-	FIRMWARE_DIR="$(FIRMWARE_DIR)" \
-	./scripts/prepare-sd.sh
+		KERNEL_IMG="$$kernel_img" \
+		PACKAGE_ZIP="$$package_zip" \
+		FIRMWARE_DIR="$(FIRMWARE_DIR)" \
+		./scripts/prepare-sd.sh
 
 help:
 	@echo "Targets: all (default), backend-module, clean, sdcard, sdcard-update, initramfs, package, help, logserial"

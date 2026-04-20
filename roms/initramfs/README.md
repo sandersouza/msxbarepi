@@ -41,7 +41,7 @@ cp roms/machines/sony/hb-f1xdj_disk_205.rom roms/initramfs/DISK.ROM
 cp roms/machines/sony/hb-f1xdj_disk_206.rom roms/initramfs/DISK.ROM
 ```
 
-Sem `KANJIBASIC.ROM`, o boot pode seguir sem ativar a rotina de logo/h-scroll por linha.
+`KANJI.ROM` e `KANJIBASIC.ROM` so entram no initramfs quando `MSXBARE_BOOT_SCREEN=1`. Com `MSXBARE_BOOT_SCREEN=0`, ambos devem ficar fora do pacote embutido e externo.
 
 Para fins de desenvolvimento, a `BIOS` usada nessa etapa, é a do `MSX Expert 1.1` da `Gradiente`. Ela é compatível com o padrão `MSX1` e pode ser encontrada em diversos sites de ROMs de **MSX**.
 

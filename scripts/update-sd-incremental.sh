@@ -12,7 +12,7 @@ fi
 VOLUME_NAME="${VOLUME_NAME:-RPIBOOT}"
 TARGET_VOLUME="${TARGET_VOLUME:-$(sdcard_default_target_volume "$VOLUME_NAME")}"
 SD_DEVICE="${SD_DEVICE:-}"
-KERNEL_IMG="${KERNEL_IMG:-${PROJECT_ROOT}/artifacts/kernel8-default.img}"
+KERNEL_IMG="${KERNEL_IMG:-}"
 CONFIG_TXT="${CONFIG_TXT:-${PROJECT_ROOT}/sdcard/config.txt}"
 CMDLINE_TXT="${CMDLINE_TXT:-${PROJECT_ROOT}/sdcard/cmdline.txt}"
 INITRAMFS_IMG="${INITRAMFS_IMG:-${PROJECT_ROOT}/sdcard/msx.cpio}"
@@ -58,6 +58,47 @@ is_yes() {
     1|y|Y|yes|YES|true|TRUE|sim|SIM|s|S) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+resolve_default_kernel_img() {
+  local branch=""
+  local issue_id=""
+  local candidate=""
+
+  if [ -n "$KERNEL_IMG" ]; then
+    printf '%s' "$KERNEL_IMG"
+    return 0
+  fi
+
+  branch="$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  issue_id="$(printf "%s" "$branch" | sed -n 's/^\([0-9][0-9]*\)-.*/\1/p')"
+  if [ -n "$issue_id" ]; then
+    candidate="${PROJECT_ROOT}/artifacts/kernel8-issue${issue_id}.img"
+    if [ -f "$candidate" ]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  fi
+
+  for candidate in \
+    "${PROJECT_ROOT}/artifacts/kernel8-default.img" \
+    "${PROJECT_ROOT}/artifacts/kernel8-bootstrap.img" \
+    "${PROJECT_ROOT}/build/kernel8.img" \
+    "${PROJECT_ROOT}/build/src/kernel8.img" \
+    "${PROJECT_ROOT}/src/kernel8.img"
+  do
+    if [ -f "$candidate" ]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+
+  printf '%s' "${PROJECT_ROOT}/artifacts/kernel8-default.img"
+}
+
+ensure_runtime_root_dirs() {
+  mkdir -p "${TARGET_VOLUME}/roms" "${TARGET_VOLUME}/disks"
+  echo "[OK] Diretorios raiz garantidos: roms/ disks/"
 }
 
 resolve_target_devices() {
@@ -248,6 +289,31 @@ copy_games_incremental() {
   fi
 }
 
+copy_cheats_incremental() {
+  local cheats_src="${GAMES_SRC_DIR}/cheats"
+  local cheats_dst="${TARGET_VOLUME}/cheats"
+
+  if [ ! -d "$cheats_src" ]; then
+    echo "[INFO] Cheats nao encontrados em ${cheats_src}; pulando payload minimo de cheats."
+    return 0
+  fi
+
+  if ! find "$cheats_src" -mindepth 1 -maxdepth 1 ! -name '.*' -print -quit | grep -q .; then
+    echo "[INFO] Diretorio de cheats vazio (sem itens visiveis): ${cheats_src}"
+    return 0
+  fi
+
+  mkdir -p "$cheats_dst"
+  echo "[INFO] Atualizando cheats de ${cheats_src} -> ${cheats_dst}/"
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --exclude '.*' --exclude '._*' "${cheats_src}/" "${cheats_dst}/"
+  else
+    find "$cheats_src" -mindepth 1 -maxdepth 1 ! -name '.*' -print0 | while IFS= read -r -d '' item; do
+      cp -R "$item" "$cheats_dst/"
+    done
+  fi
+}
+
 cleanup_macos_junk() {
   find "$TARGET_VOLUME" \
     \( -name '.fseventsd' -o -name '.Spotlight-V100' -o -name '.Trashes' -o -name '.Trash' -o -name '.TemporaryItems' -o -name '.DocumentRevisions-V100' -o -name '.AppleDouble' \) -prune \
@@ -262,7 +328,17 @@ elif [ -d "$INITRAMFS_SRC_DIR" ] && [ -x "${PROJECT_ROOT}/scripts/make-initramfs
   "${PROJECT_ROOT}/scripts/make-initramfs.sh" "$INITRAMFS_SRC_DIR" "$INITRAMFS_IMG"
 fi
 
+KERNEL_IMG="$(resolve_default_kernel_img)"
+echo "[INFO] KERNEL_IMG efetivo: ${KERNEL_IMG}"
+
 ensure_settings_cfg
+ensure_runtime_root_dirs
+
+if [ ! -f "$KERNEL_IMG" ]; then
+  echo "[ERRO] Kernel obrigatorio nao encontrado: ${KERNEL_IMG}"
+  echo "[ERRO] Rode 'make' ou informe KERNEL_IMG=/caminho/kernel8.img antes de atualizar o SD."
+  exit 1
+fi
 
 config_src="$CONFIG_TXT"
 config_tmp=""
@@ -303,6 +379,9 @@ for fw in bootcode.bin start.elf fixup.dat bcm2710-rpi-3-b.dtb; do
 done
 
 copy_games_incremental
+if ! is_yes "$COPY_GAMES_TO_ROOT"; then
+  copy_cheats_incremental
+fi
 cleanup_macos_junk
 
 TARGET_PART_DEVICE=""

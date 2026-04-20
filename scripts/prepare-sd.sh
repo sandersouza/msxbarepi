@@ -22,7 +22,7 @@ COPY_GAMES_TO_ROOT="${COPY_GAMES_TO_ROOT:-}"
 OFFLINE_DRY_PACKAGE="${OFFLINE_DRY_PACKAGE:-0}"
 PACKAGE_ZIP="${PACKAGE_ZIP:-}"
 
-KERNEL_IMG="${KERNEL_IMG:-${PROJECT_ROOT}/artifacts/kernel8-default.img}"
+KERNEL_IMG="${KERNEL_IMG:-}"
 CONFIG_TXT="${CONFIG_TXT:-${PROJECT_ROOT}/sdcard/config.txt}"
 CMDLINE_TXT="${CMDLINE_TXT:-${PROJECT_ROOT}/sdcard/cmdline.txt}"
 INITRAMFS_IMG="${INITRAMFS_IMG:-${PROJECT_ROOT}/sdcard/msx.cpio}"
@@ -167,6 +167,79 @@ copy_games_payload_to_root() {
     done < <(find "$src_dir" -mindepth 1 -maxdepth 1 ! -name '.*')
   fi
   echo "[OK] Jogos copiados para raiz do cartao."
+}
+
+resolve_default_kernel_img() {
+  local branch=""
+  local issue_id=""
+  local candidate=""
+
+  if [ -n "$KERNEL_IMG" ]; then
+    printf '%s' "$KERNEL_IMG"
+    return 0
+  fi
+
+  branch="$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  issue_id="$(printf "%s" "$branch" | sed -n 's/^\([0-9][0-9]*\)-.*/\1/p')"
+  if [ -n "$issue_id" ]; then
+    candidate="${PROJECT_ROOT}/artifacts/kernel8-issue${issue_id}.img"
+    if [ -f "$candidate" ]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  fi
+
+  for candidate in \
+    "${PROJECT_ROOT}/artifacts/kernel8-default.img" \
+    "${PROJECT_ROOT}/artifacts/kernel8-bootstrap.img" \
+    "${PROJECT_ROOT}/build/kernel8.img" \
+    "${PROJECT_ROOT}/build/src/kernel8.img" \
+    "${PROJECT_ROOT}/src/kernel8.img"
+  do
+    if [ -f "$candidate" ]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+
+  printf '%s' "${PROJECT_ROOT}/artifacts/kernel8-default.img"
+}
+
+ensure_runtime_root_dirs() {
+  local target_dir="$1"
+  run_or_echo mkdir -p "${target_dir}/roms" "${target_dir}/disks"
+  echo "[OK] Diretorios raiz garantidos: roms/ disks/"
+}
+
+copy_cheats_payload_to_root() {
+  local src_dir="$1"
+  local target_dir="$2"
+  local cheats_src="${src_dir}/cheats"
+  local cheats_dst="${target_dir}/cheats"
+
+  if [ ! -d "$cheats_src" ]; then
+    echo "[INFO] Cheats nao encontrados em ${cheats_src}; pulando payload minimo de cheats."
+    return 0
+  fi
+
+  if ! find "$cheats_src" -mindepth 1 -maxdepth 1 ! -name '.*' -print -quit | grep -q .; then
+    echo "[INFO] Diretorio de cheats vazio (sem itens visiveis): ${cheats_src}"
+    return 0
+  fi
+
+  echo "[INFO] Copiando cheats de ${cheats_src} para ${cheats_dst}..."
+  run_or_echo mkdir -p "$cheats_dst"
+  if command -v rsync >/dev/null 2>&1; then
+    run_or_echo rsync -a \
+      --exclude '.*' \
+      --exclude '._*' \
+      "$cheats_src"/ "$cheats_dst"/
+  else
+    while IFS= read -r item; do
+      run_or_echo cp -R "$item" "$cheats_dst/"
+    done < <(find "$cheats_src" -mindepth 1 -maxdepth 1 ! -name '.*')
+  fi
+  echo "[OK] Cheats copiados para raiz do cartao."
 }
 
 cleanup_macos_junk() {
@@ -415,6 +488,14 @@ safe_eject_disk() {
   sdcard_safe_eject_disk "$disk"
 }
 
+KERNEL_IMG="$(resolve_default_kernel_img)"
+echo "[INFO] KERNEL_IMG efetivo: ${KERNEL_IMG}"
+if [ ! -f "$KERNEL_IMG" ]; then
+  echo "[ERRO] Kernel obrigatorio nao encontrado: ${KERNEL_IMG}"
+  echo "[ERRO] Rode 'make' ou informe KERNEL_IMG=/caminho/kernel8.img antes de preparar o SD."
+  exit 1
+fi
+
 skip_physical_disk=0
 target_disk=""
 selected_sd_mount=""
@@ -584,8 +665,6 @@ if [ "$sd_operation_mode" = "update" ]; then
   exit 0
 fi
 
-echo "[INFO] KERNEL_IMG padrao: ${KERNEL_IMG}"
-
 copy_games_enabled=0
 if [ -n "$COPY_GAMES_TO_ROOT" ]; then
   if is_yes "$COPY_GAMES_TO_ROOT"; then
@@ -667,7 +746,7 @@ elif [ -n "$INITRAMFS_IMG" ] && [ -d "$INITRAMFS_SRC_DIR" ]; then
     echo "[INFO] Ignorando INITRAMFS_SRC_DIR em payload bloqueado: ${INITRAMFS_SRC_DIR}"
   elif [ -x "${PROJECT_ROOT}/scripts/make-initramfs.sh" ]; then
     echo "[INFO] Gerando initramfs (msx.cpio) a partir de ${INITRAMFS_SRC_DIR}..."
-    if [ "$DRY_RUN" = "1" ]; then
+    if [ "$DRY_RUN" = "1" ] && [ "$OFFLINE_DRY_PACKAGE" != "1" ]; then
       echo "[DRY-RUN] ${PROJECT_ROOT}/scripts/make-initramfs.sh ${INITRAMFS_SRC_DIR} ${INITRAMFS_IMG}"
     else
       "${PROJECT_ROOT}/scripts/make-initramfs.sh" "$INITRAMFS_SRC_DIR" "$INITRAMFS_IMG"
@@ -686,12 +765,19 @@ for blocked in "${IGNORED_SD_PAYLOAD_DIRS[@]}"; do
 done
 
 ensure_settings_cfg
+ensure_runtime_root_dirs "$TARGET_VOLUME"
 
 if [ -f "$KERNEL_IMG" ]; then
   run_or_echo cp "$KERNEL_IMG" "${TARGET_VOLUME}/kernel8.img"
   echo "[OK] Copiado: kernel8.img"
+  if [ "$DRY_RUN" != "1" ] && [ ! -f "${TARGET_VOLUME}/kernel8.img" ]; then
+    echo "[ERRO] Falha ao validar copia de kernel8.img em ${TARGET_VOLUME}."
+    exit 1
+  fi
 else
-  echo "[WARN] Nao encontrado: ${KERNEL_IMG}"
+  echo "[ERRO] Kernel obrigatorio nao encontrado: ${KERNEL_IMG}"
+  echo "[ERRO] Rode 'make' ou informe KERNEL_IMG=/caminho/kernel8.img antes de preparar o SD."
+  exit 1
 fi
 
 if [ -f "$CONFIG_TXT" ]; then
@@ -781,6 +867,7 @@ if [ "$copy_games_enabled" = "1" ]; then
   copy_games_payload_to_root "$GAMES_SRC_DIR" "$TARGET_VOLUME"
 else
   echo "[INFO] Copia de jogos para raiz: desativada."
+  copy_cheats_payload_to_root "$GAMES_SRC_DIR" "$TARGET_VOLUME"
 fi
 
 if [ "$DRY_RUN" = "1" ]; then

@@ -162,10 +162,18 @@ Pacote ZIP offline para SD:
 make package
 ```
 
+O target usa o mesmo fluxo de payload do `make sdcard`, mas em modo offline/dry-run e gerando ZIP. Por default, segue o comportamento nao interativo seguro (`COPY_GAMES_TO_ROOT=0`): copia `cheats/` e cria `roms/` e `disks/`, sem copiar todos os jogos.
+
 Com identificacao de owner:
 
 ```bash
 DEBUG=1 OWNER="BetaUser" FIRMWARE_DIR=./rpi-firmware make package
+```
+
+Com copia completa de `roms/games` para a raiz do ZIP:
+
+```bash
+COPY_GAMES_TO_ROOT=1 make package
 ```
 
 Configurar e aplicar `.config` sem abrir UI:

@@ -16,6 +16,20 @@ Ponto de entrada rapido para contexto operacional do projeto.
   - `DEBUG=1` emite UART `BOOT_TIME start_to_backend_start_ms`, `start_to_backend_ready_ms`, `initramfs_source`, `initramfs_bytes`, `raw_cfg_ms` e `fat_deferred_ms`
   - causa do nao boot com initramfs embutido: o `.img` estava abaixo de `KERNEL_MAX_SIZE=0x400000`, mas o footprint real do ELF nao; `_end=0x004BCA75` ultrapassava `MEM_KERNEL_END=0x00480000`, fazendo o Circle parar em `sysinit()` antes da UART
   - `CIRCLE_KERNEL_MAX_SIZE` foi elevado para `0x500000`, e o build agora valida tambem `_end` contra `MEM_KERNEL_END`, nao apenas o tamanho do `.img`
+  - `MSXBARE_BOOT_SCREEN=0` continua removendo `KANJI.ROM` e `KANJIBASIC.ROM` do initramfs; `MSXBARE_BOOT_SCREEN=1` inclui esses assets
+  - `Boot Mode [GAME]` com perfil `MSX 2+` foi ajustado para fast-forward e gate de video ate o frame `240`
+  - `make sdcard` agora depende do build `default`, seleciona automaticamente `artifacts/kernel8-issue<N>.img` em branch de issue e passa esse kernel para o preparo do SD
+  - `make package` foi alinhado para usar o mesmo fluxo de `make sdcard` via `prepare-sd.sh` em `OFFLINE_DRY_PACKAGE=1`, gerando ZIP em vez de gravar SD
+  - no preparo/formatacao do SD, `kernel8.img` virou obrigatorio, e o fluxo aborta se nao houver artefato valido em vez de gerar cartao sem kernel
+  - mesmo com `COPY_GAMES_TO_ROOT=0`, o SD passa a receber `cheats/` a partir de `roms/games/cheats` e a garantir `roms/` e `disks/` na raiz
+  - artefato atual para reteste:
+    - `artifacts/kernel8-issue252.img`
+    - `BUILD_BID: 202604201907-1717e80`
+    - `TXTDBG BUILD: C425`
+    - `BUILD_HASH: 1717e80-84eac97c5e77e7b9865efb2433a7e34a16714164`
+    - tamanho `kernel8.img`: `1391480` bytes, abaixo de `KERNEL_MAX_SIZE=0x500000`
+    - footprint `_end=0x004FCA75`, abaixo de `MEM_KERNEL_END=0x00580000`
+    - `build/initramfs/msx-embedded.cpio`: `616448` bytes, gerado com `MSXBARE_BOOT_SCREEN=1`
 - Atualizacao 2026-04-19 (issue #252):
   - `main` local foi publicado antes da criacao da branch da issue
   - criada issue avulsa `#252` e branch vinculada `252-remover-hotkeys-diretas-otimizar-kernel`

@@ -57,7 +57,7 @@ static boolean fmsx_runtime_name_contains_casefold(const char *text, const char 
 #endif
 
 #ifndef MSXBARE_FMSX_GAME_FAST_FORWARD_FRAMES_MSX2P
-#define MSXBARE_FMSX_GAME_FAST_FORWARD_FRAMES_MSX2P 279u
+#define MSXBARE_FMSX_GAME_FAST_FORWARD_FRAMES_MSX2P 240u
 #endif
 
 #ifndef MSXBARE_FMSX_GAME_FAST_FORWARD_STEPS_MSX2
@@ -77,7 +77,7 @@ static boolean fmsx_runtime_name_contains_casefold(const char *text, const char 
 #endif
 
 #ifndef MSXBARE_FMSX_GAME_VIDEO_SKIP_FRAMES_MSX2P
-#define MSXBARE_FMSX_GAME_VIDEO_SKIP_FRAMES_MSX2P 0u
+#define MSXBARE_FMSX_GAME_VIDEO_SKIP_FRAMES_MSX2P 240u
 #endif
 
 #ifndef MSXBARE_ENABLE_DEBUG_OVERLAY
