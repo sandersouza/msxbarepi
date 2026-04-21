@@ -1,8 +1,9 @@
 # Issue #252 - [P1] Remover hotkeys diretas e reduzir overhead do kernel/runtime
 
 - URL: https://github.com/sandersouza/msxbarepi/issues/252
+- PR: https://github.com/sandersouza/msxbarepi/pull/253
 - Milestone: issue avulsa (sem milestone)
-- Estado remoto: OPEN
+- Estado remoto: OPEN, com PR estavel aberto para `main`
 - Labels: `priority:P1`, `type:performance`, `area:debug`, `area:video`
 - Projeto: `MSX BarePI` (`Status: In progress`)
 - Branch vinculada: `252-remover-hotkeys-diretas-otimizar-kernel`
@@ -211,6 +212,7 @@ Remover os atalhos diretos `F6`, `F7`, `F8`, `F9`, `F10`, `+` e `-`, mantendo ap
 
 ## Observacoes
 
+- PR estavel aberto: `#253` https://github.com/sandersouza/msxbarepi/pull/253. A issue deve fechar automaticamente no merge porque o PR referencia `Closes #252`.
 - A correcao em `fmsx_runtime.c` e `fmsx_v9990.c` apenas ajusta guards de compilacao `DEBUG=0` para permitir a validacao solicitada nesta issue.
 - Uma remocao mais agressiva de rotinas internas de debug/menu deve ser tratada em issue separada, caso a reducao de tamanho/performance desta etapa nao seja suficiente.
 - Se a imagem nao chegar a emitir UART, o primeiro ponto a conferir no SD e o `config.txt` efetivo: no modo embedded, ele nao deve manter `initramfs msx.cpio followkernel` apontando para um `msx.cpio` ausente.

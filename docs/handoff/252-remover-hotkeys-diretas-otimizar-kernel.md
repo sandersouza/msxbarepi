@@ -9,6 +9,7 @@ Remover atalhos diretos de debug que nao sao mais operacionais (`F6-F10`, `+`, `
 ## Estado atual
 
 - Issue remota: `#252 [P1] Remover hotkeys diretas e reduzir overhead do kernel/runtime`
+- PR remoto: `#253` https://github.com/sandersouza/msxbarepi/pull/253
 - Branch vinculada: `252-remover-hotkeys-diretas-otimizar-kernel`
 - Base: `main` publicado em `origin/main` antes da criacao da branch.
 - A issue `#251` segue aberta/pausada; nao fechar nem remover a branch dela.
@@ -178,7 +179,7 @@ Remover atalhos diretos de debug que nao sao mais operacionais (`F6-F10`, `+`, `
 
 ## Proximos passos
 
-- Registrar tamanho pos-hotfix na issue remota.
+- Acompanhar review/merge do PR `#253`; a issue `#252` deve fechar automaticamente no merge.
 - Aguardar teste em hardware para confirmar:
   - boot ate `BT14`
   - `F11` alternando overlay

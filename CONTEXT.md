@@ -6,6 +6,7 @@ Ponto de entrada rapido para contexto operacional do projeto.
 - Guardrail ativo: a issue `#251` continua aberta/pausada e a branch `251-suporte-cartucho-vdp-v9990` nao deve ser removida.
 - Branch ativa da rodada: `252-remover-hotkeys-diretas-otimizar-kernel`
 - Issue ativa: `#252 [P1] Remover hotkeys diretas e reduzir overhead do kernel/runtime`
+- PR aberto: `#253` https://github.com/sandersouza/msxbarepi/pull/253
 - Issue em pausa: `#251 [P1] Implementar suporte ao cartucho/VDP V9990 (GFX9000) no backend MSX`
 - Atualizacao 2026-04-20 (boot fast path):
   - initramfs embutido virou default de build via `MSXBARE_EMBED_INITRAMFS=1`
