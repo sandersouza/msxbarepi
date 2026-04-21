@@ -20,6 +20,7 @@ MSXBARE_FEAT_DISK_ROM ?= 1
 MSXBARE_FEAT_MEGARAM ?= 1
 MSXBARE_FEAT_MSX2 ?= 1
 MSXBARE_BOOT_SCREEN ?= 0
+MSXBARE_KANJI_FONT ?= 0
 MSXBARE_FEAT_MSX2P ?= 1
 MSXBARE_FEAT_LOAD_ROM ?= 1
 MSXBARE_FEAT_LOAD_DISK ?= 1
@@ -118,7 +119,8 @@ default: config-header circle-libs
 			EMBEDDED_INITRAMFS_OUT="$(EMBEDDED_INITRAMFS_OUT)" \
 			MSXBARE_ONE_ROM_MODE="$(MSXBARE_ONE_ROM_MODE)" \
 			MSXBARE_ONE_ROM_PATH="$(MSXBARE_ONE_ROM_PATH)" \
-			MSXBARE_BOOT_SCREEN="$(MSXBARE_BOOT_SCREEN)"; \
+			MSXBARE_BOOT_SCREEN="$(MSXBARE_BOOT_SCREEN)" \
+			MSXBARE_KANJI_FONT="$(MSXBARE_KANJI_FONT)"; \
 	fi
 	$(MAKE) -C src $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 clean >/dev/null
 	$(MAKE) -C src $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 \
@@ -199,7 +201,8 @@ backend-module: config-header
 			EMBEDDED_INITRAMFS_OUT="$(EMBEDDED_INITRAMFS_OUT)" \
 			MSXBARE_ONE_ROM_MODE="$(MSXBARE_ONE_ROM_MODE)" \
 			MSXBARE_ONE_ROM_PATH="$(MSXBARE_ONE_ROM_PATH)" \
-			MSXBARE_BOOT_SCREEN="$(MSXBARE_BOOT_SCREEN)"; \
+			MSXBARE_BOOT_SCREEN="$(MSXBARE_BOOT_SCREEN)" \
+			MSXBARE_KANJI_FONT="$(MSXBARE_KANJI_FONT)"; \
 	fi
 	$(MAKE) -C src $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 \
 		EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' \
@@ -352,7 +355,7 @@ clean:
 	rm -f artifacts/kernel8-bootstrap.img artifacts/kernel8-default.img artifacts/kernel8-issue*.img
 	rm -f src/kernel8*.img src/kernel8.elf src/kernel8.lst
 
-sdcard: default
+sdcard:
 	@issue_branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true); \
 	issue_id=$$(printf "%s" "$$issue_branch" | sed -n 's/^\([0-9][0-9]*\)-.*/\1/p'); \
 	kernel_img="$(KERNEL_IMG)"; \
@@ -365,20 +368,28 @@ sdcard: default
 	if [ -z "$$kernel_img" ]; then \
 		kernel_img="$(DEFAULT_ARTIFACT)"; \
 	fi; \
-	echo "SD usando kernel: $$kernel_img"; \
+	echo "SD usando kernel existente: $$kernel_img"; \
+	MSXBARE_BOOT_SCREEN="$(MSXBARE_BOOT_SCREEN)" \
+	MSXBARE_KANJI_FONT="$(MSXBARE_KANJI_FONT)" \
 	KERNEL_IMG="$$kernel_img" ./scripts/prepare-sd.sh
 
 logserial:
 	./scripts/logserial.sh
 
 sdcard-update:
+	MSXBARE_BOOT_SCREEN="$(MSXBARE_BOOT_SCREEN)" \
+	MSXBARE_KANJI_FONT="$(MSXBARE_KANJI_FONT)" \
 	./scripts/update-sd-incremental.sh
 
 initramfs:
+	MSXBARE_BOOT_SCREEN="$(MSXBARE_BOOT_SCREEN)" \
+	MSXBARE_KANJI_FONT="$(MSXBARE_KANJI_FONT)" \
 	./scripts/make-initramfs.sh $(INITRAMFS_IN) $(INITRAMFS_OUT)
 
 embedded-initramfs:
 	@mkdir -p "$(dir $(EMBEDDED_INITRAMFS_OUT))"
+	MSXBARE_BOOT_SCREEN="$(MSXBARE_BOOT_SCREEN)" \
+	MSXBARE_KANJI_FONT="$(MSXBARE_KANJI_FONT)" \
 	./scripts/make-initramfs.sh "$(INITRAMFS_IN)" "$(EMBEDDED_INITRAMFS_OUT)"
 
 package: default
@@ -409,6 +420,8 @@ package: default
 		COPY_GAMES_TO_ROOT="$(COPY_GAMES_TO_ROOT)" \
 		DEBUG=$(DEBUG_BOOL) \
 		MSXBARE_EMBED_INITRAMFS=$(MSXBARE_EMBED_INITRAMFS) \
+		MSXBARE_BOOT_SCREEN="$(MSXBARE_BOOT_SCREEN)" \
+		MSXBARE_KANJI_FONT="$(MSXBARE_KANJI_FONT)" \
 		OFFLINE_DRY_PACKAGE=1 \
 		KERNEL_IMG="$$kernel_img" \
 		PACKAGE_ZIP="$$package_zip" \
@@ -426,6 +439,7 @@ help:
 	@echo "SD incremental update (sem formatar): make sdcard-update"
 	@echo "Initramfs: make initramfs INITRAMFS_IN=roms/initramfs INITRAMFS_OUT=sdcard/msx.cpio"
 	@echo "Embedded initramfs default: MSXBARE_EMBED_INITRAMFS=1 (fallback externo: 0)"
+	@echo "Kanji font opcional: MSXBARE_KANJI_FONT=1 preserva KANJI.ROM junto do Boot Screen"
 	@echo "SD package zip (via prepare-sd dry-run offline): make package -> artifacts/sdcard-package-YYYYMMDDHHMM.zip"
 	@echo "Flags uteis: make package DEBUG=0|1 OWNER=<nome> FIRMWARE_DIR=./rpi-firmware"
 	@echo "Precedencia: flags da linha de comando vencem .config; .config vence os defaults"

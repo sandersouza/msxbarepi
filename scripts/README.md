@@ -88,7 +88,8 @@ Sincronizar `build/config.mk` a partir de `.config` sem abrir menu:
 - Em One ROM Mode o script aplica presets de seguranca (MSX2+, boot GAME e desativa load dinamico).
 - Em `One ROM Mode`, o caminho de `CARTA.ROM` e definido diretamente no campo `MSXBARE_ONE_ROM_PATH` do proprio `menuconfig` (entrada digitada).
 - `Boot Screen` (visivel quando `Suporte a MSX2+` estiver ativo):
-  - `[*]` inclui `KANJI*.ROM` e `KANJIBASIC*.ROM` no initramfs;
+  - `[*]` inclui `KANJIBASIC*.ROM` no initramfs e remove a fonte `KANJI.ROM` por padrao;
+  - use `MSXBARE_KANJI_FONT=1` para preservar tambem `KANJI.ROM`/`KANJIFONT.ROM`;
   - `[ ]` remove `KANJI*.ROM` e `KANJIBASIC*.ROM` do initramfs.
 
 ## 1.2) gen-build-header.sh
@@ -454,7 +455,7 @@ Esse e o mesmo fluxo usado por `make package`; a diferenca e que `make package` 
 - No Linux, usa `lsblk` para deteccao; para formatar, usa `parted` + `mkfs.vfat`; para montagem/ejecao automatica, prefere `udisksctl`.
 - Quando `DEBUG=1`, ajusta `disable_splash=0` no `config.txt` copiado.
 - `kernel8.img` e obrigatorio: se `KERNEL_IMG` nao for informado, o script tenta `artifacts/kernel8-issue<N>.img`, `artifacts/kernel8-default.img` e fallbacks legados; se nenhum existir, aborta em vez de preparar um SD sem kernel.
-- Quando `COPY_GAMES_TO_ROOT=0`, `roms/games/cheats` ainda e copiado para `cheats/`, e as pastas raiz `roms/` e `disks/` continuam sendo criadas.
+- No preparo completo, quando `COPY_GAMES_TO_ROOT=0`, `roms/games/cheats` ainda e copiado para `cheats/`, e as pastas raiz `roms/` e `disks/` continuam sendo criadas.
 - Em `OFFLINE_DRY_PACKAGE=1`, o script nao toca em disco fisico, mas gera o `.zip` final com o mesmo payload que seria copiado para o SD.
 - Se o SD selecionado ja tiver estrutura minima de boot (`bootcode.bin`, `start.elf`, `fixup.dat`, `bcm2710-rpi-3-b.dtb`, `config.txt`, `kernel8.img`), o script oferece escolha entre `UPDATE` e `FORMATAR`.
 - Se `UPDATE` for escolhido, o script delega para `update-sd-incremental.sh` e encerra sem formatar.
@@ -504,8 +505,9 @@ VIDEO_MODE_PRESET=720 COPY_GAMES_TO_ROOT=1 ./scripts/update-sd-incremental.sh
 - Nao formata o cartao.
 - Quando `SD_DEVICE` e informado (via `prepare-sd.sh` ou manualmente), o script tenta detectar/montar a particao e resolver `TARGET_VOLUME` automaticamente.
 - `kernel8.img` e obrigatorio tambem no update incremental.
-- O update garante `roms/` e `disks/` na raiz e atualiza `cheats/` mesmo quando `COPY_GAMES_TO_ROOT=0`.
+- O update garante `roms/` e `disks/` na raiz. Quando `COPY_GAMES_TO_ROOT=0`, `cheats/` so e semeado a partir de `roms/games/cheats` se ainda nao existir no destino; se ja existir, o update preserva o conteudo local.
 - Se `make-initramfs.sh` estiver disponivel e `INITRAMFS_SRC_DIR` existir, regenera `msx.cpio` antes da copia.
-  - quando `CONFIG_MSXBARE_BOOT_SCREEN` estiver desligado (`[ ]`), remove `KANJI*.ROM` e `KANJIBASIC*.ROM` do pacote gerado.
+  - com `MSXBARE_BOOT_SCREEN=1`, preserva `KANJIBASIC*.ROM` e remove a fonte `KANJI.ROM` por padrao; `MSXBARE_KANJI_FONT=1` preserva ambos;
+  - com `MSXBARE_BOOT_SCREEN=0`, remove `KANJI*.ROM` e `KANJIBASIC*.ROM` do pacote gerado.
 - Ao final da copia, executa `sync` e tenta desmontar automaticamente o volume alvo.
 - Se `EJECT_AT_END=1` e o disco puder ser resolvido, faz ejeção segura do SD; caso contrario, cai para desmontagem simples do volume.

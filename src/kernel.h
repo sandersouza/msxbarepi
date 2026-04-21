@@ -307,6 +307,9 @@ private:
     u64 m_BootStartUs;
     unsigned m_BootToBackendStartMs;
     unsigned m_BootToBackendMs;
+    unsigned m_BootFirstBlitMs;
+    unsigned m_BootUsbReadyMs;
+    unsigned m_BootBt14Ms;
     unsigned m_BootRawConfigMs;
     unsigned m_BootFatDeferredMs;
     u8 *m_StateIoBuffer;

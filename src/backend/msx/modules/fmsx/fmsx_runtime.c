@@ -623,6 +623,21 @@ static void fmsx_runtime_apply_msx2p_kanji_mappings(void)
     }
 }
 
+static boolean fmsx_runtime_kanji_feature_available(void)
+{
+    if (FmsxKanjiBase != 0)
+    {
+        return TRUE;
+    }
+
+    if (MODEL(MSX_MSX2P) && (FmsxMSX2PKanjiBasicBase != 0 || FmsxMSX2PMSXJEBase != 0))
+    {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
 #if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
 static void fmsx_runtime_trace_gfx9000_event(const char *tag, boolean enabled)
 {
@@ -800,7 +815,7 @@ static boolean fmsx_runtime_apply_kanji_rom_enabled(void)
 {
     Kanji = (g_kanji_rom_enabled && FmsxKanjiBase != 0) ? FmsxKanjiBase : 0;
     fmsx_runtime_apply_msx2p_kanji_mappings();
-    return Kanji != 0 ? TRUE : FALSE;
+    return (g_kanji_rom_enabled && fmsx_runtime_kanji_feature_available()) ? TRUE : FALSE;
 }
 
 static boolean fmsx_runtime_disk_rom_effective(unsigned model_profile)
@@ -2262,12 +2277,12 @@ void fmsx_runtime_set_kanji_rom_enabled(boolean enabled)
 
 boolean fmsx_runtime_get_kanji_rom_enabled(void)
 {
-    return Kanji != 0 ? TRUE : FALSE;
+    return (g_kanji_rom_enabled && fmsx_runtime_kanji_feature_available()) ? TRUE : FALSE;
 }
 
 boolean fmsx_runtime_get_kanji_rom_available(void)
 {
-    return FmsxKanjiBase != 0 ? TRUE : FALSE;
+    return fmsx_runtime_kanji_feature_available();
 }
 
 void fmsx_runtime_set_gfx9000_enabled(boolean enabled)

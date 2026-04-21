@@ -303,8 +303,13 @@ copy_cheats_incremental() {
     return 0
   fi
 
+  if [ -e "$cheats_dst" ]; then
+    echo "[SKIP] cheats/ ja existe no destino; update nao sobrescreve payload de cheats."
+    return 0
+  fi
+
   mkdir -p "$cheats_dst"
-  echo "[INFO] Atualizando cheats de ${cheats_src} -> ${cheats_dst}/"
+  echo "[INFO] Semeando cheats de ${cheats_src} -> ${cheats_dst}/"
   if command -v rsync >/dev/null 2>&1; then
     rsync -a --exclude '.*' --exclude '._*' "${cheats_src}/" "${cheats_dst}/"
   else

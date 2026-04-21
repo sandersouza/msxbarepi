@@ -44,7 +44,7 @@ applyTo:
 - `BT2`: `screen`
 - `BT3`: `audio`
 - `BT4`: `SD/eMMC driver`
-- `BT5`: `FatFs mount` apenas quando o `BootConfig` raw nao estiver disponivel; caso contrario, deferir para o loop principal
+- `BT5`: `FatFs mount` apenas quando o `BootConfig` raw nao estiver disponivel ou quando o raw apontar ROM/DISK de startup em `SD:/`; nos demais casos, deferir para o loop principal
 - `BT6`: carga e aplicacao de `BootConfig` raw; fallback para `msxbarepi.cfg` quando necessario
 - `BT7`: `NormalizeSettingsForBuild()`
 - `BT8`: `initramfs` `boot-minimal`
@@ -52,15 +52,18 @@ applyTo:
 - `BT10`: `emulator backend`
 - `BT11`: `UART + Logger` (somente `DEBUG=1`)
 - `BT12`: debug overlay pronto (somente `DEBUG=1`)
+- primeiro blit visivel do backend antes do `USB Host`
 - `BT13`: `USB Host`
 - `BT14`: entrada no loop principal
 
 ## Politica de fastboot
 
 - Priorizar `screen` e `audio` antes do backend.
-- Carregar o `BootConfig` raw cedo, antes do `backend init`, para evitar montagem FatFs no caminho quente.
-- Montar FatFs e carregar `msxbarepi.cfg` antes do backend somente quando o snapshot raw nao existir ou estiver invalido; nesse caso, semear o raw depois da leitura FAT.
+- Carregar o `BootConfig` raw cedo, antes do `backend init`, para evitar montagem FatFs no caminho quente quando a configuracao nao depende de midia em `SD:/`.
+- Montar FatFs antes do backend quando o snapshot raw nao existir/estiver invalido; nesse caso, carregar `msxbarepi.cfg` e semear o raw depois da leitura FAT.
+- Montar FatFs antes do backend tambem quando o snapshot raw valido carregar `cart_a_path`, `cart_b_path`, `disk_a_path` ou `disk_b_path` em `SD:/`, pois `StartMSX()`/carga inicial de midia precisam enxergar esses arquivos ja no primeiro boot.
 - Em `DEBUG=1`, inicializar `UART + Logger` e o overlay somente apos o backend.
+- Fazer o primeiro blit visivel antes de inicializar `USB Host`, para reduzir o tempo ate imagem util mesmo quando USB demorar.
 - Adiar o restante do `initramfs`, o mount FatFs de rotina e outras tarefas nao criticas para o loop principal, sempre depois da primeira tentativa de inicializacao do `USB Host`.
 
 ## Fluxo oficial de configuracao

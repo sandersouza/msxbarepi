@@ -1240,6 +1240,47 @@ static boolean BootConfigKeyEquals(const char *line, unsigned key_len, const cha
 	return literal[key_len] == '\0' ? TRUE : FALSE;
 }
 
+static boolean StartupPathNeedsFatFs(const char *path)
+{
+	if (path == 0)
+	{
+		return FALSE;
+	}
+	while (*path == ' ' || *path == '\t')
+	{
+		++path;
+	}
+	return ((path[0] == 'S' || path[0] == 's')
+		&& (path[1] == 'D' || path[1] == 'd')
+		&& path[2] == ':'
+		&& (path[3] == '/' || path[3] == '\\')) ? TRUE : FALSE;
+}
+
+static boolean StartupMediaNeedsFatFs(void)
+{
+#if MSXBARE_ENABLE_FMSX
+#if MSXBARE_FEAT_LOAD_ROM
+	for (unsigned slot = 0u; slot < 2u; ++slot)
+	{
+		if (StartupPathNeedsFatFs(backend_runtime_get_cartridge_path(slot)))
+		{
+			return TRUE;
+		}
+	}
+#endif
+#if MSXBARE_FEAT_LOAD_DISK
+	for (unsigned drive = 0u; drive < 2u; ++drive)
+	{
+		if (StartupPathNeedsFatFs(backend_runtime_get_disk_path(drive)))
+		{
+			return TRUE;
+		}
+	}
+#endif
+#endif
+	return FALSE;
+}
+
 static u32 ReadLe32(const u8 *p)
 {
 	return ((u32) p[0])
@@ -1735,6 +1776,9 @@ CComboKernel::CComboKernel(void)
 		m_BootStartUs(0u),
 		m_BootToBackendStartMs(0u),
 		m_BootToBackendMs(0u),
+		m_BootFirstBlitMs(0u),
+		m_BootUsbReadyMs(0u),
+		m_BootBt14Ms(0u),
 		m_BootRawConfigMs(0u),
 		m_BootFatDeferredMs(0u),
 		m_StateIoBuffer(0),
@@ -2659,6 +2703,9 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_BootStartUs = CTimer::GetClockTicks64();
 	m_BootToBackendStartMs = 0u;
 	m_BootToBackendMs = 0u;
+	m_BootFirstBlitMs = 0u;
+	m_BootUsbReadyMs = 0u;
+	m_BootBt14Ms = 0u;
 	m_BootRawConfigMs = 0u;
 	m_BootFatDeferredMs = 0u;
 	u64 sctlr_el1 = 0;
@@ -2698,8 +2745,17 @@ TComboShutdownMode CComboKernel::Run(void)
 
 		if (raw_loaded)
 		{
-			m_SettingsFatFsMountPending = TRUE;
-			BootPhase(m_Logger, "BT5", "FATFS mount... DEFER");
+			if (StartupMediaNeedsFatFs())
+			{
+				const u64 fat_start_us = CTimer::GetClockTicks64();
+				m_SettingsFatFsMountPending = MountSettingsFileSystem("BT5M") ? FALSE : TRUE;
+				m_BootFatDeferredMs = (unsigned) ((CTimer::GetClockTicks64() - fat_start_us) / 1000u);
+			}
+			else
+			{
+				m_SettingsFatFsMountPending = TRUE;
+				BootPhase(m_Logger, "BT5", "FATFS mount... DEFER");
+			}
 		}
 		else
 		{
@@ -2911,39 +2967,73 @@ TComboShutdownMode CComboKernel::Run(void)
 	SetUartTelemetryEnabled(m_UartTelemetryEnabled);
 	#if MSXBARE_ENABLE_FMSX
 		m_Logger.Write(FromKernel, LogNotice, "Boot step: apply runtime");
+		(void) ApplyGfx9000AutoForActiveCartridge("boot-pre-runtime", FALSE);
 		ApplyRuntimeSettingsToBackend();
 		m_Logger.Write(FromKernel, LogNotice, "Boot step: runtime OK");
+		/* Force first visible frame to use current viewport policy before USB init blocks startup. */
+		if (m_BackendReady)
+		{
+			m_Logger.Write(FromKernel, LogNotice, "Boot step: first blit");
+			BlitBackendFrame(TRUE);
+			(void) m_Screen.PresentIfDirty(m_DCacheEnabled, TRUE);
+			m_BootFirstBlitMs = (unsigned) ((CTimer::GetClockTicks64() - m_BootStartUs) / 1000u);
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+			{
+				CString line;
+				line.Format("BOOT_TIME start_to_first_blit_ms=%u", m_BootFirstBlitMs);
+				m_Logger.Write(FromKernel, LogNotice, line);
+			}
+#endif
+			m_Logger.Write(FromKernel, LogNotice, "Boot step: blit OK");
+		}
 		if (!m_UsbReady)
 		{
 			m_Logger.Write(FromKernel, LogNotice, "Boot step: init USB");
 			if (m_USBHCI.Initialize())
 			{
 				m_UsbReady = TRUE;
+				m_BootUsbReadyMs = (unsigned) ((CTimer::GetClockTicks64() - m_BootStartUs) / 1000u);
 				(void) DebugRepairTimerIrqBinding(0x90u);
 				m_Logger.Write(FromKernel, LogNotice, "USB host ready");
 				m_Logger.Write(FromKernel, LogNotice, "Attach USB keyboard/gamepad");
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+				{
+					CString line;
+					line.Format("BOOT_TIME start_to_usb_ready_ms=%u", m_BootUsbReadyMs);
+					m_Logger.Write(FromKernel, LogNotice, line);
+				}
+#endif
 				BootPhase(m_Logger, "BT13", "USB Host... OK");
-				(void) ApplyGfx9000AutoForActiveCartridge("boot", TRUE);
 			}
 			else
 			{
 				m_Logger.Write(FromKernel, LogWarning, "USB host init failed; retrying");
 				m_UsbInitRetryTick = 300u;
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+				{
+					CString line;
+					line.Format("BOOT_TIME usb_retry_scheduled_tick=%u", m_UsbInitRetryTick);
+					m_Logger.Write(FromKernel, LogNotice, line);
+					line.Format("BOOT_TIME start_to_usb_retry_scheduled_ms=%u",
+						(unsigned) ((CTimer::GetClockTicks64() - m_BootStartUs) / 1000u));
+					m_Logger.Write(FromKernel, LogNotice, line);
+				}
+#endif
 				BootPhaseWarn(m_Logger, "BT13", "USB Host... RETRY");
 			}
-		}
-		/* Force first visible frame to use current viewport policy (avoid transient wide boot frame). */
-		if (m_BackendReady)
-		{
-			m_Logger.Write(FromKernel, LogNotice, "Boot step: first blit");
-			BlitBackendFrame(TRUE);
-			(void) m_Screen.PresentIfDirty(m_DCacheEnabled, TRUE);
-			m_Logger.Write(FromKernel, LogNotice, "Boot step: blit OK");
 		}
 	#endif
 
 	m_Logger.Write(FromKernel, LogNotice, "Boot step: main loop");
 	BootPhase(m_Logger, "BT14", "main loop... OK");
+	m_BootBt14Ms = (unsigned) ((CTimer::GetClockTicks64() - m_BootStartUs) / 1000u);
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+	{
+		CString line;
+		line.Format("BOOT_TIME start_to_bt14_ms=%u", m_BootBt14Ms);
+		m_Logger.Write(FromKernel, LogNotice, line);
+	}
+#endif
 	u64 next_frame_us = CTimer::GetClockTicks64();
 	for (unsigned tick = 0; ; ++tick)
 	{
@@ -2975,9 +3065,17 @@ TComboShutdownMode CComboKernel::Run(void)
 				if (m_USBHCI.Initialize())
 				{
 					m_UsbReady = TRUE;
+					m_BootUsbReadyMs = (unsigned) ((CTimer::GetClockTicks64() - m_BootStartUs) / 1000u);
 					(void) DebugRepairTimerIrqBinding(0x91u);
 					m_Logger.Write(FromKernel, LogNotice, "USB host ready");
 					m_Logger.Write(FromKernel, LogNotice, "Attach USB keyboard/gamepad");
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+					{
+						CString line;
+						line.Format("BOOT_TIME start_to_usb_ready_ms=%u", m_BootUsbReadyMs);
+						m_Logger.Write(FromKernel, LogNotice, line);
+					}
+#endif
 					(void) ApplyGfx9000AutoForActiveCartridge("usb-retry", TRUE);
 				}
 				else

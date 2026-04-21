@@ -135,8 +135,10 @@ Diretriz visual (overlay e menu):
 - Em builds com `DEBUG=1`, `Debug` tambem mostra `Kanji ROM [ON/OFF]`:
   - o toggle atua no runtime real do `fMSX`, ligando/desligando a `KANJI.ROM` quando ela existir no set carregado;
   - em perfil `MSX2+`, o mesmo toggle tambem corta ou restaura o mapeamento de `KANJIBASIC/MSX-JE`, para o A/B do boot screen ser perceptivel;
+  - com `Boot Screen` ligado, o pacote enxuto preserva `KANJIBASIC*.ROM` e remove a fonte `KANJI.ROM` por padrao; use `MSXBARE_KANJI_FONT=1` para preservar a fonte;
   - com `Boot Screen` desligado, `KANJI*.ROM` e `KANJIBASIC*.ROM` nao entram no initramfs;
-  - quando a `KANJI.ROM` nao estiver disponivel, o item continua navegavel e `Enter` apenas registra indisponibilidade, sem mudar estado efetivo.
+  - no pacote enxuto, o item continua disponivel quando `KANJIBASIC/MSX-JE` estiver carregado, mesmo sem fonte `KANJI.ROM`;
+  - quando nao houver nem fonte `KANJI.ROM` nem mapeamento `KANJIBASIC/MSX-JE`, `Enter` apenas registra indisponibilidade, sem mudar estado efetivo.
 - Fora de debug, `Refresh` continua oculto.
 - O runtime inicia em `NTSC` e continua podendo passar para `PAL` automaticamente quando o software escreve `R#9`.
 - Itens de audio em `Settings`:
@@ -178,6 +180,9 @@ Diretriz visual (overlay e menu):
 - Em `DEBUG=1`, a UART emite marcadores estruturados de boot:
   - `BOOT_TIME start_to_backend_start_ms=<n>`
   - `BOOT_TIME start_to_backend_ready_ms=<n>`
+  - `BOOT_TIME start_to_first_blit_ms=<n>`
+  - `BOOT_TIME start_to_usb_ready_ms=<n>` ou `BOOT_TIME usb_retry_scheduled_tick=<n>`
+  - `BOOT_TIME start_to_bt14_ms=<n>`
   - `BOOT_TIME initramfs_source=embedded|external`
   - `BOOT_TIME initramfs_bytes=<n>`
   - `BOOT_TIME raw_cfg_ms=<n>`
