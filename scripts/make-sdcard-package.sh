@@ -3,10 +3,11 @@ set -euo pipefail
 
 PROJECT_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
-PACKAGE_KERNEL_IMG="${PACKAGE_KERNEL_IMG:-${PROJECT_ROOT}/artifacts/kernel8-default.img}"
+PACKAGE_KERNEL_IMG="${PACKAGE_KERNEL_IMG:-}"
 PACKAGE_CONFIG_TXT="${PACKAGE_CONFIG_TXT:-${PROJECT_ROOT}/sdcard/config.txt}"
 PACKAGE_CMDLINE_TXT="${PACKAGE_CMDLINE_TXT:-${PROJECT_ROOT}/sdcard/cmdline.txt}"
 PACKAGE_INITRAMFS_IMG="${PACKAGE_INITRAMFS_IMG:-${PROJECT_ROOT}/sdcard/msx.cpio}"
+PACKAGE_EMBED_INITRAMFS="${PACKAGE_EMBED_INITRAMFS:-1}"
 PACKAGE_SETTINGS_CFG="${PACKAGE_SETTINGS_CFG:-${PROJECT_ROOT}/sdcard/msxbarepi.cfg}"
 PACKAGE_FIRMWARE_DIR="${PACKAGE_FIRMWARE_DIR:-${PROJECT_ROOT}/rpi-firmware/}"
 PACKAGE_COPY_GAMES_TO_ROOT="${PACKAGE_COPY_GAMES_TO_ROOT:-0}"
@@ -69,6 +70,70 @@ disk_b_path=
 EOF
 }
 
+resolve_default_package_kernel_img() {
+  local branch=""
+  local issue_id=""
+  local candidate=""
+
+  if [ -n "$PACKAGE_KERNEL_IMG" ]; then
+    printf '%s' "$PACKAGE_KERNEL_IMG"
+    return 0
+  fi
+
+  branch="$(git -C "$PROJECT_ROOT" rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  issue_id="$(printf "%s" "$branch" | sed -n 's/^\([0-9][0-9]*\)-.*/\1/p')"
+  if [ -n "$issue_id" ]; then
+    candidate="${PROJECT_ROOT}/artifacts/kernel8-issue${issue_id}.img"
+    if [ -f "$candidate" ]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  fi
+
+  for candidate in \
+    "${PROJECT_ROOT}/artifacts/kernel8-default.img" \
+    "${PROJECT_ROOT}/artifacts/kernel8-bootstrap.img" \
+    "${PROJECT_ROOT}/build/kernel8.img" \
+    "${PROJECT_ROOT}/build/src/kernel8.img" \
+    "${PROJECT_ROOT}/src/kernel8.img"
+  do
+    if [ -f "$candidate" ]; then
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+
+  printf '%s' "${PROJECT_ROOT}/artifacts/kernel8-default.img"
+}
+
+copy_cheats_payload_to_stage() {
+  local cheats_src="${PACKAGE_GAMES_SRC_DIR}/cheats"
+  local cheats_dst="${PACKAGE_STAGE_DIR}/cheats"
+
+  if [ ! -d "$cheats_src" ]; then
+    echo "[INFO] Cheats nao encontrados em ${cheats_src}; pulando payload minimo de cheats."
+    return 0
+  fi
+
+  if ! find "$cheats_src" -mindepth 1 -maxdepth 1 ! -name '.*' -print -quit | grep -q .; then
+    echo "[INFO] Diretorio de cheats vazio (sem itens visiveis): ${cheats_src}"
+    return 0
+  fi
+
+  mkdir -p "$cheats_dst"
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a \
+      --exclude '.*' \
+      --exclude '._*' \
+      "${cheats_src}/" "${cheats_dst}/"
+  else
+    while IFS= read -r item; do
+      cp -R "$item" "$cheats_dst/"
+    done < <(find "$cheats_src" -mindepth 1 -maxdepth 1 ! -name '.*')
+  fi
+  echo "[OK] Cheats copiados para raiz do pacote."
+}
+
 require_file() {
   local f="$1"
   if [ ! -f "$f" ]; then
@@ -85,10 +150,14 @@ require_cmd() {
 }
 
 require_cmd zip
+PACKAGE_KERNEL_IMG="$(resolve_default_package_kernel_img)"
+echo "[INFO] PACKAGE_KERNEL_IMG efetivo: ${PACKAGE_KERNEL_IMG}"
 require_file "$PACKAGE_KERNEL_IMG"
 require_file "$PACKAGE_CONFIG_TXT"
 require_file "$PACKAGE_CMDLINE_TXT"
-require_file "$PACKAGE_INITRAMFS_IMG"
+if [ "$PACKAGE_EMBED_INITRAMFS" != "1" ]; then
+  require_file "$PACKAGE_INITRAMFS_IMG"
+fi
 ensure_settings_cfg
 require_file "$PACKAGE_SETTINGS_CFG"
 
@@ -98,12 +167,15 @@ done
 
 rm -rf "$PACKAGE_STAGE_DIR"
 mkdir -p "$PACKAGE_STAGE_DIR"
+mkdir -p "${PACKAGE_STAGE_DIR}/roms" "${PACKAGE_STAGE_DIR}/disks"
 mkdir -p "$(dirname "$PACKAGE_ZIP")"
 
 cp "$PACKAGE_KERNEL_IMG" "${PACKAGE_STAGE_DIR}/kernel8.img"
 cp "$PACKAGE_CONFIG_TXT" "${PACKAGE_STAGE_DIR}/config.txt"
 cp "$PACKAGE_CMDLINE_TXT" "${PACKAGE_STAGE_DIR}/cmdline.txt"
-cp "$PACKAGE_INITRAMFS_IMG" "${PACKAGE_STAGE_DIR}/msx.cpio"
+if [ "$PACKAGE_EMBED_INITRAMFS" != "1" ]; then
+  cp "$PACKAGE_INITRAMFS_IMG" "${PACKAGE_STAGE_DIR}/msx.cpio"
+fi
 cp "$PACKAGE_SETTINGS_CFG" "${PACKAGE_STAGE_DIR}/msxbarepi.cfg"
 
 for fw in $required_fw_files; do
@@ -126,6 +198,8 @@ if [ "$PACKAGE_COPY_GAMES_TO_ROOT" = "1" ]; then
   else
     echo "[WARN] PACKAGE_COPY_GAMES_TO_ROOT=1, mas diretorio nao encontrado: ${PACKAGE_GAMES_SRC_DIR}"
   fi
+else
+  copy_cheats_payload_to_stage
 fi
 
 rm -f "$PACKAGE_ZIP"

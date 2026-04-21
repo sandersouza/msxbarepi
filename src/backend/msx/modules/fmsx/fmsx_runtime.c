@@ -57,7 +57,7 @@ static boolean fmsx_runtime_name_contains_casefold(const char *text, const char 
 #endif
 
 #ifndef MSXBARE_FMSX_GAME_FAST_FORWARD_FRAMES_MSX2P
-#define MSXBARE_FMSX_GAME_FAST_FORWARD_FRAMES_MSX2P 279u
+#define MSXBARE_FMSX_GAME_FAST_FORWARD_FRAMES_MSX2P 240u
 #endif
 
 #ifndef MSXBARE_FMSX_GAME_FAST_FORWARD_STEPS_MSX2
@@ -77,7 +77,7 @@ static boolean fmsx_runtime_name_contains_casefold(const char *text, const char 
 #endif
 
 #ifndef MSXBARE_FMSX_GAME_VIDEO_SKIP_FRAMES_MSX2P
-#define MSXBARE_FMSX_GAME_VIDEO_SKIP_FRAMES_MSX2P 0u
+#define MSXBARE_FMSX_GAME_VIDEO_SKIP_FRAMES_MSX2P 240u
 #endif
 
 #ifndef MSXBARE_ENABLE_DEBUG_OVERLAY
@@ -87,19 +87,6 @@ static boolean fmsx_runtime_name_contains_casefold(const char *text, const char 
 #ifndef MSXBARE_V9990_UART_TRACE
 #define MSXBARE_V9990_UART_TRACE 0
 #endif
-
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
-extern void msxbare_uart_write(const char *text);
-extern void msxbare_debug_trace(const char *text);
-
-typedef struct TFmsxRuntimeGhostGoblinsTraceState
-{
-    boolean active;
-    boolean key_logged;
-    boolean select_logged;
-    boolean upload_logged;
-    boolean upload_poll_logged;
-} TFmsxRuntimeGhostGoblinsTraceState;
 
 typedef enum FmsxRuntimeGfx9000TraceStepId
 {
@@ -114,6 +101,19 @@ typedef enum FmsxRuntimeGfx9000TraceStepId
     FmsxRuntimeGfx9000TraceAudioPlayEnd,
     FmsxRuntimeGfx9000TraceFrameEnd
 } FmsxRuntimeGfx9000TraceStepId;
+
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+extern void msxbare_uart_write(const char *text);
+extern void msxbare_debug_trace(const char *text);
+
+typedef struct TFmsxRuntimeGhostGoblinsTraceState
+{
+    boolean active;
+    boolean key_logged;
+    boolean select_logged;
+    boolean upload_logged;
+    boolean upload_poll_logged;
+} TFmsxRuntimeGhostGoblinsTraceState;
 
 static void fmsx_runtime_trace_gfx9000_char(char c)
 {
@@ -623,6 +623,21 @@ static void fmsx_runtime_apply_msx2p_kanji_mappings(void)
     }
 }
 
+static boolean fmsx_runtime_kanji_feature_available(void)
+{
+    if (FmsxKanjiBase != 0)
+    {
+        return TRUE;
+    }
+
+    if (MODEL(MSX_MSX2P) && (FmsxMSX2PKanjiBasicBase != 0 || FmsxMSX2PMSXJEBase != 0))
+    {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
 #if MSXBARE_ENABLE_DEBUG_OVERLAY && MSXBARE_V9990_UART_TRACE
 static void fmsx_runtime_trace_gfx9000_event(const char *tag, boolean enabled)
 {
@@ -800,7 +815,7 @@ static boolean fmsx_runtime_apply_kanji_rom_enabled(void)
 {
     Kanji = (g_kanji_rom_enabled && FmsxKanjiBase != 0) ? FmsxKanjiBase : 0;
     fmsx_runtime_apply_msx2p_kanji_mappings();
-    return Kanji != 0 ? TRUE : FALSE;
+    return (g_kanji_rom_enabled && fmsx_runtime_kanji_feature_available()) ? TRUE : FALSE;
 }
 
 static boolean fmsx_runtime_disk_rom_effective(unsigned model_profile)
@@ -2262,12 +2277,12 @@ void fmsx_runtime_set_kanji_rom_enabled(boolean enabled)
 
 boolean fmsx_runtime_get_kanji_rom_enabled(void)
 {
-    return Kanji != 0 ? TRUE : FALSE;
+    return (g_kanji_rom_enabled && fmsx_runtime_kanji_feature_available()) ? TRUE : FALSE;
 }
 
 boolean fmsx_runtime_get_kanji_rom_available(void)
 {
-    return FmsxKanjiBase != 0 ? TRUE : FALSE;
+    return fmsx_runtime_kanji_feature_available();
 }
 
 void fmsx_runtime_set_gfx9000_enabled(boolean enabled)

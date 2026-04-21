@@ -13,8 +13,9 @@ Registrar, em uma unica arte, como a carga do `msxbarepi` sai do firmware do Ras
 3. O kernel sobe `Interrupt + Timer` e prioriza `screen` + audio HDMI antes do backend, para reduzir latencia visual/auditiva do fastboot.
 4. Com video e audio prontos, o projeto sobe `SD/eMMC`, monta `FatFs`, le `msxbarepi.cfg` e normaliza os settings antes do init do backend.
 5. O boot monta apenas o `initramfs` minimo de boot, aplica a configuracao no runtime e inicializa o backend selecionado.
-6. Em `DEBUG=1`, `UART + Logger` e o debug overlay so entram depois do backend; em seguida o kernel inicializa `USB HID`.
-7. O loop principal faz `step_frame`, blit do frame para o framebuffer, aplica scanline/viewport, desenha overlay/menu apos o blit e completa tarefas diferidas, incluindo o restante do `initramfs`.
+6. Em `DEBUG=1`, `UART + Logger` e o debug overlay so entram depois do backend.
+7. O kernel faz um primeiro blit visivel antes de inicializar `USB HID`.
+8. O loop principal faz `step_frame`, blit do frame para o framebuffer, aplica scanline/viewport, desenha overlay/menu apos o blit e completa tarefas diferidas, incluindo o restante do `initramfs`.
 
 ## Fontes tecnicas usadas
 
@@ -30,5 +31,5 @@ Registrar, em uma unica arte, como a carga do `msxbarepi` sai do firmware do Ras
 
 - `BT6` continua sendo um gate funcional do boot porque o `msxbarepi.cfg` precisa ser aplicado antes do init do backend.
 - O kernel nao inclui mais um backend publico MSX diretamente; ele fala com a adaptacao neutra em `src/backend/runtime/runtime.h`.
-- O fastboot atual monta apenas o `initramfs` minimo antes do backend; o restante entra diferido no loop principal, depois da fase de `USB HID`.
+- O fastboot atual monta apenas o `initramfs` minimo antes do backend; o restante entra diferido no loop principal, depois da primeira tentativa de `USB HID`.
 - O SVG do fluxograma ainda precisa ser regenerado para refletir essa ordem nova de fastboot.

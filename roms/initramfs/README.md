@@ -12,7 +12,7 @@ MSX2EXT.ROM - Extensão de BIOS para MSX2
 MSXDOS2.ROM - Cartucho MSX-DOS 2 (carregado automaticamente no boot de MSX2/MSX2+ quando disponível)
 MSX2P.ROM - BIOS do MSX 2+
 MSX2PEXT.ROM - Extensão de BIOS para MSX2+
-KANJI.ROM - ROM de Kanji
+KANJI.ROM - ROM de fonte Kanji (opcional no pacote enxuto)
 KANJIBASIC.ROM - ROM de Kanji BASIC
 CARTA.ROM - Cartucho porta A ( Slot 1-1 )
 CARTB.ROM - Cartucho porta B ( Slot 1-2 )
@@ -30,9 +30,11 @@ nos nomes canônicos já usados pelo runtime:
 ```bash
 cp roms/machines/sony/hb-f1xdj_basic-bios2p.rom roms/initramfs/MSX2P.ROM
 cp roms/machines/sony/hb-f1xdj_msx2psub.rom roms/initramfs/MSX2PEXT.ROM
-cp roms/machines/sony/hb-f1xdj_kanjibasic.rom roms/initramfs/KANJI.ROM
 cp roms/machines/sony/hb-f1xdj_kanjibasic.rom roms/initramfs/KANJIBASIC.ROM
 ```
+
+Opcionalmente, para uma build full Kanji, copie uma ROM de fonte Kanji legitima
+para `roms/initramfs/KANJI.ROM` e gere com `MSXBARE_KANJI_FONT=1`.
 
 Opcional (variantes alternativas de DiskROM do HB-F1XDJ, escolhendo uma para `DISK.ROM`):
 
@@ -41,7 +43,10 @@ cp roms/machines/sony/hb-f1xdj_disk_205.rom roms/initramfs/DISK.ROM
 cp roms/machines/sony/hb-f1xdj_disk_206.rom roms/initramfs/DISK.ROM
 ```
 
-Sem `KANJIBASIC.ROM`, o boot pode seguir sem ativar a rotina de logo/h-scroll por linha.
+Com `MSXBARE_BOOT_SCREEN=1`, o pacote padrao preserva `KANJIBASIC.ROM` para o
+boot screen MSX2+ e remove a fonte `KANJI.ROM` para reduzir o kernel embutido.
+Use `MSXBARE_KANJI_FONT=1` para preservar tambem `KANJI.ROM`. Com
+`MSXBARE_BOOT_SCREEN=0`, ambos ficam fora do pacote embutido e externo.
 
 Para fins de desenvolvimento, a `BIOS` usada nessa etapa, é a do `MSX Expert 1.1` da `Gradiente`. Ela é compatível com o padrão `MSX1` e pode ser encontrada em diversos sites de ROMs de **MSX**.
 

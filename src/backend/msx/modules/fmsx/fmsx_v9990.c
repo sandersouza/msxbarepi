@@ -3969,6 +3969,7 @@ static void fmsx_v9990_cmd_store_da(unsigned value)
 
 static void fmsx_v9990_cmd_ready(void)
 {
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
     if (g_fmsx_v9990_debug_lmmc_trace_active)
     {
         if (g_fmsx_v9990_debug_lmmc_bytes == 0u && g_fmsx_v9990_debug_lmmc_total_bytes != 0u)
@@ -3986,6 +3987,7 @@ static void fmsx_v9990_cmd_ready(void)
         g_fmsx_v9990_debug_lmmc_mode = 0u;
         g_fmsx_v9990_debug_lmmc_opcode = 0u;
     }
+#endif
     g_fmsx_v9990.cmd.opcode = 0u;
     g_fmsx_v9990.cmd.status &= (uint8_t) ~(FMSX_V9990_CMD_STATUS_CE | FMSX_V9990_CMD_STATUS_TR);
     g_fmsx_v9990.cmd.flags = 0u;
@@ -6939,9 +6941,9 @@ static void fmsx_v9990_render_p1_frame(unsigned width, unsigned height)
     TFmsxV9990P1LineState state;
     unsigned event_index = 0u;
     unsigned y;
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
     const boolean capture_profile = (g_fmsx_v9990_debug_frame_snapshot_pending != 0u) ? TRUE : FALSE;
 
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
     if (capture_profile)
     {
         memset(g_fmsx_v9990_debug_p1_plane_a_lines, 0, sizeof(g_fmsx_v9990_debug_p1_plane_a_lines));
@@ -7444,7 +7446,9 @@ static void fmsx_v9990_write_register(uint8_t index, uint8_t value)
              * becomes visible when the next frame baseline is rebuilt.
              */
             fmsx_v9990_debug_rearm_active_window("display-on");
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
             msxbare_debug_note_gfx9000_activation();
+#endif
         }
     }
     else if ((reg == FMSX_V9990_REG_SCREEN_MODE_0 || reg == FMSX_V9990_REG_SCREEN_MODE_1)

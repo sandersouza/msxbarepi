@@ -10,17 +10,8 @@ static const u8 kHidKeyEnter = 0x28;
 static const u8 kHidKeyKeypadEnter = 0x58;
 static const u8 kHidKeyEsc = 0x29;
 static const u8 kHidKeyDel = 0x4C;
-static const u8 kHidKeyF6 = 0x3F;
-static const u8 kHidKeyF7 = 0x40;
-static const u8 kHidKeyF8 = 0x41;
-static const u8 kHidKeyF9 = 0x42;
-static const u8 kHidKeyF10 = 0x43;
 static const u8 kHidKeyF11 = 0x44;
 static const u8 kHidKeyF12 = 0x45;
-static const u8 kHidKeyMinus = 0x2D;
-static const u8 kHidKeyEqual = 0x2E;
-static const u8 kHidKeyKeypadMinus = 0x56;
-static const u8 kHidKeyKeypadPlus = 0x57;
 
 u8 ComboKeyboardJoyMask(void)
 {
@@ -39,13 +30,6 @@ void ComboDecodeKeyboardRaw(unsigned char modifiers,
 	}
 
 	out_state->bridge_bits = 0;
-	out_state->f6_pressed = FALSE;
-	out_state->f7_pressed = FALSE;
-	out_state->f8_pressed = FALSE;
-	out_state->f9_pressed = FALSE;
-	out_state->f10_pressed = FALSE;
-	out_state->debug_fm_gain_up_pressed = FALSE;
-	out_state->debug_fm_gain_down_pressed = FALSE;
 	out_state->f1_pressed = FALSE;
 	out_state->pause_pressed = FALSE;
 	out_state->menu_up_pressed = FALSE;
@@ -70,34 +54,6 @@ void ComboDecodeKeyboardRaw(unsigned char modifiers,
 		if (key == kHidKeyF11)
 		{
 			out_state->f1_pressed = TRUE;
-		}
-		if (key == kHidKeyF6)
-		{
-			out_state->f6_pressed = TRUE;
-		}
-		if (key == kHidKeyF7)
-		{
-			out_state->f7_pressed = TRUE;
-		}
-		if (key == kHidKeyF8)
-		{
-			out_state->f8_pressed = TRUE;
-		}
-		if (key == kHidKeyF9)
-		{
-			out_state->f9_pressed = TRUE;
-		}
-		if (key == kHidKeyF10)
-		{
-			out_state->f10_pressed = TRUE;
-		}
-		if (key == kHidKeyEqual || key == kHidKeyKeypadPlus)
-		{
-			out_state->debug_fm_gain_up_pressed = TRUE;
-		}
-		if (key == kHidKeyMinus || key == kHidKeyKeypadMinus)
-		{
-			out_state->debug_fm_gain_down_pressed = TRUE;
 		}
 		if (key == kHidKeyF12)
 		{

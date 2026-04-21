@@ -6,7 +6,7 @@ Documento canonico para debug HDMI/runtime. O conteudo do antigo guia de templat
 
 ## Objetivo
 - Fornecer telemetria em tempo real para diagnostico de boot, video, input, audio e I/O de SD.
-- Permitir testes A/B de audio (chips e layers) sem recompilar.
+- Permitir testes A/B de audio e video por menu/debug interno, sem recompilar.
 
 ## Como compilar
 - Regra operacional da fase atual: durante desenvolvimento, usar `DEBUG=1` por padrão; `DEBUG=0` somente quando o usuário solicitar explicitamente.
@@ -46,21 +46,9 @@ make DEBUG=0
   - `OFF`: overlay desligado.
   - toda alternancia entre esses modos limpa a tela inteira antes da nova fase, para nao deixar vestigios visuais entre `MAX/MIN/OFF`.
 - `F12`: pausa/retoma emulacao (menu de pausa).
-- `F6`: mute/unmute `Layer 1` (PSG + ruido).
-- `F7`: mute/unmute `Layer 2` (FM-PAC).
-- `F8`: mute/unmute `Layer 3` (Konami SCC+).
-- `F9`: cicla a view viva do background do `V9990`.
-  - `OFF`
-  - `LIVE_BG_A`
-  - `LIVE_BG_B`
-  - `LIVE_BG_COMPOSITE`
-  - `LIVE_BG_PROVENANCE`
-- `F10`: cicla a view de referencia/diff do `V9990`.
-  - `OFF`
-  - `ROM_EXPECTED`
-  - `ROM_SIDE_BY_SIDE`
-  - `ROM_DIFF`
-- As views `F9/F10` so atuam em `DEBUG=1` e leem o estado do `V9990` diretamente, sem depender do presenter final.
+- `START` do gamepad: alias de `F12` para pausa/menu.
+- Navegacao do menu: setas, `Enter`, `Esc`, `PageUp`, `PageDown`, `Delete` e letras para salto rapido.
+- Atalhos diretos antigos `F6`, `F7`, `F8`, `F9`, `F10`, `+` e `-` foram removidos do caminho quente de input para reduzir overhead e tamanho do kernel. As APIs internas de mute, ganho de FM e views de debug do `V9990` continuam preservadas para uso via menu/debug ou instrumentacao futura.
 
 ## Tag de build na tela
 - No preset atual de diagnostico MSX2+, o painel tenta ficar contido entre as `linhas 1..15`.
@@ -147,8 +135,10 @@ Diretriz visual (overlay e menu):
 - Em builds com `DEBUG=1`, `Debug` tambem mostra `Kanji ROM [ON/OFF]`:
   - o toggle atua no runtime real do `fMSX`, ligando/desligando a `KANJI.ROM` quando ela existir no set carregado;
   - em perfil `MSX2+`, o mesmo toggle tambem corta ou restaura o mapeamento de `KANJIBASIC/MSX-JE`, para o A/B do boot screen ser perceptivel;
-  - com `Boot Screen` desligado, o initramfs continua preservando `KANJI*.ROM`; quem sai do pacote e o `KANJIBASIC*.ROM`;
-  - quando a `KANJI.ROM` nao estiver disponivel, o item continua navegavel e `Enter` apenas registra indisponibilidade, sem mudar estado efetivo.
+  - com `Boot Screen` ligado, o pacote enxuto preserva `KANJIBASIC*.ROM` e remove a fonte `KANJI.ROM` por padrao; use `MSXBARE_KANJI_FONT=1` para preservar a fonte;
+  - com `Boot Screen` desligado, `KANJI*.ROM` e `KANJIBASIC*.ROM` nao entram no initramfs;
+  - no pacote enxuto, o item continua disponivel quando `KANJIBASIC/MSX-JE` estiver carregado, mesmo sem fonte `KANJI.ROM`;
+  - quando nao houver nem fonte `KANJI.ROM` nem mapeamento `KANJIBASIC/MSX-JE`, `Enter` apenas registra indisponibilidade, sem mudar estado efetivo.
 - Fora de debug, `Refresh` continua oculto.
 - O runtime inicia em `NTSC` e continua podendo passar para `PAL` automaticamente quando o software escreve `R#9`.
 - Itens de audio em `Settings`:
@@ -187,6 +177,16 @@ Diretriz visual (overlay e menu):
   - `CA/CB`: presenca de cartuchos nos slots A/B.
   - `BM/MP`: boot mode e model profile ativos.
   - `RM/MR/IN`: `RAM Mapper`, `MegaRAM` e total de arquivos no `initramfs`.
+- Em `DEBUG=1`, a UART emite marcadores estruturados de boot:
+  - `BOOT_TIME start_to_backend_start_ms=<n>`
+  - `BOOT_TIME start_to_backend_ready_ms=<n>`
+  - `BOOT_TIME start_to_first_blit_ms=<n>`
+  - `BOOT_TIME start_to_usb_ready_ms=<n>` ou `BOOT_TIME usb_retry_scheduled_tick=<n>`
+  - `BOOT_TIME start_to_bt14_ms=<n>`
+  - `BOOT_TIME initramfs_source=embedded|external`
+  - `BOOT_TIME initramfs_bytes=<n>`
+  - `BOOT_TIME raw_cfg_ms=<n>`
+  - `BOOT_TIME fat_deferred_ms=<n>`
 - `AC1`: estado consolidado de chips/features, mixer e mute por layer:
   - `FM:x/y`: `x`=setting FM, `y`=mask ativa no mixer.
   - `SCC:x/y`: `x`=setting do `Konami SCC+` interno, `y`=mask ativa no mixer.
@@ -327,7 +327,7 @@ make DEBUG=1 MSXBARE_V9990_UART_TRACE=1
 - Para testar audio por chip:
   1. habilite overlay (`F11`);
   2. observe `AUD1`, `SYS` e `AC1`;
-  3. use `F6/F7/F8` para isolamento por camada.
+  3. use os controles internos de debug/menu quando disponiveis para isolamento por camada.
 - Em investigacoes de SD/boot, priorize `SYS`, `TM` e correlacione com logs do kernel.
 
 ## Referencias

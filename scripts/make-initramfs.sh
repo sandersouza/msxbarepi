@@ -14,6 +14,7 @@ KCONFIG_FILE="${KCONFIG_FILE:-${PROJECT_ROOT}/.config}"
 ONE_ROM_MODE="${MSXBARE_ONE_ROM_MODE:-}"
 ONE_ROM_PATH="${MSXBARE_ONE_ROM_PATH:-}"
 BOOT_SCREEN="${MSXBARE_BOOT_SCREEN:-}"
+KANJI_FONT="${MSXBARE_KANJI_FONT:-}"
 
 if [ ! -d "$IN_DIR" ]; then
   echo "[ERRO] Diretorio nao encontrado: $IN_DIR"
@@ -65,6 +66,14 @@ if [ -z "$BOOT_SCREEN" ] && [ -f "$KCONFIG_FILE" ]; then
   fi
 fi
 
+if [ -z "$KANJI_FONT" ] && [ -f "$KCONFIG_FILE" ]; then
+  if grep -Eq '^CONFIG_MSXBARE_KANJI_FONT=y$' "$KCONFIG_FILE"; then
+    KANJI_FONT="1"
+  else
+    KANJI_FONT="0"
+  fi
+fi
+
 if [ "${ONE_ROM_MODE:-0}" = "1" ]; then
   rm -f "$TMP_DIR/CARTA.ROM" "$TMP_DIR/CARTA.rom" "$TMP_DIR/carta.rom"
 
@@ -86,15 +95,44 @@ if [ "${ONE_ROM_MODE:-0}" = "1" ]; then
   fi
 fi
 
-if [ "${BOOT_SCREEN:-0}" != "1" ]; then
-  # Boot Screen disabled: keep KANJI font ROMs for runtime debug toggles,
-  # but remove KANJIBASIC payloads that alter the MSX2+ boot path more deeply.
+remove_kanji_font_roms() {
   rm -f \
-    "$TMP_DIR/KANJIBASIC.ROM" \
-    "$TMP_DIR/HB-F1XDJ_KANJIBASIC.ROM" \
-    "$TMP_DIR/FS-A1FX_KANJIBASIC.ROM" \
-    "$TMP_DIR/FS-A1WSX_KANJIBASIC.ROM"
-  echo "[INFO] Boot Screen OFF: KANJIBASIC removido do initramfs; KANJI permanece disponivel para debug runtime."
+    "$TMP_DIR"/KANJI.ROM \
+    "$TMP_DIR"/KANJI.rom \
+    "$TMP_DIR"/KANJIFONT.ROM \
+    "$TMP_DIR"/KANJIFONT.rom \
+    "$TMP_DIR"/KANJI16.ROM \
+    "$TMP_DIR"/KANJI16.rom \
+    "$TMP_DIR"/*_KANJI.ROM \
+    "$TMP_DIR"/*_KANJI.rom \
+    "$TMP_DIR"/*_KANJIFONT.ROM \
+    "$TMP_DIR"/*_KANJIFONT.rom \
+    "$TMP_DIR"/*_KANJI16.ROM \
+    "$TMP_DIR"/*_KANJI16.rom
+}
+
+remove_kanji_basic_roms() {
+  rm -f \
+    "$TMP_DIR"/KANJIBASIC*.ROM \
+    "$TMP_DIR"/KANJIBASIC*.rom \
+    "$TMP_DIR"/*_KANJIBASIC*.ROM \
+    "$TMP_DIR"/*_KANJIBASIC*.rom
+}
+
+if [ "${BOOT_SCREEN:-0}" != "1" ]; then
+  remove_kanji_font_roms
+  remove_kanji_basic_roms
+  rm -f \
+    "$TMP_DIR"/KANJI*.ROM \
+    "$TMP_DIR"/KANJI*.rom \
+    "$TMP_DIR"/*_KANJI*.ROM \
+    "$TMP_DIR"/*_KANJI*.rom
+  echo "[INFO] Boot Screen OFF: KANJI/KANJIBASIC removidos do initramfs."
+elif [ "${KANJI_FONT:-0}" != "1" ]; then
+  remove_kanji_font_roms
+  echo "[INFO] Boot Screen ON: KANJIBASIC preservado; KANJI font removido do initramfs."
+else
+  echo "[INFO] Boot Screen ON: KANJIBASIC e KANJI font preservados no initramfs."
 fi
 
 # Include mapper DB so GuessROM() can auto-detect by SHA/CRC.

@@ -44,23 +44,27 @@ applyTo:
 - `BT2`: `screen`
 - `BT3`: `audio`
 - `BT4`: `SD/eMMC driver`
-- `BT5`: `FatFs mount`
-- `BT6`: carga e aplicacao de `msxbarepi.cfg`
+- `BT5`: `FatFs mount` apenas quando o `BootConfig` raw nao estiver disponivel ou quando o raw apontar ROM/DISK de startup em `SD:/`; nos demais casos, deferir para o loop principal
+- `BT6`: carga e aplicacao de `BootConfig` raw; fallback para `msxbarepi.cfg` quando necessario
 - `BT7`: `NormalizeSettingsForBuild()`
 - `BT8`: `initramfs` `boot-minimal`
 - `BT9`: aplicacao da config no runtime
 - `BT10`: `emulator backend`
 - `BT11`: `UART + Logger` (somente `DEBUG=1`)
 - `BT12`: debug overlay pronto (somente `DEBUG=1`)
+- primeiro blit visivel do backend antes do `USB Host`
 - `BT13`: `USB Host`
 - `BT14`: entrada no loop principal
 
 ## Politica de fastboot
 
 - Priorizar `screen` e `audio` antes do backend.
-- Carregar o `msxbarepi.cfg` cedo, antes do `backend init`, para evitar reboot/reset corretivo.
+- Carregar o `BootConfig` raw cedo, antes do `backend init`, para evitar montagem FatFs no caminho quente quando a configuracao nao depende de midia em `SD:/`.
+- Montar FatFs antes do backend quando o snapshot raw nao existir/estiver invalido; nesse caso, carregar `msxbarepi.cfg` e semear o raw depois da leitura FAT.
+- Montar FatFs antes do backend tambem quando o snapshot raw valido carregar `cart_a_path`, `cart_b_path`, `disk_a_path` ou `disk_b_path` em `SD:/`, pois `StartMSX()`/carga inicial de midia precisam enxergar esses arquivos ja no primeiro boot.
 - Em `DEBUG=1`, inicializar `UART + Logger` e o overlay somente apos o backend.
-- Adiar o restante do `initramfs` e outras tarefas nao criticas para o loop principal, sempre depois da primeira tentativa de inicializacao do `USB Host`.
+- Fazer o primeiro blit visivel antes de inicializar `USB Host`, para reduzir o tempo ate imagem util mesmo quando USB demorar.
+- Adiar o restante do `initramfs`, o mount FatFs de rotina e outras tarefas nao criticas para o loop principal, sempre depois da primeira tentativa de inicializacao do `USB Host`.
 
 ## Fluxo oficial de configuracao
 
@@ -70,16 +74,19 @@ applyTo:
 
 ### Carga
 
-- montar `FatFs`
+- tentar `BootConfig` raw espelhado no SD antes da particao FAT
+- se o raw estiver valido, aplicar as configuracoes sem montar FatFs
+- se o raw nao existir/estiver invalido, montar `FatFs`
 - tentar `msxbarepi.cfg`
 - se nao existir, tentar `MSXBARE.CFG`
 - validar o arquivo inteiro antes de aplicar
 - se houver erro, cair em fallback e registrar warning na UART/logger
-- se estiver valido, aplicar as configuracoes antes do init do backend
+- se estiver valido, aplicar as configuracoes antes do init do backend e semear o raw
 
 ### Gravacao
 
 - sobrescrever o arquivo existente em `SD:/msxbarepi.cfg`
+- sobrescrever tambem o `BootConfig` raw espelhado
 - reabrir e validar o conteudo salvo
 - se estiver valido, concluir o save e voltar ao menu principal
 - se estiver invalido, registrar erro e manter o estado anterior em memoria
