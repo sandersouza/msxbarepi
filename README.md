@@ -104,7 +104,7 @@ Flags publicas principais:
 - `MSXBARE_PATREON_TAG="<nome>"` (faz a mesma coisa que `OWNER` quando `OWNER` nao for informado)
 - `FIRMWARE_DIR=<dir>`
 - `EMULATOR_BACKEND=fmsx|bluemsx`
-- `MSXBARE_EMBED_INITRAMFS=1|0` (default `1`; embute `msx.cpio` no kernel e dispensa a linha `initramfs` no `config.txt`)
+- `MSXBARE_BOOT_STRATEGY=standalone|multicore` (default `standalone`; também exposto em `make menuconfig`; `standalone` embute o initramfs, usa RAW para settings e dispensa `msx.cpio`; `multicore` gera `msx.cpio`, usa `SD:/msx.cfg` e mantém `initramfs msx.cpio followkernel`)
 - `CROSS=<prefixo>`
 - Precedencia no `make`: flags da linha de comando vencem `.config`; `.config` vence os defaults do `Makefile`.
 
@@ -138,9 +138,13 @@ make sdcard-update
 
 O fluxo incremental executa `sync` ao final e tenta desmontar automaticamente o SD; com `EJECT_AT_END=1`, faz ejeção segura quando o disco alvo puder ser identificado.
 
-## Initramfs
+## Boot strategy
 
-O default do build gera `build/initramfs/msx-embedded.cpio` e embute o CPIO no `kernel8.img`. Para voltar ao modelo externo de SD, use `MSXBARE_EMBED_INITRAMFS=0`.
+O default do build e `MSXBARE_BOOT_STRATEGY=standalone`. Nesse modo, o build gera `build/initramfs/msx-embedded.cpio`, embute o CPIO no kernel, grava `msx.img` no SD e usa snapshot RAW para leitura/escrita dos settings, com fallback de leitura para `SD:/msx.cfg`.
+
+Para preparar um SD multicore, use `MSXBARE_BOOT_STRATEGY=multicore`. Nesse modo, o fluxo gera `msx.cpio`, mantem `initramfs msx.cpio followkernel` no `config.txt` efetivo, desabilita o snapshot RAW e força leitura/escrita de settings em `SD:/msx.cfg` antes do backend.
+
+No modo multicore, a troca pelo item Settings `CORE` sempre reescreve `SD:/config.txt` com `kernel=<core>.img` e `initramfs <core>.cpio followkernel` antes do reboot, inclusive ao voltar para `CORE [msx]`.
 
 Geracao direta do `msx.cpio` externo:
 
@@ -162,7 +166,7 @@ Pacote ZIP offline para SD:
 make package
 ```
 
-O target usa o mesmo fluxo de payload do `make sdcard`, mas em modo offline/dry-run e gerando ZIP. Por default, segue o comportamento nao interativo seguro (`COPY_GAMES_TO_ROOT=0`): copia `cheats/` e cria `roms/` e `disks/`, sem copiar todos os jogos.
+O target usa o mesmo fluxo de payload do `make sdcard`, mas em modo offline/dry-run e gerando ZIP. Por default, segue o comportamento nao interativo seguro (`COPY_GAMES_TO_ROOT=0`): copia `msx/cheats/` e cria `msx/roms/` e `msx/disks/`, sem copiar todos os jogos.
 
 Com identificacao de owner:
 
@@ -170,7 +174,7 @@ Com identificacao de owner:
 DEBUG=1 OWNER="BetaUser" FIRMWARE_DIR=./rpi-firmware make package
 ```
 
-Com copia completa de `roms/games` para a raiz do ZIP:
+Com copia completa de `roms/games` para `msx/` no ZIP:
 
 ```bash
 COPY_GAMES_TO_ROOT=1 make package
@@ -204,7 +208,7 @@ Comparar sessoes:
 
 ## Politica tecnica (resumo)
 
-- Alvo: Raspberry Pi 3B, AArch64, `kernel8.img`.
+- Alvo: Raspberry Pi 3B, AArch64; o build preserva artefatos `kernel8-*` e o fluxo SD grava o core como `msx.img`.
 - Build freestanding/no-libc.
 - HDMI como saida de video obrigatoria; UART como debug auxiliar.
 - Nao modificar diretamente `third_party/circle` e `third_party/fmsx`.

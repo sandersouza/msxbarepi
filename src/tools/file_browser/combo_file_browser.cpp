@@ -5,8 +5,8 @@ extern "C" {
 #include <fatfs/ff.h>
 }
 
-static const char *kRomsRootPath = "SD:/roms";
-static const char *kDisksRootPath = "SD:/disks";
+static const char *kRomsRootPath = "SD:/msx/roms";
+static const char *kDisksRootPath = "SD:/msx/disks";
 static const char *kCheatsRootPath = BACKEND_CHEATS_ROOT;
 static const unsigned kRepeatDelayFrames = 12u;  /* ~200ms em 60Hz */
 static const unsigned kRepeatPeriodFrames = 2u;  /* ~30 passos/s em 60Hz */

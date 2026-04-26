@@ -760,17 +760,15 @@ CComboPauseMenu::CComboPauseMenu(void)
   m_LastDrawnSelected(0xFFFFFFFFu),
     m_Visible(FALSE),
     m_View(MenuViewRoot),
-    m_ScalePercent(250u),
+    m_ScalePercent(300u),
     m_ScaleMaxFitEnabled(FALSE),
-    m_MaxScalePercent(450u),
+    m_MaxScalePercent(300u),
     m_Language(ComboLanguageEN),
     m_ResolutionMode(0u),
     m_ScanlineMode(0u),
     m_Gfx9000Enabled(FALSE),
     m_RefreshRateHz(60u),
     m_DiskRomEnabled(TRUE),
-    m_KanjiRomEnabled(TRUE),
-    m_KanjiRomAvailable(FALSE),
     m_BootMode(0u),
     m_MachineProfile(0u),
     m_RamMapperKb(256u),
@@ -789,6 +787,8 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_OverlayMode(ComboDebugOverlayOff),
     m_OverlayAvailable(FALSE),
     m_AudioGainPercent(50u),
+    m_CoreName{0},
+    m_CoreAvailable(FALSE),
     m_LoadRomSlot1Name{0},
     m_LoadRomSlot2Name{0},
     m_LoadDiskDrive1Name{0},
@@ -833,8 +833,6 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnGfx9000Enabled(FALSE),
     m_LastDrawnRefreshRateHz(60u),
     m_LastDrawnDiskRomEnabled(TRUE),
-    m_LastDrawnKanjiRomEnabled(TRUE),
-    m_LastDrawnKanjiRomAvailable(FALSE),
     m_LastDrawnBootMode(0u),
     m_LastDrawnMachineProfile(0u),
     m_LastDrawnRamMapperKb(0u),
@@ -848,6 +846,8 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnOverlayMode(ComboDebugOverlayOff),
     m_LastDrawnOverlayAvailable(FALSE),
     m_LastDrawnAudioGainPercent(50u),
+    m_LastDrawnCoreName{0},
+    m_LastDrawnCoreAvailable(FALSE),
     m_LastDrawnLoadRomSlot1Name{0},
     m_LastDrawnLoadRomSlot2Name{0},
     m_LastDrawnLoadDiskDrive1Name{0},
@@ -892,6 +892,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     CopySmallText(m_LoadRomSlot2Name, sizeof(m_LoadRomSlot2Name), "");
     CopySmallText(m_LoadDiskDrive1Name, sizeof(m_LoadDiskDrive1Name), "");
     CopySmallText(m_LoadDiskDrive2Name, sizeof(m_LoadDiskDrive2Name), "");
+    CopySmallText(m_CoreName, sizeof(m_CoreName), "");
     CopySmallText(m_RomBrowserEmptyLabel, sizeof(m_RomBrowserEmptyLabel), "");
     m_HasPendingRomSelection = FALSE;
     m_PendingRomSlot = 0u;
@@ -910,6 +911,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), "");
     CopySmallText(m_LastDrawnLoadDiskDrive1Name, sizeof(m_LastDrawnLoadDiskDrive1Name), "");
     CopySmallText(m_LastDrawnLoadDiskDrive2Name, sizeof(m_LastDrawnLoadDiskDrive2Name), "");
+    CopySmallText(m_LastDrawnCoreName, sizeof(m_LastDrawnCoreName), "");
 }
 
 CComboPauseMenu::~CComboPauseMenu(void)
@@ -977,8 +979,6 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnGfx9000Enabled = m_Gfx9000Enabled;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
     m_LastDrawnDiskRomEnabled = m_DiskRomEnabled;
-    m_LastDrawnKanjiRomEnabled = m_KanjiRomEnabled;
-    m_LastDrawnKanjiRomAvailable = m_KanjiRomAvailable;
     m_LastDrawnBootMode = m_BootMode;
     m_LastDrawnMachineProfile = m_MachineProfile;
     m_LastDrawnZ80TurboMode = m_Z80TurboMode;
@@ -990,6 +990,7 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnOverlayMode = m_OverlayMode;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
     m_LastDrawnAudioGainPercent = m_AudioGainPercent;
+    m_LastDrawnCoreAvailable = m_CoreAvailable;
     m_LastDrawnBrowserTop = 0xFFFFFFFFu;
     m_LastDrawnBrowserCount = 0xFFFFFFFFu;
     m_LastDrawnBrowserSelectedAbs = 0xFFFFFFFFu;
@@ -1015,6 +1016,7 @@ void CComboPauseMenu::Reset(void)
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), m_LoadRomSlot2Name);
     CopySmallText(m_LastDrawnLoadDiskDrive1Name, sizeof(m_LastDrawnLoadDiskDrive1Name), m_LoadDiskDrive1Name);
     CopySmallText(m_LastDrawnLoadDiskDrive2Name, sizeof(m_LastDrawnLoadDiskDrive2Name), m_LoadDiskDrive2Name);
+    CopySmallText(m_LastDrawnCoreName, sizeof(m_LastDrawnCoreName), m_CoreName);
     m_ForceRedraw = TRUE;
     m_ForceHighlightRedraw = FALSE;
     m_ForceContentRedraw = FALSE;
@@ -1045,11 +1047,18 @@ void CComboPauseMenu::Reset(void)
 
 void CComboPauseMenu::SetScalePercent(unsigned percent)
 {
-    if (percent != 200u && percent < 250u)
+    if (percent <= 200u)
+    {
+        percent = 200u;
+    }
+    else if (percent >= 300u)
+    {
+        percent = 300u;
+    }
+    else
     {
         percent = 250u;
     }
-    if (percent > 450u) percent = 450u;
     if (percent > m_MaxScalePercent) percent = m_MaxScalePercent;
 
     if (m_ScalePercent != percent)
@@ -1072,7 +1081,7 @@ void CComboPauseMenu::SetScaleMaxFitEnabled(boolean enabled)
 void CComboPauseMenu::SetMaxScalePercent(unsigned percent)
 {
     if (percent < 200u) percent = 200u;
-    if (percent > 450u) percent = 450u;
+    if (percent > 300u) percent = 300u;
     if (m_MaxScalePercent != percent)
     {
         m_MaxScalePercent = percent;
@@ -1180,36 +1189,6 @@ void CComboPauseMenu::SetDiskRomEnabled(boolean enabled)
 boolean CComboPauseMenu::IsDiskRomEnabled(void) const
 {
     return m_DiskRomEnabled ? TRUE : FALSE;
-}
-
-void CComboPauseMenu::SetKanjiRomEnabled(boolean enabled)
-{
-    enabled = enabled ? TRUE : FALSE;
-    if (m_KanjiRomEnabled != enabled)
-    {
-        m_KanjiRomEnabled = enabled;
-        m_ForceRedraw = TRUE;
-    }
-}
-
-void CComboPauseMenu::SetKanjiRomAvailable(boolean available)
-{
-    available = available ? TRUE : FALSE;
-    if (m_KanjiRomAvailable != available)
-    {
-        m_KanjiRomAvailable = available;
-        m_ForceRedraw = TRUE;
-    }
-}
-
-boolean CComboPauseMenu::IsKanjiRomEnabled(void) const
-{
-    return m_KanjiRomEnabled ? TRUE : FALSE;
-}
-
-boolean CComboPauseMenu::IsKanjiRomAvailable(void) const
-{
-    return m_KanjiRomAvailable ? TRUE : FALSE;
 }
 
 void CComboPauseMenu::SetBootMode(unsigned mode)
@@ -1407,6 +1386,21 @@ void CComboPauseMenu::SetAudioGainPercent(unsigned percent)
     if (m_AudioGainPercent != percent)
     {
         m_AudioGainPercent = percent;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+void CComboPauseMenu::SetCoreName(const char *core_name, boolean available)
+{
+    if (core_name == 0 || core_name[0] == '\0')
+    {
+        core_name = "";
+    }
+    available = available ? TRUE : FALSE;
+    if (!ComboTextEquals(m_CoreName, core_name) || m_CoreAvailable != available)
+    {
+        CopySmallText(m_CoreName, sizeof(m_CoreName), core_name);
+        m_CoreAvailable = available;
         m_ForceRedraw = TRUE;
     }
 }
@@ -1785,11 +1779,14 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
         return combo_menu_settings_items_get(
             m_Language,
             m_ResolutionMode,
+            m_ScalePercent,
             m_ScanlineMode,
             m_Gfx9000Enabled,
             m_RefreshRateHz,
             m_DiskRomEnabled,
             m_BootMode,
+            m_CoreName,
+            m_CoreAvailable,
             m_MachineProfile,
             m_RamMapperKb,
             m_MegaRamKb,
@@ -1826,14 +1823,9 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
     if (m_View == MenuViewDebug)
     {
         return combo_menu_debug_items_get(
-            m_ScalePercent,
-            m_OverlayMode == ComboDebugOverlayOff ? m_MaxScalePercent : m_ScalePercent,
-            m_MaxScalePercent,
             m_Language,
             m_RefreshRateHz,
             m_DiskRomEnabled,
-            m_KanjiRomEnabled,
-            m_KanjiRomAvailable,
             m_OverlayMode,
             m_OverlayAvailable,
             count);
@@ -2625,23 +2617,13 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             unsigned next_value = m_ScalePercent;
             if (left_step)
             {
-                next_value = (next_value <= 250u) ? 200u : (next_value - 50u);
+                next_value = (next_value <= 200u) ? 300u : (next_value - 50u);
             }
             if (right_step || enter_edge)
             {
-                if (next_value == 200u)
-                {
-                    next_value = (m_MaxScalePercent >= 250u) ? 250u : 200u;
-                }
-                else if (next_value < m_MaxScalePercent)
-                {
-                    next_value += 50u;
-                    if (next_value > m_MaxScalePercent)
-                    {
-                        next_value = m_MaxScalePercent;
-                    }
-                }
+                next_value = (next_value >= 300u) ? 200u : (next_value + 50u);
             }
+            if (next_value > m_MaxScalePercent) next_value = 200u;
 
             if (next_value != m_ScalePercent)
             {
@@ -2680,6 +2662,22 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             else if (right_step || enter_edge)
             {
                 action = ComboMenuActionCycleBootMode;
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
+            }
+            handled_settings_input = enter_edge || left_step || right_step;
+        }
+        else if (items[m_Selected].action == ComboMenuActionCycleCore)
+        {
+            if (left_step)
+            {
+                action = ComboMenuActionCycleCorePrev;
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
+            }
+            else if (right_step || enter_edge)
+            {
+                action = ComboMenuActionCycleCore;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
@@ -2847,7 +2845,6 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             handled_settings_input = enter_edge || left_step || right_step;
         }
         else if ((items[m_Selected].action == ComboMenuActionToggleDiskRom)
-              || (items[m_Selected].action == ComboMenuActionToggleKanjiRom)
               || (items[m_Selected].action == ComboMenuActionCycleOverlay))
         {
             if (items[m_Selected].action == ComboMenuActionCycleOverlay)
@@ -3201,8 +3198,6 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnGfx9000Enabled == m_Gfx9000Enabled
      && m_LastDrawnRefreshRateHz == m_RefreshRateHz
      && m_LastDrawnDiskRomEnabled == m_DiskRomEnabled
-     && m_LastDrawnKanjiRomEnabled == m_KanjiRomEnabled
-     && m_LastDrawnKanjiRomAvailable == m_KanjiRomAvailable
      && m_LastDrawnBootMode == m_BootMode
      && m_LastDrawnMachineProfile == m_MachineProfile
      && m_LastDrawnRamMapperKb == m_RamMapperKb
@@ -3216,6 +3211,8 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnOverlayMode == m_OverlayMode
      && m_LastDrawnOverlayAvailable == m_OverlayAvailable
      && m_LastDrawnAudioGainPercent == m_AudioGainPercent
+     && m_LastDrawnCoreAvailable == m_CoreAvailable
+     && ComboTextEquals(m_LastDrawnCoreName, m_CoreName)
      && ComboTextEquals(m_LastDrawnLoadRomSlot1Name, m_LoadRomSlot1Name)
      && ComboTextEquals(m_LastDrawnLoadRomSlot2Name, m_LoadRomSlot2Name)
      && ComboTextEquals(m_LastDrawnLoadDiskDrive1Name, m_LoadDiskDrive1Name)
@@ -3512,8 +3509,6 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnGfx9000Enabled = m_Gfx9000Enabled;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
     m_LastDrawnDiskRomEnabled = m_DiskRomEnabled;
-    m_LastDrawnKanjiRomEnabled = m_KanjiRomEnabled;
-    m_LastDrawnKanjiRomAvailable = m_KanjiRomAvailable;
     m_LastDrawnBootMode = m_BootMode;
     m_LastDrawnMachineProfile = m_MachineProfile;
     m_LastDrawnRamMapperKb = m_RamMapperKb;
@@ -3527,6 +3522,8 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnOverlayMode = m_OverlayMode;
     m_LastDrawnOverlayAvailable = m_OverlayAvailable;
     m_LastDrawnAudioGainPercent = m_AudioGainPercent;
+    m_LastDrawnCoreAvailable = m_CoreAvailable;
+    CopySmallText(m_LastDrawnCoreName, sizeof(m_LastDrawnCoreName), m_CoreName);
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), m_LoadRomSlot1Name);
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), m_LoadRomSlot2Name);
     CopySmallText(m_LastDrawnLoadDiskDrive1Name, sizeof(m_LastDrawnLoadDiskDrive1Name), m_LoadDiskDrive1Name);

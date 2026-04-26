@@ -1,7 +1,7 @@
 arm_64bit=1
 enable_uart=1
 disable_splash=1
-kernel=kernel8.img
+kernel=msx.img
 hdmi_force_hotplug=1
 disable_overscan=1
 dtoverlay=disable-wifi

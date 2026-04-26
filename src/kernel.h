@@ -79,7 +79,6 @@ private:
     void ApplyRuntimeSettingsToBackend(void);
     boolean ApplyGfx9000AutoForActiveCartridge(const char *source, boolean reset_backend);
     void SyncRefreshRateStateFromRuntime(void);
-    void SyncKanjiRomStateFromRuntime(void);
     void RefreshSettingsUiAfterAction(void);
     void ResetEmulationRuntimeState(void);
     void ExitPauseForBackendAction(void);
@@ -92,6 +91,9 @@ private:
     void UpdateLoadDiagTelemetry(unsigned stage);
     unsigned LoadResolutionModeFromBootConfig(void);
     void PersistResolutionModeToBootConfig(unsigned mode);
+    void RefreshCoreListFromStorage(void);
+    boolean PersistSelectedCoreToBootConfig(void);
+    void SelectCoreByDelta(boolean reverse);
     boolean InitializeSettingsStorage(void);
     boolean MountSettingsFileSystem(const char *phase);
     unsigned BuildSettingsPayload(char *buffer, unsigned buffer_size);
@@ -116,6 +118,8 @@ private:
 
 private:
 	static const unsigned kBlitMapMaxAxis = 2048u;
+    static const unsigned kMaxCoreEntries = 16u;
+    static const unsigned kCoreNameBytes = 32u;
 
     CActLED m_ActLED;
     CKernelOptions m_Options;
@@ -250,6 +254,10 @@ private:
     boolean m_ScaleMaxFitEnabled;
     unsigned m_Language;
     unsigned m_ResolutionMode;
+    char m_CoreNames[kMaxCoreEntries][kCoreNameBytes];
+    unsigned m_CoreCount;
+    unsigned m_CoreSelected;
+    char m_CoreActiveName[kCoreNameBytes];
     unsigned m_ScanlineMode;
     boolean m_Gfx9000Enabled;
     boolean m_Gfx9000AutoCfgApplied;
@@ -290,12 +298,12 @@ private:
     boolean m_SettingsFatFsMountPending;
     boolean m_RawBootConfigLoaded;
     boolean m_UartTelemetryEnabled;
-    boolean m_KanjiRomEnabled;
-    boolean m_KanjiRomAvailable;
     boolean m_SettingsLoadPending;
     boolean m_InitramfsDeferredMountPending;
     boolean m_SettingsSavePending;
     volatile boolean m_ResolutionModeLoadPending;
+    volatile boolean m_CoreListRefreshPending;
+    boolean m_CoreSwitchPending;
     boolean m_StateSavePending;
     boolean m_StateLoadPending;
     boolean m_MediaCatalogStarted;

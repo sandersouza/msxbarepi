@@ -6,6 +6,17 @@ config MSXBARE_DEBUG
     default y
 
 choice
+    prompt "Boot strategy"
+    default MSXBARE_BOOT_STRATEGY_STANDALONE
+
+config MSXBARE_BOOT_STRATEGY_STANDALONE
+    bool "Stand Alone"
+
+config MSXBARE_BOOT_STRATEGY_MULTICORE
+    bool "Multicore"
+endchoice
+
+choice
     prompt "Boot Mode default"
     default MSXBARE_BOOT_MODE_NONE
 
