@@ -54,6 +54,8 @@ public:
     boolean ConsumePendingDiskSelection(unsigned *drive_index, char *path, unsigned path_size);
     boolean ConsumePendingRomBrowserOpen(unsigned *slot_index, char *path, unsigned path_size);
     boolean ConsumePendingDiskBrowserOpen(unsigned *drive_index, char *path, unsigned path_size);
+    boolean ConsumePendingCassetteSelection(char *path, unsigned path_size);
+    boolean ConsumePendingCassetteBrowserOpen(char *path, unsigned path_size);
     boolean ConsumePendingGameMasterCheat(unsigned *game_index,
                                           unsigned *cheat_index,
                                           boolean *has_value_override,
@@ -95,8 +97,9 @@ private:
         MenuViewLoadRomBrowser = 5,
         MenuViewLoadDisk = 6,
         MenuViewLoadDiskBrowser = 7,
-        MenuViewGameMasterBrowser = 8,
-        MenuViewGameMasterCheats = 9
+        MenuViewLoadCassetteBrowser = 8,
+        MenuViewGameMasterBrowser = 9,
+        MenuViewGameMasterCheats = 10
     };
     static void CopySmallText(char *dst, unsigned dst_size, const char *src);
     void ResetRepeatState(void);
@@ -166,6 +169,10 @@ private:
     boolean m_HasPendingDiskBrowserOpen;
     unsigned m_PendingDiskBrowserDrive;
     char m_PendingDiskBrowserPath[192];
+    boolean m_HasPendingCassetteSelection;
+    char m_PendingCassettePath[192];
+    boolean m_HasPendingCassetteBrowserOpen;
+    char m_PendingCassetteBrowserPath[192];
     BackendCheatCatalog *m_GameMasterCatalog;
     unsigned m_GameMasterLoadStatus;
     unsigned m_GameMasterErrorLine;

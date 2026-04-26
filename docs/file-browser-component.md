@@ -6,7 +6,7 @@ Desacoplar a navegação de arquivos do `combo_menu` para permitir reuso em outr
 
 ## API pública
 
-- `Open(mode, slot_index)`: inicia navegador no root correto (`SD:/msx/roms` ou `SD:/msx/disks`).
+- `Open(mode, slot_index)`: inicia navegador no root correto (`SD:/msx/roms`, `SD:/msx/disks` ou `SD:/msx/cassete`).
 - `OpenGameMaster()`: inicia navegador real em `SD:/msx/cheats`.
 - `ProcessInput(up, down, enter_edge, out_path, out_path_size)`: processa navegação e seleção.
 - `GetVisibleCount()`, `GetLabelVisible(i)`, `IsDirVisible(i)`, `IsParentVisible(i)`: suporte de render para listagem.
@@ -18,18 +18,19 @@ Desacoplar a navegação de arquivos do `combo_menu` para permitir reuso em outr
 
 - Lista diretórios primeiro e arquivos depois.
 - Ignora entradas iniciadas por `.`.
-- Mantém navegação confinada ao root (`SD:/msx/roms`, `SD:/msx/disks` ou `SD:/msx/cheats`).
+- Mantém navegação confinada ao root (`SD:/msx/roms`, `SD:/msx/disks`, `SD:/msx/cassete` ou `SD:/msx/cheats`).
 - Suporta `..` para retornar ao diretório anterior.
 - Nome exibido em formato até 16 caracteres, sem extensão.
 - Auto-repeat de navegação (`UP/DOWN`) para diretórios com muitos arquivos.
 - Scroll por janela com `top/selected` para integração com barra visual no menu.
 - No modo `Game Codes`, a listagem usa o diretório real `SD:/msx/cheats` e aceita arquivos `.mcf`.
+- No modo `Cassete`, a listagem usa o diretório real `SD:/msx/cassete` e aceita arquivos `.cas`.
 - O label exibido preserva o nome curto derivado do arquivo, sem extensão, mantendo semântica compatível com navegação em SD.
 
 ## Integração atual
 
 - Consumidor atual: `CComboPauseMenu` em `src/combo_menu.cpp`.
-- O menu apenas orquestra estado visual/ações (`LOAD ROM` e `LOAD DISK`).
+- O menu apenas orquestra estado visual/ações (`LOAD ROM`, `LOAD DISK` e `LOAD CASSETE`).
 - A lógica de catálogo, navegação e seleção fica centralizada no componente.
 
 ## Uso atual para `Game Codes`

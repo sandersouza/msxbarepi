@@ -88,6 +88,7 @@ CFLAGS += -DMSXBARE_V9990_UART_TRACE=$(MSXBARE_V9990_UART_TRACE)
 
 CFLAGS += -DFMSX_BAREMETAL_NO_START_RUN
 CFLAGS += -DFMSX_BAREMETAL_SKIP_DISK_OPEN
+CFLAGS += -DPATCH_Z80
 ifeq ($(MSXBARE_CARTA_ONLY),1)
 CFLAGS += -DFMSX_BAREMETAL_CARTA_ONLY
 endif
@@ -128,6 +129,7 @@ EXTRACLEAN += backend/*.o backend/*.d backend/*/*.o backend/*/*.d backend/*/*/*.
 
 FMSX_RUNTIME_OBJS = $(FMSX_MODULE_DIR)/fmsx_runtime.o $(FMSX_MODULE_DIR)/fmsx_host_stubs.o $(FMSX_MODULE_DIR)/fmsx_compat_stubs.o $(FMSX_MODULE_DIR)/fmsx_libc_shim.o
 FMSX_RUNTIME_OBJS += $(FMSX_MODULE_DIR)/fmsx_math_shim.o
+FMSX_RUNTIME_OBJS += $(FMSX_MODULE_DIR)/fmsx_local_patch.o
 FMSX_RUNTIME_OBJS += $(FMSX_MODULE_DIR)/bluemsx_savestate_stubs.o $(FMSX_MODULE_DIR)/fmsx_upstream_bluemsx_openym2413_2.o $(FMSX_MODULE_DIR)/fmsx_local_ym2413_bluemsx.o
 FMSX_RUNTIME_OBJS += $(FMSX_MODULE_DIR)/fmsx_virtual_fs.o $(FMSX_MODULE_DIR)/fmsx_initramfs.o
 FMSX_RUNTIME_OBJS += $(FMSX_MODULE_DIR)/fmsx_carts_sha_fallback.o

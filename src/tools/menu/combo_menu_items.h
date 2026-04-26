@@ -16,6 +16,7 @@ enum TComboMenuAction {
     ComboMenuActionCartridgeB,
     ComboMenuActionDiskDriveA,
     ComboMenuActionDiskDriveB,
+    ComboMenuActionCassette,
     ComboMenuActionSettings,
     ComboMenuActionDebug,
     ComboMenuActionGameMaster,

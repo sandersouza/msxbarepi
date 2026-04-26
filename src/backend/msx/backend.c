@@ -309,6 +309,14 @@ boolean msx_backend_media_load_disk(unsigned drive_index, const char *path)
         : FALSE;
 }
 
+boolean msx_backend_media_load_cassette(const char *path)
+{
+    const MsxBackendFamilyOps *ops = msx_backend_family_ops();
+    return (ops != 0 && ops->media != 0 && ops->media->load_cassette != 0)
+        ? ops->media->load_cassette(path)
+        : FALSE;
+}
+
 MsxBackendRuntimeStatus msx_backend_get_status(void)
 {
     const BackendModuleV1 *module = msx_backend_selected_module();
@@ -411,12 +419,14 @@ void msx_backend_reset_audio_mix_debug_window(void) { MSX_BACKEND_CALL_VOID(mach
 
 const char *msx_backend_get_cartridge_name(unsigned slot_index) { MSX_BACKEND_CALL_CSTR(media, get_cartridge_name, slot_index); }
 const char *msx_backend_get_disk_name(unsigned drive_index) { MSX_BACKEND_CALL_CSTR(media, get_disk_name, drive_index); }
+const char *msx_backend_get_cassette_path(void) { MSX_BACKEND_CALL_CSTR(media, get_cassette_path); }
 const char *msx_backend_get_cartridge_path(unsigned slot_index) { MSX_BACKEND_CALL_CSTR(media, get_cartridge_path, slot_index); }
 const char *msx_backend_get_disk_path(unsigned drive_index) { MSX_BACKEND_CALL_CSTR(media, get_disk_path, drive_index); }
 boolean msx_backend_set_cartridge_path(unsigned slot_index, const char *path) { MSX_BACKEND_CALL_BOOL(media, set_cartridge_path, slot_index, path); }
 boolean msx_backend_set_disk_path(unsigned drive_index, const char *path) { MSX_BACKEND_CALL_BOOL(media, set_disk_path, drive_index, path); }
 boolean msx_backend_unload_cartridge(unsigned slot_index) { MSX_BACKEND_CALL_BOOL(media, unload_cartridge, slot_index); }
 boolean msx_backend_unload_disk(unsigned drive_index) { MSX_BACKEND_CALL_BOOL(media, unload_disk, drive_index); }
+boolean msx_backend_unload_cassette(void) { MSX_BACKEND_CALL_BOOL(media, unload_cassette); }
 
 void msx_backend_reset_game_master_session(void) { MSX_BACKEND_CALL_VOID(cheat, reset_game_master_session); }
 boolean msx_backend_set_game_master_cheat_enabled(const TGameMasterPoke *pokes, unsigned poke_count, boolean enabled) { MSX_BACKEND_CALL_BOOL(cheat, set_game_master_cheat_enabled, pokes, poke_count, enabled); }

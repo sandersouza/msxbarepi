@@ -64,6 +64,7 @@ void msx_backend_input_push_joystick(u8 bridge_bits);
 void msx_backend_input_push_keyboard(u8 modifiers, const unsigned char raw_keys[6]);
 boolean msx_backend_media_load_cartridge(unsigned slot_index, const char *path);
 boolean msx_backend_media_load_disk(unsigned drive_index, const char *path);
+boolean msx_backend_media_load_cassette(const char *path);
 MsxBackendRuntimeStatus msx_backend_get_status(void);
 MsxBackendInfo msx_backend_get_info(void);
 
@@ -114,12 +115,14 @@ void msx_backend_reset_audio_mix_debug_window(void);
 
 const char *msx_backend_get_cartridge_name(unsigned slot_index);
 const char *msx_backend_get_disk_name(unsigned drive_index);
+const char *msx_backend_get_cassette_path(void);
 const char *msx_backend_get_cartridge_path(unsigned slot_index);
 const char *msx_backend_get_disk_path(unsigned drive_index);
 boolean msx_backend_set_cartridge_path(unsigned slot_index, const char *path);
 boolean msx_backend_set_disk_path(unsigned drive_index, const char *path);
 boolean msx_backend_unload_cartridge(unsigned slot_index);
 boolean msx_backend_unload_disk(unsigned drive_index);
+boolean msx_backend_unload_cassette(void);
 
 void msx_backend_reset_game_master_session(void);
 boolean msx_backend_set_game_master_cheat_enabled(const TGameMasterPoke *pokes, unsigned poke_count, boolean enabled);

@@ -809,6 +809,10 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_HasPendingDiskBrowserOpen(FALSE),
     m_PendingDiskBrowserDrive(0u),
     m_PendingDiskBrowserPath{0},
+    m_HasPendingCassetteSelection(FALSE),
+    m_PendingCassettePath{0},
+    m_HasPendingCassetteBrowserOpen(FALSE),
+    m_PendingCassetteBrowserPath{0},
     m_GameMasterCatalog(0),
     m_GameMasterLoadStatus((unsigned) GameMasterLoadFileOpenFailed),
     m_GameMasterErrorLine(0u),
@@ -906,6 +910,10 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_HasPendingDiskBrowserOpen = FALSE;
     m_PendingDiskBrowserDrive = 0u;
     CopySmallText(m_PendingDiskBrowserPath, sizeof(m_PendingDiskBrowserPath), "");
+    m_HasPendingCassetteSelection = FALSE;
+    CopySmallText(m_PendingCassettePath, sizeof(m_PendingCassettePath), "");
+    m_HasPendingCassetteBrowserOpen = FALSE;
+    CopySmallText(m_PendingCassetteBrowserPath, sizeof(m_PendingCassetteBrowserPath), "");
     ResetGameMasterState();
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), "");
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), "");
@@ -1011,6 +1019,10 @@ void CComboPauseMenu::Reset(void)
     m_HasPendingDiskBrowserOpen = FALSE;
     m_PendingDiskBrowserDrive = 0u;
     CopySmallText(m_PendingDiskBrowserPath, sizeof(m_PendingDiskBrowserPath), "");
+    m_HasPendingCassetteSelection = FALSE;
+    CopySmallText(m_PendingCassettePath, sizeof(m_PendingCassettePath), "");
+    m_HasPendingCassetteBrowserOpen = FALSE;
+    CopySmallText(m_PendingCassetteBrowserPath, sizeof(m_PendingCassetteBrowserPath), "");
     ResetGameMasterState();
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), m_LoadRomSlot1Name);
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), m_LoadRomSlot2Name);
@@ -1528,6 +1540,36 @@ boolean CComboPauseMenu::ConsumePendingDiskBrowserOpen(unsigned *drive_index, ch
     return TRUE;
 }
 
+boolean CComboPauseMenu::ConsumePendingCassetteSelection(char *path, unsigned path_size)
+{
+    if (!m_HasPendingCassetteSelection)
+    {
+        return FALSE;
+    }
+    if (path != 0 && path_size > 0u)
+    {
+        CopySmallText(path, path_size, m_PendingCassettePath);
+    }
+    m_HasPendingCassetteSelection = FALSE;
+    CopySmallText(m_PendingCassettePath, sizeof(m_PendingCassettePath), "");
+    return TRUE;
+}
+
+boolean CComboPauseMenu::ConsumePendingCassetteBrowserOpen(char *path, unsigned path_size)
+{
+    if (!m_HasPendingCassetteBrowserOpen)
+    {
+        return FALSE;
+    }
+    if (path != 0 && path_size > 0u)
+    {
+        CopySmallText(path, path_size, m_PendingCassetteBrowserPath);
+    }
+    m_HasPendingCassetteBrowserOpen = FALSE;
+    CopySmallText(m_PendingCassetteBrowserPath, sizeof(m_PendingCassetteBrowserPath), "");
+    return TRUE;
+}
+
 boolean CComboPauseMenu::ConsumePendingGameMasterCheat(unsigned *game_index,
                                                        unsigned *cheat_index,
                                                        boolean *has_value_override,
@@ -1571,7 +1613,18 @@ void CComboPauseMenu::OpenFileBrowser(unsigned mode, unsigned slot_index, const 
     {
         m_FileBrowser.Open(mode, slot_index);
     }
-    m_View = (mode == (unsigned) ComboFileBrowserModeDisk) ? MenuViewLoadDiskBrowser : MenuViewLoadRomBrowser;
+    if (mode == (unsigned) ComboFileBrowserModeDisk)
+    {
+        m_View = MenuViewLoadDiskBrowser;
+    }
+    else if (mode == (unsigned) ComboFileBrowserModeCassette)
+    {
+        m_View = MenuViewLoadCassetteBrowser;
+    }
+    else
+    {
+        m_View = MenuViewLoadRomBrowser;
+    }
     m_Selected = 0u;
     m_ForceRedraw = TRUE;
     m_ForceHighlightRedraw = FALSE;
@@ -1921,7 +1974,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
         }
         return m_GameMasterCheatItems;
     }
-    if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser)
+    if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewLoadCassetteBrowser || m_View == MenuViewGameMasterBrowser)
     {
         const TComboLocaleStrings *locale = combo_locale_get(m_Language);
         if (locale == 0)
@@ -1970,7 +2023,9 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
         }
         else
         {
-            const char *empty = (m_View == MenuViewLoadDiskBrowser) ? locale->load_disk_empty : locale->load_rom_empty;
+            const char *empty = (m_View == MenuViewLoadCassetteBrowser)
+                ? locale->load_cassette_empty
+                : ((m_View == MenuViewLoadDiskBrowser) ? locale->load_disk_empty : locale->load_rom_empty);
             if (empty == 0 || empty[0] == '\0')
             {
                 empty = "EMPTY";
@@ -2173,6 +2228,10 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         else if (m_View == MenuViewLoadDiskBrowser)
         {
             m_View = MenuViewLoadDisk;
+        }
+        else if (m_View == MenuViewLoadCassetteBrowser)
+        {
+            m_View = MenuViewRoot;
         }
         else if (m_View == MenuViewGameMasterCheats)
         {
@@ -2391,7 +2450,7 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         return action;
     }
 
-    if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser)
+    if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewLoadCassetteBrowser || m_View == MenuViewGameMasterBrowser)
     {
         ResetRepeatState();
         const unsigned old_browser_top = m_FileBrowser.GetTop();
@@ -2473,6 +2532,12 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                     CopySmallText(m_PendingDiskBrowserPath, sizeof(m_PendingDiskBrowserPath), selected_path);
                     action = (m_PendingDiskBrowserDrive == 0u) ? ComboMenuActionDiskDriveA : ComboMenuActionDiskDriveB;
                 }
+                else if (m_FileBrowser.GetMode() == (unsigned) ComboFileBrowserModeCassette)
+                {
+                    m_HasPendingCassetteBrowserOpen = TRUE;
+                    CopySmallText(m_PendingCassetteBrowserPath, sizeof(m_PendingCassetteBrowserPath), selected_path);
+                    action = ComboMenuActionCassette;
+                }
             }
             m_ForceRedraw = TRUE;
             m_ForceHighlightRedraw = FALSE;
@@ -2534,6 +2599,18 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
                 m_ForceContentRedraw = FALSE;
                 m_RequestBackgroundRestore = TRUE;
             }
+            else if (m_FileBrowser.GetMode() == (unsigned) ComboFileBrowserModeCassette)
+            {
+                m_HasPendingCassetteSelection = TRUE;
+                CopySmallText(m_PendingCassettePath, sizeof(m_PendingCassettePath), selected_path);
+                action = ComboMenuActionCassette;
+                m_View = MenuViewRoot;
+                m_Selected = FindFirstSelectable();
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
+                m_ForceContentRedraw = FALSE;
+                m_RequestBackgroundRestore = TRUE;
+            }
             else
             {
                 char title[64];
@@ -2580,8 +2657,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         m_LastEnterPressed = enter_pressed;
         m_LastDeletePressed = delete_pressed;
 
-        const boolean old_browser = (old_view == MenuViewLoadRomBrowser || old_view == MenuViewLoadDiskBrowser || old_view == MenuViewGameMasterBrowser) ? TRUE : FALSE;
-        const boolean new_browser = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser) ? TRUE : FALSE;
+        const boolean old_browser = (old_view == MenuViewLoadRomBrowser || old_view == MenuViewLoadDiskBrowser || old_view == MenuViewLoadCassetteBrowser || old_view == MenuViewGameMasterBrowser) ? TRUE : FALSE;
+        const boolean new_browser = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewLoadCassetteBrowser || m_View == MenuViewGameMasterBrowser) ? TRUE : FALSE;
         if (old_browser != new_browser)
         {
             m_RequestBackgroundRestore = TRUE;
@@ -2906,6 +2983,12 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             m_ForceHighlightRedraw = FALSE;
             m_RequestBackgroundRestore = TRUE;
         }
+        else if (m_View == MenuViewRoot && items[m_Selected].action == ComboMenuActionCassette)
+        {
+            m_HasPendingCassetteBrowserOpen = TRUE;
+            CopySmallText(m_PendingCassetteBrowserPath, sizeof(m_PendingCassetteBrowserPath), "");
+            action = ComboMenuActionCassette;
+        }
         else if (m_View == MenuViewRoot && items[m_Selected].action == ComboMenuActionGameMaster)
         {
             action = ComboMenuActionGameMaster;
@@ -2989,8 +3072,8 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
     m_LastEnterPressed = enter_pressed;
     m_LastDeletePressed = delete_pressed;
 
-    const boolean old_browser = (old_view == MenuViewLoadRomBrowser || old_view == MenuViewLoadDiskBrowser || old_view == MenuViewGameMasterBrowser) ? TRUE : FALSE;
-    const boolean new_browser = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser) ? TRUE : FALSE;
+    const boolean old_browser = (old_view == MenuViewLoadRomBrowser || old_view == MenuViewLoadDiskBrowser || old_view == MenuViewLoadCassetteBrowser || old_view == MenuViewGameMasterBrowser) ? TRUE : FALSE;
+    const boolean new_browser = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewLoadCassetteBrowser || m_View == MenuViewGameMasterBrowser) ? TRUE : FALSE;
     if (old_browser != new_browser)
     {
         m_RequestBackgroundRestore = TRUE;
@@ -3090,20 +3173,27 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     {
         title = locale->title_active_cheats;
     }
-    else if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser)
+    else if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewLoadCassetteBrowser)
     {
-        const boolean disk_browser = (m_View == MenuViewLoadDiskBrowser) ? TRUE : FALSE;
-        const unsigned browser_slot = m_FileBrowser.GetSlotIndex();
-        const char *slot_tag = disk_browser
-            ? ((browser_slot == 0u) ? locale->load_disk_drive1 : locale->load_disk_drive2)
-            : ((browser_slot == 0u) ? locale->load_rom_slot1 : locale->load_rom_slot2);
-        if (slot_tag == 0 || slot_tag[0] == '\0')
+        if (m_View == MenuViewLoadCassetteBrowser)
         {
-            slot_tag = disk_browser
-                ? ((browser_slot == 0u) ? "DRIVE1" : "DRIVE2")
-                : ((browser_slot == 0u) ? "SLOT1" : "SLOT2");
+            title = locale->title_load_cassette;
         }
-        title = slot_tag;
+        else
+        {
+            const boolean disk_browser = (m_View == MenuViewLoadDiskBrowser) ? TRUE : FALSE;
+            const unsigned browser_slot = m_FileBrowser.GetSlotIndex();
+            const char *slot_tag = disk_browser
+                ? ((browser_slot == 0u) ? locale->load_disk_drive1 : locale->load_disk_drive2)
+                : ((browser_slot == 0u) ? locale->load_rom_slot1 : locale->load_rom_slot2);
+            if (slot_tag == 0 || slot_tag[0] == '\0')
+            {
+                slot_tag = disk_browser
+                    ? ((browser_slot == 0u) ? "DRIVE1" : "DRIVE2")
+                    : ((browser_slot == 0u) ? "SLOT1" : "SLOT2");
+            }
+            title = slot_tag;
+        }
     }
 
     unsigned char_w = renderer->GetCharWidth();
@@ -3130,7 +3220,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     {
         content_cols = 18u;
     }
-    if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser)
+    if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewLoadCassetteBrowser || m_View == MenuViewGameMasterBrowser)
     {
         /*
          * Browser width rule:
@@ -3171,7 +3261,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         box_y = screen_height > box_h_px ? (screen_height - box_h_px) : 0u;
     }
 
-    const boolean browser_view = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser) ? TRUE : FALSE;
+    const boolean browser_view = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewLoadCassetteBrowser || m_View == MenuViewGameMasterBrowser) ? TRUE : FALSE;
     if (m_ForceHighlightRedraw || m_ForceContentRedraw)
     {
         m_ForceRedraw = TRUE;
@@ -3217,7 +3307,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && ComboTextEquals(m_LastDrawnLoadRomSlot2Name, m_LoadRomSlot2Name)
      && ComboTextEquals(m_LastDrawnLoadDiskDrive1Name, m_LoadDiskDrive1Name)
      && ComboTextEquals(m_LastDrawnLoadDiskDrive2Name, m_LoadDiskDrive2Name)
-     && (m_View != MenuViewLoadRomBrowser && m_View != MenuViewLoadDiskBrowser && m_View != MenuViewGameMasterBrowser
+     && (m_View != MenuViewLoadRomBrowser && m_View != MenuViewLoadDiskBrowser && m_View != MenuViewLoadCassetteBrowser && m_View != MenuViewGameMasterBrowser
          ? TRUE
          : (m_LastDrawnBrowserTop == m_FileBrowser.GetTop()
             && m_LastDrawnBrowserCount == m_FileBrowser.GetCount()
@@ -3306,7 +3396,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     renderer->DrawText(title_x, title_y, title, title_style, scale_x, scale_y);
 
     const boolean browser_with_scrollbar =
-        ((m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser)
+        ((m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewLoadCassetteBrowser || m_View == MenuViewGameMasterBrowser)
          && item_count > 0u
          && m_FileBrowser.GetCount() > item_count
          && box_cols > 8u);
@@ -3319,7 +3409,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         const unsigned text_len = ComboStrLen(items[i].label);
         const boolean settings_row = (m_View == MenuViewSettings || m_View == MenuViewDebug || m_View == MenuViewJoystickMap);
         const boolean load_media_row = (m_View == MenuViewLoadRom || m_View == MenuViewLoadDisk);
-        const boolean browser_row = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser);
+        const boolean browser_row = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewLoadCassetteBrowser || m_View == MenuViewGameMasterBrowser);
         const boolean cheat_list_row = (m_View == MenuViewGameMasterCheats);
         const boolean separator_row = (items[i].action == ComboMenuActionSeparator);
         const boolean selected_row = (items[i].selectable && i == m_Selected) ? TRUE : FALSE;
@@ -3546,7 +3636,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_ForceRedraw = FALSE;
     m_ForceHighlightRedraw = FALSE;
     m_ForceContentRedraw = FALSE;
-    if ((m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewGameMasterBrowser) && m_BrowserWarmupRedraws > 0u)
+    if ((m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewLoadCassetteBrowser || m_View == MenuViewGameMasterBrowser) && m_BrowserWarmupRedraws > 0u)
     {
         --m_BrowserWarmupRedraws;
         m_ForceRedraw = TRUE;

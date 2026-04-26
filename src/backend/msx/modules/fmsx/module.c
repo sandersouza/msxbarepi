@@ -77,6 +77,11 @@ static boolean msx_fmsx_media_load_disk(unsigned drive_index, const char *path)
     return fmsx_runtime_load_disk(drive_index, path);
 }
 
+static boolean msx_fmsx_media_load_cassette(const char *path)
+{
+    return fmsx_runtime_load_cassette(path);
+}
+
 static BackendRuntimeStatus msx_fmsx_get_status(void)
 {
     const TFmsxRuntimeStatus status = fmsx_runtime_get_status();
@@ -157,10 +162,13 @@ static const MsxBackendMachineOps k_msx_fmsx_machine_ops = {
 static const MsxBackendMediaOps k_msx_fmsx_media_ops = {
     fmsx_runtime_get_cartridge_name,
     fmsx_runtime_get_disk_name,
+    fmsx_runtime_get_cassette_path,
     fmsx_runtime_get_cartridge_path,
     fmsx_runtime_get_disk_path,
     fmsx_runtime_set_cartridge_path,
     fmsx_runtime_set_disk_path,
+    msx_fmsx_media_load_cassette,
+    fmsx_runtime_unload_cassette,
     fmsx_runtime_unload_cartridge,
     fmsx_runtime_unload_disk
 };

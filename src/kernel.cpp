@@ -2269,12 +2269,6 @@ void CComboKernel::NormalizeSettingsForBuild(void)
 
 #if !MSXBARE_FEAT_DISK_ROM
 	m_DiskRomEnabled = FALSE;
-#elif !MSXBARE_ENABLE_DEBUG_OVERLAY
-	/*
-	 * In non-debug builds Disk ROM must stay enabled regardless of persisted
-	 * boot config. Disabling is only allowed when DEBUG is compiled in.
-	 */
-	m_DiskRomEnabled = TRUE;
 #endif
 #if !MSXBARE_FEAT_MEGARAM
 	m_MegaRamKb = 0u;
@@ -7130,6 +7124,45 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		break;
 #endif
 
+	case ComboMenuActionCassette:
+#if !MSXBARE_ENABLE_FMSX
+		m_Logger.Write(FromKernel, LogNotice, "Load Cassete indisponivel neste build");
+		break;
+#else
+		{
+			char browser_path[192];
+			browser_path[0] = '\0';
+			if (m_PauseMenu.ConsumePendingCassetteBrowserOpen(browser_path, sizeof(browser_path)))
+			{
+				m_PauseMenu.OpenFileBrowser((unsigned) ComboFileBrowserModeCassette, 0u, browser_path);
+				UpdateLoadDiagTelemetry(4103u); /* CAS browser open deferred to main loop */
+				break;
+			}
+		}
+		if (m_BackendReady)
+		{
+			char cassette_path[192];
+			cassette_path[0] = '\0';
+			if (m_PauseMenu.ConsumePendingCassetteSelection(cassette_path, sizeof(cassette_path)))
+			{
+				UpdateLoadDiagTelemetry(4001u); /* menu consumed CAS selection */
+				if (backend_runtime_media_load_cassette(cassette_path))
+				{
+					UpdateLoadDiagTelemetry(4002u); /* ChangeTape ok */
+					CString line;
+					line.Format("Load CAS: %s", cassette_path);
+					m_Logger.Write(FromKernel, LogNotice, line);
+				}
+				else
+				{
+					UpdateLoadDiagTelemetry(9009u); /* ChangeTape failed */
+					m_Logger.Write(FromKernel, LogWarning, "Load CAS falhou: ChangeTape");
+				}
+			}
+		}
+		break;
+#endif
+
 	case ComboMenuActionGameMaster:
 #if !MSXBARE_ENABLE_FMSX
 		m_Logger.Write(FromKernel, LogNotice, "Game Codes indisponivel neste build");
@@ -8327,6 +8360,7 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 		|| (menu_action == ComboMenuActionCartridgeB)
 		|| (menu_action == ComboMenuActionDiskDriveA)
 		|| (menu_action == ComboMenuActionDiskDriveB)
+		|| (menu_action == ComboMenuActionCassette)
 		|| (menu_action == ComboMenuActionToggleGfx9000)
 		|| (menu_action == ComboMenuActionReset)
 		|| (menu_action == ComboMenuActionMsxBasic);
@@ -8337,6 +8371,10 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	else if (menu_action == ComboMenuActionDiskDriveA || menu_action == ComboMenuActionDiskDriveB)
 	{
 		UpdateLoadDiagTelemetry(2991u); /* disk menu action propagated to kernel */
+	}
+	else if (menu_action == ComboMenuActionCassette)
+	{
+		UpdateLoadDiagTelemetry(3991u); /* cassette menu action propagated to kernel */
 	}
 	const boolean video_affecting_action =
 		(menu_action == ComboMenuActionOverscanChanged)

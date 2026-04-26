@@ -205,7 +205,11 @@ const TComboMenuItem *combo_menu_root_items_get(unsigned language, unsigned boot
     {
         ADD_ROOT_ITEM(locale->root_load_disk, ComboMenuActionDiskDriveA, TRUE);
     }
-    if (MSXBARE_FEAT_LOAD_ROM || MSXBARE_FEAT_LOAD_DISK)
+    if (MSXBARE_ENABLE_FMSX)
+    {
+        ADD_ROOT_ITEM(locale->root_load_cassette, ComboMenuActionCassette, TRUE);
+    }
+    if (MSXBARE_FEAT_LOAD_ROM || MSXBARE_FEAT_LOAD_DISK || MSXBARE_ENABLE_FMSX)
     {
         ADD_ROOT_ITEM("", ComboMenuActionSeparator, FALSE);
     }
@@ -406,6 +410,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     static char machine_label[32];
     static char mapper_label[32];
     static char megaram_label[32];
+    static char disk_rom_label[32];
     static char turbo_label[32];
     static char rensha_label[32];
     static char joypad_mapping_label[40];
@@ -432,7 +437,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     if (rensha_mode > 3u) rensha_mode = 0u;
     if (audio_gain_percent > 100u) audio_gain_percent = 100u;
     (void) refresh_rate_hz;
-    (void) disk_rom_enabled;
     (void) overlay_mode;
     (void) overlay_available;
 
@@ -469,6 +473,8 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     }
     BuildLabelFlag(megaram_label, sizeof(megaram_label), locale->settings_megaram,
                    megaram_kb == 0u ? locale->flag_off : (megaram_kb == 512u ? "512" : (megaram_kb == 1024u ? "1024" : "256")));
+    BuildLabelFlag(disk_rom_label, sizeof(disk_rom_label), locale->settings_disk_rom,
+                   disk_rom_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(turbo_label, sizeof(turbo_label), locale->settings_z80_turbo,
                    z80_turbo_mode == 0u ? "NORM"
                    : (z80_turbo_mode == 1u ? "PAN"
@@ -542,6 +548,10 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
         if (MSXBARE_FEAT_MEGARAM)
         {
             ADD_SETTING_ITEM(megaram_label, ComboMenuActionCycleMegaRam, ComboMenuRedrawMenuOnly, TRUE);
+        }
+        if (MSXBARE_FEAT_DISK_ROM)
+        {
+            ADD_SETTING_ITEM(disk_rom_label, ComboMenuActionToggleDiskRom, ComboMenuRedrawMenuOnly, TRUE);
         }
     }
 
@@ -642,7 +652,6 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned language,
 {
     static TComboMenuItem debug_items[9];
     static char refresh_label[32];
-    static char disk_rom_label[32];
     static char overlay_label[32];
 
     const TComboLocaleStrings *locale = combo_locale_get(language);
@@ -653,10 +662,9 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned language,
 
     BuildLabelFlag(overlay_label, sizeof(overlay_label), locale->settings_debugger,
                    MenuOverlayModeFlag(locale, overlay_mode));
-    BuildLabelFlag(disk_rom_label, sizeof(disk_rom_label), locale->settings_disk_rom,
-                   disk_rom_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(refresh_label, sizeof(refresh_label), locale->settings_refresh,
                    refresh_rate_hz == 50u ? locale->refresh_pal : locale->refresh_ntsc);
+    (void) disk_rom_enabled;
 
     unsigned item_count = 0u;
 #define ADD_DEBUG_ITEM(lbl, act, sel) \
@@ -670,7 +678,6 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned language,
     if (MSXBARE_ENABLE_DEBUG_OVERLAY)
     {
         ADD_DEBUG_ITEM(overlay_label, ComboMenuActionCycleOverlay, overlay_available ? TRUE : FALSE);
-        ADD_DEBUG_ITEM(disk_rom_label, ComboMenuActionToggleDiskRom, TRUE);
         ADD_DEBUG_ITEM(refresh_label, ComboMenuActionCycleRefreshRate, TRUE);
     }
 

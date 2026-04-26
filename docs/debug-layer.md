@@ -123,7 +123,8 @@ Diretriz visual (overlay e menu):
 ## Menu relacionado
 - `Debug -> Debugger`: sempre aparece em builds `DEBUG=1` e opera diretamente como `MAX/MIN/OFF`.
 - `Settings -> Scale`: afeta o viewport independentemente do modo do debugger.
-- Em builds com `DEBUG=1`, `Settings` volta a mostrar `Refresh [NTSC/PAL]` logo abaixo de `Disk ROM` para diagnostico.
+- `Settings -> Disk ROM`: aparece abaixo de `MegaRAM`, independente de `DEBUG=1`/`DEBUG=0`, e alterna a disponibilidade da Disk ROM no runtime.
+- Em builds com `DEBUG=1`, o menu `Debug` mantem apenas controles de diagnostico, como `Debugger` e `Standard [NTSC/PAL]`.
 - Nesse caminho de diagnostico, o toggle agora atua no estado efetivo do VDP em runtime:
   - em `MSX2/MSX2+`, ele força `R#9 bit1` (`PAL/NTSC`) no core local;
   - o overlay passa a refletir imediatamente o modo efetivo (`PALVideo`), e nao apenas o pacing base do host.
