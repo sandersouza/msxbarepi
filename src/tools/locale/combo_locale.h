@@ -16,10 +16,12 @@ typedef struct {
     const char *title_joystick_map;
     const char *title_load_rom;
     const char *title_load_disk;
+    const char *title_load_cassette;
     const char *title_game_master;
     const char *title_active_cheats;
     const char *root_load_cart;
     const char *root_load_disk;
+    const char *root_load_cassette;
     const char *root_save_state;
     const char *root_load_state;
     const char *root_settings;
@@ -36,6 +38,7 @@ typedef struct {
     const char *load_disk_drive2;
     const char *load_disk_empty;
     const char *load_disk_unload_hint;
+    const char *load_cassette_empty;
     const char *game_master_empty;
     const char *game_master_open_failed;
     const char *game_master_invalid;

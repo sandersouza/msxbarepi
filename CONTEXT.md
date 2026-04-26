@@ -2,11 +2,37 @@
 
 Ponto de entrada rapido para contexto operacional do projeto.
 
-- Contexto completo e historico de handoff da branch atual: [docs/handoff/254-preparacao-sd-multicore.md](docs/handoff/254-preparacao-sd-multicore.md)
+- Contexto completo e historico de handoff da branch atual: [docs/handoff/256-msx-suporte-a-leitura-cassete.md](docs/handoff/256-msx-suporte-a-leitura-cassete.md)
 - Guardrail ativo: a issue `#251` continua aberta/pausada e a branch `251-suporte-cartucho-vdp-v9990` nao deve ser removida.
-- Branch ativa da rodada: `254-preparacao-sd-multicore`
-- Issue ativa: `#254 [P1] Preparar SD multicore e selecao de core no boot`
-- PR aberto: nenhum para a issue ativa
+- Branch ativa da rodada: `256-msx-suporte-a-leitura-cassete`
+- Issue ativa: `#256 [P1] Habilitar suporte a carregamento .CAS e leitura cassete`
+- PR da rodada anterior mergeado: `#255` https://github.com/sandersouza/msxbarepi/pull/255
+- Branch base da issue ativa atualizada para `origin/main` em `31776ef`, preservando as alteracoes locais de cassete
+- Atualizacao 2026-04-26 (issue #256):
+  - issue avulsa `#256` criada; branch vinculada: `256-msx-suporte-a-leitura-cassete`
+  - suporte `.CAS` confirmado no backend local fMSX (`CasName`, `ChangeTape()`, `RewindTape()` e deteccao ASCII/BINARY/BASIC)
+  - F12 passa a exibir `Load Cassete` abaixo de `Load Disk`
+  - browser de cassete usa `SD:/msx/cassete` e filtra arquivos `.cas`
+  - backend/runtime expoe `media_load_cassette`, chamando `ChangeTape()` sem alterar `third_party/fmsx`
+  - locales PT/EN/ES atualizados para as novas labels visiveis
+  - validacao local:
+    - `scripts/check-third-party-pristine.sh`
+    - `git diff --check`
+    - `make -j4 DEBUG=1`
+    - `make -j4 DEBUG=0`
+  - atualizacao 2026-04-26 pos-merge do PR #255:
+    - branch `256-msx-suporte-a-leitura-cassete` fast-forward para `origin/main` (`31776ef`)
+    - alteracoes locais de cassete reaplicadas sem conflito
+    - validacao pos-merge: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=1`
+    - build pos-merge: `BUILD_BID: 202604261506-31776ef`, `TXTDBG BUILD:C09B`, `BUILD_HASH:31776ef-cddca248daeb7b64007cd390af6e0fa6442cea31`
+  - atualizacao 2026-04-26 pos-teste `ZANAC.CAS`:
+    - sintoma em hardware: `BLOAD"CAS:",R` nao exibia `Found: ZANAC` e so parava com `CTRL+BREAK`
+    - causa provavel: `ChangeTape()` carregava o arquivo, mas o core local nao compilava handler `PatchZ80()` para as rotinas BIOS de cassete
+    - correcao aplicada: `src/backend/msx/modules/fmsx/fmsx_local_patch.c` implementa `TAPION`/`TAPIN`/`TAPIOF`/`TAPOON`/`TAPOUT`/`TAPOOF`/`STMOTR`, e `src/Makefile` compila com `PATCH_Z80`
+    - validacao local: `git diff --check`, `scripts/check-third-party-pristine.sh`, `make -j4 DEBUG=1`, `make -j4 DEBUG=0`
+    - build final DEBUG=1 para reteste: `BUILD_BID: 202604261517-31776ef`, `TXTDBG BUILD:65B9`, `BUILD_HASH:31776ef-8bbca2e3fc909cbf3c00f30b075250a0e00c0792`
+    - ajuste UI: `Disk ROM [ON/OFF]` voltou para `Settings`, abaixo de `MegaRAM`, saiu de `Debug` e existe em `DEBUG=1`/`DEBUG=0`; `DEBUG=0` nao força mais Disk ROM `ON`
+    - build apos ajuste UI: `BUILD_BID: 202604261535-31776ef`, `TXTDBG BUILD:C7A1`, `BUILD_HASH:31776ef-51d348c6e93c90733d89a57fa6ba1ea0bbb449b7`
 - PR ainda aberto de rodada anterior: `#253` https://github.com/sandersouza/msxbarepi/pull/253
 - Issue em pausa: `#251 [P1] Implementar suporte ao cartucho/VDP V9990 (GFX9000) no backend MSX`
 - Atualizacao 2026-04-23 (issue #254):

@@ -388,6 +388,7 @@ static TFmsxVideoPresentation g_cached_video_presentation = { 0 };
 static boolean g_cached_video_valid = FALSE;
 static char g_cartridge_path[2][192] = {{0}};
 static char g_disk_path[2][192] = {{0}};
+static char g_cassette_path[192] = {0};
 static volatile unsigned g_load_diag_stage = 0u;
 static const unsigned kFmsxAudioRate = 48000u;
 static unsigned g_boot_warmup_frames_remaining = 0u;
@@ -2579,6 +2580,11 @@ const char *fmsx_runtime_get_disk_path(unsigned drive_index)
     return g_disk_path[drive_index][0] != '\0' ? g_disk_path[drive_index] : 0;
 }
 
+const char *fmsx_runtime_get_cassette_path(void)
+{
+    return g_cassette_path[0] != '\0' ? g_cassette_path : 0;
+}
+
 boolean fmsx_runtime_set_cartridge_path(unsigned slot_index, const char *path)
 {
     if (slot_index > 1u)
@@ -2722,6 +2728,65 @@ boolean fmsx_runtime_load_disk(unsigned drive_index, const char *path)
     return TRUE;
 }
 
+boolean fmsx_runtime_load_cassette(const char *path)
+{
+    if (path == 0 || path[0] == '\0' || !g_fmsx_status.running)
+    {
+        return FALSE;
+    }
+
+    char old_path[192];
+    unsigned old_n = 0u;
+    while (old_n + 1u < sizeof(old_path) && g_cassette_path[old_n] != '\0')
+    {
+        old_path[old_n] = g_cassette_path[old_n];
+        ++old_n;
+    }
+    old_path[old_n] = '\0';
+
+    unsigned n = 0u;
+    while (path[n] != '\0' && n + 1u < sizeof(g_cassette_path))
+    {
+        g_cassette_path[n] = path[n];
+        ++n;
+    }
+    g_cassette_path[n] = '\0';
+    if (path[n] != '\0')
+    {
+        return FALSE;
+    }
+
+    fmsx_runtime_set_load_diag(2501u); /* before ChangeTape */
+    if (!ChangeTape(g_cassette_path))
+    {
+        fmsx_runtime_set_load_diag(9501u); /* ChangeTape failed */
+        g_cassette_path[0] = '\0';
+        if (old_path[0] != '\0')
+        {
+            unsigned i = 0u;
+            while (old_path[i] != '\0' && i + 1u < sizeof(g_cassette_path))
+            {
+                g_cassette_path[i] = old_path[i];
+                ++i;
+            }
+            g_cassette_path[i] = '\0';
+            CasName = g_cassette_path;
+            (void) ChangeTape(g_cassette_path);
+        }
+        else
+        {
+            CasName = 0;
+            (void) ChangeTape(0);
+        }
+        return FALSE;
+    }
+
+    CasName = g_cassette_path;
+    fmsx_runtime_set_load_diag(2502u); /* ChangeTape ok */
+    g_fmsx_status.last_pc = (int) CPU.PC.W;
+    return TRUE;
+}
+
 boolean fmsx_runtime_unload_cartridge(unsigned slot_index)
 {
     if (slot_index > 1u || !g_fmsx_status.running)
@@ -2763,6 +2828,24 @@ boolean fmsx_runtime_unload_disk(unsigned drive_index)
 
     DSKName[drive_index] = 0;
     g_disk_path[drive_index][0] = '\0';
+    g_fmsx_status.last_pc = (int) CPU.PC.W;
+    return TRUE;
+}
+
+boolean fmsx_runtime_unload_cassette(void)
+{
+    if (!g_fmsx_status.running)
+    {
+        return FALSE;
+    }
+
+    if (!ChangeTape(0))
+    {
+        return FALSE;
+    }
+
+    CasName = 0;
+    g_cassette_path[0] = '\0';
     g_fmsx_status.last_pc = (int) CPU.PC.W;
     return TRUE;
 }

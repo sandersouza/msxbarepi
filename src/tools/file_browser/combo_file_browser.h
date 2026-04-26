@@ -6,7 +6,8 @@
 enum TComboFileBrowserMode {
     ComboFileBrowserModeRom = 0,
     ComboFileBrowserModeDisk = 1,
-    ComboFileBrowserModeGameMaster = 2
+    ComboFileBrowserModeGameMaster = 2,
+    ComboFileBrowserModeCassette = 3
 };
 
 enum TComboFileBrowserEvent {

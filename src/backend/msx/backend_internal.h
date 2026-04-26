@@ -61,10 +61,13 @@ typedef struct {
 typedef struct {
     const char *(*get_cartridge_name)(unsigned slot_index);
     const char *(*get_disk_name)(unsigned drive_index);
+    const char *(*get_cassette_path)(void);
     const char *(*get_cartridge_path)(unsigned slot_index);
     const char *(*get_disk_path)(unsigned drive_index);
     boolean (*set_cartridge_path)(unsigned slot_index, const char *path);
     boolean (*set_disk_path)(unsigned drive_index, const char *path);
+    boolean (*load_cassette)(const char *path);
+    boolean (*unload_cassette)(void);
     boolean (*unload_cartridge)(unsigned slot_index);
     boolean (*unload_disk)(unsigned drive_index);
 } MsxBackendMediaOps;

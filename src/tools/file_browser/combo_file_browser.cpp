@@ -7,6 +7,7 @@ extern "C" {
 
 static const char *kRomsRootPath = "SD:/msx/roms";
 static const char *kDisksRootPath = "SD:/msx/disks";
+static const char *kCassetteRootPath = "SD:/msx/cassete";
 static const char *kCheatsRootPath = BACKEND_CHEATS_ROOT;
 static const unsigned kRepeatDelayFrames = 12u;  /* ~200ms em 60Hz */
 static const unsigned kRepeatPeriodFrames = 2u;  /* ~30 passos/s em 60Hz */
@@ -114,6 +115,10 @@ static int ComboIsSupportedFileForMode(unsigned mode, const char *name)
     if (mode == (unsigned) ComboFileBrowserModeGameMaster)
     {
         return ComboEndsWithIgnoreCase(name, ".mcf");
+    }
+    if (mode == (unsigned) ComboFileBrowserModeCassette)
+    {
+        return ComboEndsWithIgnoreCase(name, ".cas");
     }
     return ComboEndsWithIgnoreCase(name, ".rom")
         || ComboEndsWithIgnoreCase(name, ".mx1")
@@ -264,7 +269,15 @@ void CComboFileBrowser::Reset(void)
 
 void CComboFileBrowser::Open(unsigned mode, unsigned slot_index)
 {
-    m_Mode = (mode == (unsigned) ComboFileBrowserModeDisk) ? (unsigned) ComboFileBrowserModeDisk : (unsigned) ComboFileBrowserModeRom;
+    if (mode == (unsigned) ComboFileBrowserModeDisk
+     || mode == (unsigned) ComboFileBrowserModeCassette)
+    {
+        m_Mode = mode;
+    }
+    else
+    {
+        m_Mode = (unsigned) ComboFileBrowserModeRom;
+    }
     m_SlotIndex = slot_index > 1u ? 1u : slot_index;
     CopySmallText(m_CurrentDir, sizeof(m_CurrentDir), RootPath());
     m_LastUpPressed = FALSE;
@@ -948,6 +961,10 @@ const char *CComboFileBrowser::RootPath(void) const
     if (m_Mode == (unsigned) ComboFileBrowserModeGameMaster)
     {
         return kCheatsRootPath;
+    }
+    if (m_Mode == (unsigned) ComboFileBrowserModeCassette)
+    {
+        return kCassetteRootPath;
     }
     return (m_Mode == (unsigned) ComboFileBrowserModeDisk) ? kDisksRootPath : kRomsRootPath;
 }
