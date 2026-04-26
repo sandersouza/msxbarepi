@@ -360,10 +360,10 @@ static const u64 kFramePacingSleepTargetUs = 1200ull;
 static const u64 kFramePacingSpinThresholdUs = 80ull;
 static const uintptr kDCacheLineSize = 64u;
 static const u16 kLetterboxColor565 = 0x0000u;
-static const unsigned kScalePercentNone = 200u;
-static const unsigned kScalePercentMin = 250u;
-static const unsigned kScalePercentStep = 50u;
-static const unsigned kScalePercentHardMax = 450u;
+static const unsigned kScaleModeNative = 200u;
+static const unsigned kScaleModeHalfMax = 250u;
+static const unsigned kScaleModeFullMax = 300u;
+static const unsigned kScaleQuarterUnitOne = 4u;
 static const unsigned kScanlineModeOff = 0u;
 static const unsigned kScanlineModeLcd = 1u;
 static const unsigned kBootModeNorm = 0u;
@@ -394,9 +394,11 @@ static const unsigned kResolutionMode1080 = 1u;
 static const unsigned kResolutionMode720 = 2u;
 static const unsigned kResolutionMode768 = 3u;
 static const char kSettingsDrive[] = "SD:";
-static const char kSettingsPath[] = "SD:/msxbarepi.cfg";
-static const char kSettingsLegacyPath[] = "SD:/MSXBARE.CFG";
+static const char kSettingsPath[] = "SD:/msx.cfg";
+static const char kSettingsLegacyPath[] = "SD:/msxbarepi.cfg";
+static const char kSettingsLegacy83Path[] = "SD:/MSXBARE.CFG";
 static const char kBootConfigPath[] = "SD:/config.txt";
+static const char kDefaultCoreName[] = "msx";
 static const char kStateDirPath[] = "SD:/states";
 static const char kStatePath[] = "SD:/states/slot-last.sav";
 static const unsigned kRawBootConfigSlotBytes = 4096u;
@@ -658,70 +660,122 @@ static boolean ShouldPreferPresentArea(unsigned dst_w,
 
 static unsigned ScaleFactorFromPercent(unsigned percent)
 {
-	if (percent == kScalePercentNone)
+	if (percent <= kScaleModeNative)
 	{
 		return 1u;
 	}
-	if (percent < kScalePercentMin)
-	{
-		percent = kScalePercentMin;
-	}
-	if (percent > kScalePercentHardMax)
-	{
-		percent = kScalePercentHardMax;
-	}
-	return 2u + ((percent - kScalePercentMin) / kScalePercentStep);
-}
-
-static unsigned ScalePercentFromFactor(unsigned factor)
-{
-	if (factor <= 1u)
-	{
-		return kScalePercentNone;
-	}
-	if (factor >= 6u)
-	{
-		return kScalePercentHardMax;
-	}
-	return kScalePercentMin + ((factor - 2u) * kScalePercentStep);
-}
-
-static unsigned ComputeFixedMaxScaleFactor(unsigned screen_h)
-{
-	if (screen_h >= 1080u)
-	{
-		return 4u;
-	}
-	if (screen_h >= 720u)
+	if (percent >= kScaleModeFullMax)
 	{
 		return 3u;
 	}
 	return 2u;
 }
 
-static unsigned ComputeViewportUiMaxScalePercent(unsigned screen_h)
+static unsigned ScalePercentFromFactor(unsigned factor)
+{
+	if (factor <= 1u)
+	{
+		return kScaleModeNative;
+	}
+	if (factor >= 3u)
+	{
+		return kScaleModeFullMax;
+	}
+	return kScaleModeHalfMax;
+}
+
+static unsigned ClampScaleMode(unsigned percent)
+{
+	if (percent <= kScaleModeNative)
+	{
+		return kScaleModeNative;
+	}
+	if (percent >= kScaleModeFullMax)
+	{
+		return kScaleModeFullMax;
+	}
+	return kScaleModeHalfMax;
+}
+
+static unsigned ComputeFullscreenScaleQuarterUnits(unsigned screen_h)
 {
 	if (screen_h == 0u)
 	{
-		return kScalePercentHardMax;
+		return 17u; /* 4.25x for the common 1080p path until HDMI is known. */
 	}
-	return ScalePercentFromFactor(ComputeFixedMaxScaleFactor(screen_h));
+	unsigned units = (screen_h * kScaleQuarterUnitOne) / kViewportBaseHeight;
+	if (units < kScaleQuarterUnitOne)
+	{
+		units = kScaleQuarterUnitOne;
+	}
+	return units;
+}
+
+static unsigned ComputeScaleQuarterUnits(unsigned scale_mode, unsigned screen_h)
+{
+	const unsigned full_units = ComputeFullscreenScaleQuarterUnits(screen_h);
+	if (scale_mode <= kScaleModeNative)
+	{
+		return kScaleQuarterUnitOne;
+	}
+	if (scale_mode >= kScaleModeFullMax)
+	{
+		return full_units;
+	}
+	unsigned half_units = kScaleQuarterUnitOne + ((full_units - kScaleQuarterUnitOne) / 2u);
+	if (half_units < kScaleQuarterUnitOne)
+	{
+		half_units = kScaleQuarterUnitOne;
+	}
+	return half_units;
+}
+
+static unsigned ComputeViewportUiMaxScalePercent(unsigned screen_h)
+{
+	(void) screen_h;
+	return kScaleModeFullMax;
 }
 
 static boolean ScalePercentIsNone(unsigned percent)
 {
-	return percent == kScalePercentNone ? TRUE : FALSE;
+	return percent <= kScaleModeNative ? TRUE : FALSE;
 }
 
 static unsigned ClampScalePercent(unsigned percent, unsigned max_scale)
 {
-	if (ScalePercentIsNone(percent))
-	{
-		return kScalePercentNone;
-	}
-	if (percent < kScalePercentMin) percent = kScalePercentMin;
+	percent = ClampScaleMode(percent);
 	if (percent > max_scale) percent = max_scale;
 	return percent;
+}
+
+static unsigned ScaleModeFromSettingsValue(unsigned value)
+{
+	if (value <= 3u)
+	{
+		return ScalePercentFromFactor(value);
+	}
+	if (value <= kScaleModeNative)
+	{
+		return kScaleModeNative;
+	}
+	if (value < kScaleModeFullMax)
+	{
+		return kScaleModeHalfMax;
+	}
+	return kScaleModeFullMax;
+}
+
+static unsigned ScaleModeFromLegacyOverscan(unsigned value)
+{
+	if (value >= 75u)
+	{
+		return kScaleModeFullMax;
+	}
+	if (value >= 25u)
+	{
+		return kScaleModeHalfMax;
+	}
+	return kScaleModeNative;
 }
 
 static unsigned ComputeEffectiveViewportScalePercent(unsigned manual_scale_percent,
@@ -729,35 +783,23 @@ static unsigned ComputeEffectiveViewportScalePercent(unsigned manual_scale_perce
 									 unsigned screen_height,
 									 unsigned overlay_mode)
 {
-	if (max_scale_percent < kScalePercentMin)
+	if (max_scale_percent < kScaleModeNative)
 	{
-		max_scale_percent = kScalePercentMin;
+		max_scale_percent = kScaleModeNative;
 	}
-	if (max_scale_percent > kScalePercentHardMax)
+	if (max_scale_percent > kScaleModeFullMax)
 	{
-		max_scale_percent = kScalePercentHardMax;
+		max_scale_percent = kScaleModeFullMax;
 	}
 
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
-	if (DebugOverlayModeEnabled(ClampDebugOverlayMode(overlay_mode)))
-	{
-		return ClampScalePercent(manual_scale_percent, max_scale_percent);
-	}
-#else
 	(void) overlay_mode;
-#endif
-
-	unsigned fixed_scale_percent = ScalePercentFromFactor(ComputeFixedMaxScaleFactor(screen_height));
-	if (fixed_scale_percent > max_scale_percent)
-	{
-		fixed_scale_percent = max_scale_percent;
-	}
-	return fixed_scale_percent;
+	(void) screen_height;
+	return ClampScalePercent(manual_scale_percent, max_scale_percent);
 }
 
 static boolean EffectiveOverscanEnabled(unsigned scale_percent)
 {
-	return (scale_percent > kScalePercentMin) ? TRUE : FALSE;
+	return (scale_percent > kScaleModeNative) ? TRUE : FALSE;
 }
 
 static void ComputeViewportLayout(unsigned screen_width, unsigned screen_height,
@@ -786,11 +828,11 @@ static void ComputeViewportLayout(unsigned screen_width, unsigned screen_height,
 		const boolean hires_mode = src_width >= 512u ? TRUE : FALSE;
 		const unsigned box_base_w = kViewportBaseWidth;
 		const unsigned box_base_h = kViewportBaseHeight;
-		const unsigned scale_factor = ScaleFactorFromPercent(scale_percent);
+		const unsigned scale_quarter_units = ComputeScaleQuarterUnits(scale_percent, screen_height);
 
 		(void) hires_mode;
-		full_w = box_base_w * scale_factor;
-		full_h = box_base_h * scale_factor;
+		full_w = (box_base_w * scale_quarter_units) / kScaleQuarterUnitOne;
+		full_h = (box_base_h * scale_quarter_units) / kScaleQuarterUnitOne;
 
 		if (full_w == 0u) full_w = 1u;
 		if (full_h == 0u) full_h = 1u;
@@ -1240,6 +1282,223 @@ static boolean BootConfigKeyEquals(const char *line, unsigned key_len, const cha
 	return literal[key_len] == '\0' ? TRUE : FALSE;
 }
 
+static int TextEqualsIgnoreCase(const char *a, const char *b)
+{
+	if (a == 0 || b == 0)
+	{
+		return 0;
+	}
+	unsigned i = 0u;
+	while (a[i] != '\0' && b[i] != '\0')
+	{
+		if (ToUpperAscii(a[i]) != ToUpperAscii(b[i]))
+		{
+			return 0;
+		}
+		++i;
+	}
+	return (a[i] == '\0' && b[i] == '\0') ? 1 : 0;
+}
+
+static int TextStartsWithIgnoreCase(const char *text, const char *prefix)
+{
+	if (text == 0 || prefix == 0)
+	{
+		return 0;
+	}
+	for (unsigned i = 0u; prefix[i] != '\0'; ++i)
+	{
+		if (text[i] == '\0' || ToUpperAscii(text[i]) != ToUpperAscii(prefix[i]))
+		{
+			return 0;
+		}
+	}
+	return 1;
+}
+
+static int TextEndsWithIgnoreCase(const char *text, const char *suffix)
+{
+	if (text == 0 || suffix == 0)
+	{
+		return 0;
+	}
+	const unsigned text_len = (unsigned) strlen(text);
+	const unsigned suffix_len = (unsigned) strlen(suffix);
+	if (suffix_len == 0u || text_len < suffix_len)
+	{
+		return 0;
+	}
+	const char *start = text + text_len - suffix_len;
+	return TextStartsWithIgnoreCase(start, suffix);
+}
+
+static int CoreNameCompareIgnoreCase(const char *a, const char *b)
+{
+	if (a == 0 && b == 0) return 0;
+	if (a == 0) return -1;
+	if (b == 0) return 1;
+	unsigned i = 0u;
+	while (a[i] != '\0' && b[i] != '\0')
+	{
+		const char ca = ToUpperAscii(a[i]);
+		const char cb = ToUpperAscii(b[i]);
+		if (ca < cb) return -1;
+		if (ca > cb) return 1;
+		++i;
+	}
+	if (a[i] == '\0' && b[i] == '\0') return 0;
+	return (a[i] == '\0') ? -1 : 1;
+}
+
+static void CopyTextBounded(char *dst, unsigned dst_size, const char *src)
+{
+	if (dst == 0 || dst_size == 0u)
+	{
+		return;
+	}
+	if (src == 0)
+	{
+		dst[0] = '\0';
+		return;
+	}
+	unsigned i = 0u;
+	while (src[i] != '\0' && i + 1u < dst_size)
+	{
+		dst[i] = src[i];
+		++i;
+	}
+	dst[i] = '\0';
+}
+
+static void NormalizeLegacyMsxAssetPath(char *path, unsigned path_size)
+{
+	if (path == 0 || path_size == 0u || path[0] == '\0')
+	{
+		return;
+	}
+
+	const char *replacement = 0;
+	const char *tail = 0;
+	if (TextStartsWithIgnoreCase(path, "SD:/roms"))
+	{
+		replacement = "SD:/msx/roms";
+		tail = path + 8u;
+	}
+	else if (TextStartsWithIgnoreCase(path, "SD:/disks"))
+	{
+		replacement = "SD:/msx/disks";
+		tail = path + 9u;
+	}
+	else if (TextStartsWithIgnoreCase(path, "SD:/cheats"))
+	{
+		replacement = "SD:/msx/cheats";
+		tail = path + 10u;
+	}
+	if (replacement == 0 || tail == 0)
+	{
+		return;
+	}
+
+	char migrated[192];
+	unsigned out = 0u;
+	for (unsigned i = 0u; replacement[i] != '\0' && out + 1u < sizeof(migrated); ++i)
+	{
+		migrated[out++] = replacement[i];
+	}
+	for (unsigned i = 0u; tail[i] != '\0' && out + 1u < sizeof(migrated); ++i)
+	{
+		migrated[out++] = tail[i];
+	}
+	migrated[out] = '\0';
+	CopyTextBounded(path, path_size, migrated);
+}
+
+static boolean CopyCoreNameFromImageName(char *dst, unsigned dst_size, const char *name)
+{
+	if (dst == 0 || dst_size == 0u || name == 0 || name[0] == '\0' || name[0] == '.')
+	{
+		return FALSE;
+	}
+	if (!TextEndsWithIgnoreCase(name, ".img"))
+	{
+		return FALSE;
+	}
+	const unsigned name_len = (unsigned) strlen(name);
+	if (name_len <= 4u)
+	{
+		return FALSE;
+	}
+	const unsigned core_len = name_len - 4u;
+	unsigned out = 0u;
+	for (unsigned i = 0u; i < core_len && out + 1u < dst_size; ++i)
+	{
+		const char ch = name[i];
+		if (ch == '/' || ch == '\\' || ch == ':' || ch == ' ' || ch == '\t')
+		{
+			return FALSE;
+		}
+		dst[out++] = ch;
+	}
+	dst[out] = '\0';
+	return out > 0u ? TRUE : FALSE;
+}
+
+static boolean CopyCoreNameFromBootValue(char *dst, unsigned dst_size, const char *value_start, const char *value_end)
+{
+	char image_name[64];
+	unsigned out = 0u;
+	if (dst == 0 || dst_size == 0u)
+	{
+		return FALSE;
+	}
+	dst[0] = '\0';
+	if (value_start == 0 || value_end == 0 || value_end <= value_start)
+	{
+		return FALSE;
+	}
+
+	while (value_start < value_end && (*value_start == ' ' || *value_start == '\t'))
+	{
+		++value_start;
+	}
+	while (value_end > value_start && (value_end[-1] == ' ' || value_end[-1] == '\t'))
+	{
+		--value_end;
+	}
+	for (const char *p = value_start; p < value_end && out + 1u < sizeof(image_name); ++p)
+	{
+		if (*p == ' ' || *p == '\t' || *p == '#')
+		{
+			break;
+		}
+		if (*p == '/' || *p == '\\' || *p == ':')
+		{
+			out = 0u;
+			continue;
+		}
+		image_name[out++] = *p;
+	}
+	image_name[out] = '\0';
+	return CopyCoreNameFromImageName(dst, dst_size, image_name);
+}
+
+static boolean AppendTextToBuffer(char *buffer, unsigned buffer_size, unsigned *offset, const char *text)
+{
+	if (buffer == 0 || buffer_size == 0u || offset == 0 || text == 0)
+	{
+		return FALSE;
+	}
+	const unsigned len = (unsigned) strlen(text);
+	if (*offset + len >= buffer_size)
+	{
+		return FALSE;
+	}
+	memcpy(buffer + *offset, text, len);
+	*offset += len;
+	buffer[*offset] = '\0';
+	return TRUE;
+}
+
 static boolean StartupPathNeedsFatFs(const char *path)
 {
 	if (path == 0)
@@ -1254,6 +1513,15 @@ static boolean StartupPathNeedsFatFs(const char *path)
 		&& (path[1] == 'D' || path[1] == 'd')
 		&& path[2] == ':'
 		&& (path[3] == '/' || path[3] == '\\')) ? TRUE : FALSE;
+}
+
+static boolean BuildUsesRawBootConfig(void)
+{
+#if MSXBARE_USE_RAW_BOOT_CONFIG
+	return TRUE;
+#else
+	return FALSE;
+#endif
 }
 
 static boolean StartupMediaNeedsFatFs(void)
@@ -1715,10 +1983,14 @@ CComboKernel::CComboKernel(void)
 	m_BlitMapValid(FALSE),
 	m_BlitMapWovenHiRes(FALSE),
 	m_GameMasterCatalog{{0}},
-	m_OverscanPercent(250u),
+	m_OverscanPercent(300u),
 	m_ScaleMaxFitEnabled(FALSE),
 	m_Language(ComboLanguagePT),
 	m_ResolutionMode(kResolutionModeAuto),
+	m_CoreNames{{0}},
+	m_CoreCount(0u),
+	m_CoreSelected(0u),
+	m_CoreActiveName{0},
 	m_ScanlineMode(kScanlineModeOff),
 	m_Gfx9000Enabled(FALSE),
 	m_Gfx9000AutoCfgApplied(FALSE),
@@ -1758,13 +2030,13 @@ CComboKernel::CComboKernel(void)
 		m_SettingsFatFsMounted(FALSE),
 		m_SettingsFatFsMountPending(FALSE),
 		m_RawBootConfigLoaded(FALSE),
-		m_UartTelemetryEnabled(FALSE),
-	m_KanjiRomEnabled(TRUE),
-	m_KanjiRomAvailable(FALSE),
+	m_UartTelemetryEnabled(FALSE),
 	m_SettingsLoadPending(FALSE),
 	m_InitramfsDeferredMountPending(FALSE),
 	m_SettingsSavePending(FALSE),
 	m_ResolutionModeLoadPending(FALSE),
+	m_CoreListRefreshPending(FALSE),
+	m_CoreSwitchPending(FALSE),
 	m_StateSavePending(FALSE),
 	m_StateLoadPending(FALSE),
 	m_MediaCatalogStarted(FALSE),
@@ -1788,6 +2060,11 @@ CComboKernel::CComboKernel(void)
 {
 	s_Instance = this;
 	m_ActLED.Blink(5);
+	CopyTextBounded(m_CoreActiveName, sizeof(m_CoreActiveName), kDefaultCoreName);
+	CopyTextBounded(m_CoreNames[0], sizeof(m_CoreNames[0]), kDefaultCoreName);
+	m_CoreCount = 1u;
+	m_CoreSelected = 0u;
+	m_PauseMenu.SetCoreName(m_CoreActiveName, TRUE);
 	memset(m_DebugOverlayLineLengths, 0, sizeof(m_DebugOverlayLineLengths));
 	NormalizeSettingsForBuild();
 	ResetUartPerfTelemetry();
@@ -2263,24 +2540,7 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 			}
 			else if (SettingsKeyEquals(line, key_len, "scale"))
 			{
-				unsigned clamped = value;
-				if (clamped == 500u)
-				{
-					clamped = kScalePercentHardMax;
-				}
-				else
-				{
-					const unsigned max_saved_factor = ScaleFactorFromPercent(kScalePercentHardMax);
-					if (clamped > 0u && clamped <= max_saved_factor)
-					{
-						clamped = ScalePercentFromFactor(clamped);
-					}
-				}
-				if (clamped != kScalePercentNone && clamped < kScalePercentMin) clamped = kScalePercentMin;
-				if (clamped > kScalePercentHardMax) clamped = kScalePercentHardMax;
-				m_OverscanPercent = (clamped == kScalePercentNone)
-					? kScalePercentNone
-					: ((clamped / kScalePercentStep) * kScalePercentStep);
+				m_OverscanPercent = ScaleModeFromSettingsValue(value);
 			}
 			else if (SettingsKeyEquals(line, key_len, "language"))
 			{
@@ -2301,10 +2561,6 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 			else if (SettingsKeyEquals(line, key_len, "disk_rom"))
 			{
 				m_DiskRomEnabled = value ? TRUE : FALSE;
-			}
-			else if (SettingsKeyEquals(line, key_len, "kanji_rom"))
-			{
-				m_KanjiRomEnabled = value ? TRUE : FALSE;
 			}
 			else if (SettingsKeyEquals(line, key_len, "boot_mode"))
 			{
@@ -2423,6 +2679,10 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 	}
 
 	NormalizeSettingsForBuild();
+	NormalizeLegacyMsxAssetPath(cfg_carta_path, sizeof(cfg_carta_path));
+	NormalizeLegacyMsxAssetPath(cfg_cartb_path, sizeof(cfg_cartb_path));
+	NormalizeLegacyMsxAssetPath(cfg_diska_path, sizeof(cfg_diska_path));
+	NormalizeLegacyMsxAssetPath(cfg_diskb_path, sizeof(cfg_diskb_path));
 #if MSXBARE_FEAT_GFX9000
 	if ((has_cfg_carta && RomPathLooksLikeGfx9000(cfg_carta_path))
 	 || (has_cfg_cartb && RomPathLooksLikeGfx9000(cfg_cartb_path)))
@@ -2447,8 +2707,6 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 	m_PauseMenu.SetGfx9000Enabled(m_Gfx9000Enabled);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 	m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
-	m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
-	m_PauseMenu.SetKanjiRomAvailable(m_KanjiRomAvailable);
 	m_PauseMenu.SetBootMode(m_BootMode);
 	m_PauseMenu.SetMachineProfile(m_MachineProfile);
 	m_PauseMenu.SetRamMapperKb(m_RamMapperKb);
@@ -2486,7 +2744,6 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 	}
 	backend_runtime_set_refresh_hz(m_RefreshRateHz);
 	backend_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
-	backend_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
 	backend_runtime_set_gfx9000_enabled(m_Gfx9000Enabled);
 	backend_runtime_set_boot_mode(m_BootMode);
 	backend_runtime_set_model_profile(m_MachineProfile);
@@ -2514,7 +2771,6 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 	{
 		m_SccDualCartEnabled = FALSE;
 	}
-	SyncKanjiRomStateFromRuntime();
 	m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled, backend_runtime_get_scc_dual_cart_available());
 #endif
 	return TRUE;
@@ -2522,6 +2778,9 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 
 boolean CComboKernel::LoadRawBootConfig(void)
 {
+#if !MSXBARE_USE_RAW_BOOT_CONFIG
+	return FALSE;
+#else
 	u64 slot_a = 0u;
 	u64 slot_b = 0u;
 	if (!ResolveRawBootConfigSlots(&slot_a, &slot_b))
@@ -2574,6 +2833,7 @@ boolean CComboKernel::LoadRawBootConfig(void)
 	m_RawBootConfigLoaded = TRUE;
 	BootPhase(m_Logger, "BT6", "raw BootConfig... OK");
 	return TRUE;
+#endif
 }
 
 void CComboKernel::InitializeDebugRuntime(void)
@@ -2736,40 +2996,52 @@ TComboShutdownMode CComboKernel::Run(void)
 
 	if (InitializeSettingsStorage())
 	{
-		boolean raw_loaded = FALSE;
+		if (BuildUsesRawBootConfig())
 		{
-			const u64 raw_start_us = CTimer::GetClockTicks64();
-			raw_loaded = LoadRawBootConfig();
-			m_BootRawConfigMs = (unsigned) ((CTimer::GetClockTicks64() - raw_start_us) / 1000u);
-		}
-
-		if (raw_loaded)
-		{
-			if (StartupMediaNeedsFatFs())
+			boolean raw_loaded = FALSE;
 			{
-				const u64 fat_start_us = CTimer::GetClockTicks64();
-				m_SettingsFatFsMountPending = MountSettingsFileSystem("BT5M") ? FALSE : TRUE;
-				m_BootFatDeferredMs = (unsigned) ((CTimer::GetClockTicks64() - fat_start_us) / 1000u);
+				const u64 raw_start_us = CTimer::GetClockTicks64();
+				raw_loaded = LoadRawBootConfig();
+				m_BootRawConfigMs = (unsigned) ((CTimer::GetClockTicks64() - raw_start_us) / 1000u);
+			}
+
+			if (raw_loaded)
+			{
+				if (StartupMediaNeedsFatFs())
+				{
+					const u64 fat_start_us = CTimer::GetClockTicks64();
+					m_SettingsFatFsMountPending = MountSettingsFileSystem("BT5M") ? FALSE : TRUE;
+					m_BootFatDeferredMs = (unsigned) ((CTimer::GetClockTicks64() - fat_start_us) / 1000u);
+				}
+				else
+				{
+					m_SettingsFatFsMountPending = TRUE;
+					BootPhase(m_Logger, "BT5", "FATFS mount... DEFER");
+				}
 			}
 			else
 			{
-				m_SettingsFatFsMountPending = TRUE;
-				BootPhase(m_Logger, "BT5", "FATFS mount... DEFER");
+				/* First boot or raw snapshot missing: keep compatibility and seed raw before backend. */
+				const u64 fat_start_us = CTimer::GetClockTicks64();
+				if (MountSettingsFileSystem("BT5"))
+				{
+					LoadSettingsFromStorage();
+					char seed[1024];
+					const unsigned seed_len = BuildSettingsPayload(seed, sizeof(seed));
+					if (seed_len != 0u)
+					{
+						SaveRawBootConfigBuffer(seed, seed_len);
+					}
+				}
+				m_BootFatDeferredMs = (unsigned) ((CTimer::GetClockTicks64() - fat_start_us) / 1000u);
 			}
 		}
 		else
 		{
-			/* First boot or raw snapshot missing: keep compatibility and seed raw before backend. */
 			const u64 fat_start_us = CTimer::GetClockTicks64();
 			if (MountSettingsFileSystem("BT5"))
 			{
 				LoadSettingsFromStorage();
-				char seed[1024];
-				const unsigned seed_len = BuildSettingsPayload(seed, sizeof(seed));
-				if (seed_len != 0u)
-				{
-					SaveRawBootConfigBuffer(seed, seed_len);
-				}
 			}
 			m_BootFatDeferredMs = (unsigned) ((CTimer::GetClockTicks64() - fat_start_us) / 1000u);
 		}
@@ -2806,7 +3078,6 @@ TComboShutdownMode CComboKernel::Run(void)
 			m_RefreshRateHz = ClampRefreshRateHz(m_RefreshRateHz);
 			backend_runtime_set_refresh_hz(m_RefreshRateHz);
 			backend_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
-			backend_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
 			backend_runtime_set_gfx9000_enabled(m_Gfx9000Enabled);
 			backend_runtime_set_boot_mode(m_BootMode);
 			backend_runtime_set_model_profile(m_MachineProfile);
@@ -2930,8 +3201,6 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_RefreshRateHz = 60u;
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 	m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
-	m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
-	m_PauseMenu.SetKanjiRomAvailable(m_KanjiRomAvailable);
 	m_PauseMenu.SetBootMode(m_BootMode);
 	m_PauseMenu.SetMachineProfile(m_MachineProfile);
 	m_PauseMenu.SetRamMapperKb(m_RamMapperKb);
@@ -3198,6 +3467,25 @@ TComboShutdownMode CComboKernel::Run(void)
 				m_PauseMenu.RequestRedraw();
 			}
 			m_ResolutionModeLoadPending = FALSE;
+		}
+		if (m_CoreListRefreshPending)
+		{
+			if (m_EmulationPaused && m_PauseMenu.IsInSettings())
+			{
+				RefreshCoreListFromStorage();
+				m_PauseMenu.RequestRedraw();
+			}
+			m_CoreListRefreshPending = FALSE;
+		}
+		if (m_CoreSwitchPending && !m_EmulationPaused)
+		{
+			if (PersistSelectedCoreToBootConfig())
+			{
+				PrimeAudioSilenceBeforeReset();
+				return ComboShutdownReboot;
+			}
+			m_CoreSwitchPending = FALSE;
+			m_Logger.Write(FromKernel, LogWarning, "Settings: CORE switch failed; reboot canceled");
 		}
 		if (m_StateSavePending)
 		{
@@ -5059,7 +5347,6 @@ void CComboKernel::ApplyRuntimeSettingsToBackend(void)
 		backend_runtime_set_overscan(EffectiveOverscanEnabled(effective_scale));
 	}
 	backend_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
-	backend_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
 	backend_runtime_set_gfx9000_enabled(m_Gfx9000Enabled);
 	backend_runtime_set_boot_mode(m_BootMode);
 	backend_runtime_set_model_profile(m_MachineProfile);
@@ -5073,7 +5360,6 @@ void CComboKernel::ApplyRuntimeSettingsToBackend(void)
 	{
 		m_SccDualCartEnabled = FALSE;
 	}
-	SyncKanjiRomStateFromRuntime();
 	SyncRefreshRateStateFromRuntime();
 #endif
 }
@@ -5159,25 +5445,6 @@ void CComboKernel::SyncRefreshRateStateFromRuntime(void)
 #endif
 }
 
-void CComboKernel::SyncKanjiRomStateFromRuntime(void)
-{
-#if MSXBARE_ENABLE_FMSX
-	if (!m_BackendReady || !backend_runtime_is_capability_available(BACKEND_CAP_MACHINE))
-	{
-		m_KanjiRomAvailable = FALSE;
-		m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
-		m_PauseMenu.SetKanjiRomAvailable(m_KanjiRomAvailable);
-		return;
-	}
-	m_KanjiRomAvailable = backend_runtime_get_kanji_rom_available();
-	m_KanjiRomEnabled = backend_runtime_get_kanji_rom_enabled();
-#else
-	m_KanjiRomAvailable = FALSE;
-#endif
-	m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
-	m_PauseMenu.SetKanjiRomAvailable(m_KanjiRomAvailable);
-}
-
 void CComboKernel::UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux)
 {
 	m_SettingsSaveStage = stage;
@@ -5224,8 +5491,13 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	}
 	if (stat_result == FR_NO_FILE)
 	{
+		settings_path = kSettingsLegacy83Path;
+		stat_result = f_stat(settings_path, &file_info);
+	}
+	if (stat_result == FR_NO_FILE)
+	{
 		UpdateLoadDiagTelemetry(5102u); /* CFG not found */
-		BootPhaseWarn(m_Logger, "BT6", "msxbarepi.cfg... DEFAULTS");
+		BootPhaseWarn(m_Logger, "BT6", "msx.cfg... DEFAULTS");
 		m_Logger.Write(FromKernel, LogNotice, "Settings file not found; using defaults");
 		return;
 	}
@@ -5233,7 +5505,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	{
 		UpdateLoadDiagTelemetry(5190u + (ClampFatFsCode(stat_result) % 10u)); /* CFG stat fail */
 		LogSdOpResult(m_Logger, "CFG:STAT", stat_result, settings_path, TRUE);
-		BootPhaseWarn(m_Logger, "BT6", "msxbarepi.cfg... FALLBACK");
+		BootPhaseWarn(m_Logger, "BT6", "msx.cfg... FALLBACK");
 		m_Logger.Write(FromKernel, LogWarning, "Settings stat failed; using defaults");
 		return;
 	}
@@ -5245,7 +5517,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	{
 		UpdateLoadDiagTelemetry(5290u + (ClampFatFsCode(open_result) % 10u)); /* CFG open fail */
 		LogSdOpResult(m_Logger, "CFG:OPEN", open_result, settings_path, TRUE);
-		BootPhaseWarn(m_Logger, "BT6", "msxbarepi.cfg... FALLBACK");
+		BootPhaseWarn(m_Logger, "BT6", "msx.cfg... FALLBACK");
 		m_Logger.Write(FromKernel, LogWarning, "Settings open failed; using defaults");
 		return;
 	}
@@ -5262,7 +5534,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 		{
 			LogSdOpResult(m_Logger, "CFG:READ", read_result, settings_path, TRUE);
 		}
-		BootPhaseWarn(m_Logger, "BT6", "msxbarepi.cfg... FALLBACK");
+		BootPhaseWarn(m_Logger, "BT6", "msx.cfg... FALLBACK");
 		m_Logger.Write(FromKernel, LogWarning, "Settings read failed; using defaults");
 		return;
 	}
@@ -5272,7 +5544,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	/* Corruption guard: only parse files written by SaveSettingsToStorage(). */
 	if (strstr(buffer, "#END") == 0)
 	{
-		BootPhaseWarn(m_Logger, "BT6", "msxbarepi.cfg... FALLBACK");
+		BootPhaseWarn(m_Logger, "BT6", "msx.cfg... FALLBACK");
 		m_Logger.Write(FromKernel, LogWarning, "Settings file invalid/corrupt; using defaults");
 		return;
 	}
@@ -5331,39 +5603,19 @@ void CComboKernel::LoadSettingsFromStorage(void)
 				}
 				else if (SettingsKeyEquals(line, key_len, "scale"))
 				{
-					unsigned clamped = value;
-					if (clamped == 500u)
-					{
-						clamped = kScalePercentHardMax;
-					}
-					else
-					{
-						const unsigned max_saved_factor = ScaleFactorFromPercent(kScalePercentHardMax);
-						if (clamped > 0u && clamped <= max_saved_factor)
-						{
-							clamped = ScalePercentFromFactor(clamped);
-						}
-					}
-					if (clamped != kScalePercentNone && clamped < kScalePercentMin) clamped = kScalePercentMin;
-					if (clamped > kScalePercentHardMax) clamped = kScalePercentHardMax;
-					m_OverscanPercent = (clamped == kScalePercentNone)
-						? kScalePercentNone
-						: ((clamped / kScalePercentStep) * kScalePercentStep);
+					m_OverscanPercent = ScaleModeFromSettingsValue(value);
 				}
 				else if (SettingsKeyEquals(line, key_len, "scale_max"))
 				{
 					if (value)
 					{
-						m_OverscanPercent = kScalePercentHardMax;
+						m_OverscanPercent = kScaleModeFullMax;
 					}
 				}
 				else if (SettingsKeyEquals(line, key_len, "overscan"))
 				{
-					/* Legacy migration: overscan 0..100 -> scale 250..450 (steps of 50). */
 					const unsigned legacy = value > 100u ? 100u : value;
-					unsigned migrated = kScalePercentMin + ((legacy / 25u) * kScalePercentStep);
-					if (migrated > kScalePercentHardMax) migrated = kScalePercentHardMax;
-					m_OverscanPercent = migrated;
+					m_OverscanPercent = ScaleModeFromLegacyOverscan(legacy);
 				}
 				else if (SettingsKeyEquals(line, key_len, "language"))
 				{
@@ -5384,10 +5636,6 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			else if (SettingsKeyEquals(line, key_len, "disk_rom"))
 			{
 				m_DiskRomEnabled = value ? TRUE : FALSE;
-			}
-			else if (SettingsKeyEquals(line, key_len, "kanji_rom"))
-			{
-				m_KanjiRomEnabled = value ? TRUE : FALSE;
 			}
 				else if (SettingsKeyEquals(line, key_len, "boot_mode"))
 				{
@@ -5515,6 +5763,10 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	}
 
 	NormalizeSettingsForBuild();
+	NormalizeLegacyMsxAssetPath(cfg_carta_path, sizeof(cfg_carta_path));
+	NormalizeLegacyMsxAssetPath(cfg_cartb_path, sizeof(cfg_cartb_path));
+	NormalizeLegacyMsxAssetPath(cfg_diska_path, sizeof(cfg_diska_path));
+	NormalizeLegacyMsxAssetPath(cfg_diskb_path, sizeof(cfg_diskb_path));
 #if MSXBARE_FEAT_GFX9000
 	if ((has_cfg_carta && RomPathLooksLikeGfx9000(cfg_carta_path))
 	 || (has_cfg_cartb && RomPathLooksLikeGfx9000(cfg_cartb_path)))
@@ -5539,8 +5791,6 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetGfx9000Enabled(m_Gfx9000Enabled);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 	m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
-	m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
-	m_PauseMenu.SetKanjiRomAvailable(m_KanjiRomAvailable);
 	m_PauseMenu.SetBootMode(m_BootMode);
 	m_PauseMenu.SetMachineProfile(m_MachineProfile);
 	m_PauseMenu.SetRamMapperKb(m_RamMapperKb);
@@ -5579,7 +5829,6 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	}
 	backend_runtime_set_refresh_hz(m_RefreshRateHz);
 	backend_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
-	backend_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
 	backend_runtime_set_gfx9000_enabled(m_Gfx9000Enabled);
 	backend_runtime_set_boot_mode(m_BootMode);
 	backend_runtime_set_model_profile(m_MachineProfile);
@@ -5607,14 +5856,13 @@ void CComboKernel::LoadSettingsFromStorage(void)
 		{
 			m_SccDualCartEnabled = FALSE;
 		}
-		SyncKanjiRomStateFromRuntime();
 		m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled, backend_runtime_get_scc_dual_cart_available());
 	#endif
 
 	CString line_log;
 	line_log.Format("Settings loaded from %s", settings_path);
 	m_Logger.Write(FromKernel, LogNotice, line_log);
-	BootPhase(m_Logger, "BT6", "msxbarepi.cfg... OK");
+	BootPhase(m_Logger, "BT6", "msx.cfg... OK");
 }
 
 unsigned CComboKernel::BuildSettingsPayload(char *buffer, unsigned buffer_size)
@@ -5671,7 +5919,6 @@ unsigned CComboKernel::BuildSettingsPayload(char *buffer, unsigned buffer_size)
 	APPEND_LINE_FMT("gfx9000=%u\n", (MSXBARE_FEAT_GFX9000 && m_Gfx9000Enabled) ? 1u : 0u);
 	APPEND_LINE_FMT("refresh=%u\n", ClampRefreshRateHz(m_RefreshRateHz));
 	APPEND_LINE_FMT("disk_rom=%u\n", m_DiskRomEnabled ? 1u : 0u);
-	APPEND_LINE_FMT("kanji_rom=%u\n", m_KanjiRomEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("boot_mode=%u\n", m_BootMode);
 	APPEND_LINE_FMT("machine=%u\n", m_MachineProfile);
 	APPEND_LINE_FMT("rammapper_kb=%u\n", m_RamMapperKb);
@@ -5723,6 +5970,11 @@ unsigned CComboKernel::BuildSettingsPayload(char *buffer, unsigned buffer_size)
 
 void CComboKernel::SaveRawBootConfigBuffer(const char *payload, unsigned payload_len)
 {
+#if !MSXBARE_USE_RAW_BOOT_CONFIG
+	(void) payload;
+	(void) payload_len;
+	return;
+#else
 	if (!m_SettingsStorageReady || payload == 0 || payload_len == 0u || payload_len > kRawBootConfigMaxPayload)
 	{
 		return;
@@ -5784,6 +6036,7 @@ void CComboKernel::SaveRawBootConfigBuffer(const char *payload, unsigned payload
 	{
 		m_Logger.Write(FromKernel, LogWarning, "Raw BootConfig save failed");
 	}
+#endif
 }
 
 void CComboKernel::SaveSettingsToStorage(void)
@@ -5806,7 +6059,11 @@ void CComboKernel::SaveSettingsToStorage(void)
 	if (!m_SettingsFatFsMounted)
 	{
 		UpdateSettingsSaveTelemetry(90u, 0u, 0u); /* storage unavailable */
+#if MSXBARE_USE_RAW_BOOT_CONFIG
 		m_Logger.Write(FromKernel, LogWarning, "Settings FAT save unavailable (raw saved if SD is ready)");
+#else
+		m_Logger.Write(FromKernel, LogWarning, "Settings FAT save unavailable (raw disabled by Boot Strategy)");
+#endif
 		return;
 	}
 
@@ -6112,6 +6369,320 @@ void CComboKernel::PersistResolutionModeToBootConfig(unsigned mode)
 	(void) f_write(&out, output, out_len, &written);
 	(void) f_truncate(&out);
 	(void) f_close(&out);
+}
+
+void CComboKernel::RefreshCoreListFromStorage(void)
+{
+	CopyTextBounded(m_CoreActiveName, sizeof(m_CoreActiveName), kDefaultCoreName);
+	m_CoreCount = 0u;
+	m_CoreSelected = 0u;
+
+	if (!m_SettingsFatFsMounted)
+	{
+		CopyTextBounded(m_CoreNames[0], sizeof(m_CoreNames[0]), m_CoreActiveName);
+		m_CoreCount = 1u;
+		m_PauseMenu.SetCoreName(m_CoreActiveName, TRUE);
+		return;
+	}
+
+	FIL cfg;
+	if (f_open(&cfg, kBootConfigPath, FA_READ) == FR_OK)
+	{
+		char buffer[4096];
+		UINT bytes_read = 0u;
+		if (f_read(&cfg, buffer, sizeof(buffer) - 1u, &bytes_read) == FR_OK
+			&& bytes_read > 0u
+			&& bytes_read < sizeof(buffer) - 1u)
+		{
+			buffer[bytes_read] = '\0';
+			char *line = buffer;
+			while (*line != '\0')
+			{
+				while (*line == '\r' || *line == '\n')
+				{
+					++line;
+				}
+				if (*line == '\0')
+				{
+					break;
+				}
+				char *line_end = line;
+				while (*line_end != '\0' && *line_end != '\r' && *line_end != '\n')
+				{
+					++line_end;
+				}
+				char *eq = line;
+				while (eq < line_end && *eq != '=')
+				{
+					++eq;
+				}
+				if (eq < line_end)
+				{
+					const unsigned key_len = (unsigned) (eq - line);
+					if (BootConfigKeyEquals(line, key_len, "kernel"))
+					{
+						char parsed[kCoreNameBytes];
+						if (CopyCoreNameFromBootValue(parsed, sizeof(parsed), eq + 1, line_end))
+						{
+							CopyTextBounded(m_CoreActiveName, sizeof(m_CoreActiveName), parsed);
+						}
+						break;
+					}
+				}
+				line = line_end;
+			}
+		}
+		(void) f_close(&cfg);
+	}
+
+	DIR dir;
+	if (f_opendir(&dir, "SD:/") == FR_OK)
+	{
+		while (m_CoreCount < kMaxCoreEntries)
+		{
+			FILINFO file_info;
+			const FRESULT read_result = f_readdir(&dir, &file_info);
+			if (read_result != FR_OK || file_info.fname[0] == '\0')
+			{
+				break;
+			}
+			if ((file_info.fattrib & AM_DIR) != 0u)
+			{
+				continue;
+			}
+			char core_name[kCoreNameBytes];
+			if (!CopyCoreNameFromImageName(core_name, sizeof(core_name), file_info.fname))
+			{
+				continue;
+			}
+			boolean exists = FALSE;
+			unsigned insert_at = m_CoreCount;
+			for (unsigned i = 0u; i < m_CoreCount; ++i)
+			{
+				const int cmp = CoreNameCompareIgnoreCase(core_name, m_CoreNames[i]);
+				if (cmp == 0)
+				{
+					exists = TRUE;
+					break;
+				}
+				if (cmp < 0)
+				{
+					insert_at = i;
+					break;
+				}
+			}
+			if (exists)
+			{
+				continue;
+			}
+			for (unsigned i = m_CoreCount; i > insert_at; --i)
+			{
+				CopyTextBounded(m_CoreNames[i], sizeof(m_CoreNames[i]), m_CoreNames[i - 1u]);
+			}
+			CopyTextBounded(m_CoreNames[insert_at], sizeof(m_CoreNames[insert_at]), core_name);
+			++m_CoreCount;
+		}
+		(void) f_closedir(&dir);
+	}
+
+	if (m_CoreCount == 0u)
+	{
+		m_PauseMenu.SetCoreName("", FALSE);
+		m_CoreSwitchPending = FALSE;
+		m_Logger.Write(FromKernel, LogWarning, "Settings: nenhum core .img encontrado na raiz do SD");
+		return;
+	}
+
+	for (unsigned i = 0u; i < m_CoreCount; ++i)
+	{
+		if (TextEqualsIgnoreCase(m_CoreNames[i], m_CoreActiveName))
+		{
+			m_CoreSelected = i;
+			break;
+		}
+	}
+	m_CoreSwitchPending = FALSE;
+	m_PauseMenu.SetCoreName(m_CoreNames[m_CoreSelected], TRUE);
+	{
+		CString line;
+		line.Format("Settings: cores=%u active=%s selected=%s",
+			m_CoreCount,
+			m_CoreActiveName,
+			m_CoreNames[m_CoreSelected]);
+		m_Logger.Write(FromKernel, LogNotice, line);
+	}
+}
+
+void CComboKernel::SelectCoreByDelta(boolean reverse)
+{
+	if (m_CoreCount == 0u)
+	{
+		m_PauseMenu.SetCoreName("", FALSE);
+		m_CoreSwitchPending = FALSE;
+		m_Logger.Write(FromKernel, LogWarning, "Settings: CORE indisponivel");
+		return;
+	}
+
+	if (reverse)
+	{
+		m_CoreSelected = (m_CoreSelected == 0u) ? (m_CoreCount - 1u) : (m_CoreSelected - 1u);
+	}
+	else
+	{
+		m_CoreSelected = (m_CoreSelected + 1u) % m_CoreCount;
+	}
+
+	m_CoreSwitchPending = TextEqualsIgnoreCase(m_CoreNames[m_CoreSelected], m_CoreActiveName) ? FALSE : TRUE;
+	m_PauseMenu.SetCoreName(m_CoreNames[m_CoreSelected], TRUE);
+	{
+		CString line;
+		line.Format("Settings: CORE %s%s",
+			m_CoreNames[m_CoreSelected],
+			m_CoreSwitchPending ? " (reboot pending)" : "");
+		m_Logger.Write(FromKernel, LogNotice, line);
+	}
+}
+
+boolean CComboKernel::PersistSelectedCoreToBootConfig(void)
+{
+	if (!m_SettingsFatFsMounted || m_CoreCount == 0u || m_CoreSelected >= m_CoreCount)
+	{
+		return FALSE;
+	}
+
+	const char *selected_core = m_CoreNames[m_CoreSelected];
+	if (selected_core == 0 || selected_core[0] == '\0')
+	{
+		return FALSE;
+	}
+
+	char input[4096];
+	unsigned input_len = 0u;
+	input[0] = '\0';
+	{
+		FIL file;
+		const FRESULT open_result = f_open(&file, kBootConfigPath, FA_READ);
+		if (open_result != FR_OK)
+		{
+			LogSdOpResult(m_Logger, "CORE:OPEN", open_result, kBootConfigPath, TRUE);
+			return FALSE;
+		}
+		UINT bytes_read = 0u;
+		const FRESULT read_result = f_read(&file, input, sizeof(input) - 1u, &bytes_read);
+		(void) f_close(&file);
+		if (read_result != FR_OK || bytes_read == 0u || bytes_read >= (sizeof(input) - 1u))
+		{
+			LogSdOpResult(m_Logger, "CORE:READ", read_result, kBootConfigPath, TRUE);
+			return FALSE;
+		}
+		input_len = (unsigned) bytes_read;
+		input[input_len] = '\0';
+	}
+
+	char output[4096];
+	unsigned out_len = 0u;
+	output[0] = '\0';
+	char *line = input;
+	while (*line != '\0')
+	{
+		char *line_end = line;
+		while (*line_end != '\0' && *line_end != '\r' && *line_end != '\n')
+		{
+			++line_end;
+		}
+		char *next = line_end;
+		while (*next == '\r' || *next == '\n')
+		{
+			++next;
+		}
+
+		char *trimmed = line;
+		while (trimmed < line_end && (*trimmed == ' ' || *trimmed == '\t'))
+		{
+			++trimmed;
+		}
+
+		boolean skip = FALSE;
+		char *eq = trimmed;
+		while (eq < line_end && *eq != '=')
+		{
+			++eq;
+		}
+		if (eq < line_end)
+		{
+			const unsigned key_len = (unsigned) (eq - trimmed);
+			if (BootConfigKeyEquals(trimmed, key_len, "kernel"))
+			{
+				skip = TRUE;
+			}
+		}
+		if (!skip && TextStartsWithIgnoreCase(trimmed, "initramfs"))
+		{
+			const char after = trimmed[9];
+			if (after == '\0' || after == ' ' || after == '\t')
+			{
+				skip = TRUE;
+			}
+		}
+
+		if (!skip)
+		{
+			const unsigned line_len = (unsigned) (line_end - line);
+			if (line_len > 0u)
+			{
+				if (out_len + line_len + 1u >= sizeof(output))
+				{
+					return FALSE;
+				}
+				memcpy(output + out_len, line, line_len);
+				out_len += line_len;
+				output[out_len++] = '\n';
+				output[out_len] = '\0';
+			}
+		}
+		line = next;
+	}
+
+	CString kernel_line;
+	kernel_line.Format("kernel=%s.img\n", selected_core);
+	if (!AppendTextToBuffer(output, sizeof(output), &out_len, (const char *) kernel_line))
+	{
+		return FALSE;
+	}
+
+	CString initramfs_line;
+	initramfs_line.Format("initramfs %s.cpio followkernel\n", selected_core);
+	if (!AppendTextToBuffer(output, sizeof(output), &out_len, (const char *) initramfs_line))
+	{
+		return FALSE;
+	}
+
+	FIL out;
+	const FRESULT open_result = f_open(&out, kBootConfigPath, FA_WRITE | FA_CREATE_ALWAYS);
+	if (open_result != FR_OK)
+	{
+		LogSdOpResult(m_Logger, "CORE:OPENW", open_result, kBootConfigPath, TRUE);
+		return FALSE;
+	}
+	UINT written = 0u;
+	const FRESULT write_result = f_write(&out, output, out_len, &written);
+	const FRESULT trunc_result = f_truncate(&out);
+	const FRESULT close_result = f_close(&out);
+	if (write_result != FR_OK || trunc_result != FR_OK || close_result != FR_OK || written != out_len)
+	{
+		LogSdOpResult(m_Logger, "CORE:WRITE", write_result != FR_OK ? write_result : (trunc_result != FR_OK ? trunc_result : close_result), kBootConfigPath, TRUE);
+		return FALSE;
+	}
+
+	CopyTextBounded(m_CoreActiveName, sizeof(m_CoreActiveName), selected_core);
+	m_CoreSwitchPending = FALSE;
+	m_PauseMenu.SetCoreName(m_CoreActiveName, TRUE);
+	{
+		CString line_log;
+		line_log.Format("Settings: CORE persisted %s; rebooting", m_CoreActiveName);
+		m_Logger.Write(FromKernel, LogNotice, line_log);
+	}
+	return TRUE;
 }
 
 boolean CComboKernel::EnsureStateIoBuffer(unsigned min_capacity)
@@ -6567,7 +7138,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		{
 			backend_cheat_catalog_reset(&m_GameMasterCatalog);
 			m_PauseMenu.OpenGameMaster(&m_GameMasterCatalog, (unsigned) GameMasterLoadOk, 0u);
-			m_Logger.Write(FromKernel, LogNotice, "Game Codes aberto: SD:/cheats");
+			m_Logger.Write(FromKernel, LogNotice, "Game Codes aberto: SD:/msx/cheats");
 		}
 		break;
 #endif
@@ -6936,28 +7507,6 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		break;
 #endif
 
-	case ComboMenuActionToggleKanjiRom:
-#if MSXBARE_ENABLE_FMSX
-		if (!backend_runtime_get_kanji_rom_available())
-		{
-			SyncKanjiRomStateFromRuntime();
-			RefreshSettingsUiAfterAction();
-			m_Logger.Write(FromKernel, LogNotice, "Settings: Kanji ROM indisponivel");
-			break;
-		}
-#endif
-		m_KanjiRomEnabled = m_KanjiRomEnabled ? FALSE : TRUE;
-		RefreshSettingsUiAfterAction();
-#if MSXBARE_ENABLE_FMSX
-		backend_runtime_set_kanji_rom_enabled(m_KanjiRomEnabled);
-		SyncKanjiRomStateFromRuntime();
-#else
-		m_PauseMenu.SetKanjiRomEnabled(m_KanjiRomEnabled);
-		m_PauseMenu.SetKanjiRomAvailable(m_KanjiRomAvailable);
-#endif
-		m_Logger.Write(FromKernel, LogNotice, m_KanjiRomEnabled ? "Settings: Kanji ROM ON" : "Settings: Kanji ROM OFF");
-		break;
-
 	case ComboMenuActionCycleBootMode:
 #if MSXBARE_ONE_ROM_MODE || MSXBARE_BOOT_MODE_LOCKED
 		m_BootMode = kBootModeGame;
@@ -7023,6 +7572,16 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		}
 		break;
 #endif
+
+	case ComboMenuActionCycleCore:
+		SelectCoreByDelta(FALSE);
+		RefreshSettingsUiAfterAction();
+		break;
+
+	case ComboMenuActionCycleCorePrev:
+		SelectCoreByDelta(TRUE);
+		RefreshSettingsUiAfterAction();
+		break;
 
 	case ComboMenuActionCycleMachine:
 		{
@@ -7760,6 +8319,7 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	{
 		/* Must run in main loop context (never from keyboard callback). */
 		m_ResolutionModeLoadPending = TRUE;
+		m_CoreListRefreshPending = TRUE;
 	}
 	m_LastPauseWasInSettings = now_in_settings;
 	const boolean defer_heavy_action =

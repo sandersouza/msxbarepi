@@ -49,8 +49,8 @@ typedef struct {
     const char *settings_gfx9000;
     const char *settings_refresh;
     const char *settings_disk_rom;
-    const char *settings_kanji_rom;
     const char *settings_boot_mode;
+    const char *settings_core;
     const char *settings_machine;
     const char *settings_mapper;
     const char *settings_megaram;

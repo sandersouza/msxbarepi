@@ -17,9 +17,9 @@ if [ "${1:-}" = "--sync-only" ]; then
   shift
 fi
 
-if [ "$PWD" != "/Users/sandersouza/Developer/msxbarepi-circle" ]; then
+if [ "$PWD" != "/Users/sandersouza/Developer/msxbarepi" ]; then
   echo "[WARN] PWD atual: $PWD" >&2
-  echo "[WARN] Recomenda-se usar /Users/sandersouza/Developer/msxbarepi-circle" >&2
+  echo "[WARN] Recomenda-se usar /Users/sandersouza/Developer/msxbarepi" >&2
 fi
 
 kconfig_enabled() {
@@ -41,11 +41,67 @@ kconfig_string() {
   printf '%s' "$line"
 }
 
+normalize_boot_strategy() {
+  case "${1:-}" in
+    multicore|MULTICORE|Multicore)
+      printf '%s' "multicore"
+      ;;
+    *)
+      printf '%s' "standalone"
+      ;;
+  esac
+}
+
+kconfig_boot_strategy() {
+  if [ "$(kconfig_enabled MSXBARE_BOOT_STRATEGY_MULTICORE)" = "1" ]; then
+    printf '%s' "multicore"
+  else
+    printf '%s' "standalone"
+  fi
+}
+
+detect_boot_strategy_from_kconfig_file() {
+  local strategy=""
+
+  if grep -Eq '^CONFIG_MSXBARE_BOOT_STRATEGY_MULTICORE=y$' "$CONFIG_KCONFIG_FILE" 2>/dev/null; then
+    strategy="multicore"
+  elif grep -Eq '^CONFIG_MSXBARE_BOOT_STRATEGY_STANDALONE=y$' "$CONFIG_KCONFIG_FILE" 2>/dev/null; then
+    strategy="standalone"
+  elif grep -Eq '^CONFIG_MSXBARE_INITRAMFS_EXTERNAL=y$' "$CONFIG_KCONFIG_FILE" 2>/dev/null; then
+    strategy="multicore"
+  elif grep -Eq '^CONFIG_MSXBARE_INITRAMFS_EMBEDDED=y$' "$CONFIG_KCONFIG_FILE" 2>/dev/null; then
+    strategy="standalone"
+  fi
+
+  normalize_boot_strategy "$strategy"
+}
+
 ensure_missing_kconfig_defaults() {
   [ -f "$CONFIG_KCONFIG_FILE" ] || return 0
 
   if ! grep -Eq '^(CONFIG_MSXBARE_FEAT_GFX9000=y|# CONFIG_MSXBARE_FEAT_GFX9000 is not set)$' "$CONFIG_KCONFIG_FILE" 2>/dev/null; then
     printf 'CONFIG_MSXBARE_FEAT_GFX9000=y\n' >> "$CONFIG_KCONFIG_FILE"
+  fi
+  local has_standalone_choice=0
+  local has_multicore_choice=0
+  if grep -Eq '^(CONFIG_MSXBARE_BOOT_STRATEGY_STANDALONE=y|# CONFIG_MSXBARE_BOOT_STRATEGY_STANDALONE is not set)$' "$CONFIG_KCONFIG_FILE" 2>/dev/null; then
+    has_standalone_choice=1
+  fi
+  if grep -Eq '^(CONFIG_MSXBARE_BOOT_STRATEGY_MULTICORE=y|# CONFIG_MSXBARE_BOOT_STRATEGY_MULTICORE is not set)$' "$CONFIG_KCONFIG_FILE" 2>/dev/null; then
+    has_multicore_choice=1
+  fi
+  if [ "$has_standalone_choice" = "0" ] && [ "$has_multicore_choice" = "0" ]; then
+    if [ "$(detect_boot_strategy_from_kconfig_file)" = "multicore" ]; then
+      printf '# CONFIG_MSXBARE_BOOT_STRATEGY_STANDALONE is not set\n' >> "$CONFIG_KCONFIG_FILE"
+      printf 'CONFIG_MSXBARE_BOOT_STRATEGY_MULTICORE=y\n' >> "$CONFIG_KCONFIG_FILE"
+    else
+      printf 'CONFIG_MSXBARE_BOOT_STRATEGY_STANDALONE=y\n' >> "$CONFIG_KCONFIG_FILE"
+      printf '# CONFIG_MSXBARE_BOOT_STRATEGY_MULTICORE is not set\n' >> "$CONFIG_KCONFIG_FILE"
+    fi
+  elif [ "$has_standalone_choice" = "0" ]; then
+    printf '# CONFIG_MSXBARE_BOOT_STRATEGY_STANDALONE is not set\n' >> "$CONFIG_KCONFIG_FILE"
+  elif [ "$has_multicore_choice" = "0" ]; then
+    printf '# CONFIG_MSXBARE_BOOT_STRATEGY_MULTICORE is not set\n' >> "$CONFIG_KCONFIG_FILE"
   fi
 }
 
@@ -53,6 +109,8 @@ ensure_default_kconfig() {
   cat > "$CONFIG_KCONFIG_FILE" <<'KCONF'
 # Auto-generated baseline config for MSX BarePI
 CONFIG_MSXBARE_DEBUG=y
+CONFIG_MSXBARE_BOOT_STRATEGY_STANDALONE=y
+# CONFIG_MSXBARE_BOOT_STRATEGY_MULTICORE is not set
 CONFIG_MSXBARE_BOOT_MODE_NONE=y
 # CONFIG_MSXBARE_BOOT_MODE_NORM is not set
 # CONFIG_MSXBARE_BOOT_MODE_FAST is not set
@@ -76,7 +134,7 @@ KCONF
 write_kconfig_from_legacy() {
   local legacy="$1"
   local debug=1 scc=1 gfx9000=1 fmpac=1 disk=1 megaram=1 msx2=1 bootscreen=0 msx2p=1 loadrom=1 loaddisk=1 onerom=0
-  local onerom_path="" bootmode="NORM" patreon=""
+  local onerom_path="" bootmode="NORM" patreon="" embed_initramfs=1 boot_strategy=""
 
   # shellcheck disable=SC1090
   source "$legacy"
@@ -96,12 +154,28 @@ write_kconfig_from_legacy() {
   onerom_path="${MSXBARE_ONE_ROM_PATH:-}"
   bootmode="${MSXBARE_BOOT_MODE_DEFAULT:-NORM}"
   patreon="${MSXBARE_PATREON_TAG:-}"
+  embed_initramfs="${MSXBARE_EMBED_INITRAMFS:-1}"
+  boot_strategy="$(normalize_boot_strategy "${MSXBARE_BOOT_STRATEGY:-}")"
+  if [ -z "${MSXBARE_BOOT_STRATEGY:-}" ]; then
+    if [ "$embed_initramfs" = "0" ]; then
+      boot_strategy="multicore"
+    else
+      boot_strategy="standalone"
+    fi
+  fi
 
   yn() { [ "$1" = "1" ] && echo "y" || echo "n"; }
 
   {
     echo "# Migrated from legacy .config"
     [ "$(yn "$debug")" = "y" ] && echo "CONFIG_MSXBARE_DEBUG=y" || echo "# CONFIG_MSXBARE_DEBUG is not set"
+    if [ "$boot_strategy" = "multicore" ]; then
+      echo "# CONFIG_MSXBARE_BOOT_STRATEGY_STANDALONE is not set"
+      echo "CONFIG_MSXBARE_BOOT_STRATEGY_MULTICORE=y"
+    else
+      echo "CONFIG_MSXBARE_BOOT_STRATEGY_STANDALONE=y"
+      echo "# CONFIG_MSXBARE_BOOT_STRATEGY_MULTICORE is not set"
+    fi
     case "$bootmode" in
       NONE)
         echo "CONFIG_MSXBARE_BOOT_MODE_NONE=y"
@@ -186,6 +260,9 @@ emit_make_config() {
   local MSXBARE_ONE_ROM_PATH
   local MSXBARE_PATREON_TAG
   local MSXBARE_BOOT_MODE_DEFAULT
+  local MSXBARE_EMBED_INITRAMFS
+  local MSXBARE_BOOT_STRATEGY
+  local MSXBARE_USE_RAW_BOOT_CONFIG
 
   DEBUG="$(kconfig_enabled MSXBARE_DEBUG)"
   MSXBARE_FEAT_SCC="$(kconfig_enabled MSXBARE_FEAT_SCC)"
@@ -201,6 +278,14 @@ emit_make_config() {
   MSXBARE_ONE_ROM_MODE="$(kconfig_enabled MSXBARE_ONE_ROM_MODE)"
   MSXBARE_ONE_ROM_PATH="$(kconfig_string MSXBARE_ONE_ROM_PATH)"
   MSXBARE_PATREON_TAG="$(kconfig_string MSXBARE_PATREON_TAG)"
+  MSXBARE_BOOT_STRATEGY="$(kconfig_boot_strategy)"
+  if [ "$MSXBARE_BOOT_STRATEGY" = "multicore" ]; then
+    MSXBARE_EMBED_INITRAMFS=0
+    MSXBARE_USE_RAW_BOOT_CONFIG=0
+  else
+    MSXBARE_EMBED_INITRAMFS=1
+    MSXBARE_USE_RAW_BOOT_CONFIG=1
+  fi
 
   if [ "$(kconfig_enabled MSXBARE_BOOT_MODE_NONE)" = "1" ]; then
     MSXBARE_BOOT_MODE_DEFAULT="NONE"
@@ -253,6 +338,12 @@ emit_make_config() {
     echo "MSXBARE_ONE_ROM_PATH := $MSXBARE_ONE_ROM_PATH"
     echo "MSXBARE_BOOT_MODE_DEFAULT_CONFIG := $MSXBARE_BOOT_MODE_DEFAULT"
     echo "MSXBARE_BOOT_MODE_DEFAULT := $MSXBARE_BOOT_MODE_DEFAULT"
+    echo "MSXBARE_BOOT_STRATEGY_CONFIG := $MSXBARE_BOOT_STRATEGY"
+    echo "MSXBARE_BOOT_STRATEGY := $MSXBARE_BOOT_STRATEGY"
+    echo "MSXBARE_EMBED_INITRAMFS_CONFIG := $MSXBARE_EMBED_INITRAMFS"
+    echo "MSXBARE_EMBED_INITRAMFS := $MSXBARE_EMBED_INITRAMFS"
+    echo "MSXBARE_USE_RAW_BOOT_CONFIG_CONFIG := $MSXBARE_USE_RAW_BOOT_CONFIG"
+    echo "MSXBARE_USE_RAW_BOOT_CONFIG := $MSXBARE_USE_RAW_BOOT_CONFIG"
     echo "MSXBARE_PATREON_TAG_CONFIG := $MSXBARE_PATREON_TAG"
     echo "MSXBARE_PATREON_TAG := $MSXBARE_PATREON_TAG"
   } > "$CONFIG_ROOT_MK_FILE"

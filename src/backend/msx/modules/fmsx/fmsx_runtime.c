@@ -394,7 +394,6 @@ static unsigned g_boot_warmup_frames_remaining = 0u;
 static boolean g_boot_forced_turbo = FALSE;
 static unsigned g_boot_video_gate_frames_remaining = 0u;
 static boolean g_disk_rom_enabled = TRUE;
-static boolean g_kanji_rom_enabled = TRUE;
 static boolean g_gfx9000_enabled = FALSE;
 static unsigned g_boot_mode = 0u;
 static unsigned g_active_boot_mode = 0u;
@@ -580,7 +579,7 @@ static void fmsx_runtime_apply_msx2p_kanji_mappings(void)
         return;
     }
 
-    if (g_kanji_rom_enabled && FmsxMSX2PMSXJEBase != 0)
+    if (FmsxMSX2PMSXJEBase != 0)
     {
         MemMap[0][3][0] = FmsxMSX2PMSXJEBase;
         MemMap[0][3][1] = FmsxMSX2PMSXJEBase + 0x2000;
@@ -605,7 +604,7 @@ static void fmsx_runtime_apply_msx2p_kanji_mappings(void)
         FmsxMSX2PMSXJELoaded = 0u;
     }
 
-    if (g_kanji_rom_enabled && FmsxMSX2PKanjiBasicBase != 0)
+    if (FmsxMSX2PKanjiBasicBase != 0)
     {
         MemMap[3][1][2] = FmsxMSX2PKanjiBasicBase;
         MemMap[3][1][3] = FmsxMSX2PKanjiBasicBase + 0x2000;
@@ -813,9 +812,9 @@ static void fmsx_runtime_trace_gfx9000_step_consume(void)
 
 static boolean fmsx_runtime_apply_kanji_rom_enabled(void)
 {
-    Kanji = (g_kanji_rom_enabled && FmsxKanjiBase != 0) ? FmsxKanjiBase : 0;
+    Kanji = FmsxKanjiBase;
     fmsx_runtime_apply_msx2p_kanji_mappings();
-    return (g_kanji_rom_enabled && fmsx_runtime_kanji_feature_available()) ? TRUE : FALSE;
+    return fmsx_runtime_kanji_feature_available() ? TRUE : FALSE;
 }
 
 static boolean fmsx_runtime_disk_rom_effective(unsigned model_profile)
@@ -2268,7 +2267,7 @@ boolean fmsx_runtime_get_disk_rom_enabled(void)
 
 void fmsx_runtime_set_kanji_rom_enabled(boolean enabled)
 {
-    g_kanji_rom_enabled = enabled ? TRUE : FALSE;
+    (void) enabled;
     if (g_fmsx_status.running)
     {
         (void) fmsx_runtime_apply_kanji_rom_enabled();
@@ -2277,7 +2276,7 @@ void fmsx_runtime_set_kanji_rom_enabled(boolean enabled)
 
 boolean fmsx_runtime_get_kanji_rom_enabled(void)
 {
-    return (g_kanji_rom_enabled && fmsx_runtime_kanji_feature_available()) ? TRUE : FALSE;
+    return TRUE;
 }
 
 boolean fmsx_runtime_get_kanji_rom_available(void)

@@ -2,12 +2,41 @@
 
 Ponto de entrada rapido para contexto operacional do projeto.
 
-- Contexto completo e historico de handoff da branch atual: [docs/handoff/252-remover-hotkeys-diretas-otimizar-kernel.md](docs/handoff/252-remover-hotkeys-diretas-otimizar-kernel.md)
+- Contexto completo e historico de handoff da branch atual: [docs/handoff/254-preparacao-sd-multicore.md](docs/handoff/254-preparacao-sd-multicore.md)
 - Guardrail ativo: a issue `#251` continua aberta/pausada e a branch `251-suporte-cartucho-vdp-v9990` nao deve ser removida.
-- Branch ativa da rodada: `252-remover-hotkeys-diretas-otimizar-kernel`
-- Issue ativa: `#252 [P1] Remover hotkeys diretas e reduzir overhead do kernel/runtime`
-- PR aberto: `#253` https://github.com/sandersouza/msxbarepi/pull/253
+- Branch ativa da rodada: `254-preparacao-sd-multicore`
+- Issue ativa: `#254 [P1] Preparar SD multicore e selecao de core no boot`
+- PR aberto: nenhum para a issue ativa
+- PR ainda aberto de rodada anterior: `#253` https://github.com/sandersouza/msxbarepi/pull/253
 - Issue em pausa: `#251 [P1] Implementar suporte ao cartucho/VDP V9990 (GFX9000) no backend MSX`
+- Atualizacao 2026-04-23 (issue #254):
+  - issue avulsa `#254` em `Status: In progress`; branch vinculada: `254-preparacao-sd-multicore`
+  - espelho local da issue: `docs/issues/254-preparacao-sd-multicore.md`
+  - handoff ativo: `docs/handoff/254-preparacao-sd-multicore.md`
+  - fluxo de SD multicore implementado:
+    - `sdcard/config.txt` usa `kernel=msx.img`
+    - `sdcard/msxbarepi.cfg` foi substituido por `sdcard/msx.cfg`
+    - runtime salva em `SD:/msx.cfg` e ainda le `SD:/msxbarepi.cfg`/`SD:/MSXBARE.CFG` como fallback
+    - assets de runtime usam `SD:/msx/roms`, `SD:/msx/disks` e `SD:/msx/cheats`
+    - scripts de SD/package gravam `msx.img`, `msx.cfg`, `msx/roms`, `msx/disks` e `msx/cheats`
+    - `make sdcard` so oferece `UPDATE` quando o SD ja contem o core atualizavel `msx.img`
+    - `make menuconfig` agora expoe `Boot strategy = Stand Alone|Multicore`, com default `Stand Alone`
+    - `Stand Alone` usa initramfs embutido, nao gera `msx.cpio`, usa snapshot RAW para settings com fallback para `SD:/msx.cfg` e pode deferir `FatFs`
+    - `Multicore` gera `msx.cpio`, usa `SD:/msx.cfg` sem RAW e monta `FatFs` antes do backend
+    - Settings voltou a expor `Scale [1x/2x/3x]`; `2x` fica no meio entre `1x` e fullscreen, `3x` usa o maior multiplicador em passos de `0.25x` permitido pela altura HDMI ativa, e o boot default e `3x`
+    - Settings exibe `CORE []` acima de `Machine`, listando `.img` da raiz do SD sem extensao
+    - trocar `CORE` reescreve `SD:/config.txt` sempre com `kernel=<core>.img` e `initramfs <core>.cpio followkernel` antes do reboot
+    - ao fechar o menu F12 apos troca de core, o runtime retorna `ComboShutdownReboot` e `main()` chama Circle `reboot()`
+    - menu Debug nao expoe mais `Kanji ROM [ON/OFF]`, `msx.cfg` nao grava mais `kanji_rom`, e o backend carrega Kanji/MSX-JE sempre que os blobs estiverem presentes
+  - validacao local ja executada:
+    - `bash -n` nos scripts alterados
+    - `NON_INTERACTIVE=1 ./scripts/menuconfig.sh --sync-only`
+    - `./scripts/check-third-party-pristine.sh`
+    - `make -j4 DEBUG=1`
+    - `make -j4 DEBUG=0`
+    - `make -n sdcard`
+    - `prepare-sd.sh` em `DRY_RUN=1 OFFLINE_DRY_PACKAGE=1` para `Boot strategy = Stand Alone` e `Multicore`
+    - `git diff --check`
 - Atualizacao 2026-04-20 (boot fast path):
   - initramfs embutido virou default de build via `MSXBARE_EMBED_INITRAMFS=1`
   - o build gera `build/initramfs/msx-embedded.cpio` e embute no `kernel8.img`; `MSXBARE_EMBED_INITRAMFS=0` preserva o fallback externo `msx.cpio`

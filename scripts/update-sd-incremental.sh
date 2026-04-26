@@ -17,11 +17,15 @@ CONFIG_TXT="${CONFIG_TXT:-${PROJECT_ROOT}/sdcard/config.txt}"
 CMDLINE_TXT="${CMDLINE_TXT:-${PROJECT_ROOT}/sdcard/cmdline.txt}"
 INITRAMFS_IMG="${INITRAMFS_IMG:-${PROJECT_ROOT}/sdcard/msx.cpio}"
 INITRAMFS_SRC_DIR="${INITRAMFS_SRC_DIR:-${PROJECT_ROOT}/roms/initramfs}"
-SETTINGS_CFG="${SETTINGS_CFG:-${PROJECT_ROOT}/sdcard/msxbarepi.cfg}"
+SETTINGS_CFG="${SETTINGS_CFG:-${PROJECT_ROOT}/sdcard/msx.cfg}"
+SD_KERNEL_NAME="${SD_KERNEL_NAME:-msx.img}"
+SD_SETTINGS_NAME="${SD_SETTINGS_NAME:-msx.cfg}"
+SD_MSX_DIR_NAME="${SD_MSX_DIR_NAME:-msx}"
 FIRMWARE_DIR="${FIRMWARE_DIR:-${PROJECT_ROOT}/rpi-firmware}"
 GAMES_SRC_DIR="${GAMES_SRC_DIR:-${PROJECT_ROOT}/roms/games}"
 COPY_GAMES_TO_ROOT="${COPY_GAMES_TO_ROOT:-0}"
 DEBUG="${DEBUG:-0}"
+MSXBARE_BOOT_STRATEGY="${MSXBARE_BOOT_STRATEGY:-}"
 MSXBARE_EMBED_INITRAMFS="${MSXBARE_EMBED_INITRAMFS:-1}"
 VIDEO_MODE_PRESET="${VIDEO_MODE_PRESET:-auto}"
 EJECT_AT_END="${EJECT_AT_END:-0}"
@@ -60,6 +64,36 @@ is_yes() {
   esac
 }
 
+normalize_boot_strategy() {
+  case "${1:-}" in
+    multicore|MULTICORE|Multicore)
+      printf '%s' "multicore"
+      ;;
+    *)
+      printf '%s' "standalone"
+      ;;
+  esac
+}
+
+resolve_boot_strategy() {
+  if [ -n "$MSXBARE_BOOT_STRATEGY" ]; then
+    normalize_boot_strategy "$MSXBARE_BOOT_STRATEGY"
+    return 0
+  fi
+  if is_yes "$MSXBARE_EMBED_INITRAMFS"; then
+    printf '%s' "standalone"
+  else
+    printf '%s' "multicore"
+  fi
+}
+
+MSXBARE_BOOT_STRATEGY="$(resolve_boot_strategy)"
+if [ "$MSXBARE_BOOT_STRATEGY" = "multicore" ]; then
+  MSXBARE_EMBED_INITRAMFS=0
+else
+  MSXBARE_EMBED_INITRAMFS=1
+fi
+
 resolve_default_kernel_img() {
   local branch=""
   local issue_id=""
@@ -97,8 +131,8 @@ resolve_default_kernel_img() {
 }
 
 ensure_runtime_root_dirs() {
-  mkdir -p "${TARGET_VOLUME}/roms" "${TARGET_VOLUME}/disks"
-  echo "[OK] Diretorios raiz garantidos: roms/ disks/"
+  mkdir -p "${TARGET_VOLUME}/${SD_MSX_DIR_NAME}/roms" "${TARGET_VOLUME}/${SD_MSX_DIR_NAME}/disks" "${TARGET_VOLUME}/${SD_MSX_DIR_NAME}/cheats"
+  echo "[OK] Diretorios MSX garantidos: ${SD_MSX_DIR_NAME}/roms ${SD_MSX_DIR_NAME}/disks ${SD_MSX_DIR_NAME}/cheats"
 }
 
 resolve_target_devices() {
@@ -228,7 +262,7 @@ ensure_settings_cfg() {
 
   mkdir -p "$(dirname "$SETTINGS_CFG")"
   cat > "$SETTINGS_CFG" <<'EOF'
-scale=250
+scale=3
 resolution=0
 language=0
 widescreen=0
@@ -279,19 +313,20 @@ copy_games_incremental() {
     echo "[WARN] GAMES_SRC_DIR ausente: ${GAMES_SRC_DIR}"
     return 0
   fi
-  echo "[INFO] Atualizando conteudo de ${GAMES_SRC_DIR} -> ${TARGET_VOLUME}/"
+  mkdir -p "${TARGET_VOLUME}/${SD_MSX_DIR_NAME}"
+  echo "[INFO] Atualizando conteudo de ${GAMES_SRC_DIR} -> ${TARGET_VOLUME}/${SD_MSX_DIR_NAME}/"
   if command -v rsync >/dev/null 2>&1; then
-    rsync -a --exclude '.*' --exclude '._*' "${GAMES_SRC_DIR}/" "${TARGET_VOLUME}/"
+    rsync -a --exclude '.*' --exclude '._*' "${GAMES_SRC_DIR}/" "${TARGET_VOLUME}/${SD_MSX_DIR_NAME}/"
   else
     find "$GAMES_SRC_DIR" -mindepth 1 -maxdepth 1 ! -name '.*' -print0 | while IFS= read -r -d '' item; do
-      cp -R "$item" "${TARGET_VOLUME}/"
+      cp -R "$item" "${TARGET_VOLUME}/${SD_MSX_DIR_NAME}/"
     done
   fi
 }
 
 copy_cheats_incremental() {
   local cheats_src="${GAMES_SRC_DIR}/cheats"
-  local cheats_dst="${TARGET_VOLUME}/cheats"
+  local cheats_dst="${TARGET_VOLUME}/${SD_MSX_DIR_NAME}/cheats"
 
   if [ ! -d "$cheats_src" ]; then
     echo "[INFO] Cheats nao encontrados em ${cheats_src}; pulando payload minimo de cheats."
@@ -304,7 +339,7 @@ copy_cheats_incremental() {
   fi
 
   if [ -e "$cheats_dst" ]; then
-    echo "[SKIP] cheats/ ja existe no destino; update nao sobrescreve payload de cheats."
+    echo "[SKIP] ${SD_MSX_DIR_NAME}/cheats ja existe no destino; update nao sobrescreve payload de cheats."
     return 0
   fi
 
@@ -327,8 +362,10 @@ cleanup_macos_junk() {
     >/dev/null 2>&1 || true
 }
 
+echo "[INFO] Boot strategy ativa: ${MSXBARE_BOOT_STRATEGY}"
+
 if is_yes "$MSXBARE_EMBED_INITRAMFS"; then
-  echo "[INFO] Initramfs embutido ativo; nao gerando msx.cpio para update incremental."
+  echo "[INFO] Boot strategy Standalone: nao gerando msx.cpio para update incremental."
 elif [ -d "$INITRAMFS_SRC_DIR" ] && [ -x "${PROJECT_ROOT}/scripts/make-initramfs.sh" ]; then
   "${PROJECT_ROOT}/scripts/make-initramfs.sh" "$INITRAMFS_SRC_DIR" "$INITRAMFS_IMG"
 fi
@@ -341,20 +378,23 @@ ensure_runtime_root_dirs
 
 if [ ! -f "$KERNEL_IMG" ]; then
   echo "[ERRO] Kernel obrigatorio nao encontrado: ${KERNEL_IMG}"
-  echo "[ERRO] Rode 'make' ou informe KERNEL_IMG=/caminho/kernel8.img antes de atualizar o SD."
+  echo "[ERRO] Rode 'make' ou informe KERNEL_IMG=/caminho/kernel8.img ou /caminho/msx.img; ele sera gravado como ${SD_KERNEL_NAME} no SD."
   exit 1
 fi
 
 config_src="$CONFIG_TXT"
 config_tmp=""
 if [ -f "$CONFIG_TXT" ]; then
-  if [ "$DEBUG" = "1" ] || [ "$VIDEO_MODE_PRESET" != "auto" ] || is_yes "$MSXBARE_EMBED_INITRAMFS"; then
-    config_tmp="$(mktemp)"
-    cp "$CONFIG_TXT" "$config_tmp"
-    config_src="$config_tmp"
-  fi
+  config_tmp="$(mktemp)"
+  cp "$CONFIG_TXT" "$config_tmp"
+  config_src="$config_tmp"
+  set_or_append_config_key "$config_src" "kernel" "$SD_KERNEL_NAME"
+  drop_initramfs_line_if_present "$config_src"
   if is_yes "$MSXBARE_EMBED_INITRAMFS"; then
-    drop_initramfs_line_if_present "$config_src"
+    echo "[INFO] Boot strategy Standalone: removendo linha initramfs do config.txt efetivo"
+  else
+    printf 'initramfs msx.cpio followkernel\n' >> "$config_src"
+    echo "[INFO] Boot strategy Multicore: adicionando 'initramfs msx.cpio followkernel'"
   fi
   if [ "$DEBUG" = "1" ]; then
     if grep -Eq '^[[:space:]]*disable_splash=' "$config_src"; then
@@ -369,15 +409,15 @@ if [ -f "$CONFIG_TXT" ]; then
   fi
 fi
 
-copy_if_changed "$KERNEL_IMG" "${TARGET_VOLUME}/kernel8.img" "kernel8.img"
+copy_if_changed "$KERNEL_IMG" "${TARGET_VOLUME}/${SD_KERNEL_NAME}" "$SD_KERNEL_NAME"
 copy_if_changed "$config_src" "${TARGET_VOLUME}/config.txt" "config.txt"
 copy_if_changed "$CMDLINE_TXT" "${TARGET_VOLUME}/cmdline.txt" "cmdline.txt"
 if is_yes "$MSXBARE_EMBED_INITRAMFS"; then
-  echo "[SKIP] msx.cpio (initramfs embutido no kernel)"
+  echo "[SKIP] msx.cpio (Boot strategy Standalone)"
 else
   copy_if_changed "$INITRAMFS_IMG" "${TARGET_VOLUME}/msx.cpio" "msx.cpio"
 fi
-copy_if_changed "$SETTINGS_CFG" "${TARGET_VOLUME}/msxbarepi.cfg" "msxbarepi.cfg"
+copy_if_changed "$SETTINGS_CFG" "${TARGET_VOLUME}/${SD_SETTINGS_NAME}" "$SD_SETTINGS_NAME"
 
 for fw in bootcode.bin start.elf fixup.dat bcm2710-rpi-3-b.dtb; do
   copy_if_changed "${FIRMWARE_DIR}/${fw}" "${TARGET_VOLUME}/${fw}" "$fw"

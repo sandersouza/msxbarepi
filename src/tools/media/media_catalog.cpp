@@ -44,8 +44,8 @@ struct TCatalogStackNode
 };
 
 static const TCatalogRoot kCatalogRoots[] = {
-	{"SD:/roms", (unsigned char) ComboMediaTypeRom},
-	{"SD:/disks", (unsigned char) ComboMediaTypeDisk}
+	{"SD:/msx/roms", (unsigned char) ComboMediaTypeRom},
+	{"SD:/msx/disks", (unsigned char) ComboMediaTypeDisk}
 };
 static const unsigned kRootCount = (unsigned) (sizeof(kCatalogRoots) / sizeof(kCatalogRoots[0]));
 

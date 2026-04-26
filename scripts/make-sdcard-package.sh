@@ -7,8 +7,12 @@ PACKAGE_KERNEL_IMG="${PACKAGE_KERNEL_IMG:-}"
 PACKAGE_CONFIG_TXT="${PACKAGE_CONFIG_TXT:-${PROJECT_ROOT}/sdcard/config.txt}"
 PACKAGE_CMDLINE_TXT="${PACKAGE_CMDLINE_TXT:-${PROJECT_ROOT}/sdcard/cmdline.txt}"
 PACKAGE_INITRAMFS_IMG="${PACKAGE_INITRAMFS_IMG:-${PROJECT_ROOT}/sdcard/msx.cpio}"
+PACKAGE_BOOT_STRATEGY="${PACKAGE_BOOT_STRATEGY:-${MSXBARE_BOOT_STRATEGY:-}}"
 PACKAGE_EMBED_INITRAMFS="${PACKAGE_EMBED_INITRAMFS:-1}"
-PACKAGE_SETTINGS_CFG="${PACKAGE_SETTINGS_CFG:-${PROJECT_ROOT}/sdcard/msxbarepi.cfg}"
+PACKAGE_SETTINGS_CFG="${PACKAGE_SETTINGS_CFG:-${PROJECT_ROOT}/sdcard/msx.cfg}"
+PACKAGE_KERNEL_NAME="${PACKAGE_KERNEL_NAME:-msx.img}"
+PACKAGE_SETTINGS_NAME="${PACKAGE_SETTINGS_NAME:-msx.cfg}"
+PACKAGE_MSX_DIR_NAME="${PACKAGE_MSX_DIR_NAME:-msx}"
 PACKAGE_FIRMWARE_DIR="${PACKAGE_FIRMWARE_DIR:-${PROJECT_ROOT}/rpi-firmware/}"
 PACKAGE_COPY_GAMES_TO_ROOT="${PACKAGE_COPY_GAMES_TO_ROOT:-0}"
 PACKAGE_GAMES_SRC_DIR="${PACKAGE_GAMES_SRC_DIR:-${PROJECT_ROOT}/roms/games}"
@@ -28,6 +32,25 @@ esac
 # Evita gravacao de AppleDouble/extended attributes no stage ZIP.
 export COPYFILE_DISABLE=1
 
+if [ -z "$PACKAGE_BOOT_STRATEGY" ]; then
+  if [ "$PACKAGE_EMBED_INITRAMFS" = "0" ]; then
+    PACKAGE_BOOT_STRATEGY="multicore"
+  else
+    PACKAGE_BOOT_STRATEGY="standalone"
+  fi
+fi
+
+case "$PACKAGE_BOOT_STRATEGY" in
+  multicore|MULTICORE|Multicore)
+    PACKAGE_BOOT_STRATEGY="multicore"
+    PACKAGE_EMBED_INITRAMFS=0
+    ;;
+  *)
+    PACKAGE_BOOT_STRATEGY="standalone"
+    PACKAGE_EMBED_INITRAMFS=1
+    ;;
+esac
+
 ensure_settings_cfg() {
   if [ -f "$PACKAGE_SETTINGS_CFG" ]; then
     return 0
@@ -37,14 +60,13 @@ ensure_settings_cfg() {
   mkdir -p "$(dirname "$PACKAGE_SETTINGS_CFG")"
   cat > "$PACKAGE_SETTINGS_CFG" <<'EOF'
 backend_id=msx.fmsx
-scale=2
+scale=3
 language=1
 resolution=2
 scanline=0
 gfx9000=0
 refresh=60
 disk_rom=1
-kanji_rom=1
 boot_mode=0
 machine=0
 rammapper_kb=256
@@ -108,7 +130,7 @@ resolve_default_package_kernel_img() {
 
 copy_cheats_payload_to_stage() {
   local cheats_src="${PACKAGE_GAMES_SRC_DIR}/cheats"
-  local cheats_dst="${PACKAGE_STAGE_DIR}/cheats"
+  local cheats_dst="${PACKAGE_STAGE_DIR}/${PACKAGE_MSX_DIR_NAME}/cheats"
 
   if [ ! -d "$cheats_src" ]; then
     echo "[INFO] Cheats nao encontrados em ${cheats_src}; pulando payload minimo de cheats."
@@ -131,7 +153,7 @@ copy_cheats_payload_to_stage() {
       cp -R "$item" "$cheats_dst/"
     done < <(find "$cheats_src" -mindepth 1 -maxdepth 1 ! -name '.*')
   fi
-  echo "[OK] Cheats copiados para raiz do pacote."
+  echo "[OK] Cheats copiados para ${PACKAGE_MSX_DIR_NAME}/cheats no pacote."
 }
 
 require_file() {
@@ -152,6 +174,7 @@ require_cmd() {
 require_cmd zip
 PACKAGE_KERNEL_IMG="$(resolve_default_package_kernel_img)"
 echo "[INFO] PACKAGE_KERNEL_IMG efetivo: ${PACKAGE_KERNEL_IMG}"
+echo "[INFO] Boot strategy do pacote: ${PACKAGE_BOOT_STRATEGY}"
 require_file "$PACKAGE_KERNEL_IMG"
 require_file "$PACKAGE_CONFIG_TXT"
 require_file "$PACKAGE_CMDLINE_TXT"
@@ -167,16 +190,16 @@ done
 
 rm -rf "$PACKAGE_STAGE_DIR"
 mkdir -p "$PACKAGE_STAGE_DIR"
-mkdir -p "${PACKAGE_STAGE_DIR}/roms" "${PACKAGE_STAGE_DIR}/disks"
+mkdir -p "${PACKAGE_STAGE_DIR}/${PACKAGE_MSX_DIR_NAME}/roms" "${PACKAGE_STAGE_DIR}/${PACKAGE_MSX_DIR_NAME}/disks" "${PACKAGE_STAGE_DIR}/${PACKAGE_MSX_DIR_NAME}/cheats"
 mkdir -p "$(dirname "$PACKAGE_ZIP")"
 
-cp "$PACKAGE_KERNEL_IMG" "${PACKAGE_STAGE_DIR}/kernel8.img"
+cp "$PACKAGE_KERNEL_IMG" "${PACKAGE_STAGE_DIR}/${PACKAGE_KERNEL_NAME}"
 cp "$PACKAGE_CONFIG_TXT" "${PACKAGE_STAGE_DIR}/config.txt"
 cp "$PACKAGE_CMDLINE_TXT" "${PACKAGE_STAGE_DIR}/cmdline.txt"
 if [ "$PACKAGE_EMBED_INITRAMFS" != "1" ]; then
   cp "$PACKAGE_INITRAMFS_IMG" "${PACKAGE_STAGE_DIR}/msx.cpio"
 fi
-cp "$PACKAGE_SETTINGS_CFG" "${PACKAGE_STAGE_DIR}/msxbarepi.cfg"
+cp "$PACKAGE_SETTINGS_CFG" "${PACKAGE_STAGE_DIR}/${PACKAGE_SETTINGS_NAME}"
 
 for fw in $required_fw_files; do
   cp "${PACKAGE_FIRMWARE_DIR}/${fw}" "${PACKAGE_STAGE_DIR}/${fw}"
@@ -188,13 +211,13 @@ if [ "$PACKAGE_COPY_GAMES_TO_ROOT" = "1" ]; then
       rsync -a \
         --exclude '.*' \
         --exclude '._*' \
-        "${PACKAGE_GAMES_SRC_DIR}/" "${PACKAGE_STAGE_DIR}/"
+        "${PACKAGE_GAMES_SRC_DIR}/" "${PACKAGE_STAGE_DIR}/${PACKAGE_MSX_DIR_NAME}/"
     else
       while IFS= read -r item; do
-        cp -R "$item" "${PACKAGE_STAGE_DIR}/"
+        cp -R "$item" "${PACKAGE_STAGE_DIR}/${PACKAGE_MSX_DIR_NAME}/"
       done < <(find "$PACKAGE_GAMES_SRC_DIR" -mindepth 1 -maxdepth 1 ! -name '.*')
     fi
-    echo "[OK] Conteudo de games copiado para raiz do pacote."
+    echo "[OK] Conteudo de games copiado para ${PACKAGE_MSX_DIR_NAME}/ no pacote."
   else
     echo "[WARN] PACKAGE_COPY_GAMES_TO_ROOT=1, mas diretorio nao encontrado: ${PACKAGE_GAMES_SRC_DIR}"
   fi

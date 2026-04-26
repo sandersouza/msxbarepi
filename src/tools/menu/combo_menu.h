@@ -29,10 +29,6 @@ public:
     unsigned GetRefreshRateHz(void) const;
     void SetDiskRomEnabled(boolean enabled);
     boolean IsDiskRomEnabled(void) const;
-    void SetKanjiRomEnabled(boolean enabled);
-    void SetKanjiRomAvailable(boolean available);
-    boolean IsKanjiRomEnabled(void) const;
-    boolean IsKanjiRomAvailable(void) const;
     void SetBootMode(unsigned mode);
     unsigned GetBootMode(void) const;
     void SetMachineProfile(unsigned profile);
@@ -51,6 +47,7 @@ public:
     void SetSccDualCartState(boolean enabled, boolean available);
     void SetOverlayMode(unsigned mode, boolean available);
     void SetAudioGainPercent(unsigned percent);
+    void SetCoreName(const char *core_name, boolean available);
     void SetLoadRomSlotNames(const char *slot1_name, const char *slot2_name);
     void SetLoadDiskDriveNames(const char *drive1_name, const char *drive2_name);
     boolean ConsumePendingRomSelection(unsigned *slot_index, char *path, unsigned path_size);
@@ -129,8 +126,6 @@ private:
     boolean m_Gfx9000Enabled;
     unsigned m_RefreshRateHz;
     boolean m_DiskRomEnabled;
-    boolean m_KanjiRomEnabled;
-    boolean m_KanjiRomAvailable;
     unsigned m_BootMode;
     unsigned m_MachineProfile;
     unsigned m_RamMapperKb;
@@ -149,6 +144,8 @@ private:
     unsigned m_OverlayMode;
     boolean m_OverlayAvailable;
     unsigned m_AudioGainPercent;
+    char m_CoreName[32];
+    boolean m_CoreAvailable;
     char m_LoadRomSlot1Name[17];
     char m_LoadRomSlot2Name[17];
     char m_LoadDiskDrive1Name[17];
@@ -194,8 +191,6 @@ private:
     boolean m_LastDrawnGfx9000Enabled;
     unsigned m_LastDrawnRefreshRateHz;
     boolean m_LastDrawnDiskRomEnabled;
-    boolean m_LastDrawnKanjiRomEnabled;
-    boolean m_LastDrawnKanjiRomAvailable;
     unsigned m_LastDrawnBootMode;
     unsigned m_LastDrawnMachineProfile;
     unsigned m_LastDrawnRamMapperKb;
@@ -209,6 +204,8 @@ private:
     unsigned m_LastDrawnOverlayMode;
     boolean m_LastDrawnOverlayAvailable;
     unsigned m_LastDrawnAudioGainPercent;
+    char m_LastDrawnCoreName[32];
+    boolean m_LastDrawnCoreAvailable;
     char m_LastDrawnLoadRomSlot1Name[17];
     char m_LastDrawnLoadRomSlot2Name[17];
     char m_LastDrawnLoadDiskDrive1Name[17];

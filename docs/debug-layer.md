@@ -15,7 +15,7 @@ Documento canonico para debug HDMI/runtime. O conteudo do antigo guia de templat
 make DEBUG=1
 ```
 - Em `DEBUG=1`, o fastboot atual adia `UART + Logger` e a ativacao do overlay ate depois do bootstrap do backend.
-- No boot, o modo inicial do overlay e sempre `OFF`; depois da carga do `msxbarepi.cfg`, o runtime assume o valor persistido em `debugger=`.
+- No boot, o modo inicial do overlay e sempre `OFF`; depois da carga do `msx.cfg`, o runtime assume o valor persistido em `debugger=`.
 - Forma simplificada para pacote (tambem habilita debug no kernel):
 ```bash
 DEBUG=1 OWNER="beta@exemplo.com" make package
@@ -70,15 +70,13 @@ Objetivo: painel legivel no framebuffer HDMI com MMU/cache ativo, sem depender d
 - Overlay compacto no canto superior esquerdo.
 - O painel pode usar a largura horizontal inteira da linha quando isso ajudar a ficar contido até a `linha 15`.
 - Emulador segue rodando ao fundo.
-- O item `Scale` agora vive no menu `Debug`, nao mais em `Settings`.
+- O item `Scale` vive em `Settings`, logo abaixo de `Resolution`.
 - `Scanlines` agora e binario no runtime e no `.cfg`: `OFF/ON`.
 - O estado `ON` usa apenas a logica LCD atual; o antigo modo `CRT` foi removido.
-- Com `Debugger = OFF`, o viewport ignora a escala manual e usa sempre o maximo fixo permitido pela resolucao atual:
-  - `720p/768p = 3x`
-  - `1080p = 4x`
-- Com `Debugger = MIN/MAX`, o viewport volta a usar o fator manual de `Scale`.
-- `Standard`: usa `logical_src_w x normalized_src_h` multiplicado pelo fator de `Scale`.
-- `HIRES` (`>=512` colunas): usa largura logica normal da mailbox e o mesmo fator de `Scale`.
+- `Scale [1x]`: usa a mailbox nativa do emulador.
+- `Scale [2x]`: usa metade do intervalo entre `1x` e o fullscreen, em passos de `0.25x`.
+- `Scale [3x]`: fullscreen vertical; calcula o maior multiplicador em passos de `0.25x` que cabe na resolucao vertical HDMI ativa.
+- `Standard` e `HIRES` usam a mesma mailbox base do emulador e o mesmo modo de `Scale`.
 - `Widescreen`: removido do runtime e do menu; o viewport agora segue sempre a mailbox fixa do emulador.
 
 Regras validadas em hardware:
@@ -124,7 +122,7 @@ Diretriz visual (overlay e menu):
 
 ## Menu relacionado
 - `Debug -> Debugger`: sempre aparece em builds `DEBUG=1` e opera diretamente como `MAX/MIN/OFF`.
-- `Debug -> Scale`: so afeta o viewport quando `Debugger` estiver em `MIN` ou `MAX`.
+- `Settings -> Scale`: afeta o viewport independentemente do modo do debugger.
 - Em builds com `DEBUG=1`, `Settings` volta a mostrar `Refresh [NTSC/PAL]` logo abaixo de `Disk ROM` para diagnostico.
 - Nesse caminho de diagnostico, o toggle agora atua no estado efetivo do VDP em runtime:
   - em `MSX2/MSX2+`, ele força `R#9 bit1` (`PAL/NTSC`) no core local;
@@ -132,13 +130,12 @@ Diretriz visual (overlay e menu):
 - O item do menu deve espelhar o estado efetivo em tempo real:
   - mesmo com o emulador pausado/menu aberto, `Standard` precisa refletir o `R#9 bit1` atual do runtime;
   - se o software tiver mudado `PAL/NTSC` antes da pausa (ex.: `OUT` no BASIC), o menu deve abrir ja mostrando esse estado real.
-- Em builds com `DEBUG=1`, `Debug` tambem mostra `Kanji ROM [ON/OFF]`:
-  - o toggle atua no runtime real do `fMSX`, ligando/desligando a `KANJI.ROM` quando ela existir no set carregado;
-  - em perfil `MSX2+`, o mesmo toggle tambem corta ou restaura o mapeamento de `KANJIBASIC/MSX-JE`, para o A/B do boot screen ser perceptivel;
+- O menu `Debug` nao expoe mais `Kanji ROM [ON/OFF]`:
+  - `msx.cfg` nao persiste mais `kanji_rom`;
+  - a emulacao sempre carrega `KANJI.ROM`, `KANJIBASIC` e `MSX-JE` quando esses blobs estiverem presentes no set carregado;
   - com `Boot Screen` ligado, o pacote enxuto preserva `KANJIBASIC*.ROM` e remove a fonte `KANJI.ROM` por padrao; use `MSXBARE_KANJI_FONT=1` para preservar a fonte;
   - com `Boot Screen` desligado, `KANJI*.ROM` e `KANJIBASIC*.ROM` nao entram no initramfs;
-  - no pacote enxuto, o item continua disponivel quando `KANJIBASIC/MSX-JE` estiver carregado, mesmo sem fonte `KANJI.ROM`;
-  - quando nao houver nem fonte `KANJI.ROM` nem mapeamento `KANJIBASIC/MSX-JE`, `Enter` apenas registra indisponibilidade, sem mudar estado efetivo.
+  - quando a fonte ou os mapas japoneses nao existirem no pacote, o runtime simplesmente segue sem esse recurso, sem toggle de usuario.
 - Fora de debug, `Refresh` continua oculto.
 - O runtime inicia em `NTSC` e continua podendo passar para `PAL` automaticamente quando o software escreve `R#9`.
 - Itens de audio em `Settings`:

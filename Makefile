@@ -28,7 +28,9 @@ MSXBARE_ONE_ROM_MODE ?= 0
 MSXBARE_ONE_ROM_PATH ?=
 MSXBARE_V9990_UART_TRACE ?= 0
 MSXBARE_BOOT_MODE_DEFAULT ?= NORM
-MSXBARE_EMBED_INITRAMFS ?= 1
+MSXBARE_BOOT_STRATEGY ?=
+MSXBARE_EMBED_INITRAMFS ?=
+MSXBARE_USE_RAW_BOOT_CONFIG ?=
 FIRMWARE_DIR ?= ./rpi-firmware
 BUILD_BID ?= $(shell date +%Y%m%d%H%M)-$(shell git rev-parse --short HEAD 2>/dev/null || echo nogit)
 CIRCLE_KERNEL_MAX_SIZE ?= 0x500000
@@ -48,6 +50,30 @@ FATFS_COMPAT_INCLUDE := -I$(CURDIR)/src/fatfs_compat
 # vencer a linha de comando. Com os includes acima, o comportamento volta
 # ao padrao do GNU make: `make DEBUG=0 OWNER=...` vence a configuracao salva.
 #
+
+BOOT_STRATEGY_CANONICAL := $(strip $(MSXBARE_BOOT_STRATEGY))
+ifeq ($(BOOT_STRATEGY_CANONICAL),)
+ifeq ($(strip $(MSXBARE_EMBED_INITRAMFS)),0)
+BOOT_STRATEGY_CANONICAL := multicore
+else
+BOOT_STRATEGY_CANONICAL := standalone
+endif
+endif
+
+ifneq ($(BOOT_STRATEGY_CANONICAL),standalone)
+ifneq ($(BOOT_STRATEGY_CANONICAL),multicore)
+$(error MSXBARE_BOOT_STRATEGY invalido: $(BOOT_STRATEGY_CANONICAL). Use standalone ou multicore)
+endif
+endif
+
+MSXBARE_BOOT_STRATEGY_MULTICORE := 0
+MSXBARE_EMBED_INITRAMFS_EFFECTIVE := 1
+MSXBARE_USE_RAW_BOOT_CONFIG_EFFECTIVE := 1
+ifeq ($(BOOT_STRATEGY_CANONICAL),multicore)
+MSXBARE_BOOT_STRATEGY_MULTICORE := 1
+MSXBARE_EMBED_INITRAMFS_EFFECTIVE := 0
+MSXBARE_USE_RAW_BOOT_CONFIG_EFFECTIVE := 0
+endif
 
 DEBUG_BOOL := 0
 ifeq ($(strip $(DEBUG)),1)
@@ -113,7 +139,7 @@ all: default
 default: config-header circle-libs
 	@mkdir -p artifacts
 	@mkdir -p artifacts build/src
-	@if [ "$(MSXBARE_EMBED_INITRAMFS)" = "1" ]; then \
+	@if [ "$(MSXBARE_EMBED_INITRAMFS_EFFECTIVE)" = "1" ]; then \
 		$(MAKE) embedded-initramfs \
 			INITRAMFS_IN="$(INITRAMFS_IN)" \
 			EMBEDDED_INITRAMFS_OUT="$(EMBEDDED_INITRAMFS_OUT)" \
@@ -147,7 +173,7 @@ default: config-header circle-libs
 		MSXBARE_ONE_ROM_MODE=$(MSXBARE_ONE_ROM_MODE) \
 		MSXBARE_ONE_ROM_PATH="$(MSXBARE_ONE_ROM_PATH)" \
 		MSXBARE_V9990_UART_TRACE=$(MSXBARE_V9990_UART_TRACE) \
-		MSXBARE_EMBED_INITRAMFS=$(MSXBARE_EMBED_INITRAMFS) \
+		MSXBARE_EMBED_INITRAMFS=$(MSXBARE_EMBED_INITRAMFS_EFFECTIVE) \
 		MSXBARE_EMBED_INITRAMFS_PATH="$(abspath $(EMBEDDED_INITRAMFS_OUT))" \
 		MSXBARE_PATREON_TAG="$(EFFECTIVE_OWNER)" \
 		MSXBARE_BOOT_MODE_DEFAULT_ENUM=$(MSXBARE_BOOT_MODE_DEFAULT_ENUM) \
@@ -178,7 +204,7 @@ default: config-header circle-libs
 			fi; \
 		fi; \
 	fi; \
-	if [ "$(MSXBARE_EMBED_INITRAMFS)" = "1" ] && [ -f "$(EMBEDDED_INITRAMFS_OUT)" ]; then \
+	if [ "$(MSXBARE_EMBED_INITRAMFS_EFFECTIVE)" = "1" ] && [ -f "$(EMBEDDED_INITRAMFS_OUT)" ]; then \
 		cpio_bytes=$$(wc -c < "$(EMBEDDED_INITRAMFS_OUT)" | tr -d ' '); \
 		echo "Initramfs embedded: $(EMBEDDED_INITRAMFS_OUT) ($$cpio_bytes bytes)"; \
 	fi
@@ -195,7 +221,7 @@ default: config-header circle-libs
 
 backend-module: config-header
 	@mkdir -p artifacts
-	@if [ "$(MSXBARE_EMBED_INITRAMFS)" = "1" ]; then \
+	@if [ "$(MSXBARE_EMBED_INITRAMFS_EFFECTIVE)" = "1" ]; then \
 		$(MAKE) embedded-initramfs \
 			INITRAMFS_IN="$(INITRAMFS_IN)" \
 			EMBEDDED_INITRAMFS_OUT="$(EMBEDDED_INITRAMFS_OUT)" \
@@ -228,7 +254,7 @@ backend-module: config-header
 		MSXBARE_ONE_ROM_MODE=$(MSXBARE_ONE_ROM_MODE) \
 		MSXBARE_ONE_ROM_PATH="$(MSXBARE_ONE_ROM_PATH)" \
 		MSXBARE_V9990_UART_TRACE=$(MSXBARE_V9990_UART_TRACE) \
-		MSXBARE_EMBED_INITRAMFS=$(MSXBARE_EMBED_INITRAMFS) \
+		MSXBARE_EMBED_INITRAMFS=$(MSXBARE_EMBED_INITRAMFS_EFFECTIVE) \
 		MSXBARE_EMBED_INITRAMFS_PATH="$(abspath $(EMBEDDED_INITRAMFS_OUT))" \
 		MSXBARE_PATREON_TAG="$(EFFECTIVE_OWNER)" \
 		MSXBARE_BOOT_MODE_DEFAULT_ENUM=$(MSXBARE_BOOT_MODE_DEFAULT_ENUM) \
@@ -336,7 +362,10 @@ config-header:
 	MSXBARE_BOOT_MODE_DEFAULT="$(MSXBARE_BOOT_MODE_DEFAULT)" \
 	MSXBARE_BOOT_MODE_DEFAULT_ENUM="$(MSXBARE_BOOT_MODE_DEFAULT_ENUM)" \
 	MSXBARE_BOOT_MODE_LOCKED="$(MSXBARE_BOOT_MODE_LOCKED)" \
+	MSXBARE_BOOT_STRATEGY="$(BOOT_STRATEGY_CANONICAL)" \
+	MSXBARE_USE_RAW_BOOT_CONFIG="$(MSXBARE_USE_RAW_BOOT_CONFIG_EFFECTIVE)" \
 	MSXBARE_PATREON_TAG="$(EFFECTIVE_OWNER)" \
+	MSXBARE_EMBED_INITRAMFS="$(MSXBARE_EMBED_INITRAMFS_EFFECTIVE)" \
 	./scripts/gen-build-header.sh $(BUILD_DIR)/config_build.h
 
 clean:
@@ -368,17 +397,21 @@ sdcard:
 	if [ -z "$$kernel_img" ]; then \
 		kernel_img="$(DEFAULT_ARTIFACT)"; \
 	fi; \
-	echo "SD usando kernel existente: $$kernel_img"; \
+	echo "SD usando kernel existente: $$kernel_img -> msx.img"; \
+	MSXBARE_BOOT_STRATEGY="$(BOOT_STRATEGY_CANONICAL)" \
 	MSXBARE_BOOT_SCREEN="$(MSXBARE_BOOT_SCREEN)" \
 	MSXBARE_KANJI_FONT="$(MSXBARE_KANJI_FONT)" \
+	MSXBARE_EMBED_INITRAMFS="$(MSXBARE_EMBED_INITRAMFS_EFFECTIVE)" \
 	KERNEL_IMG="$$kernel_img" ./scripts/prepare-sd.sh
 
 logserial:
 	./scripts/logserial.sh
 
 sdcard-update:
+	MSXBARE_BOOT_STRATEGY="$(BOOT_STRATEGY_CANONICAL)" \
 	MSXBARE_BOOT_SCREEN="$(MSXBARE_BOOT_SCREEN)" \
 	MSXBARE_KANJI_FONT="$(MSXBARE_KANJI_FONT)" \
+	MSXBARE_EMBED_INITRAMFS="$(MSXBARE_EMBED_INITRAMFS_EFFECTIVE)" \
 	./scripts/update-sd-incremental.sh
 
 initramfs:
@@ -419,7 +452,8 @@ package: default
 		AUTO_CONFIRM=1 \
 		COPY_GAMES_TO_ROOT="$(COPY_GAMES_TO_ROOT)" \
 		DEBUG=$(DEBUG_BOOL) \
-		MSXBARE_EMBED_INITRAMFS=$(MSXBARE_EMBED_INITRAMFS) \
+		MSXBARE_BOOT_STRATEGY="$(BOOT_STRATEGY_CANONICAL)" \
+		MSXBARE_EMBED_INITRAMFS=$(MSXBARE_EMBED_INITRAMFS_EFFECTIVE) \
 		MSXBARE_BOOT_SCREEN="$(MSXBARE_BOOT_SCREEN)" \
 		MSXBARE_KANJI_FONT="$(MSXBARE_KANJI_FONT)" \
 		OFFLINE_DRY_PACKAGE=1 \
@@ -438,10 +472,10 @@ help:
 	@echo "SD card prep: make sdcard"
 	@echo "SD incremental update (sem formatar): make sdcard-update"
 	@echo "Initramfs: make initramfs INITRAMFS_IN=roms/initramfs INITRAMFS_OUT=sdcard/msx.cpio"
-	@echo "Embedded initramfs default: MSXBARE_EMBED_INITRAMFS=1 (fallback externo: 0)"
+	@echo "Boot strategy default: MSXBARE_BOOT_STRATEGY=standalone (multicore => msx.cpio externo + msx.cfg em FAT)"
 	@echo "Kanji font opcional: MSXBARE_KANJI_FONT=1 preserva KANJI.ROM junto do Boot Screen"
 	@echo "SD package zip (via prepare-sd dry-run offline): make package -> artifacts/sdcard-package-YYYYMMDDHHMM.zip"
-	@echo "Flags uteis: make package DEBUG=0|1 OWNER=<nome> FIRMWARE_DIR=./rpi-firmware"
+	@echo "Flags uteis: make package DEBUG=0|1 OWNER=<nome> FIRMWARE_DIR=./rpi-firmware MSXBARE_BOOT_STRATEGY=standalone|multicore"
 	@echo "Precedencia: flags da linha de comando vencem .config; .config vence os defaults"
 	@echo "Cross prefix auto: aarch64-none-elf- | aarch64-elf- | aarch64-linux-gnu-"
 	@echo "Override: make CROSS=aarch64-elf-"

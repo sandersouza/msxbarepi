@@ -2,11 +2,11 @@
 
 ## Objetivo
 
-Definir um formato simples e deterministico para `SD:/gamemaster.cht`, adequado ao runtime baremetal e ao fluxo futuro de browser/UI de cheats.
+Definir um formato simples e deterministico para `SD:/msx/gamemaster.cht`, adequado ao runtime baremetal e ao fluxo futuro de browser/UI de cheats.
 
 ## Caminho canonico
 
-- Arquivo esperado: `SD:/gamemaster.cht`
+- Arquivo esperado: `SD:/msx/gamemaster.cht`
 
 ## Diretriz de parser
 
@@ -57,7 +57,7 @@ endgame
 ## Exemplo valido
 
 ```text
-# SD:/gamemaster.cht
+# SD:/msx/gamemaster.cht
 game "Space Manbow 2"
 rom "SMANBOW2"
 cheat "Invencibilidade"

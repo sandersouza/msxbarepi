@@ -8,10 +8,10 @@ Registrar, em uma unica arte, como a carga do `msxbarepi` sai do firmware do Ras
 
 ## Leitura rapida
 
-1. O firmware do Raspberry Pi le os arquivos da particao FAT do SD e entrega o controle para `kernel8.img`.
+1. O firmware do Raspberry Pi le os arquivos da particao FAT do SD e entrega o controle para o core configurado em `kernel=`; no MSX BarePI, o fluxo SD grava `msx.img`.
 2. O bootstrap do Circle sobe o ambiente baremetal AArch64 e entra em `main()`, que instancia `CComboKernel`.
 3. O kernel sobe `Interrupt + Timer` e prioriza `screen` + audio HDMI antes do backend, para reduzir latencia visual/auditiva do fastboot.
-4. Com video e audio prontos, o projeto sobe `SD/eMMC`, monta `FatFs`, le `msxbarepi.cfg` e normaliza os settings antes do init do backend.
+4. Com video e audio prontos, o projeto sobe `SD/eMMC`; em `Boot strategy = Standalone`, tenta carregar primeiro o snapshot RAW e pode deferir o `FatFs`, enquanto em `Boot strategy = Multicore` monta `FatFs` cedo e le `msx.cfg` antes do init do backend.
 5. O boot monta apenas o `initramfs` minimo de boot, aplica a configuracao no runtime e inicializa o backend selecionado.
 6. Em `DEBUG=1`, `UART + Logger` e o debug overlay so entram depois do backend.
 7. O kernel faz um primeiro blit visivel antes de inicializar `USB HID`.
@@ -29,7 +29,7 @@ Registrar, em uma unica arte, como a carga do `msxbarepi` sai do firmware do Ras
 
 ## Observacoes de modelagem
 
-- `BT6` continua sendo um gate funcional do boot porque o `msxbarepi.cfg` precisa ser aplicado antes do init do backend.
+- `BT6` continua sendo um gate funcional do boot: em `Standalone`, ele pode vir do snapshot RAW; em `Multicore`, vem sempre de `msx.cfg` na FAT.
 - O kernel nao inclui mais um backend publico MSX diretamente; ele fala com a adaptacao neutra em `src/backend/runtime/runtime.h`.
 - O fastboot atual monta apenas o `initramfs` minimo antes do backend; o restante entra diferido no loop principal, depois da primeira tentativa de `USB HID`.
 - O SVG do fluxograma ainda precisa ser regenerado para refletir essa ordem nova de fastboot.

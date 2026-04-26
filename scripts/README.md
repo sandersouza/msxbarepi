@@ -336,7 +336,7 @@ python3 scripts/build-v9990-debug-disks.py \
 
 Monta um pacote ZIP com os arquivos de boot/execucao para SD sem formatar dispositivo fisico.
 Quando `PACKAGE_KERNEL_IMG` nao e informado, usa o artefato da issue ativa (`artifacts/kernel8-issue<N>.img`) quando existir; caso contrario cai para `artifacts/kernel8-default.img`.
-O pacote sempre cria `roms/` e `disks/` na raiz. Se `PACKAGE_COPY_GAMES_TO_ROOT=0`, ainda copia `roms/games/cheats` para `cheats/`.
+O pacote sempre cria `msx/roms/`, `msx/disks/` e `msx/cheats/`. Se `PACKAGE_COPY_GAMES_TO_ROOT=0`, ainda copia `roms/games/cheats` para `msx/cheats/`.
 
 Observacao: o caminho oficial para pacote final e `make package`, que usa o mesmo fluxo de `make sdcard` via `prepare-sd.sh` em modo offline/dry-run e chama este script apenas como gerador do ZIP.
 
@@ -354,7 +354,7 @@ Com destino customizado:
 PACKAGE_ZIP=artifacts/sdcard-package-custom.zip ./scripts/make-sdcard-package.sh
 ```
 
-Com copia de jogos para raiz do pacote:
+Com copia de jogos para `msx/` no pacote:
 
 ```bash
 PACKAGE_COPY_GAMES_TO_ROOT=1 ./scripts/make-sdcard-package.sh
@@ -366,6 +366,7 @@ PACKAGE_COPY_GAMES_TO_ROOT=1 ./scripts/make-sdcard-package.sh
 - `PACKAGE_CONFIG_TXT`
 - `PACKAGE_CMDLINE_TXT`
 - `PACKAGE_INITRAMFS_IMG`
+- `PACKAGE_BOOT_STRATEGY=standalone|multicore`
 - `PACKAGE_SETTINGS_CFG`
 - `PACKAGE_FIRMWARE_DIR`
 - `PACKAGE_COPY_GAMES_TO_ROOT`
@@ -408,7 +409,7 @@ Comparar sessoes:
 
 ### Funcao
 
-Fluxo oficial para preparar o microSD: seleciona disco, verifica se ja existe payload minimo de boot no SD e pergunta se deve `UPDATE` (incremental) ou `FORMATAR` (ciclo completo). No modo formatacao, copia kernel/config/cmdline/initramfs/firmware, cria `roms/` e `disks/` na raiz, preserva o payload minimo de `cheats/` mesmo sem copiar jogos completos e ejeta com seguranca.
+Fluxo oficial para preparar o microSD: seleciona disco, verifica se ja existe payload minimo de boot no SD e pergunta se deve `UPDATE` (incremental) ou `FORMATAR` (ciclo completo). No modo formatacao, copia kernel/config/cmdline/initramfs/firmware, grava o kernel como `msx.img`, cria `msx/roms/`, `msx/disks/` e `msx/cheats/`, preserva o payload minimo de cheats mesmo sem copiar jogos completos e ejeta com seguranca.
 
 ### Como usar
 
@@ -444,6 +445,7 @@ Esse e o mesmo fluxo usado por `make package`; a diferenca e que `make package` 
 - `SETTINGS_CFG`, `FIRMWARE_DIR`
 - `DRY_RUN`, `NON_INTERACTIVE`, `AUTO_CONFIRM`
 - `DEBUG`, `VIDEO_MODE_PRESET` (`auto`, `1080`, `720`, `768`, `16:9`, `4:3`)
+- `MSXBARE_BOOT_STRATEGY=standalone|multicore`
 - `COPY_GAMES_TO_ROOT`, `GAMES_SRC_DIR`
 - `OFFLINE_DRY_PACKAGE`, `PACKAGE_ZIP`
 
@@ -454,10 +456,11 @@ Esse e o mesmo fluxo usado por `make package`; a diferenca e que `make package` 
 - No macOS, usa `diskutil` e `plutil`.
 - No Linux, usa `lsblk` para deteccao; para formatar, usa `parted` + `mkfs.vfat`; para montagem/ejecao automatica, prefere `udisksctl`.
 - Quando `DEBUG=1`, ajusta `disable_splash=0` no `config.txt` copiado.
-- `kernel8.img` e obrigatorio: se `KERNEL_IMG` nao for informado, o script tenta `artifacts/kernel8-issue<N>.img`, `artifacts/kernel8-default.img` e fallbacks legados; se nenhum existir, aborta em vez de preparar um SD sem kernel.
-- No preparo completo, quando `COPY_GAMES_TO_ROOT=0`, `roms/games/cheats` ainda e copiado para `cheats/`, e as pastas raiz `roms/` e `disks/` continuam sendo criadas.
+- `KERNEL_IMG` e obrigatorio: se nao for informado, o script tenta `artifacts/kernel8-issue<N>.img`, `artifacts/kernel8-default.img` e fallbacks legados; o arquivo escolhido e gravado no SD como `msx.img`.
+- `MSXBARE_BOOT_STRATEGY=standalone` embute o initramfs e remove a linha `initramfs` do `config.txt`; `multicore` gera/copia `msx.cpio` e adiciona `initramfs msx.cpio followkernel`.
+- No preparo completo, quando `COPY_GAMES_TO_ROOT=0`, `roms/games/cheats` ainda e copiado para `msx/cheats/`, e as pastas `msx/roms/` e `msx/disks/` continuam sendo criadas.
 - Em `OFFLINE_DRY_PACKAGE=1`, o script nao toca em disco fisico, mas gera o `.zip` final com o mesmo payload que seria copiado para o SD.
-- Se o SD selecionado ja tiver estrutura minima de boot (`bootcode.bin`, `start.elf`, `fixup.dat`, `bcm2710-rpi-3-b.dtb`, `config.txt`, `kernel8.img`), o script oferece escolha entre `UPDATE` e `FORMATAR`.
+- Se o SD selecionado ja tiver o core atualizavel (`msx.img` por padrao), o script oferece escolha entre `UPDATE` e `FORMATAR`.
 - Se `UPDATE` for escolhido, o script delega para `update-sd-incremental.sh` e encerra sem formatar.
 
 ## 9) update-sd-incremental.sh
@@ -497,6 +500,7 @@ VIDEO_MODE_PRESET=720 COPY_GAMES_TO_ROOT=1 ./scripts/update-sd-incremental.sh
 - `KERNEL_IMG`, `CONFIG_TXT`, `CMDLINE_TXT`, `INITRAMFS_IMG`, `INITRAMFS_SRC_DIR`
 - `SETTINGS_CFG`, `FIRMWARE_DIR`
 - `DEBUG`, `VIDEO_MODE_PRESET`
+- `MSXBARE_BOOT_STRATEGY=standalone|multicore`
 - `COPY_GAMES_TO_ROOT`, `GAMES_SRC_DIR`
 - `EJECT_AT_END`
 
@@ -504,9 +508,9 @@ VIDEO_MODE_PRESET=720 COPY_GAMES_TO_ROOT=1 ./scripts/update-sd-incremental.sh
 
 - Nao formata o cartao.
 - Quando `SD_DEVICE` e informado (via `prepare-sd.sh` ou manualmente), o script tenta detectar/montar a particao e resolver `TARGET_VOLUME` automaticamente.
-- `kernel8.img` e obrigatorio tambem no update incremental.
-- O update garante `roms/` e `disks/` na raiz. Quando `COPY_GAMES_TO_ROOT=0`, `cheats/` so e semeado a partir de `roms/games/cheats` se ainda nao existir no destino; se ja existir, o update preserva o conteudo local.
-- Se `make-initramfs.sh` estiver disponivel e `INITRAMFS_SRC_DIR` existir, regenera `msx.cpio` antes da copia.
+- `KERNEL_IMG` e obrigatorio tambem no update incremental e e gravado no SD como `msx.img`.
+- O update garante `msx/roms/` e `msx/disks/`. Quando `COPY_GAMES_TO_ROOT=0`, `msx/cheats/` so e semeado a partir de `roms/games/cheats` se ainda nao existir no destino; se ja existir, o update preserva o conteudo local.
+- Se `MSXBARE_BOOT_STRATEGY=multicore` e `make-initramfs.sh` estiver disponivel com `INITRAMFS_SRC_DIR`, o script regenera `msx.cpio` antes da copia.
   - com `MSXBARE_BOOT_SCREEN=1`, preserva `KANJIBASIC*.ROM` e remove a fonte `KANJI.ROM` por padrao; `MSXBARE_KANJI_FONT=1` preserva ambos;
   - com `MSXBARE_BOOT_SCREEN=0`, remove `KANJI*.ROM` e `KANJIBASIC*.ROM` do pacote gerado.
 - Ao final da copia, executa `sync` e tenta desmontar automaticamente o volume alvo.

@@ -123,15 +123,11 @@ static unsigned MenuScaleFactorFromPercent(unsigned percent)
     {
         return 1u;
     }
-    if (percent < 250u)
+    if (percent >= 300u)
     {
-        percent = 250u;
+        return 3u;
     }
-    if (percent > 450u)
-    {
-        percent = 450u;
-    }
-    return 2u + ((percent - 250u) / 50u);
+    return 2u;
 }
 
 static const char *MenuOverlayModeFlag(const TComboLocaleStrings *locale, unsigned overlay_mode)
@@ -377,11 +373,14 @@ const TComboMenuItem *combo_menu_load_disk_items_get(unsigned language,
 
 const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
                                                      unsigned resolution_mode,
+                                                     unsigned scale_percent,
                                                      unsigned scanline_mode,
                                                      boolean gfx9000_enabled,
                                                      unsigned refresh_rate_hz,
                                                      boolean disk_rom_enabled,
                                                      unsigned boot_mode,
+                                                     const char *core_name,
+                                                     boolean core_available,
                                                      unsigned machine_profile,
                                                      unsigned rammapper_kb,
                                                      unsigned megaram_kb,
@@ -396,12 +395,14 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
                                                      unsigned audio_gain_percent,
                                                      unsigned *count)
 {
-    static TComboMenuItem settings_items[32];
+    static TComboMenuItem settings_items[36];
     static char language_label[32];
     static char resolution_label[32];
+    static char scale_label[32];
     static char scanline_label[32];
     static char gfx9000_label[32];
     static char boot_label[32];
+    static char core_label[32];
     static char machine_label[32];
     static char mapper_label[32];
     static char megaram_label[32];
@@ -420,6 +421,8 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
 
     language = combo_locale_clamp_language(language);
     if (resolution_mode > 3u) resolution_mode = 0u;
+    if (scale_percent < 200u) scale_percent = 200u;
+    if (scale_percent > 300u) scale_percent = 300u;
     if (scanline_mode > 1u) scanline_mode = 1u;
     machine_profile = backend_machine_profile_clamp(machine_profile);
     if (rammapper_kb != 256u && rammapper_kb != 512u && rammapper_kb != 1024u) rammapper_kb = 256u;
@@ -438,12 +441,22 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
                    resolution_mode == 0u ? locale->resolution_auto
                    : (resolution_mode == 1u ? locale->resolution_1080
                    : (resolution_mode == 2u ? locale->resolution_720 : locale->resolution_768)));
+    {
+        char scale_flag[8];
+        const unsigned scale_factor = MenuScaleFactorFromPercent(scale_percent);
+        scale_flag[0] = (char) ('0' + (scale_factor % 10u));
+        scale_flag[1] = 'x';
+        scale_flag[2] = '\0';
+        BuildLabelFlag(scale_label, sizeof(scale_label), locale->settings_scale, scale_flag);
+    }
     BuildLabelFlag(scanline_label, sizeof(scanline_label), locale->settings_scanlines,
                    scanline_mode == 0u ? locale->flag_off : locale->flag_on);
     BuildLabelFlag(gfx9000_label, sizeof(gfx9000_label), locale->settings_gfx9000,
                    gfx9000_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(boot_label, sizeof(boot_label), locale->settings_boot_mode,
                    boot_mode == 0u ? "NORM" : (boot_mode == 1u ? "FAST" : "GAME"));
+    BuildLabelFlag(core_label, sizeof(core_label), locale->settings_core,
+                   core_available && core_name != 0 && core_name[0] != '\0' ? core_name : locale->flag_na);
     BuildLabelFlag(machine_label, sizeof(machine_label), locale->settings_machine,
                    backend_machine_profile_label(machine_profile));
     {
@@ -498,6 +511,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     ADD_SETTING_ITEM(language_label, ComboMenuActionCycleLanguage, ComboMenuRedrawMenuOnly, TRUE);
     ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
     ADD_SETTING_ITEM(resolution_label, ComboMenuActionCycleResolution, ComboMenuRedrawMenuOnly, TRUE);
+    ADD_SETTING_ITEM(scale_label, ComboMenuActionOverscanChanged, ComboMenuRedrawMenuAndViewport, TRUE);
     ADD_SETTING_ITEM(scanline_label, ComboMenuActionCycleScanlines, ComboMenuRedrawMenuAndViewport, TRUE);
     if (MSXBARE_FEAT_GFX9000)
     {
@@ -532,6 +546,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     }
 
     ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
+    ADD_SETTING_ITEM(core_label, ComboMenuActionCycleCore, ComboMenuRedrawMenuOnly, core_available);
     if (show_machine)
     {
         ADD_SETTING_ITEM(machine_label, ComboMenuActionCycleMachine, ComboMenuRedrawMenuOnly, TRUE);
@@ -618,23 +633,16 @@ const TComboMenuItem *combo_menu_joystick_map_items_get(unsigned language,
     return items;
 }
 
-const TComboMenuItem *combo_menu_debug_items_get(unsigned scale_percent,
-                                                 unsigned effective_scale_percent,
-                                                 unsigned max_scale_percent,
-                                                 unsigned language,
+const TComboMenuItem *combo_menu_debug_items_get(unsigned language,
                                                  unsigned refresh_rate_hz,
                                                  boolean disk_rom_enabled,
-                                                 boolean kanji_rom_enabled,
-                                                 boolean kanji_rom_available,
                                                  unsigned overlay_mode,
                                                  boolean overlay_available,
                                                  unsigned *count)
 {
     static TComboMenuItem debug_items[9];
-    static char scale_label[32];
     static char refresh_label[32];
     static char disk_rom_label[32];
-    static char kanji_rom_label[32];
     static char overlay_label[32];
 
     const TComboLocaleStrings *locale = combo_locale_get(language);
@@ -643,28 +651,10 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned scale_percent,
         locale = combo_locale_get(ComboLanguageEN);
     }
 
-    if (scale_percent < 200u) scale_percent = 200u;
-    if (effective_scale_percent < 200u) effective_scale_percent = 200u;
-    if (max_scale_percent < 200u) max_scale_percent = 200u;
-
-    {
-        char scale_flag[8];
-        const unsigned display_scale_percent =
-            (overlay_mode == ComboDebugOverlayOff) ? effective_scale_percent : scale_percent;
-        const unsigned scale_factor = MenuScaleFactorFromPercent(display_scale_percent);
-        (void) max_scale_percent;
-        scale_flag[0] = (char) ('0' + (scale_factor % 10u));
-        scale_flag[1] = 'x';
-        scale_flag[2] = '\0';
-        BuildLabelFlag(scale_label, sizeof(scale_label), locale->settings_scale, scale_flag);
-    }
-
     BuildLabelFlag(overlay_label, sizeof(overlay_label), locale->settings_debugger,
                    MenuOverlayModeFlag(locale, overlay_mode));
     BuildLabelFlag(disk_rom_label, sizeof(disk_rom_label), locale->settings_disk_rom,
                    disk_rom_enabled ? locale->flag_on : locale->flag_off);
-    BuildLabelFlag(kanji_rom_label, sizeof(kanji_rom_label), locale->settings_kanji_rom,
-                   kanji_rom_enabled ? locale->flag_on : locale->flag_off);
     BuildLabelFlag(refresh_label, sizeof(refresh_label), locale->settings_refresh,
                    refresh_rate_hz == 50u ? locale->refresh_pal : locale->refresh_ntsc);
 
@@ -680,10 +670,7 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned scale_percent,
     if (MSXBARE_ENABLE_DEBUG_OVERLAY)
     {
         ADD_DEBUG_ITEM(overlay_label, ComboMenuActionCycleOverlay, overlay_available ? TRUE : FALSE);
-        ADD_DEBUG_ITEM(scale_label, ComboMenuActionOverscanChanged,
-            (overlay_available && overlay_mode != ComboDebugOverlayOff) ? TRUE : FALSE);
         ADD_DEBUG_ITEM(disk_rom_label, ComboMenuActionToggleDiskRom, TRUE);
-        ADD_DEBUG_ITEM(kanji_rom_label, ComboMenuActionToggleKanjiRom, TRUE);
         ADD_DEBUG_ITEM(refresh_label, ComboMenuActionCycleRefreshRate, TRUE);
     }
 

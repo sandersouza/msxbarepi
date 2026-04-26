@@ -4,9 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
-if [ "$PWD" != "/Users/sandersouza/Developer/msxbarepi-circle" ]; then
+if [ "$PWD" != "/Users/sandersouza/Developer/msxbarepi" ]; then
   echo "[WARN] PWD atual: $PWD" >&2
-  echo "[WARN] Recomenda-se usar /Users/sandersouza/Developer/msxbarepi-circle" >&2
+  echo "[WARN] Recomenda-se usar /Users/sandersouza/Developer/msxbarepi" >&2
 fi
 
 NON_INTERACTIVE="${NON_INTERACTIVE:-0}"

@@ -3,8 +3,8 @@
 
 #include <stdint.h>
 
-#define GAMEMASTER_CATALOG_PATH "SD:/gamemaster.cht"
-#define GAMEMASTER_CHEATS_ROOT "SD:/cheats"
+#define GAMEMASTER_CATALOG_PATH "SD:/msx/gamemaster.cht"
+#define GAMEMASTER_CHEATS_ROOT "SD:/msx/cheats"
 
 #define GAMEMASTER_MAX_GAMES 4u
 #define GAMEMASTER_MAX_CHEATS 160u
