@@ -1,16 +1,32 @@
-arm_64bit=1
+# Kernel default
+kernel=coco.img
+initramfs coco.cpio followkernel
+
+# Boot config
 enable_uart=1
+enable_tvout=1
 disable_splash=1
-kernel=msx.img
-hdmi_force_hotplug=1
 disable_overscan=1
+hdmi_force_hotplug=1
+
+# Disable WIFI + BT
 dtoverlay=disable-wifi
 dtoverlay=disable-bt
 dtoverlay=pi3-disable-bt
-dtparam=audio=on
+
+# Force CPU Freq
+arm_64bit=1
 arm_freq=1200
 arm_freq_min=1150
+
+# HDMI Output 720p 16:9
 hdmi_group=1
 hdmi_mode=4
 framebuffer_width=1280
 framebuffer_height=720
+
+# HDMI Output 768p 4:3
+# hdmi_group=2
+# hdmi_mode=16
+# framebuffer_width=1024
+# framebuffer_height=768
