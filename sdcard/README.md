@@ -6,7 +6,7 @@ Para preparar o SD em modo multicore, compile e copie com `MSXBARE_BOOT_STRATEGY
 
 Em SD multicore com alternancia pelo Settings `CORE`, mantenha tambem o `<core>.cpio` correspondente na raiz. Ao trocar de core, o runtime grava `kernel=<core>.img` e `initramfs <core>.cpio followkernel` apenas dentro do bloco `#---KERNEL START---`/`#---KERNEL END---` antes do reboot.
 
-O Settings `Resolution [720/768]` reflete o `framebuffer_height` do bloco HDMI em `config.txt`. Ao usar `Save to disk`, o runtime grava somente o bloco HDMI delimitado por `#---HDMI START---` e `#---HDMI END---`; todo o conteudo fora desse bloco deve ser preservado exatamente como estiver no MicroSD.
+O Settings `Proportion [16:9/4:3]` e persistido em `msx.cfg`/RAW e aplicado pelo Circle no framebuffer do runtime. `16:9` usa `960x540`; `4:3` usa `640x480`. Esse setting nao altera `config.txt`, que fica restrito ao boot/firmware do Raspberry Pi e pode permanecer com deteccao HDMI automatica.
 
 Payload esperado na partição FAT32 de boot:
 

@@ -37,7 +37,7 @@ extern const TComboLocaleStrings g_ComboLocaleES = {
     "LINEA",
     "[ENTER] TOGGLE",
     "Idioma",
-    "Resolucion",
+    "Proporcion",
     "Escala",
     "Scanline",
     "GFX9000",
@@ -55,7 +55,6 @@ extern const TComboLocaleStrings g_ComboLocaleES = {
     "Konami SCC+",
     "Debugger",
     "Ganancia Audio",
-    "Guardar no disco",
     "Joystick ARRIBA",
     "Joystick ABAJO",
     "Joystick IZQUIERDA",
@@ -72,6 +71,6 @@ extern const TComboLocaleStrings g_ComboLocaleES = {
     "N/D",
     "NTSC",
     "PAL",
-    "720",
-    "768"
+    "16:9",
+    "4:3"
 };

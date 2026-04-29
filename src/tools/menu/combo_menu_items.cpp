@@ -376,7 +376,7 @@ const TComboMenuItem *combo_menu_load_disk_items_get(unsigned language,
 }
 
 const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
-                                                     unsigned resolution_mode,
+                                                     unsigned proportion_mode,
                                                      unsigned scale_percent,
                                                      unsigned scanline_mode,
                                                      boolean gfx9000_enabled,
@@ -401,7 +401,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
 {
     static TComboMenuItem settings_items[36];
     static char language_label[32];
-    static char resolution_label[32];
+    static char proportion_label[32];
     static char scale_label[32];
     static char scanline_label[32];
     static char gfx9000_label[32];
@@ -425,7 +425,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     }
 
     language = combo_locale_clamp_language(language);
-    if (resolution_mode > 1u) resolution_mode = 0u;
+    if (proportion_mode > 1u) proportion_mode = 0u;
     if (scale_percent < 200u) scale_percent = 200u;
     if (scale_percent > 300u) scale_percent = 300u;
     if (scanline_mode > 1u) scanline_mode = 1u;
@@ -441,9 +441,9 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     (void) overlay_available;
 
     BuildLabelFlag(language_label, sizeof(language_label), locale->settings_language, combo_locale_language_code(language));
-    BuildLabelFlag(resolution_label, sizeof(resolution_label), locale->settings_resolution,
-                   resolution_mode == 0u ? locale->resolution_720
-                   : locale->resolution_768);
+    BuildLabelFlag(proportion_label, sizeof(proportion_label), locale->settings_proportion,
+                   proportion_mode == 0u ? locale->proportion_16_9
+                   : locale->proportion_4_3);
     {
         char scale_flag[8];
         const unsigned scale_factor = MenuScaleFactorFromPercent(scale_percent);
@@ -515,7 +515,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     const boolean show_boot_mode = (MSXBARE_ONE_ROM_MODE == 0 && MSXBARE_BOOT_MODE_LOCKED == 0) ? TRUE : FALSE;
     ADD_SETTING_ITEM(language_label, ComboMenuActionCycleLanguage, ComboMenuRedrawMenuOnly, TRUE);
     ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
-    ADD_SETTING_ITEM(resolution_label, ComboMenuActionCycleResolution, ComboMenuRedrawMenuOnly, TRUE);
+    ADD_SETTING_ITEM(proportion_label, ComboMenuActionCycleProportion, ComboMenuRedrawMenuAndViewport, TRUE);
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
     ADD_SETTING_ITEM(scale_label, ComboMenuActionOverscanChanged, ComboMenuRedrawMenuAndViewport, TRUE);
 #endif
@@ -570,11 +570,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     ADD_SETTING_ITEM(rensha_label, ComboMenuActionCycleRensha, ComboMenuRedrawMenuOnly, TRUE);
     ADD_SETTING_ITEM(joypad_mapping_label, ComboMenuActionOpenJoystickMap, ComboMenuRedrawMenuOnly, TRUE);
 
-    settings_items[item_count].label = "";
-    settings_items[item_count].action = ComboMenuActionNone;
-    settings_items[item_count].redraw_policy = ComboMenuRedrawMenuOnly;
-    settings_items[item_count++].selectable = FALSE;
-    ADD_SETTING_ITEM(locale->settings_save, ComboMenuActionSaveSettings, ComboMenuRedrawMenuOnly, TRUE);
 #undef ADD_SETTING_ITEM
 
     if (count != 0)

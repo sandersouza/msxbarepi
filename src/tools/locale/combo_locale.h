@@ -46,7 +46,7 @@ typedef struct {
     const char *game_master_line;
     const char *game_master_apply_hint;
     const char *settings_language;
-    const char *settings_resolution;
+    const char *settings_proportion;
     const char *settings_scale;
     const char *settings_scanlines;
     const char *settings_gfx9000;
@@ -64,7 +64,6 @@ typedef struct {
     const char *settings_scc_cart;
     const char *settings_debugger;
     const char *settings_audio_gain;
-    const char *settings_save;
     const char *joystick_map_up;
     const char *joystick_map_down;
     const char *joystick_map_left;
@@ -81,8 +80,8 @@ typedef struct {
     const char *flag_na;
     const char *refresh_ntsc;
     const char *refresh_pal;
-    const char *resolution_720;
-    const char *resolution_768;
+    const char *proportion_16_9;
+    const char *proportion_4_3;
 } TComboLocaleStrings;
 
 unsigned combo_locale_clamp_language(unsigned language);

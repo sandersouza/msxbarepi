@@ -89,8 +89,7 @@ private:
     void SetUartTelemetryEnabled(boolean enabled);
     void UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux);
     void UpdateLoadDiagTelemetry(unsigned stage);
-    unsigned LoadResolutionModeFromBootConfig(void);
-    boolean PersistResolutionModeToBootConfig(unsigned mode);
+    boolean ApplyProportionModeToScreen(const char *phase, boolean force);
     void RefreshCoreListFromStorage(void);
     boolean PersistSelectedCoreToBootConfig(void);
     boolean TryCoreSwitchReboot(void);
@@ -254,7 +253,7 @@ private:
     unsigned m_OverscanPercent;
     boolean m_ScaleMaxFitEnabled;
     unsigned m_Language;
-    unsigned m_ResolutionMode;
+    unsigned m_ProportionMode;
     char m_CoreNames[kMaxCoreEntries][kCoreNameBytes];
     unsigned m_CoreCount;
     unsigned m_CoreSelected;
@@ -302,7 +301,6 @@ private:
     boolean m_SettingsLoadPending;
     boolean m_InitramfsDeferredMountPending;
     boolean m_SettingsSavePending;
-    volatile boolean m_ResolutionModeLoadPending;
     volatile boolean m_CoreListRefreshPending;
     boolean m_CoreSwitchPending;
     boolean m_StateSavePending;

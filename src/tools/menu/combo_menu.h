@@ -18,9 +18,9 @@ public:
     void SetScaleMaxFitEnabled(boolean enabled);
     void SetMaxScalePercent(unsigned percent);
     void SetLanguage(unsigned language);
-    void SetResolutionMode(unsigned mode);
+    void SetProportionMode(unsigned mode);
     unsigned GetLanguage(void) const;
-    unsigned GetResolutionMode(void) const;
+    unsigned GetProportionMode(void) const;
     unsigned GetScalePercent(void) const;
     boolean IsScaleMaxFitEnabled(void) const;
     void SetScanlineMode(unsigned mode);
@@ -64,6 +64,7 @@ public:
     void OpenGameMaster(BackendCheatCatalog *catalog, unsigned load_status, unsigned error_line);
     unsigned GetAudioGainPercent(void) const;
     boolean IsInSettings(void) const;
+    boolean IsInSettingsContext(void) const;
     boolean IsCapturingJoystickMap(void) const;
     void ReturnToRoot(void);
     void RequestRedraw(void);
@@ -124,7 +125,7 @@ private:
     boolean m_ScaleMaxFitEnabled;
     unsigned m_MaxScalePercent;
     unsigned m_Language;
-    unsigned m_ResolutionMode;
+    unsigned m_ProportionMode;
     unsigned m_ScanlineMode;
     boolean m_Gfx9000Enabled;
     unsigned m_RefreshRateHz;
@@ -193,7 +194,7 @@ private:
     boolean m_LastDrawnScaleMaxFitEnabled;
     unsigned m_LastDrawnMaxScalePercent;
     unsigned m_LastDrawnLanguage;
-    unsigned m_LastDrawnResolutionMode;
+    unsigned m_LastDrawnProportionMode;
     unsigned m_LastDrawnScanlineMode;
     boolean m_LastDrawnGfx9000Enabled;
     unsigned m_LastDrawnRefreshRateHz;

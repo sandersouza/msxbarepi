@@ -60,6 +60,7 @@ ensure_settings_cfg() {
   mkdir -p "$(dirname "$PACKAGE_SETTINGS_CFG")"
   cat > "$PACKAGE_SETTINGS_CFG" <<'EOF'
 backend_id=msx.fmsx
+proportion=16:9
 scale=3
 language=1
 scanline=0

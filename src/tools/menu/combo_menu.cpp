@@ -764,7 +764,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_ScaleMaxFitEnabled(FALSE),
     m_MaxScalePercent(300u),
     m_Language(ComboLanguageEN),
-    m_ResolutionMode(0u),
+    m_ProportionMode(0u),
     m_ScanlineMode(0u),
     m_Gfx9000Enabled(FALSE),
     m_RefreshRateHz(60u),
@@ -832,7 +832,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnScalePercent(0u),
     m_LastDrawnMaxScalePercent(0u),
     m_LastDrawnLanguage(ComboLanguageEN),
-    m_LastDrawnResolutionMode(0u),
+    m_LastDrawnProportionMode(0u),
     m_LastDrawnScanlineMode(0u),
     m_LastDrawnGfx9000Enabled(FALSE),
     m_LastDrawnRefreshRateHz(60u),
@@ -982,7 +982,7 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnScaleMaxFitEnabled = m_ScaleMaxFitEnabled;
     m_LastDrawnMaxScalePercent = m_MaxScalePercent;
     m_LastDrawnLanguage = m_Language;
-    m_LastDrawnResolutionMode = m_ResolutionMode;
+    m_LastDrawnProportionMode = m_ProportionMode;
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnGfx9000Enabled = m_Gfx9000Enabled;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
@@ -1115,15 +1115,15 @@ void CComboPauseMenu::SetLanguage(unsigned language)
     }
 }
 
-void CComboPauseMenu::SetResolutionMode(unsigned mode)
+void CComboPauseMenu::SetProportionMode(unsigned mode)
 {
     if (mode > 1u)
     {
         mode = 0u;
     }
-    if (m_ResolutionMode != mode)
+    if (m_ProportionMode != mode)
     {
-        m_ResolutionMode = mode;
+        m_ProportionMode = mode;
         m_ForceRedraw = TRUE;
     }
 }
@@ -1133,9 +1133,9 @@ unsigned CComboPauseMenu::GetLanguage(void) const
     return m_Language;
 }
 
-unsigned CComboPauseMenu::GetResolutionMode(void) const
+unsigned CComboPauseMenu::GetProportionMode(void) const
 {
-    return m_ResolutionMode;
+    return m_ProportionMode;
 }
 
 unsigned CComboPauseMenu::GetScalePercent(void) const
@@ -1663,6 +1663,11 @@ boolean CComboPauseMenu::IsInSettings(void) const
     return (m_View != MenuViewRoot) ? TRUE : FALSE;
 }
 
+boolean CComboPauseMenu::IsInSettingsContext(void) const
+{
+    return (m_View == MenuViewSettings) ? TRUE : FALSE;
+}
+
 boolean CComboPauseMenu::IsCapturingJoystickMap(void) const
 {
     return (m_View == MenuViewJoystickMap) ? TRUE : FALSE;
@@ -1831,7 +1836,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
     {
         return combo_menu_settings_items_get(
             m_Language,
-            m_ResolutionMode,
+            m_ProportionMode,
             m_ScalePercent,
             m_ScanlineMode,
             m_Gfx9000Enabled,
@@ -2840,17 +2845,17 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             }
             handled_settings_input = enter_edge || left_step || right_step;
         }
-        else if (items[m_Selected].action == ComboMenuActionCycleResolution)
+        else if (items[m_Selected].action == ComboMenuActionCycleProportion)
         {
             if (left_step)
             {
-                action = ComboMenuActionCycleResolutionPrev;
+                action = ComboMenuActionCycleProportionPrev;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
             else if (right_step || enter_edge)
             {
-                action = ComboMenuActionCycleResolution;
+                action = ComboMenuActionCycleProportion;
                 m_ForceRedraw = TRUE;
                 m_ForceHighlightRedraw = FALSE;
             }
@@ -3213,7 +3218,9 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         }
     }
 
-    const unsigned title_len = ComboStrLen(title);
+    const boolean show_title = (m_View == MenuViewSettings) ? FALSE : TRUE;
+    const unsigned title_len = show_title ? ComboStrLen(title) : 0u;
+    const unsigned item_start_row = show_title ? 2u : 1u;
     unsigned content_cols = max_item_len > title_len ? max_item_len : title_len;
     content_cols += 4u;
     if (content_cols < 18u)
@@ -3243,7 +3250,8 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     const unsigned box_cols = content_cols;
     const boolean has_unload_hint = (m_View == MenuViewLoadRom || m_View == MenuViewLoadDisk) ? TRUE : FALSE;
     const boolean has_cheat_hint = FALSE;
-    const unsigned box_rows = item_count + 3u + (has_unload_hint ? 2u : 0u) + (has_cheat_hint ? 2u : 0u);
+    const unsigned base_margin_rows = show_title ? 3u : 2u;
+    const unsigned box_rows = item_count + base_margin_rows + (has_unload_hint ? 2u : 0u) + (has_cheat_hint ? 2u : 0u);
     const unsigned box_w_px = box_cols * cell_w;
     const unsigned box_h_px = box_rows * cell_h;
 
@@ -3283,7 +3291,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnScaleMaxFitEnabled == m_ScaleMaxFitEnabled
      && m_LastDrawnMaxScalePercent == m_MaxScalePercent
      && m_LastDrawnLanguage == m_Language
-     && m_LastDrawnResolutionMode == m_ResolutionMode
+     && m_LastDrawnProportionMode == m_ProportionMode
      && m_LastDrawnScanlineMode == m_ScanlineMode
      && m_LastDrawnGfx9000Enabled == m_Gfx9000Enabled
      && m_LastDrawnRefreshRateHz == m_RefreshRateHz
@@ -3393,7 +3401,10 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     }
     renderer->FillRect(box_x, box_y, box_w_px, box_h_px, kPauseMenuBgColor);
     renderer->DrawRectBorder(box_x, box_y, box_w_px, box_h_px, BRIGHT_WHITE_COLOR, 2u);
-    renderer->DrawText(title_x, title_y, title, title_style, scale_x, scale_y);
+    if (show_title)
+    {
+        renderer->DrawText(title_x, title_y, title, title_style, scale_x, scale_y);
+    }
 
     const boolean browser_with_scrollbar =
         ((m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewLoadCassetteBrowser || m_View == MenuViewGameMasterBrowser)
@@ -3404,7 +3415,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
 
     const auto draw_row = [&](unsigned i)
     {
-        const unsigned row = 2u + i;
+        const unsigned row = item_start_row + i;
         const unsigned y = box_y + (row * cell_h);
         const unsigned text_len = ComboStrLen(items[i].label);
         const boolean settings_row = (m_View == MenuViewSettings || m_View == MenuViewDebug || m_View == MenuViewJoystickMap);
@@ -3543,8 +3554,8 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     if (browser_with_scrollbar)
     {
         const unsigned bar_x = box_x + (bar_col * cell_w);
-        const unsigned top_row = 2u;
-        const unsigned bottom_row = 2u + item_count - 1u;
+        const unsigned top_row = item_start_row;
+        const unsigned bottom_row = item_start_row + item_count - 1u;
         const unsigned arrow_up_row = (top_row > 0u) ? (top_row - 1u) : top_row;
         const unsigned arrow_down_row = bottom_row + 1u;
         const unsigned top_y = box_y + (arrow_up_row * cell_h);
@@ -3581,7 +3592,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
             hint = (m_View == MenuViewLoadDisk) ? "[DEL] Eject Disk" : "[DEL] Unload ROM";
         }
         const unsigned hint_len = ComboStrLen(hint);
-        const unsigned hint_row = item_count + 3u; /* one blank line above */
+        const unsigned hint_row = item_start_row + item_count + 1u; /* one blank line above */
         const unsigned hint_y = box_y + (hint_row * cell_h);
         const unsigned hint_x = box_x + ((box_cols - hint_len) / 2u) * cell_w;
         renderer->DrawText(hint_x, hint_y, hint, normal_style, scale_x, scale_y);
@@ -3594,7 +3605,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnScaleMaxFitEnabled = m_ScaleMaxFitEnabled;
     m_LastDrawnMaxScalePercent = m_MaxScalePercent;
     m_LastDrawnLanguage = m_Language;
-    m_LastDrawnResolutionMode = m_ResolutionMode;
+    m_LastDrawnProportionMode = m_ProportionMode;
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnGfx9000Enabled = m_Gfx9000Enabled;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
