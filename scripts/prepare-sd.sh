@@ -467,6 +467,7 @@ ensure_settings_cfg() {
   mkdir -p "$(dirname "$SETTINGS_CFG")"
   cat > "$SETTINGS_CFG" <<'EOF'
 backend_id=msx.fmsx
+proportion=16:9
 scale=3
 language=1
 scanline=0

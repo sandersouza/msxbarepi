@@ -363,7 +363,7 @@ static const u16 kLetterboxColor565 = 0x0000u;
 static const unsigned kScaleModeNative = 200u;
 static const unsigned kScaleModeHalfMax = 250u;
 static const unsigned kScaleModeFullMax = 300u;
-static const unsigned kScaleQuarterUnitOne = 4u;
+static const unsigned kScaleFitUnitOne = 16u;
 static const unsigned kScanlineModeOff = 0u;
 static const unsigned kScanlineModeLcd = 1u;
 static const unsigned kBootModeNorm = 0u;
@@ -389,16 +389,14 @@ static InterruptBindingBaseline g_InterruptBindingBaseline = {0, 0, FALSE, FALSE
 static const unsigned kBootModeGame = 2u;
 static const unsigned kRamMapperKbDefault = 256u;
 static const unsigned kMegaRamKbDefault = 0u;
-static const unsigned kResolutionMode720 = 0u;
-static const unsigned kResolutionMode768 = 1u;
-static const unsigned kBootConfigHdmiWidth16_9 = 1280u;
-static const unsigned kBootConfigHdmiHeight16_9 = 720u;
-static const unsigned kBootConfigHdmiWidth4_3 = 1024u;
-static const unsigned kBootConfigHdmiHeight4_3 = 768u;
+static const unsigned kProportionMode16_9 = 0u;
+static const unsigned kProportionMode4_3 = 1u;
+static const unsigned kProportionWidth16_9 = 960u;
+static const unsigned kProportionHeight16_9 = 540u;
+static const unsigned kProportionWidth4_3 = 640u;
+static const unsigned kProportionHeight4_3 = 480u;
 static const char kBootConfigKernelStartMarker[] = "#---KERNEL START---";
 static const char kBootConfigKernelEndMarker[] = "#---KERNEL END---";
-static const char kBootConfigHdmiStartMarker[] = "#---HDMI START---";
-static const char kBootConfigHdmiEndMarker[] = "#---HDMI END---";
 static const char kSettingsDrive[] = "SD:";
 static const char kSettingsPath[] = "SD:/msx.cfg";
 static const char kSettingsLegacyPath[] = "SD:/msxbarepi.cfg";
@@ -703,35 +701,37 @@ static unsigned ClampScaleMode(unsigned percent)
 	return kScaleModeHalfMax;
 }
 
-static unsigned ComputeFullscreenScaleQuarterUnits(unsigned screen_h)
+static unsigned ComputeFullscreenScaleFitUnits(unsigned screen_w, unsigned screen_h)
 {
-	if (screen_h == 0u)
+	if (screen_w == 0u || screen_h == 0u)
 	{
-		return 17u; /* 4.25x for the common 1080p path until HDMI is known. */
+		return 35u; /* 2.1875x for the common 960x540 path until HDMI is known. */
 	}
-	unsigned units = (screen_h * kScaleQuarterUnitOne) / kViewportBaseHeight;
-	if (units < kScaleQuarterUnitOne)
+	const unsigned width_units = (screen_w * kScaleFitUnitOne) / kViewportBaseWidth;
+	const unsigned height_units = (screen_h * kScaleFitUnitOne) / kViewportBaseHeight;
+	unsigned units = UMin(width_units, height_units);
+	if (units < kScaleFitUnitOne)
 	{
-		units = kScaleQuarterUnitOne;
+		units = kScaleFitUnitOne;
 	}
 	return units;
 }
 
-static unsigned ComputeScaleQuarterUnits(unsigned scale_mode, unsigned screen_h)
+static unsigned ComputeScaleFitUnits(unsigned scale_mode, unsigned screen_w, unsigned screen_h)
 {
-	const unsigned full_units = ComputeFullscreenScaleQuarterUnits(screen_h);
+	const unsigned full_units = ComputeFullscreenScaleFitUnits(screen_w, screen_h);
 	if (scale_mode <= kScaleModeNative)
 	{
-		return kScaleQuarterUnitOne;
+		return kScaleFitUnitOne;
 	}
 	if (scale_mode >= kScaleModeFullMax)
 	{
 		return full_units;
 	}
-	unsigned half_units = kScaleQuarterUnitOne + ((full_units - kScaleQuarterUnitOne) / 2u);
-	if (half_units < kScaleQuarterUnitOne)
+	unsigned half_units = kScaleFitUnitOne + ((full_units - kScaleFitUnitOne) / 2u);
+	if (half_units < kScaleFitUnitOne)
 	{
-		half_units = kScaleQuarterUnitOne;
+		half_units = kScaleFitUnitOne;
 	}
 	return half_units;
 }
@@ -852,11 +852,11 @@ static void ComputeViewportLayout(unsigned screen_width, unsigned screen_height,
 		const boolean hires_mode = src_width >= 512u ? TRUE : FALSE;
 		const unsigned box_base_w = kViewportBaseWidth;
 		const unsigned box_base_h = kViewportBaseHeight;
-		const unsigned scale_quarter_units = ComputeScaleQuarterUnits(scale_percent, screen_height);
+		const unsigned scale_fit_units = ComputeScaleFitUnits(scale_percent, screen_width, screen_height);
 
 		(void) hires_mode;
-		full_w = (box_base_w * scale_quarter_units) / kScaleQuarterUnitOne;
-		full_h = (box_base_h * scale_quarter_units) / kScaleQuarterUnitOne;
+		full_w = (box_base_w * scale_fit_units) / kScaleFitUnitOne;
+		full_h = (box_base_h * scale_fit_units) / kScaleFitUnitOne;
 
 		if (full_w == 0u) full_w = 1u;
 		if (full_h == 0u) full_h = 1u;
@@ -1269,6 +1269,43 @@ static void ParseTextValueLine(const char *value_start, const char *value_end, c
 	{
 		dst[0] = '\0';
 	}
+}
+
+static boolean TextValueStartsWith(const char *value_start, const char *value_end, const char *literal)
+{
+	if (value_start == 0 || value_end == 0 || literal == 0)
+	{
+		return FALSE;
+	}
+	while (value_start < value_end && (*value_start == ' ' || *value_start == '\t'))
+	{
+		++value_start;
+	}
+	for (unsigned i = 0u; literal[i] != '\0'; ++i)
+	{
+		if (value_start + i >= value_end || value_start[i] != literal[i])
+		{
+			return FALSE;
+		}
+	}
+	return TRUE;
+}
+
+static unsigned ParseProportionModeValue(const char *value_start, const char *value_end, unsigned fallback)
+{
+	const unsigned value = ParseUintValue(value_start);
+	if (TextValueStartsWith(value_start, value_end, "4:3") || value == 768u || value == 43u || value == 1u)
+	{
+		return kProportionMode4_3;
+	}
+	if (TextValueStartsWith(value_start, value_end, "16:9")
+	 || TextValueStartsWith(value_start, value_end, "0")
+	 || value == 720u
+	 || value == 169u)
+	{
+		return kProportionMode16_9;
+	}
+	return fallback > kProportionMode4_3 ? kProportionMode16_9 : fallback;
 }
 
 static int SettingsKeyEquals(const char *key, unsigned key_len, const char *literal)
@@ -2010,7 +2047,7 @@ CComboKernel::CComboKernel(void)
 	m_OverscanPercent(300u),
 	m_ScaleMaxFitEnabled(FALSE),
 	m_Language(ComboLanguagePT),
-	m_ResolutionMode(kResolutionMode720),
+	m_ProportionMode(kProportionMode16_9),
 	m_CoreNames{{0}},
 	m_CoreCount(0u),
 	m_CoreSelected(0u),
@@ -2058,7 +2095,6 @@ CComboKernel::CComboKernel(void)
 	m_SettingsLoadPending(FALSE),
 	m_InitramfsDeferredMountPending(FALSE),
 	m_SettingsSavePending(FALSE),
-	m_ResolutionModeLoadPending(FALSE),
 	m_CoreListRefreshPending(FALSE),
 	m_CoreSwitchPending(FALSE),
 	m_StateSavePending(FALSE),
@@ -2560,6 +2596,11 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 				(void) value;
 #endif
 			}
+			else if (SettingsKeyEquals(line, key_len, "proportion")
+			      || SettingsKeyEquals(line, key_len, "resolution"))
+			{
+				m_ProportionMode = ParseProportionModeValue(eq + 1, line_end, m_ProportionMode);
+			}
 			else if (SettingsKeyEquals(line, key_len, "language"))
 			{
 				m_Language = combo_locale_clamp_language(value);
@@ -2720,7 +2761,7 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 	m_PauseMenu.SetScalePercent(m_OverscanPercent);
 	m_PauseMenu.SetScaleMaxFitEnabled(m_ScaleMaxFitEnabled);
 	m_PauseMenu.SetLanguage(m_Language);
-	m_PauseMenu.SetResolutionMode(m_ResolutionMode);
+	m_PauseMenu.SetProportionMode(m_ProportionMode);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetGfx9000Enabled(m_Gfx9000Enabled);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
@@ -3070,6 +3111,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	}
 	NormalizeSettingsForBuild();
 	BootPhase(m_Logger, "BT7", "Normalize settings... OK");
+	(void) ApplyProportionModeToScreen("boot", TRUE);
 #if MSXBARE_ENABLE_FMSX
 	if (m_BackendEnabled)
 	{
@@ -3213,7 +3255,7 @@ TComboShutdownMode CComboKernel::Run(void)
 #endif
 	m_PauseMenu.SetScalePercent(m_OverscanPercent);
 	m_PauseMenu.SetLanguage(m_Language);
-	m_PauseMenu.SetResolutionMode(m_ResolutionMode);
+	m_PauseMenu.SetProportionMode(m_ProportionMode);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetGfx9000Enabled(m_Gfx9000Enabled);
 	m_RefreshRateHz = 60u;
@@ -3480,16 +3522,6 @@ TComboShutdownMode CComboKernel::Run(void)
 			m_PauseMenu.ReturnToRoot();
 			m_LastPauseWasInSettings = FALSE;
 			m_PauseMenu.RequestRedraw();
-		}
-		if (m_ResolutionModeLoadPending)
-		{
-			if (m_EmulationPaused && m_PauseMenu.IsInSettings())
-			{
-				m_ResolutionMode = LoadResolutionModeFromBootConfig();
-				m_PauseMenu.SetResolutionMode(m_ResolutionMode);
-				m_PauseMenu.RequestRedraw();
-			}
-			m_ResolutionModeLoadPending = FALSE;
 		}
 		if (m_CoreListRefreshPending)
 		{
@@ -5622,6 +5654,11 @@ void CComboKernel::LoadSettingsFromStorage(void)
 					(void) value;
 #endif
 				}
+				else if (SettingsKeyEquals(line, key_len, "proportion")
+				      || SettingsKeyEquals(line, key_len, "resolution"))
+				{
+					m_ProportionMode = ParseProportionModeValue(eq + 1, line_end, m_ProportionMode);
+				}
 				else if (SettingsKeyEquals(line, key_len, "scale_max"))
 				{
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
@@ -5811,7 +5848,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetScalePercent(m_OverscanPercent);
 	m_PauseMenu.SetScaleMaxFitEnabled(m_ScaleMaxFitEnabled);
 	m_PauseMenu.SetLanguage(m_Language);
-	m_PauseMenu.SetResolutionMode(m_ResolutionMode);
+	m_PauseMenu.SetProportionMode(m_ProportionMode);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetGfx9000Enabled(m_Gfx9000Enabled);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
@@ -5937,6 +5974,7 @@ unsigned CComboKernel::BuildSettingsPayload(char *buffer, unsigned buffer_size)
 	} while (0)
 
 	APPEND_LINE_TEXT("backend_id", saved_backend_id);
+	APPEND_LINE_TEXT("proportion", m_ProportionMode == kProportionMode4_3 ? "4:3" : "16:9");
 	APPEND_LINE_FMT("scale=%u\n", ScaleFactorFromPercent(m_OverscanPercent));
 	APPEND_LINE_FMT("language=%u\n", m_Language);
 	APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
@@ -6130,12 +6168,6 @@ void CComboKernel::SaveSettingsToStorage(void)
 		CString line_log;
 		line_log.Format("Settings saved to %s", kSettingsPath);
 		m_Logger.Write(FromKernel, LogNotice, line_log);
-		const unsigned saved_resolution = (m_ResolutionMode > kResolutionMode768) ? kResolutionMode720 : m_ResolutionMode;
-		if (LoadResolutionModeFromBootConfig() != saved_resolution
-			&& PersistResolutionModeToBootConfig(saved_resolution))
-		{
-			m_Logger.Write(FromKernel, LogNotice, "Settings: Resolution saved to config.txt; reboot required");
-		}
 	}
 	else
 	{
@@ -6154,293 +6186,68 @@ void CComboKernel::SaveSettingsToStorage(void)
 	}
 }
 
-unsigned CComboKernel::LoadResolutionModeFromBootConfig(void)
+boolean CComboKernel::ApplyProportionModeToScreen(const char *phase, boolean force)
 {
-	if (!m_SettingsFatFsMounted)
-	{
-		return kResolutionMode720;
-	}
-
-	FILINFO info;
-	const FRESULT stat_result = f_stat(kBootConfigPath, &info);
-	if (stat_result != FR_OK)
-	{
-		return kResolutionMode720;
-	}
-
-	FIL file;
-	const FRESULT open_result = f_open(&file, kBootConfigPath, FA_READ);
-	if (open_result != FR_OK)
-	{
-		return kResolutionMode720;
-	}
-
-	char buffer[4096];
-	UINT bytes_read = 0u;
-	const FRESULT read_result = f_read(&file, buffer, sizeof(buffer) - 1u, &bytes_read);
-	(void) f_close(&file);
-	if (read_result != FR_OK || bytes_read == 0u)
-	{
-		return kResolutionMode720;
-	}
-	/* Safety: treat truncated reads as invalid and fallback to 720. */
-	if (bytes_read >= (sizeof(buffer) - 1u))
-	{
-		return kResolutionMode720;
-	}
-	buffer[bytes_read] = '\0';
-
-	char *block_start = strstr(buffer, kBootConfigHdmiStartMarker);
-	char *block_end = strstr(buffer, kBootConfigHdmiEndMarker);
-	if (block_start != 0 && block_end != 0 && block_end > block_start)
-	{
-		char *line_after_start = block_start;
-		while (*line_after_start != '\0' && *line_after_start != '\n')
-		{
-			++line_after_start;
-		}
-		if (*line_after_start == '\n')
-		{
-			++line_after_start;
-		}
-		buffer[bytes_read] = '\0';
-		*block_end = '\0';
-		char *line = line_after_start;
-		unsigned hdmi_group = 0u;
-		unsigned hdmi_mode = 0u;
-		unsigned fb_h = 0u;
-		boolean has_hdmi_group = FALSE;
-		boolean has_hdmi_mode = FALSE;
-		boolean has_fb_h = FALSE;
-
-		while (*line != '\0')
-		{
-			while (*line == '\r' || *line == '\n')
-			{
-				++line;
-			}
-			if (*line == '\0')
-			{
-				break;
-			}
-			char *line_end = line;
-			while (*line_end != '\0' && *line_end != '\r' && *line_end != '\n')
-			{
-				++line_end;
-			}
-			char *eq = line;
-			while (eq < line_end && *eq != '=')
-			{
-				++eq;
-			}
-			if (eq < line_end)
-			{
-				const unsigned key_len = (unsigned) (eq - line);
-				const unsigned value = ParseUintValue(eq + 1);
-				if (BootConfigKeyEquals(line, key_len, "framebuffer_height"))
-				{
-					fb_h = value;
-					has_fb_h = TRUE;
-				}
-				else if (BootConfigKeyEquals(line, key_len, "hdmi_group"))
-				{
-					hdmi_group = value;
-					has_hdmi_group = TRUE;
-				}
-				else if (BootConfigKeyEquals(line, key_len, "hdmi_mode"))
-				{
-					hdmi_mode = value;
-					has_hdmi_mode = TRUE;
-				}
-			}
-			line = line_end;
-		}
-
-		if (has_fb_h)
-		{
-			if (fb_h == kBootConfigHdmiHeight4_3) return kResolutionMode768;
-			if (fb_h == kBootConfigHdmiHeight16_9) return kResolutionMode720;
-		}
-		if (has_hdmi_group && has_hdmi_mode)
-		{
-			if (hdmi_group == 2u && hdmi_mode == 16u) return kResolutionMode768;
-			if (hdmi_group == 1u && hdmi_mode == 4u) return kResolutionMode720;
-		}
-		return kResolutionMode720;
-	}
-
-	unsigned hdmi_group = 0u;
-	unsigned hdmi_mode = 0u;
-	unsigned fb_h = 0u;
-	boolean has_hdmi_group = FALSE;
-	boolean has_hdmi_mode = FALSE;
-	boolean has_fb_h = FALSE;
-
-	char *line = buffer;
-	while (*line != '\0')
-	{
-		while (*line == '\r' || *line == '\n')
-		{
-			++line;
-		}
-		if (*line == '\0')
-		{
-			break;
-		}
-		char *line_end = line;
-		while (*line_end != '\0' && *line_end != '\r' && *line_end != '\n')
-		{
-			++line_end;
-		}
-		char *eq = line;
-		while (eq < line_end && *eq != '=')
-		{
-			++eq;
-		}
-		if (eq < line_end)
-		{
-			const unsigned key_len = (unsigned) (eq - line);
-			const unsigned value = ParseUintValue(eq + 1);
-			if (BootConfigKeyEquals(line, key_len, "framebuffer_height"))
-			{
-				fb_h = value;
-				has_fb_h = TRUE;
-			}
-			else if (BootConfigKeyEquals(line, key_len, "hdmi_group"))
-			{
-				hdmi_group = value;
-				has_hdmi_group = TRUE;
-			}
-			else if (BootConfigKeyEquals(line, key_len, "hdmi_mode"))
-			{
-				hdmi_mode = value;
-				has_hdmi_mode = TRUE;
-			}
-		}
-		line = line_end;
-	}
-
-	if (has_fb_h)
-	{
-		if (fb_h == kBootConfigHdmiHeight4_3) return kResolutionMode768;
-		if (fb_h == kBootConfigHdmiHeight16_9) return kResolutionMode720;
-	}
-	if (has_hdmi_group && has_hdmi_mode)
-	{
-		if (hdmi_group == 2u && hdmi_mode == 16u) return kResolutionMode768;
-		if (hdmi_group == 1u && hdmi_mode == 4u) return kResolutionMode720;
-	}
-
-	return kResolutionMode720;
-}
-
-boolean CComboKernel::PersistResolutionModeToBootConfig(unsigned mode)
-{
-	if (!m_SettingsFatFsMounted)
+	if (!m_ScreenReady)
 	{
 		return FALSE;
 	}
 
-	if (mode > kResolutionMode768)
+	if (m_ProportionMode > kProportionMode4_3)
 	{
-		mode = kResolutionMode720;
+		m_ProportionMode = kProportionMode16_9;
 	}
 
-	char input[4096];
-	unsigned input_len = 0u;
-	input[0] = '\0';
-	FILINFO info;
-	const FRESULT stat_result = f_stat(kBootConfigPath, &info);
-	if (stat_result != FR_OK)
+	const unsigned target_w = (m_ProportionMode == kProportionMode4_3)
+		? kProportionWidth4_3
+		: kProportionWidth16_9;
+	const unsigned target_h = (m_ProportionMode == kProportionMode4_3)
+		? kProportionHeight4_3
+		: kProportionHeight16_9;
+
+	if (!force && m_Screen.GetWidth() == target_w && m_Screen.GetHeight() == target_h)
 	{
-		/* No readable boot config: do not synthesize firmware config. */
+		return TRUE;
+	}
+
+	if (!m_Screen.Resize(target_w, target_h))
+	{
+		CString line;
+		line.Format("Proportion apply failed: %s %ux%u",
+			m_ProportionMode == kProportionMode4_3 ? "4:3" : "16:9",
+			target_w,
+			target_h);
+		m_Logger.Write(FromKernel, LogWarning, line);
 		return FALSE;
 	}
 
+	m_BackendBoxX = 0u;
+	m_BackendBoxY = 0u;
+	m_BackendBoxW = 0u;
+	m_BackendBoxH = 0u;
+	m_BlitMapValid = FALSE;
+	m_BackendVideoSeq = 0u;
+	m_PauseMenu.InvalidateViewportSnapshot();
+	m_ForceViewportFullClearNextFrame = TRUE;
+	m_PauseNeedsBackgroundRedraw = TRUE;
+	m_PauseNeedsFullViewportClear = TRUE;
+
 	{
-		FIL file;
-		if (f_open(&file, kBootConfigPath, FA_READ) == FR_OK)
-		{
-			UINT bytes_read = 0u;
-			if (f_read(&file, input, sizeof(input) - 1u, &bytes_read) == FR_OK)
-			{
-				input_len = (unsigned) bytes_read;
-				input[input_len] = '\0';
-			}
-			(void) f_close(&file);
-		}
-		else
-		{
-			return FALSE;
-		}
-	}
-	if (input_len == 0u || input_len >= (sizeof(input) - 1u))
-	{
-		/* Avoid corrupting config.txt on large/truncated content. */
-		return FALSE;
+		const unsigned max_scale = ComputeViewportUiMaxScalePercent(m_Screen.GetHeight());
+		m_PauseMenu.SetMaxScalePercent(max_scale);
+		m_ScaleMaxFitEnabled = FALSE;
+		m_OverscanPercent = RuntimeScalePercentForBuild(m_OverscanPercent, max_scale);
+		m_PauseMenu.SetScalePercent(m_OverscanPercent);
+		m_PauseMenu.SetScaleMaxFitEnabled(FALSE);
 	}
 
-	char output[4096];
-	unsigned out_len = 0u;
-	output[0] = '\0';
-
-	char *block_start = strstr(input, kBootConfigHdmiStartMarker);
-	char *block_end = strstr(input, kBootConfigHdmiEndMarker);
-	if (block_start == 0 || block_end == 0 || block_end <= block_start)
-	{
-		m_Logger.Write(FromKernel, LogWarning, "HDMI block missing in config.txt");
-		return FALSE;
-	}
-
-	char *start_line_end = block_start;
-	while (*start_line_end != '\0' && *start_line_end != '\n')
-	{
-		++start_line_end;
-	}
-	if (*start_line_end == '\n')
-	{
-		++start_line_end;
-	}
-
-	const unsigned prefix_len = (unsigned) (start_line_end - input);
-	if (prefix_len >= sizeof(output))
-	{
-		return FALSE;
-	}
-	memcpy(output, input, prefix_len);
-	out_len = prefix_len;
-	output[out_len] = '\0';
-
-	const char *hdmi_lines = (mode == kResolutionMode768)
-		? "hdmi_group=2\nhdmi_mode=16\nframebuffer_width=1024\nframebuffer_height=768\n"
-		: "hdmi_group=1\nhdmi_mode=4\nframebuffer_width=1280\nframebuffer_height=720\n";
-	if (!AppendTextToBuffer(output, sizeof(output), &out_len, hdmi_lines))
-	{
-		return FALSE;
-	}
-	if (!AppendTextToBuffer(output, sizeof(output), &out_len, block_end))
-	{
-		return FALSE;
-	}
-
-	FIL out;
-	const FRESULT open_result = f_open(&out, kBootConfigPath, FA_WRITE | FA_CREATE_ALWAYS);
-	if (open_result != FR_OK)
-	{
-		LogSdOpResult(m_Logger, "HDMI:OPENW", open_result, kBootConfigPath, TRUE);
-		return FALSE;
-	}
-	UINT written = 0u;
-	const FRESULT write_result = f_write(&out, output, out_len, &written);
-	const FRESULT trunc_result = f_truncate(&out);
-	const FRESULT close_result = f_close(&out);
-	if (write_result != FR_OK || trunc_result != FR_OK || close_result != FR_OK || written != out_len)
-	{
-		LogSdOpResult(m_Logger, "HDMI:WRITE", write_result != FR_OK ? write_result : (trunc_result != FR_OK ? trunc_result : close_result), kBootConfigPath, TRUE);
-		return FALSE;
-	}
-
-	m_Logger.Write(FromKernel, LogNotice, mode == kResolutionMode768 ? "Settings: Resolution 768 saved" : "Settings: Resolution 720 saved");
+	CString line;
+	line.Format("Proportion applied %s: %s %ux%u",
+		phase != 0 ? phase : "runtime",
+		m_ProportionMode == kProportionMode4_3 ? "4:3" : "16:9",
+		target_w,
+		target_h);
+	m_Logger.Write(FromKernel, LogNotice, line);
 	return TRUE;
 }
 
@@ -7464,15 +7271,17 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 #endif
 		break;
 
-	case ComboMenuActionCycleResolution:
-		m_ResolutionMode = (m_ResolutionMode == kResolutionMode768) ? kResolutionMode720 : kResolutionMode768;
-		m_PauseMenu.SetResolutionMode(m_ResolutionMode);
+	case ComboMenuActionCycleProportion:
+		m_ProportionMode = (m_ProportionMode == kProportionMode4_3) ? kProportionMode16_9 : kProportionMode4_3;
+		m_PauseMenu.SetProportionMode(m_ProportionMode);
+		(void) ApplyProportionModeToScreen("menu", FALSE);
 		RefreshSettingsUiAfterAction();
 		break;
 
-	case ComboMenuActionCycleResolutionPrev:
-		m_ResolutionMode = (m_ResolutionMode == kResolutionMode720) ? kResolutionMode768 : kResolutionMode720;
-		m_PauseMenu.SetResolutionMode(m_ResolutionMode);
+	case ComboMenuActionCycleProportionPrev:
+		m_ProportionMode = (m_ProportionMode == kProportionMode16_9) ? kProportionMode4_3 : kProportionMode16_9;
+		m_PauseMenu.SetProportionMode(m_ProportionMode);
+		(void) ApplyProportionModeToScreen("menu", FALSE);
 		RefreshSettingsUiAfterAction();
 		break;
 
@@ -7990,13 +7799,6 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		m_Logger.Write(FromKernel, LogNotice, "Load State queued");
 		break;
 
-	case ComboMenuActionSaveSettings:
-		RefreshSettingsUiAfterAction();
-		m_SettingsSavePending = TRUE;
-		UpdateSettingsSaveTelemetry(8u, 0u, 0u); /* queued */
-		m_Logger.Write(FromKernel, LogNotice, "Settings save queued");
-		break;
-
 	default:
 		break;
 	}
@@ -8369,9 +8171,17 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	{
 		if (m_LastPauseToggleUs == 0u || (now_us - m_LastPauseToggleUs) >= 200000ull)
 		{
+				const boolean was_in_settings_context = m_EmulationPaused ? m_PauseMenu.IsInSettingsContext() : FALSE;
 				m_EmulationPaused = m_EmulationPaused ? FALSE : TRUE;
 				if (!m_EmulationPaused)
 				{
+					if (was_in_settings_context && !m_SettingsSavePending)
+					{
+						RefreshSettingsUiAfterAction();
+						m_SettingsSavePending = TRUE;
+						UpdateSettingsSaveTelemetry(8u, 0u, 0u); /* queued */
+						m_Logger.Write(FromKernel, LogNotice, "Settings auto-save queued");
+					}
 					m_PauseNeedsBackgroundRedraw = FALSE;
 					m_PauseNeedsFullViewportClear = FALSE;
 					m_PauseRenderSuppressed = TRUE;
@@ -8436,6 +8246,7 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 	}
 #endif
 
+	const boolean was_in_settings_context = m_PauseMenu.IsInSettingsContext();
 	const TComboMenuAction menu_action = m_PauseMenu.ProcessInput(
 		m_EmulationPaused,
 		key_state.menu_up_pressed,
@@ -8449,11 +8260,18 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 		key_state.menu_delete_pressed,
 		(!same_report ? key_state.menu_jump_letter : '\0'),
 		m_UsbGamepad.GetActiveControlCode());
+	const boolean now_in_settings_context = m_PauseMenu.IsInSettingsContext();
+	if (m_EmulationPaused && was_in_settings_context && !now_in_settings_context && !m_SettingsSavePending)
+	{
+		RefreshSettingsUiAfterAction();
+		m_SettingsSavePending = TRUE;
+		UpdateSettingsSaveTelemetry(8u, 0u, 0u); /* queued */
+		m_Logger.Write(FromKernel, LogNotice, "Settings auto-save queued");
+	}
 	const boolean now_in_settings = m_PauseMenu.IsInSettings() ? TRUE : FALSE;
 	if (m_EmulationPaused && now_in_settings && !m_LastPauseWasInSettings)
 	{
 		/* Must run in main loop context (never from keyboard callback). */
-		m_ResolutionModeLoadPending = TRUE;
 		m_CoreListRefreshPending = TRUE;
 	}
 	m_LastPauseWasInSettings = now_in_settings;

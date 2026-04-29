@@ -3,19 +3,18 @@ kernel=msx.img
 initramfs msx.cpio followkernel
 #---KERNEL END---
 
-#---HDMI START---
-hdmi_group=1
-hdmi_mode=4
-framebuffer_width=1280
-framebuffer_height=720
-#---HDMI END---
+# HDMI/AV Settings Auto
+hdmi_force_hotplug=1
+hdmi_group=0
+hdmi_mode=0
+enable_tvout=1
+sdtv_mode=0      # 0=NTSC 2=PALM
 
 # Boot config
 enable_uart=1
 enable_tvout=1
 disable_splash=1
 disable_overscan=1
-hdmi_force_hotplug=1
 
 # Disable WIFI + BT
 dtoverlay=disable-wifi

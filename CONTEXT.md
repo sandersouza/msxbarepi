@@ -2,12 +2,26 @@
 
 Ponto de entrada rapido para contexto operacional do projeto.
 
-- Contexto completo e historico de handoff da branch atual: [docs/handoff/bug-fix-config-hdmi-output-720-768.md](docs/handoff/bug-fix-config-hdmi-output-720-768.md)
+- Contexto completo e historico de handoff da branch atual: [docs/handoff/260-hdmi-resolution-circle.md](docs/handoff/260-hdmi-resolution-circle.md)
 - Guardrail ativo: a issue `#251` continua aberta/pausada e a branch `251-suporte-cartucho-vdp-v9990` nao deve ser removida.
-- Branch ativa da rodada: `bug/fix-config-hdmi-output-720-768`
-- Issue ativa: `#258 [P1] Corrigir escrita do config.txt ao alterar Scale`
-- Issue remota: https://github.com/sandersouza/msxbarepi/issues/258
-- Escopo: separar `SD:/config.txt` de firmware dos settings do runtime; `Scale` deve persistir em `msx.cfg`/RAW, nao em `config.txt`.
+- Branch ativa da rodada: `260-hdmi-resolution-circle`
+- Issue ativa: `#260 Melhorar deteccao HDMI, escala e troca de resolucao on-the-fly via Circle`
+- Issue remota: https://github.com/sandersouza/msxbarepi/issues/260
+- Escopo: melhorar deteccao de resolucao HDMI, ajustes de escala e troca de resolucao on-the-fly usando Circle como referencia/infraestrutura principal.
+- Atualizacao 2026-04-29 (issue #260):
+  - issue avulsa `#260` criada e adicionada ao projeto `MSX BarePI`; status atualizado para `In progress`;
+  - branch vinculada criada via `gh issue develop`: `260-hdmi-resolution-circle`;
+  - espelho local criado em `docs/issues/260-hdmi-resolution-circle.md`;
+  - handoff ativo criado em `docs/handoff/260-hdmi-resolution-circle.md`;
+  - `Resolution [720/768]` foi substituido por `Proportion [16:9/4:3]`;
+  - `16:9` aplica framebuffer Circle `960x540`; `4:3` aplica `640x480`;
+  - `proportion=16:9|4:3` e persistido em `msx.cfg`/RAW e nao altera `config.txt`;
+  - o boot aplica `Proportion` via Circle antes de `backend_runtime_init()`, e o menu aplica resize em runtime;
+  - `Save to Disk` foi removido de `Settings`; sair com `ESC` ou fechar com `F12` dentro de `Settings` salva automaticamente em `msx.cfg`/RAW;
+  - o header `SETTINGS` foi removido da view `Settings`, com margem superior igual a inferior para reduzir altura sem mudar fonte;
+  - fullscreen do viewport usa o maior fator que cabe em largura e altura em passos de `1/16x`, mantendo proporcao e escala cacheavel;
+  - validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `bash -n` scripts SD, `make -j4 DEBUG=1`, `make -j4 DEBUG=0`, `make -n sdcard`;
+  - build local final: `BUILD_BID: 202604291401-c386661`, `TXTDBG BUILD:3260`, artefato `artifacts/kernel8-issue260.img`.
 - Atualizacao 2026-04-28 (issue #258):
   - `Resolution [720/768]` voltou ao Settings, com locale PT/EN/ES, refletindo `framebuffer_height` do bloco HDMI em `config.txt`.
   - `msx.cfg`/scripts nao gravam mais `proportion=` nem `resolution=`; a fonte de verdade de resolucao e `SD:/config.txt`.

@@ -22,8 +22,8 @@ enum TComboMenuAction {
     ComboMenuActionGameMaster,
     ComboMenuActionCycleLanguage,
     ComboMenuActionCycleLanguagePrev,
-    ComboMenuActionCycleResolution,
-    ComboMenuActionCycleResolutionPrev,
+    ComboMenuActionCycleProportion,
+    ComboMenuActionCycleProportionPrev,
     ComboMenuActionOverscanChanged,
     ComboMenuActionCycleScanlines,
     ComboMenuActionCycleScanlinesPrev,
@@ -55,7 +55,6 @@ enum TComboMenuAction {
     ComboMenuActionApplyGameMasterCheat,
     ComboMenuActionSaveState,
     ComboMenuActionLoadState,
-    ComboMenuActionSaveSettings,
     ComboMenuActionMsxBasic,
     ComboMenuActionReset
 };
@@ -82,7 +81,7 @@ const TComboMenuItem *combo_menu_load_disk_items_get(unsigned language,
                                                       const char *drive2_name,
                                                       unsigned *count);
 const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
-                                                     unsigned resolution_mode,
+                                                     unsigned proportion_mode,
                                                      unsigned scale_percent,
                                                      unsigned scanline_mode,
                                                      boolean gfx9000_enabled,
