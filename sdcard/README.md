@@ -4,7 +4,9 @@ O fluxo padrão usa `MSXBARE_BOOT_STRATEGY=standalone`. No SD, o arquivo de boot
 
 Para preparar o SD em modo multicore, compile e copie com `MSXBARE_BOOT_STRATEGY=multicore`; nesse caso o `msx.cpio` volta a ser copiado para a particao FAT32, o `config.txt` mantem `initramfs msx.cpio followkernel` e os settings passam a ser lidos/escritos apenas em `SD:/msx.cfg`.
 
-Em SD multicore com alternancia pelo Settings `CORE`, mantenha tambem o `<core>.cpio` correspondente na raiz. Ao trocar de core, o runtime sempre grava `kernel=<core>.img` e `initramfs <core>.cpio followkernel` antes do reboot.
+Em SD multicore com alternancia pelo Settings `CORE`, mantenha tambem o `<core>.cpio` correspondente na raiz. Ao trocar de core, o runtime grava `kernel=<core>.img` e `initramfs <core>.cpio followkernel` apenas dentro do bloco `#---KERNEL START---`/`#---KERNEL END---` antes do reboot.
+
+O Settings `Resolution [720/768]` reflete o `framebuffer_height` do bloco HDMI em `config.txt`. Ao usar `Save to disk`, o runtime grava somente o bloco HDMI delimitado por `#---HDMI START---` e `#---HDMI END---`; todo o conteudo fora desse bloco deve ser preservado exatamente como estiver no MicroSD.
 
 Payload esperado na partição FAT32 de boot:
 

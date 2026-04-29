@@ -81,8 +81,6 @@ typedef struct {
     const char *flag_na;
     const char *refresh_ntsc;
     const char *refresh_pal;
-    const char *resolution_auto;
-    const char *resolution_1080;
     const char *resolution_720;
     const char *resolution_768;
 } TComboLocaleStrings;

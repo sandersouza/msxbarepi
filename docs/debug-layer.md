@@ -70,7 +70,7 @@ Objetivo: painel legivel no framebuffer HDMI com MMU/cache ativo, sem depender d
 - Overlay compacto no canto superior esquerdo.
 - O painel pode usar a largura horizontal inteira da linha quando isso ajudar a ficar contido até a `linha 15`.
 - Emulador segue rodando ao fundo.
-- O item `Scale` vive em `Settings`, logo abaixo de `Resolution`.
+- O item `Scale` vive em `Settings`, logo abaixo de `Resolution`, apenas em builds `DEBUG=1`.
 - `Scanlines` agora e binario no runtime e no `.cfg`: `OFF/ON`.
 - O estado `ON` usa apenas a logica LCD atual; o antigo modo `CRT` foi removido.
 - `Scale [1x]`: usa a mailbox nativa do emulador.
@@ -122,7 +122,8 @@ Diretriz visual (overlay e menu):
 
 ## Menu relacionado
 - `Debug -> Debugger`: sempre aparece em builds `DEBUG=1` e opera diretamente como `MAX/MIN/OFF`.
-- `Settings -> Scale`: afeta o viewport independentemente do modo do debugger.
+- `Settings -> Scale`: aparece apenas em builds `DEBUG=1` e afeta o viewport independentemente do modo do debugger.
+- Em builds `DEBUG=0`, `Scale` nao aparece no menu e o viewport usa sempre o maior scale permitido pela resolucao ativa.
 - `Settings -> Disk ROM`: aparece abaixo de `MegaRAM`, independente de `DEBUG=1`/`DEBUG=0`, e alterna a disponibilidade da Disk ROM no runtime.
 - Em builds com `DEBUG=1`, o menu `Debug` mantem apenas controles de diagnostico, como `Debugger` e `Standard [NTSC/PAL]`.
 - Nesse caminho de diagnostico, o toggle agora atua no estado efetivo do VDP em runtime:

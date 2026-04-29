@@ -455,7 +455,7 @@ Esse e o mesmo fluxo usado por `make package`; a diferenca e que `make package` 
 - Requer `fzf` apenas no modo interativo.
 - No macOS, usa `diskutil` e `plutil`.
 - No Linux, usa `lsblk` para deteccao; para formatar, usa `parted` + `mkfs.vfat`; para montagem/ejecao automatica, prefere `udisksctl`.
-- Quando `DEBUG=1`, ajusta `disable_splash=0` no `config.txt` copiado.
+- Quando `DEBUG=1`, ajusta `disable_splash=1` no `config.txt` copiado.
 - `KERNEL_IMG` e obrigatorio: se nao for informado, o script tenta `artifacts/kernel8-issue<N>.img`, `artifacts/kernel8-default.img` e fallbacks legados; o arquivo escolhido e gravado no SD como `msx.img`.
 - `MSXBARE_BOOT_STRATEGY=standalone` embute o initramfs e remove a linha `initramfs` do `config.txt`; `multicore` gera/copia `msx.cpio` e adiciona `initramfs msx.cpio followkernel`.
 - No preparo completo, quando `COPY_GAMES_TO_ROOT=0`, `roms/games/cheats` ainda e copiado para `msx/cheats/`, e as pastas `msx/roms/` e `msx/disks/` continuam sendo criadas.

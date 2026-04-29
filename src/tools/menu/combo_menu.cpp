@@ -1117,7 +1117,7 @@ void CComboPauseMenu::SetLanguage(unsigned language)
 
 void CComboPauseMenu::SetResolutionMode(unsigned mode)
 {
-    if (mode > 3u)
+    if (mode > 1u)
     {
         mode = 0u;
     }

@@ -90,9 +90,10 @@ private:
     void UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux);
     void UpdateLoadDiagTelemetry(unsigned stage);
     unsigned LoadResolutionModeFromBootConfig(void);
-    void PersistResolutionModeToBootConfig(unsigned mode);
+    boolean PersistResolutionModeToBootConfig(unsigned mode);
     void RefreshCoreListFromStorage(void);
     boolean PersistSelectedCoreToBootConfig(void);
+    boolean TryCoreSwitchReboot(void);
     void SelectCoreByDelta(boolean reverse);
     boolean InitializeSettingsStorage(void);
     boolean MountSettingsFileSystem(const char *phase);
