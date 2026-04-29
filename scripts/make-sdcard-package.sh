@@ -62,7 +62,6 @@ ensure_settings_cfg() {
 backend_id=msx.fmsx
 scale=3
 language=1
-resolution=2
 scanline=0
 gfx9000=0
 refresh=60

@@ -389,10 +389,16 @@ static InterruptBindingBaseline g_InterruptBindingBaseline = {0, 0, FALSE, FALSE
 static const unsigned kBootModeGame = 2u;
 static const unsigned kRamMapperKbDefault = 256u;
 static const unsigned kMegaRamKbDefault = 0u;
-static const unsigned kResolutionModeAuto = 0u;
-static const unsigned kResolutionMode1080 = 1u;
-static const unsigned kResolutionMode720 = 2u;
-static const unsigned kResolutionMode768 = 3u;
+static const unsigned kResolutionMode720 = 0u;
+static const unsigned kResolutionMode768 = 1u;
+static const unsigned kBootConfigHdmiWidth16_9 = 1280u;
+static const unsigned kBootConfigHdmiHeight16_9 = 720u;
+static const unsigned kBootConfigHdmiWidth4_3 = 1024u;
+static const unsigned kBootConfigHdmiHeight4_3 = 768u;
+static const char kBootConfigKernelStartMarker[] = "#---KERNEL START---";
+static const char kBootConfigKernelEndMarker[] = "#---KERNEL END---";
+static const char kBootConfigHdmiStartMarker[] = "#---HDMI START---";
+static const char kBootConfigHdmiEndMarker[] = "#---HDMI END---";
 static const char kSettingsDrive[] = "SD:";
 static const char kSettingsPath[] = "SD:/msx.cfg";
 static const char kSettingsLegacyPath[] = "SD:/msxbarepi.cfg";
@@ -746,6 +752,24 @@ static unsigned ClampScalePercent(unsigned percent, unsigned max_scale)
 	percent = ClampScaleMode(percent);
 	if (percent > max_scale) percent = max_scale;
 	return percent;
+}
+
+static unsigned RuntimeScalePercentForBuild(unsigned requested_percent, unsigned max_scale)
+{
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+	return ClampScalePercent(requested_percent, max_scale);
+#else
+	(void) requested_percent;
+	if (max_scale < kScaleModeNative)
+	{
+		return kScaleModeNative;
+	}
+	if (max_scale > kScaleModeFullMax)
+	{
+		return kScaleModeFullMax;
+	}
+	return max_scale;
+#endif
 }
 
 static unsigned ScaleModeFromSettingsValue(unsigned value)
@@ -1986,7 +2010,7 @@ CComboKernel::CComboKernel(void)
 	m_OverscanPercent(300u),
 	m_ScaleMaxFitEnabled(FALSE),
 	m_Language(ComboLanguagePT),
-	m_ResolutionMode(kResolutionModeAuto),
+	m_ResolutionMode(kResolutionMode720),
 	m_CoreNames{{0}},
 	m_CoreCount(0u),
 	m_CoreSelected(0u),
@@ -2528,13 +2552,13 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 		{
 			const unsigned key_len = (unsigned) (eq - line);
 			const unsigned value = ParseUintValue(eq + 1);
-			if (SettingsKeyEquals(line, key_len, "resolution"))
+			if (SettingsKeyEquals(line, key_len, "scale"))
 			{
-				m_ResolutionMode = (value > kResolutionMode768) ? kResolutionModeAuto : value;
-			}
-			else if (SettingsKeyEquals(line, key_len, "scale"))
-			{
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
 				m_OverscanPercent = ScaleModeFromSettingsValue(value);
+#else
+				(void) value;
+#endif
 			}
 			else if (SettingsKeyEquals(line, key_len, "language"))
 			{
@@ -2723,7 +2747,7 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 		const unsigned max_scale = ComputeViewportUiMaxScalePercent(m_Screen.GetHeight());
 		m_PauseMenu.SetMaxScalePercent(max_scale);
 		m_ScaleMaxFitEnabled = FALSE;
-		m_OverscanPercent = ClampScalePercent(m_OverscanPercent, max_scale);
+		m_OverscanPercent = RuntimeScalePercentForBuild(m_OverscanPercent, max_scale);
 		m_PauseMenu.SetScalePercent(m_OverscanPercent);
 		m_PauseMenu.SetScaleMaxFitEnabled(FALSE);
 	}
@@ -3223,7 +3247,7 @@ TComboShutdownMode CComboKernel::Run(void)
 		const unsigned max_scale = ComputeViewportUiMaxScalePercent(m_Screen.GetHeight());
 		m_PauseMenu.SetMaxScalePercent(max_scale);
 		m_ScaleMaxFitEnabled = FALSE;
-		m_OverscanPercent = ClampScalePercent(m_OverscanPercent, max_scale);
+		m_OverscanPercent = RuntimeScalePercentForBuild(m_OverscanPercent, max_scale);
 		m_PauseMenu.SetScalePercent(m_OverscanPercent);
 		m_PauseMenu.SetScaleMaxFitEnabled(FALSE);
 	}
@@ -3434,6 +3458,11 @@ TComboShutdownMode CComboKernel::Run(void)
 			UpdateJoystickFromRaw(m_LastKeyboardModifiers, m_LastKeyboardRawKeys);
 		}
 
+		if (TryCoreSwitchReboot())
+		{
+			return ComboShutdownReboot;
+		}
+
 		if (!m_EmulationPaused && m_BackendReady)
 		{
 			BackendGfx9000KernelTrace("G9K: deferred begin");
@@ -3471,15 +3500,9 @@ TComboShutdownMode CComboKernel::Run(void)
 			}
 			m_CoreListRefreshPending = FALSE;
 		}
-		if (m_CoreSwitchPending && !m_EmulationPaused)
+		if (TryCoreSwitchReboot())
 		{
-			if (PersistSelectedCoreToBootConfig())
-			{
-				PrimeAudioSilenceBeforeReset();
-				return ComboShutdownReboot;
-			}
-			m_CoreSwitchPending = FALSE;
-			m_Logger.Write(FromKernel, LogWarning, "Settings: CORE switch failed; reboot canceled");
+			return ComboShutdownReboot;
 		}
 		if (m_StateSavePending)
 		{
@@ -5591,25 +5614,33 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			{
 				const unsigned key_len = (unsigned) (eq - line);
 				const unsigned value = ParseUintValue(eq + 1);
-				if (SettingsKeyEquals(line, key_len, "resolution"))
+				if (SettingsKeyEquals(line, key_len, "scale"))
 				{
-					m_ResolutionMode = (value > kResolutionMode768) ? kResolutionModeAuto : value;
-				}
-				else if (SettingsKeyEquals(line, key_len, "scale"))
-				{
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
 					m_OverscanPercent = ScaleModeFromSettingsValue(value);
+#else
+					(void) value;
+#endif
 				}
 				else if (SettingsKeyEquals(line, key_len, "scale_max"))
 				{
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
 					if (value)
 					{
 						m_OverscanPercent = kScaleModeFullMax;
 					}
+#else
+					(void) value;
+#endif
 				}
 				else if (SettingsKeyEquals(line, key_len, "overscan"))
 				{
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
 					const unsigned legacy = value > 100u ? 100u : value;
 					m_OverscanPercent = ScaleModeFromLegacyOverscan(legacy);
+#else
+					(void) value;
+#endif
 				}
 				else if (SettingsKeyEquals(line, key_len, "language"))
 				{
@@ -5808,7 +5839,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 		const unsigned max_scale = ComputeViewportUiMaxScalePercent(m_Screen.GetHeight());
 		m_PauseMenu.SetMaxScalePercent(max_scale);
 		m_ScaleMaxFitEnabled = FALSE;
-		m_OverscanPercent = ClampScalePercent(m_OverscanPercent, max_scale);
+		m_OverscanPercent = RuntimeScalePercentForBuild(m_OverscanPercent, max_scale);
 		m_PauseMenu.SetScalePercent(m_OverscanPercent);
 		m_PauseMenu.SetScaleMaxFitEnabled(FALSE);
 	}
@@ -5908,7 +5939,6 @@ unsigned CComboKernel::BuildSettingsPayload(char *buffer, unsigned buffer_size)
 	APPEND_LINE_TEXT("backend_id", saved_backend_id);
 	APPEND_LINE_FMT("scale=%u\n", ScaleFactorFromPercent(m_OverscanPercent));
 	APPEND_LINE_FMT("language=%u\n", m_Language);
-	APPEND_LINE_FMT("resolution=%u\n", m_ResolutionMode);
 	APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
 	APPEND_LINE_FMT("gfx9000=%u\n", (MSXBARE_FEAT_GFX9000 && m_Gfx9000Enabled) ? 1u : 0u);
 	APPEND_LINE_FMT("refresh=%u\n", ClampRefreshRateHz(m_RefreshRateHz));
@@ -6100,7 +6130,12 @@ void CComboKernel::SaveSettingsToStorage(void)
 		CString line_log;
 		line_log.Format("Settings saved to %s", kSettingsPath);
 		m_Logger.Write(FromKernel, LogNotice, line_log);
-		PersistResolutionModeToBootConfig(m_ResolutionMode);
+		const unsigned saved_resolution = (m_ResolutionMode > kResolutionMode768) ? kResolutionMode720 : m_ResolutionMode;
+		if (LoadResolutionModeFromBootConfig() != saved_resolution
+			&& PersistResolutionModeToBootConfig(saved_resolution))
+		{
+			m_Logger.Write(FromKernel, LogNotice, "Settings: Resolution saved to config.txt; reboot required");
+		}
 	}
 	else
 	{
@@ -6123,21 +6158,21 @@ unsigned CComboKernel::LoadResolutionModeFromBootConfig(void)
 {
 	if (!m_SettingsFatFsMounted)
 	{
-		return kResolutionModeAuto;
+		return kResolutionMode720;
 	}
 
 	FILINFO info;
 	const FRESULT stat_result = f_stat(kBootConfigPath, &info);
 	if (stat_result != FR_OK)
 	{
-		return kResolutionModeAuto;
+		return kResolutionMode720;
 	}
 
 	FIL file;
 	const FRESULT open_result = f_open(&file, kBootConfigPath, FA_READ);
 	if (open_result != FR_OK)
 	{
-		return kResolutionModeAuto;
+		return kResolutionMode720;
 	}
 
 	char buffer[4096];
@@ -6146,22 +6181,99 @@ unsigned CComboKernel::LoadResolutionModeFromBootConfig(void)
 	(void) f_close(&file);
 	if (read_result != FR_OK || bytes_read == 0u)
 	{
-		return kResolutionModeAuto;
+		return kResolutionMode720;
 	}
-	/* Safety: treat truncated reads as invalid and fallback to AUTO. */
+	/* Safety: treat truncated reads as invalid and fallback to 720. */
 	if (bytes_read >= (sizeof(buffer) - 1u))
 	{
-		return kResolutionModeAuto;
+		return kResolutionMode720;
 	}
 	buffer[bytes_read] = '\0';
 
+	char *block_start = strstr(buffer, kBootConfigHdmiStartMarker);
+	char *block_end = strstr(buffer, kBootConfigHdmiEndMarker);
+	if (block_start != 0 && block_end != 0 && block_end > block_start)
+	{
+		char *line_after_start = block_start;
+		while (*line_after_start != '\0' && *line_after_start != '\n')
+		{
+			++line_after_start;
+		}
+		if (*line_after_start == '\n')
+		{
+			++line_after_start;
+		}
+		buffer[bytes_read] = '\0';
+		*block_end = '\0';
+		char *line = line_after_start;
+		unsigned hdmi_group = 0u;
+		unsigned hdmi_mode = 0u;
+		unsigned fb_h = 0u;
+		boolean has_hdmi_group = FALSE;
+		boolean has_hdmi_mode = FALSE;
+		boolean has_fb_h = FALSE;
+
+		while (*line != '\0')
+		{
+			while (*line == '\r' || *line == '\n')
+			{
+				++line;
+			}
+			if (*line == '\0')
+			{
+				break;
+			}
+			char *line_end = line;
+			while (*line_end != '\0' && *line_end != '\r' && *line_end != '\n')
+			{
+				++line_end;
+			}
+			char *eq = line;
+			while (eq < line_end && *eq != '=')
+			{
+				++eq;
+			}
+			if (eq < line_end)
+			{
+				const unsigned key_len = (unsigned) (eq - line);
+				const unsigned value = ParseUintValue(eq + 1);
+				if (BootConfigKeyEquals(line, key_len, "framebuffer_height"))
+				{
+					fb_h = value;
+					has_fb_h = TRUE;
+				}
+				else if (BootConfigKeyEquals(line, key_len, "hdmi_group"))
+				{
+					hdmi_group = value;
+					has_hdmi_group = TRUE;
+				}
+				else if (BootConfigKeyEquals(line, key_len, "hdmi_mode"))
+				{
+					hdmi_mode = value;
+					has_hdmi_mode = TRUE;
+				}
+			}
+			line = line_end;
+		}
+
+		if (has_fb_h)
+		{
+			if (fb_h == kBootConfigHdmiHeight4_3) return kResolutionMode768;
+			if (fb_h == kBootConfigHdmiHeight16_9) return kResolutionMode720;
+		}
+		if (has_hdmi_group && has_hdmi_mode)
+		{
+			if (hdmi_group == 2u && hdmi_mode == 16u) return kResolutionMode768;
+			if (hdmi_group == 1u && hdmi_mode == 4u) return kResolutionMode720;
+		}
+		return kResolutionMode720;
+	}
+
 	unsigned hdmi_group = 0u;
 	unsigned hdmi_mode = 0u;
-	unsigned fb_w = 0u;
 	unsigned fb_h = 0u;
 	boolean has_hdmi_group = FALSE;
 	boolean has_hdmi_mode = FALSE;
-	boolean has_fb_w = FALSE;
 	boolean has_fb_h = FALSE;
 
 	char *line = buffer;
@@ -6189,12 +6301,7 @@ unsigned CComboKernel::LoadResolutionModeFromBootConfig(void)
 		{
 			const unsigned key_len = (unsigned) (eq - line);
 			const unsigned value = ParseUintValue(eq + 1);
-			if (BootConfigKeyEquals(line, key_len, "framebuffer_width"))
-			{
-				fb_w = value;
-				has_fb_w = TRUE;
-			}
-			else if (BootConfigKeyEquals(line, key_len, "framebuffer_height"))
+			if (BootConfigKeyEquals(line, key_len, "framebuffer_height"))
 			{
 				fb_h = value;
 				has_fb_h = TRUE;
@@ -6213,32 +6320,30 @@ unsigned CComboKernel::LoadResolutionModeFromBootConfig(void)
 		line = line_end;
 	}
 
-	if (has_fb_w && has_fb_h)
+	if (has_fb_h)
 	{
-		if (fb_w == 1920u && fb_h == 1080u) return kResolutionMode1080;
-		if (fb_w == 1280u && fb_h == 720u) return kResolutionMode720;
-		if (fb_w == 1024u && fb_h == 768u) return kResolutionMode768;
+		if (fb_h == kBootConfigHdmiHeight4_3) return kResolutionMode768;
+		if (fb_h == kBootConfigHdmiHeight16_9) return kResolutionMode720;
 	}
 	if (has_hdmi_group && has_hdmi_mode)
 	{
-		if (hdmi_group == 1u && hdmi_mode == 16u) return kResolutionMode1080;
-		if (hdmi_group == 1u && hdmi_mode == 4u) return kResolutionMode720;
 		if (hdmi_group == 2u && hdmi_mode == 16u) return kResolutionMode768;
+		if (hdmi_group == 1u && hdmi_mode == 4u) return kResolutionMode720;
 	}
 
-	return kResolutionModeAuto;
+	return kResolutionMode720;
 }
 
-void CComboKernel::PersistResolutionModeToBootConfig(unsigned mode)
+boolean CComboKernel::PersistResolutionModeToBootConfig(unsigned mode)
 {
 	if (!m_SettingsFatFsMounted)
 	{
-		return;
+		return FALSE;
 	}
 
 	if (mode > kResolutionMode768)
 	{
-		mode = kResolutionModeAuto;
+		mode = kResolutionMode720;
 	}
 
 	char input[4096];
@@ -6248,8 +6353,8 @@ void CComboKernel::PersistResolutionModeToBootConfig(unsigned mode)
 	const FRESULT stat_result = f_stat(kBootConfigPath, &info);
 	if (stat_result != FR_OK)
 	{
-		/* No readable boot config: do not touch firmware config, keep AUTO semantic. */
-		return;
+		/* No readable boot config: do not synthesize firmware config. */
+		return FALSE;
 	}
 
 	{
@@ -6266,103 +6371,77 @@ void CComboKernel::PersistResolutionModeToBootConfig(unsigned mode)
 		}
 		else
 		{
-			return;
+			return FALSE;
 		}
 	}
 	if (input_len == 0u || input_len >= (sizeof(input) - 1u))
 	{
 		/* Avoid corrupting config.txt on large/truncated content. */
-		return;
+		return FALSE;
 	}
 
 	char output[4096];
 	unsigned out_len = 0u;
-	char *line = input;
-	while (*line != '\0')
+	output[0] = '\0';
+
+	char *block_start = strstr(input, kBootConfigHdmiStartMarker);
+	char *block_end = strstr(input, kBootConfigHdmiEndMarker);
+	if (block_start == 0 || block_end == 0 || block_end <= block_start)
 	{
-		char *line_end = line;
-		while (*line_end != '\0' && *line_end != '\r' && *line_end != '\n')
-		{
-			++line_end;
-		}
-		char *next = line_end;
-		while (*next == '\r' || *next == '\n')
-		{
-			++next;
-		}
-
-		char *eq = line;
-		while (eq < line_end && *eq != '=')
-		{
-			++eq;
-		}
-		boolean skip = FALSE;
-		if (eq < line_end)
-		{
-			const unsigned key_len = (unsigned) (eq - line);
-			if (BootConfigKeyEquals(line, key_len, "hdmi_group")
-			 || BootConfigKeyEquals(line, key_len, "hdmi_mode")
-			 || BootConfigKeyEquals(line, key_len, "framebuffer_width")
-			 || BootConfigKeyEquals(line, key_len, "framebuffer_height"))
-			{
-				skip = TRUE;
-			}
-		}
-		if (!skip)
-		{
-			const unsigned line_len = (unsigned) (line_end - line);
-			if (line_len > 0u && out_len + line_len + 1u < sizeof(output))
-			{
-				memcpy(output + out_len, line, line_len);
-				out_len += line_len;
-				output[out_len++] = '\n';
-			}
-		}
-
-		line = next;
+		m_Logger.Write(FromKernel, LogWarning, "HDMI block missing in config.txt");
+		return FALSE;
 	}
 
-	const char *append = 0;
-	switch (mode)
+	char *start_line_end = block_start;
+	while (*start_line_end != '\0' && *start_line_end != '\n')
 	{
-	case kResolutionMode1080:
-		append = "framebuffer_width=1920\nframebuffer_height=1080\n";
-		break;
-	case kResolutionMode720:
-		append = "framebuffer_width=1280\nframebuffer_height=720\n";
-		break;
-	case kResolutionMode768:
-		append = "framebuffer_width=1024\nframebuffer_height=768\n";
-		break;
-	case kResolutionModeAuto:
-	default:
-		append = 0;
-		break;
+		++start_line_end;
 	}
-	if (append != 0)
+	if (*start_line_end == '\n')
 	{
-		const unsigned append_len = (unsigned) strlen(append);
-		if (out_len + append_len < sizeof(output))
-		{
-			memcpy(output + out_len, append, append_len);
-			out_len += append_len;
-		}
-		else
-		{
-			return;
-		}
+		++start_line_end;
+	}
+
+	const unsigned prefix_len = (unsigned) (start_line_end - input);
+	if (prefix_len >= sizeof(output))
+	{
+		return FALSE;
+	}
+	memcpy(output, input, prefix_len);
+	out_len = prefix_len;
+	output[out_len] = '\0';
+
+	const char *hdmi_lines = (mode == kResolutionMode768)
+		? "hdmi_group=2\nhdmi_mode=16\nframebuffer_width=1024\nframebuffer_height=768\n"
+		: "hdmi_group=1\nhdmi_mode=4\nframebuffer_width=1280\nframebuffer_height=720\n";
+	if (!AppendTextToBuffer(output, sizeof(output), &out_len, hdmi_lines))
+	{
+		return FALSE;
+	}
+	if (!AppendTextToBuffer(output, sizeof(output), &out_len, block_end))
+	{
+		return FALSE;
 	}
 
 	FIL out;
 	const FRESULT open_result = f_open(&out, kBootConfigPath, FA_WRITE | FA_CREATE_ALWAYS);
 	if (open_result != FR_OK)
 	{
-		return;
+		LogSdOpResult(m_Logger, "HDMI:OPENW", open_result, kBootConfigPath, TRUE);
+		return FALSE;
 	}
 	UINT written = 0u;
-	(void) f_write(&out, output, out_len, &written);
-	(void) f_truncate(&out);
-	(void) f_close(&out);
+	const FRESULT write_result = f_write(&out, output, out_len, &written);
+	const FRESULT trunc_result = f_truncate(&out);
+	const FRESULT close_result = f_close(&out);
+	if (write_result != FR_OK || trunc_result != FR_OK || close_result != FR_OK || written != out_len)
+	{
+		LogSdOpResult(m_Logger, "HDMI:WRITE", write_result != FR_OK ? write_result : (trunc_result != FR_OK ? trunc_result : close_result), kBootConfigPath, TRUE);
+		return FALSE;
+	}
+
+	m_Logger.Write(FromKernel, LogNotice, mode == kResolutionMode768 ? "Settings: Resolution 768 saved" : "Settings: Resolution 720 saved");
+	return TRUE;
 }
 
 void CComboKernel::RefreshCoreListFromStorage(void)
@@ -6390,18 +6469,38 @@ void CComboKernel::RefreshCoreListFromStorage(void)
 		{
 			buffer[bytes_read] = '\0';
 			char *line = buffer;
+			char *limit = buffer + bytes_read;
+			char *block_start = strstr(buffer, kBootConfigKernelStartMarker);
+			char *block_end = strstr(buffer, kBootConfigKernelEndMarker);
+			if (block_start != 0 && block_end != 0 && block_end > block_start)
+			{
+				line = block_start;
+				while (*line != '\0' && *line != '\n')
+				{
+					++line;
+				}
+				if (*line == '\n')
+				{
+					++line;
+				}
+				limit = block_end;
+			}
 			while (*line != '\0')
 			{
+				if (line >= limit)
+				{
+					break;
+				}
 				while (*line == '\r' || *line == '\n')
 				{
 					++line;
 				}
-				if (*line == '\0')
+				if (*line == '\0' || line >= limit)
 				{
 					break;
 				}
 				char *line_end = line;
-				while (*line_end != '\0' && *line_end != '\r' && *line_end != '\n')
+				while (line_end < limit && *line_end != '\0' && *line_end != '\r' && *line_end != '\n')
 				{
 					++line_end;
 				}
@@ -6576,66 +6675,33 @@ boolean CComboKernel::PersistSelectedCoreToBootConfig(void)
 	char output[4096];
 	unsigned out_len = 0u;
 	output[0] = '\0';
-	char *line = input;
-	while (*line != '\0')
+
+	char *block_start = strstr(input, kBootConfigKernelStartMarker);
+	char *block_end = strstr(input, kBootConfigKernelEndMarker);
+	if (block_start == 0 || block_end == 0 || block_end <= block_start)
 	{
-		char *line_end = line;
-		while (*line_end != '\0' && *line_end != '\r' && *line_end != '\n')
-		{
-			++line_end;
-		}
-		char *next = line_end;
-		while (*next == '\r' || *next == '\n')
-		{
-			++next;
-		}
-
-		char *trimmed = line;
-		while (trimmed < line_end && (*trimmed == ' ' || *trimmed == '\t'))
-		{
-			++trimmed;
-		}
-
-		boolean skip = FALSE;
-		char *eq = trimmed;
-		while (eq < line_end && *eq != '=')
-		{
-			++eq;
-		}
-		if (eq < line_end)
-		{
-			const unsigned key_len = (unsigned) (eq - trimmed);
-			if (BootConfigKeyEquals(trimmed, key_len, "kernel"))
-			{
-				skip = TRUE;
-			}
-		}
-		if (!skip && TextStartsWithIgnoreCase(trimmed, "initramfs"))
-		{
-			const char after = trimmed[9];
-			if (after == '\0' || after == ' ' || after == '\t')
-			{
-				skip = TRUE;
-			}
-		}
-
-		if (!skip)
-		{
-			const unsigned line_len = (unsigned) (line_end - line);
-			if (line_len > 0u)
-			{
-				if (out_len + line_len + 1u >= sizeof(output))
-				{
-					return FALSE;
-				}
-				memcpy(output + out_len, line, line_len);
-				out_len += line_len;
-				output[out_len++] = '\n';
-				output[out_len] = '\0';
-			}
-		}
-		line = next;
+		m_Logger.Write(FromKernel, LogWarning, "KERNEL block missing in config.txt");
+		return FALSE;
 	}
+
+	char *start_line_end = block_start;
+	while (*start_line_end != '\0' && *start_line_end != '\n')
+	{
+		++start_line_end;
+	}
+	if (*start_line_end == '\n')
+	{
+		++start_line_end;
+	}
+
+	const unsigned prefix_len = (unsigned) (start_line_end - input);
+	if (prefix_len >= sizeof(output))
+	{
+		return FALSE;
+	}
+	memcpy(output, input, prefix_len);
+	out_len = prefix_len;
+	output[out_len] = '\0';
 
 	CString kernel_line;
 	kernel_line.Format("kernel=%s.img\n", selected_core);
@@ -6647,6 +6713,10 @@ boolean CComboKernel::PersistSelectedCoreToBootConfig(void)
 	CString initramfs_line;
 	initramfs_line.Format("initramfs %s.cpio followkernel\n", selected_core);
 	if (!AppendTextToBuffer(output, sizeof(output), &out_len, (const char *) initramfs_line))
+	{
+		return FALSE;
+	}
+	if (!AppendTextToBuffer(output, sizeof(output), &out_len, block_end))
 	{
 		return FALSE;
 	}
@@ -6677,6 +6747,29 @@ boolean CComboKernel::PersistSelectedCoreToBootConfig(void)
 		m_Logger.Write(FromKernel, LogNotice, line_log);
 	}
 	return TRUE;
+}
+
+boolean CComboKernel::TryCoreSwitchReboot(void)
+{
+	if (!m_CoreSwitchPending || m_EmulationPaused)
+	{
+		return FALSE;
+	}
+
+	if (!m_SettingsFatFsMounted && m_SettingsStorageReady)
+	{
+		(void) MountSettingsFileSystem("BT5C");
+	}
+
+	if (PersistSelectedCoreToBootConfig())
+	{
+		PrimeAudioSilenceBeforeReset();
+		return TRUE;
+	}
+
+	m_CoreSwitchPending = FALSE;
+	m_Logger.Write(FromKernel, LogWarning, "Settings: CORE switch failed; reboot canceled");
+	return FALSE;
 }
 
 boolean CComboKernel::EnsureStateIoBuffer(unsigned min_capacity)
@@ -7328,6 +7421,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		break;
 
 	case ComboMenuActionOverscanChanged:
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
 		m_OverscanPercent = m_PauseMenu.GetScalePercent();
 		m_ScaleMaxFitEnabled = FALSE;
 		RefreshSettingsUiAfterAction();
@@ -7360,16 +7454,24 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 			}
 			m_Logger.Write(FromKernel, LogNotice, line);
 		}
+#else
+		{
+			const unsigned max_scale = ComputeViewportUiMaxScalePercent(m_Screen.GetHeight());
+			m_OverscanPercent = RuntimeScalePercentForBuild(m_OverscanPercent, max_scale);
+			m_PauseMenu.SetScalePercent(m_OverscanPercent);
+		}
+		RefreshSettingsUiAfterAction();
+#endif
 		break;
 
 	case ComboMenuActionCycleResolution:
-		m_ResolutionMode = (m_ResolutionMode >= kResolutionMode768) ? kResolutionModeAuto : (m_ResolutionMode + 1u);
+		m_ResolutionMode = (m_ResolutionMode == kResolutionMode768) ? kResolutionMode720 : kResolutionMode768;
 		m_PauseMenu.SetResolutionMode(m_ResolutionMode);
 		RefreshSettingsUiAfterAction();
 		break;
 
 	case ComboMenuActionCycleResolutionPrev:
-		m_ResolutionMode = (m_ResolutionMode == kResolutionModeAuto) ? kResolutionMode768 : (m_ResolutionMode - 1u);
+		m_ResolutionMode = (m_ResolutionMode == kResolutionMode720) ? kResolutionMode768 : kResolutionMode720;
 		m_PauseMenu.SetResolutionMode(m_ResolutionMode);
 		RefreshSettingsUiAfterAction();
 		break;
@@ -8324,10 +8426,10 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 		const unsigned max_scale = ComputeViewportUiMaxScalePercent(m_Screen.GetHeight());
 		m_PauseMenu.SetMaxScalePercent(max_scale);
 		m_ScaleMaxFitEnabled = FALSE;
-		if (!ScalePercentIsNone(m_OverscanPercent)
-			&& m_OverscanPercent > max_scale)
+		const unsigned normalized_scale = RuntimeScalePercentForBuild(m_OverscanPercent, max_scale);
+		if (m_OverscanPercent != normalized_scale)
 		{
-			m_OverscanPercent = max_scale;
+			m_OverscanPercent = normalized_scale;
 			m_PauseMenu.SetScalePercent(m_OverscanPercent);
 			m_ForceViewportFullClearNextFrame = TRUE;
 		}

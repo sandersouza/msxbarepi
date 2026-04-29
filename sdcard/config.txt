@@ -1,6 +1,14 @@
-# Kernel default
-kernel=coco.img
-initramfs coco.cpio followkernel
+#---KERNEL START---
+kernel=msx.img
+initramfs msx.cpio followkernel
+#---KERNEL END---
+
+#---HDMI START---
+hdmi_group=1
+hdmi_mode=4
+framebuffer_width=1280
+framebuffer_height=720
+#---HDMI END---
 
 # Boot config
 enable_uart=1
@@ -18,15 +26,3 @@ dtoverlay=pi3-disable-bt
 arm_64bit=1
 arm_freq=1200
 arm_freq_min=1150
-
-# HDMI Output 720p 16:9
-hdmi_group=1
-hdmi_mode=4
-framebuffer_width=1280
-framebuffer_height=720
-
-# HDMI Output 768p 4:3
-# hdmi_group=2
-# hdmi_mode=16
-# framebuffer_width=1024
-# framebuffer_height=768

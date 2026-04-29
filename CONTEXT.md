@@ -2,12 +2,28 @@
 
 Ponto de entrada rapido para contexto operacional do projeto.
 
-- Contexto completo e historico de handoff da branch atual: [docs/handoff/256-msx-suporte-a-leitura-cassete.md](docs/handoff/256-msx-suporte-a-leitura-cassete.md)
+- Contexto completo e historico de handoff da branch atual: [docs/handoff/bug-fix-config-hdmi-output-720-768.md](docs/handoff/bug-fix-config-hdmi-output-720-768.md)
 - Guardrail ativo: a issue `#251` continua aberta/pausada e a branch `251-suporte-cartucho-vdp-v9990` nao deve ser removida.
-- Branch ativa da rodada: `256-msx-suporte-a-leitura-cassete`
-- Issue ativa: `#256 [P1] Habilitar suporte a carregamento .CAS e leitura cassete`
+- Branch ativa da rodada: `bug/fix-config-hdmi-output-720-768`
+- Issue ativa: `#258 [P1] Corrigir escrita do config.txt ao alterar Scale`
+- Issue remota: https://github.com/sandersouza/msxbarepi/issues/258
+- Escopo: separar `SD:/config.txt` de firmware dos settings do runtime; `Scale` deve persistir em `msx.cfg`/RAW, nao em `config.txt`.
+- Atualizacao 2026-04-28 (issue #258):
+  - `Resolution [720/768]` voltou ao Settings, com locale PT/EN/ES, refletindo `framebuffer_height` do bloco HDMI em `config.txt`.
+  - `msx.cfg`/scripts nao gravam mais `proportion=` nem `resolution=`; a fonte de verdade de resolucao e `SD:/config.txt`.
+  - `PersistResolutionModeToBootConfig()` so altera o bloco entre `#---HDMI START---` e `#---HDMI END---` em `SD:/config.txt`.
+  - `PersistSelectedCoreToBootConfig()` so altera o bloco entre `#---KERNEL START---` e `#---KERNEL END---` em `SD:/config.txt`.
+  - Ao sair do pause menu com `CORE` pendente, o runtime grava o bloco KERNEL e reinicia o Raspberry imediatamente.
+  - `Scale` permanece isolado em settings e nao escreve `config.txt`; o item fica ativo apenas em `DEBUG=1`.
+  - Em `DEBUG=0`, o runtime ignora `scale=` salvo e usa sempre o maior scale permitido pela resolucao ativa.
+  - A troca de `Resolution` nao aplica resize em runtime; a persistencia ocorre somente em `Save to disk`.
+  - validacao local: `bash -n` scripts SD, `./scripts/check-third-party-pristine.sh`, `git diff --check`, `make -n sdcard`, `make -j4 DEBUG=1`, `make -j4 DEBUG=0`.
+  - build local final: `BUILD_BID: 202604282047-485e5f5`, `TXTDBG BUILD:DBD9`, `BUILD_HASH:485e5f5-2dc0597d9758f411479ac5f8af19f331446a279c`.
+
+## Historico anterior
+
 - PR da rodada anterior mergeado: `#255` https://github.com/sandersouza/msxbarepi/pull/255
-- Branch base da issue ativa atualizada para `origin/main` em `31776ef`, preservando as alteracoes locais de cassete
+- Branch base da issue `#256` atualizada para `origin/main` em `31776ef`, preservando as alteracoes locais de cassete
 - Atualizacao 2026-04-26 (issue #256):
   - issue avulsa `#256` criada; branch vinculada: `256-msx-suporte-a-leitura-cassete`
   - suporte `.CAS` confirmado no backend local fMSX (`CasName`, `ChangeTape()`, `RewindTape()` e deteccao ASCII/BINARY/BASIC)

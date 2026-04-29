@@ -72,8 +72,6 @@ extern const TComboLocaleStrings g_ComboLocalePT = {
     "N/A",
     "NTSC",
     "PAL",
-    "AUTO",
-    "1080",
     "720",
     "768"
 };

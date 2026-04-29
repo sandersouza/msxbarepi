@@ -220,6 +220,40 @@ drop_initramfs_line_if_present() {
   fi
 }
 
+replace_kernel_block() {
+  local file="$1"
+  local kernel_name="$2"
+  local initramfs_name="$3"
+  awk -v kernel_name="$kernel_name" -v initramfs_name="$initramfs_name" '
+    BEGIN { in_block = 0; replaced = 0 }
+    /^#---KERNEL START---$/ {
+      print
+      print "kernel=" kernel_name
+      if (initramfs_name != "") {
+        print "initramfs " initramfs_name " followkernel"
+      }
+      in_block = 1
+      replaced = 1
+      next
+    }
+    /^#---KERNEL END---$/ {
+      in_block = 0
+      print
+      next
+    }
+    in_block { next }
+    { print }
+    END { if (!replaced) exit 2 }
+  ' "$file" > "${file}.new"
+  local rc=$?
+  if [ "$rc" -ne 0 ]; then
+    rm -f "${file}.new"
+    echo "[ERRO] Bloco #---KERNEL START---/#---KERNEL END--- ausente em config.txt" >&2
+    return "$rc"
+  fi
+  mv "${file}.new" "$file"
+}
+
 apply_video_mode_preset() {
   local file="$1"
   local preset="$2"
@@ -263,7 +297,6 @@ ensure_settings_cfg() {
   mkdir -p "$(dirname "$SETTINGS_CFG")"
   cat > "$SETTINGS_CFG" <<'EOF'
 scale=3
-resolution=0
 language=0
 widescreen=0
 scanline=0
@@ -388,12 +421,11 @@ if [ -f "$CONFIG_TXT" ]; then
   config_tmp="$(mktemp)"
   cp "$CONFIG_TXT" "$config_tmp"
   config_src="$config_tmp"
-  set_or_append_config_key "$config_src" "kernel" "$SD_KERNEL_NAME"
-  drop_initramfs_line_if_present "$config_src"
   if is_yes "$MSXBARE_EMBED_INITRAMFS"; then
+    replace_kernel_block "$config_src" "$SD_KERNEL_NAME" ""
     echo "[INFO] Boot strategy Standalone: removendo linha initramfs do config.txt efetivo"
   else
-    printf 'initramfs msx.cpio followkernel\n' >> "$config_src"
+    replace_kernel_block "$config_src" "$SD_KERNEL_NAME" "msx.cpio"
     echo "[INFO] Boot strategy Multicore: adicionando 'initramfs msx.cpio followkernel'"
   fi
   if [ "$DEBUG" = "1" ]; then

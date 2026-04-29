@@ -376,6 +376,40 @@ drop_initramfs_line_if_present() {
   fi
 }
 
+replace_kernel_block() {
+  local file="$1"
+  local kernel_name="$2"
+  local initramfs_name="$3"
+  awk -v kernel_name="$kernel_name" -v initramfs_name="$initramfs_name" '
+    BEGIN { in_block = 0; replaced = 0 }
+    /^#---KERNEL START---$/ {
+      print
+      print "kernel=" kernel_name
+      if (initramfs_name != "") {
+        print "initramfs " initramfs_name " followkernel"
+      }
+      in_block = 1
+      replaced = 1
+      next
+    }
+    /^#---KERNEL END---$/ {
+      in_block = 0
+      print
+      next
+    }
+    in_block { next }
+    { print }
+    END { if (!replaced) exit 2 }
+  ' "$file" > "${file}.new"
+  local rc=$?
+  if [ "$rc" -ne 0 ]; then
+    rm -f "${file}.new"
+    echo "[ERRO] Bloco #---KERNEL START---/#---KERNEL END--- ausente em config.txt" >&2
+    return "$rc"
+  fi
+  mv "${file}.new" "$file"
+}
+
 ensure_config_tmp() {
   if [ -z "$CONFIG_TMP" ]; then
     CONFIG_TMP="$(mktemp)"
@@ -435,7 +469,6 @@ ensure_settings_cfg() {
 backend_id=msx.fmsx
 scale=3
 language=1
-resolution=2
 scanline=0
 gfx9000=0
 refresh=60
@@ -821,23 +854,22 @@ if [ -f "$CONFIG_TXT" ]; then
   ensure_config_tmp
   config_tmp="$CONFIG_TMP"
   config_src="$config_tmp"
-  set_or_append_config_key "$config_src" "kernel" "$SD_KERNEL_NAME"
-  drop_initramfs_line_if_present "$config_src"
   if is_yes "$MSXBARE_EMBED_INITRAMFS"; then
+    replace_kernel_block "$config_src" "$SD_KERNEL_NAME" ""
     echo "[INFO] Boot strategy Standalone: removendo linha initramfs do config.txt efetivo"
   else
-    printf 'initramfs msx.cpio followkernel\n' >> "$config_src"
+    replace_kernel_block "$config_src" "$SD_KERNEL_NAME" "msx.cpio"
     echo "[INFO] Boot strategy Multicore: adicionando 'initramfs msx.cpio followkernel'"
   fi
   if [ "$DEBUG" = "1" ]; then
     if grep -Eq '^[[:space:]]*disable_splash=' "$config_tmp"; then
-      sed -E 's/^[[:space:]]*disable_splash=.*/disable_splash=0/' "$config_tmp" > "${config_tmp}.new"
+      sed -E 's/^[[:space:]]*disable_splash=.*/disable_splash=1/' "$config_tmp" > "${config_tmp}.new"
       mv "${config_tmp}.new" "$config_tmp"
     else
-      printf '\ndisable_splash=0\n' >> "$config_tmp"
+      printf '\ndisable_splash=1\n' >> "$config_tmp"
     fi
     config_src="$config_tmp"
-    echo "[INFO] DEBUG=1: forçando disable_splash=0 em config.txt"
+    echo "[INFO] DEBUG=1: forçando disable_splash=1 em config.txt"
   fi
   if [ "$VIDEO_MODE_PRESET" != "auto" ]; then
     apply_video_mode_preset "$config_src" "$VIDEO_MODE_PRESET"
