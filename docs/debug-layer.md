@@ -71,12 +71,12 @@ Objetivo: painel legivel no framebuffer HDMI com MMU/cache ativo, sem depender d
 - O painel pode usar a largura horizontal inteira da linha quando isso ajudar a ficar contido até a `linha 15`.
 - Emulador segue rodando ao fundo.
 - O item `Proportion` vive em `Settings` e aplica a resolucao do framebuffer via Circle: `16:9` usa `960x540`, `4:3` usa `640x480`.
-- O item `Scale` vive em `Settings`, logo abaixo de `Proportion`, apenas em builds `DEBUG=1`.
+- O item `Scale` vive em `Debug`, antes de `Debugger`, apenas em builds `DEBUG=1`.
 - `Scanlines` agora e binario no runtime e no `.cfg`: `OFF/ON`.
 - O estado `ON` usa apenas a logica LCD atual; o antigo modo `CRT` foi removido.
 - `Scale [1x]`: usa a mailbox nativa do emulador.
 - `Scale [2x]`: usa metade do intervalo entre `1x` e o fullscreen, em passos de `1/16x`.
-- `Scale [3x]`: fullscreen fit; calcula o maior multiplicador em passos de `1/16x` que cabe na largura e altura da resolucao ativa, sem alterar proporcao.
+- `Scale [3x]`: fullscreen fit usa a area MSX ativa `256x192` e aplica o mesmo multiplicador em X/Y. Em `4:3` (`640x480`) o fator e `2.5x`; em `16:9` (`960x540`) o fator e `2.75x`.
 - `Standard` e `HIRES` usam a mesma mailbox base do emulador e o mesmo modo de `Scale`.
 - `Widescreen`: removido do runtime e do menu; o viewport agora segue sempre a mailbox fixa do emulador.
 
@@ -124,12 +124,12 @@ Diretriz visual (overlay e menu):
 ## Menu relacionado
 - `Debug -> Debugger`: sempre aparece em builds `DEBUG=1` e opera diretamente como `MAX/MIN/OFF`.
 - `Settings -> Proportion`: alterna `16:9`/`4:3`, grava em `msx.cfg`/RAW e nao altera `config.txt`.
-- `Settings -> Scale`: aparece apenas em builds `DEBUG=1` e afeta o viewport independentemente do modo do debugger.
-- `Settings` nao expoe mais `Save to Disk`: ao sair de `Settings` com `ESC`, ou fechar o menu com `F12` enquanto `Settings` esta aberto, as alteracoes sao enfileiradas para persistencia em `msx.cfg`/RAW.
+- `Debug -> Scale`: aparece apenas em builds `DEBUG=1` e afeta o viewport independentemente do modo do debugger.
+- `Settings` nao expoe mais `Save to Disk`: ao sair de `Settings`/`Debug` com `ESC`, ou fechar o menu com `F12` enquanto uma dessas views esta aberta, as alteracoes sao enfileiradas para persistencia em `msx.cfg`/RAW.
 - `Settings` nao desenha mais o header `SETTINGS`; os itens usam margem superior e inferior simetricas para reduzir a altura do menu sem alterar a fonte.
 - Em builds `DEBUG=0`, `Scale` nao aparece no menu e o viewport usa sempre o maior scale permitido pela resolucao ativa.
 - `Settings -> Disk ROM`: aparece abaixo de `MegaRAM`, independente de `DEBUG=1`/`DEBUG=0`, e alterna a disponibilidade da Disk ROM no runtime.
-- Em builds com `DEBUG=1`, o menu `Debug` mantem apenas controles de diagnostico, como `Debugger` e `Standard [NTSC/PAL]`.
+- Em builds com `DEBUG=1`, o menu `Debug` mantem controles de diagnostico e apresentacao de debug, como `Scale`, `Debugger` e `Standard [NTSC/PAL]`.
 - Nesse caminho de diagnostico, o toggle agora atua no estado efetivo do VDP em runtime:
   - em `MSX2/MSX2+`, ele força `R#9 bit1` (`PAL/NTSC`) no core local;
   - o overlay passa a refletir imediatamente o modo efetivo (`PALVideo`), e nao apenas o pacing base do host.

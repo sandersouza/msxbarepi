@@ -606,7 +606,12 @@ static unsigned UMin(unsigned a, unsigned b)
 }
 
 static const unsigned kViewportBaseWidth = 256u;
-static const unsigned kViewportBaseHeight = 243u;
+static const unsigned kViewportBaseHeight = 192u;
+static const unsigned kFmsxHostBorderPixels = 8u;
+static const unsigned kFmsxHostWidth = 256u + (kFmsxHostBorderPixels << 1);
+static const unsigned kFmsxHostHeight = 212u + (kFmsxHostBorderPixels << 1);
+static const unsigned kMsxActiveHeight = 192u;
+static const unsigned kViewportScaleFitUnits16_9 = 44u;
 
 static boolean CanUseDirectPresentWithDebug(unsigned dst_x,
 							 unsigned dst_y,
@@ -705,11 +710,14 @@ static unsigned ComputeFullscreenScaleFitUnits(unsigned screen_w, unsigned scree
 {
 	if (screen_w == 0u || screen_h == 0u)
 	{
-		return 35u; /* 2.1875x for the common 960x540 path until HDMI is known. */
+		return kViewportScaleFitUnits16_9; /* 2.75x for the common 960x540 path until HDMI is known. */
 	}
-	const unsigned width_units = (screen_w * kScaleFitUnitOne) / kViewportBaseWidth;
-	const unsigned height_units = (screen_h * kScaleFitUnitOne) / kViewportBaseHeight;
-	unsigned units = UMin(width_units, height_units);
+	if (screen_w == kProportionWidth16_9 && screen_h == kProportionHeight16_9)
+	{
+		return kViewportScaleFitUnits16_9;
+	}
+	(void) screen_w;
+	unsigned units = (screen_h * kScaleFitUnitOne) / kViewportBaseHeight;
 	if (units < kScaleFitUnitOne)
 	{
 		units = kScaleFitUnitOne;
@@ -824,6 +832,50 @@ static unsigned ComputeEffectiveViewportScalePercent(unsigned manual_scale_perce
 static boolean EffectiveOverscanEnabled(unsigned scale_percent)
 {
 	return (scale_percent > kScaleModeNative) ? TRUE : FALSE;
+}
+
+static void SelectViewportSourceRect(unsigned width,
+							   unsigned height,
+							   unsigned screen_width,
+							   unsigned screen_height,
+							   const BackendVideoPresentation *presentation,
+							   unsigned *out_x,
+							   unsigned *out_y,
+							   unsigned *out_w,
+							   unsigned *out_h)
+{
+	unsigned x = 0u;
+	unsigned y = 0u;
+	unsigned w = width;
+	unsigned h = height;
+	const boolean woven_hires =
+		(presentation != 0)
+		&& (presentation->woven_hires != 0u)
+		&& (presentation->logical_height > 0u)
+		&& (height == (presentation->logical_height << 1));
+
+	(void) screen_width;
+	(void) screen_height;
+
+	if (!woven_hires && width >= kFmsxHostWidth && height >= kFmsxHostHeight)
+	{
+		const unsigned active_w = (width >= (kFmsxHostWidth << 1)) ? (kViewportBaseWidth << 1) : kViewportBaseWidth;
+		if (width >= active_w)
+		{
+			x = (width - active_w) / 2u;
+			w = active_w;
+		}
+		if (height >= kMsxActiveHeight)
+		{
+			y = (height - kMsxActiveHeight) / 2u;
+			h = kMsxActiveHeight;
+		}
+	}
+
+	if (out_x != 0) *out_x = x;
+	if (out_y != 0) *out_y = y;
+	if (out_w != 0) *out_w = w;
+	if (out_h != 0) *out_h = h;
 }
 
 static void ComputeViewportLayout(unsigned screen_width, unsigned screen_height,
@@ -3841,10 +3893,17 @@ TComboShutdownMode CComboKernel::Run(void)
 			{
 				const unsigned screen_width = m_Screen.GetWidth();
 				const unsigned screen_height = m_Screen.GetHeight();
+				const unsigned src_pitch = (presentation.pitch_pixels != 0u) ? presentation.pitch_pixels : src_w;
+				unsigned active_src_x = 0u;
+				unsigned active_src_y = 0u;
+				unsigned active_src_w = src_w;
+				unsigned active_src_h = src_h;
 				unsigned full_snap_w = 0u;
 				unsigned full_snap_h = 0u;
 				unsigned crop_x = 0u;
 				unsigned crop_y = 0u;
+				SelectViewportSourceRect(src_w, src_h, screen_width, screen_height, &presentation,
+					&active_src_x, &active_src_y, &active_src_w, &active_src_h);
 				const unsigned max_scale = ComputeViewportUiMaxScalePercent(screen_height);
 				const unsigned scale_percent =
 					ComputeEffectiveViewportScalePercent(m_OverscanPercent,
@@ -3852,14 +3911,15 @@ TComboShutdownMode CComboKernel::Run(void)
 						screen_height,
 						m_DebugOverlayMode);
 				ComputeViewportLayout(screen_width, screen_height,
-					src_w, src_h,
+					active_src_w, active_src_h,
 					scale_percent,
 					&m_BackendBoxX, &m_BackendBoxY, &m_BackendBoxW, &m_BackendBoxH,
 					&full_snap_w, &full_snap_h,
 					&crop_x, &crop_y);
 				(void) combo_viewport_screenshot_capture_from_emulator(
-					src_pixels, src_w, src_h,
-					(presentation.pitch_pixels != 0u) ? presentation.pitch_pixels : src_w,
+					src_pixels + (active_src_y * src_pitch) + active_src_x,
+					active_src_w, active_src_h,
+					src_pitch,
 					m_BackendBoxX, m_BackendBoxY, m_BackendBoxW, m_BackendBoxH,
 					full_snap_w, full_snap_h, crop_x, crop_y,
 					(presentation.disable_scanline_postfx == 0u) ? m_ScanlineMode : kScanlineModeOff);
@@ -4968,6 +5028,7 @@ void CComboKernel::BlitBackendFrame(boolean force_redraw)
 	const unsigned logical_src_height =
 		woven_hires ? presentation.logical_height : height;
 	const unsigned src_pitch = (presentation.pitch_pixels != 0u) ? presentation.pitch_pixels : width;
+	SelectViewportSourceRect(width, height, screen_width, screen_height, &presentation, &src_x0, &src_y0, &src_w, &src_h);
 
 	const unsigned scanline_mode =
 		((presentation.disable_scanline_postfx == 0u) && (m_ScanlineMode != kScanlineModeOff))
@@ -4983,7 +5044,7 @@ void CComboKernel::BlitBackendFrame(boolean force_redraw)
 				screen_height,
 				m_DebugOverlayMode);
 		ComputeViewportLayout(screen_width, screen_height,
-			width, height,
+			src_w, src_h,
 			scale_percent,
 			&offset_x, &offset_y, &dst_width, &dst_height,
 			&full_dst_width, &full_dst_height,
@@ -7253,11 +7314,11 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 			CString line;
 			if (ScalePercentIsNone(m_OverscanPercent))
 			{
-				line.Format("Settings: Scale 1x");
+				line.Format("Debug: Scale 1x");
 			}
 			else
 			{
-				line.Format("Settings: Scale %ux", ScaleFactorFromPercent(m_OverscanPercent));
+				line.Format("Debug: Scale %ux", ScaleFactorFromPercent(m_OverscanPercent));
 			}
 			m_Logger.Write(FromKernel, LogNotice, line);
 		}
@@ -7402,7 +7463,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 
 	case ComboMenuActionCycleRefreshRate:
 #if !MSXBARE_ENABLE_DEBUG_OVERLAY
-		m_Logger.Write(FromKernel, LogNotice, "Settings: Refresh indisponivel neste build");
+		m_Logger.Write(FromKernel, LogNotice, "Debug: Refresh indisponivel neste build");
 		break;
 #else
 		m_RefreshRateHz = (m_RefreshRateHz == 50u) ? 60u : 50u;
@@ -7414,13 +7475,13 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
 		m_FramePacingResetPending = TRUE;
 		RefreshSettingsUiAfterAction();
-		m_Logger.Write(FromKernel, LogNotice, m_RefreshRateHz == 50u ? "Settings: Refresh PAL" : "Settings: Refresh NTSC");
+		m_Logger.Write(FromKernel, LogNotice, m_RefreshRateHz == 50u ? "Debug: Refresh PAL" : "Debug: Refresh NTSC");
 		break;
 #endif
 
 	case ComboMenuActionCycleRefreshRatePrev:
 #if !MSXBARE_ENABLE_DEBUG_OVERLAY
-		m_Logger.Write(FromKernel, LogNotice, "Settings: Refresh indisponivel neste build");
+		m_Logger.Write(FromKernel, LogNotice, "Debug: Refresh indisponivel neste build");
 		break;
 #else
 		m_RefreshRateHz = (m_RefreshRateHz == 50u) ? 60u : 50u;
@@ -7432,7 +7493,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
 		m_FramePacingResetPending = TRUE;
 		RefreshSettingsUiAfterAction();
-		m_Logger.Write(FromKernel, LogNotice, m_RefreshRateHz == 50u ? "Settings: Refresh PAL" : "Settings: Refresh NTSC");
+		m_Logger.Write(FromKernel, LogNotice, m_RefreshRateHz == 50u ? "Debug: Refresh PAL" : "Debug: Refresh NTSC");
 		break;
 #endif
 
@@ -7682,11 +7743,11 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		RefreshSettingsUiAfterAction();
 		{
 			CString line;
-			line.Format("Settings: Debugger %s", DebugOverlayModeLogLabel(m_DebugOverlayMode));
+			line.Format("Debug: Debugger %s", DebugOverlayModeLogLabel(m_DebugOverlayMode));
 			m_Logger.Write(FromKernel, LogNotice, line);
 		}
 	#else
-		m_Logger.Write(FromKernel, LogNotice, "Settings: Debugger indisponivel neste build");
+		m_Logger.Write(FromKernel, LogNotice, "Debug: Debugger indisponivel neste build");
 	#endif
 		break;
 
@@ -7696,11 +7757,11 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		RefreshSettingsUiAfterAction();
 		{
 			CString line;
-			line.Format("Settings: Debugger %s", DebugOverlayModeLogLabel(m_DebugOverlayMode));
+			line.Format("Debug: Debugger %s", DebugOverlayModeLogLabel(m_DebugOverlayMode));
 			m_Logger.Write(FromKernel, LogNotice, line);
 		}
 	#else
-		m_Logger.Write(FromKernel, LogNotice, "Settings: Debugger indisponivel neste build");
+		m_Logger.Write(FromKernel, LogNotice, "Debug: Debugger indisponivel neste build");
 	#endif
 		break;
 

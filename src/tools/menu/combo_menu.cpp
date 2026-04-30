@@ -1665,7 +1665,7 @@ boolean CComboPauseMenu::IsInSettings(void) const
 
 boolean CComboPauseMenu::IsInSettingsContext(void) const
 {
-    return (m_View == MenuViewSettings) ? TRUE : FALSE;
+    return (m_View == MenuViewSettings || m_View == MenuViewDebug || m_View == MenuViewJoystickMap) ? TRUE : FALSE;
 }
 
 boolean CComboPauseMenu::IsCapturingJoystickMap(void) const
@@ -1837,7 +1837,6 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
         return combo_menu_settings_items_get(
             m_Language,
             m_ProportionMode,
-            m_ScalePercent,
             m_ScanlineMode,
             m_Gfx9000Enabled,
             m_RefreshRateHz,
@@ -1882,6 +1881,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
     {
         return combo_menu_debug_items_get(
             m_Language,
+            m_ScalePercent,
             m_RefreshRateHz,
             m_DiskRomEnabled,
             m_OverlayMode,

@@ -1,5 +1,5 @@
 ---
-description: "Use quando atualizar contexto de handoff, milestones/issues locais, ou documentacao tecnica em docs/. Cobre sincronizacao entre codigo, docs/milestones, docs/issues, AGENTS.md e CONTEXT.md."
+description: "Use para manter docs, handoff, CONTEXT e espelhos locais sincronizados com codigo e GitHub."
 name: "MSXBarePi Docs Sync"
 applyTo:
   - "docs/**"
@@ -8,29 +8,24 @@ applyTo:
 ---
 # MSXBarePi Docs Sync
 
-## Objetivo
+## Regra geral
 
-- Manter rastreabilidade entre mudancas de codigo, estado operacional e espelho local de milestones/issues.
+- Mudanca relevante de codigo deve atualizar a documentacao minima aplicavel.
+- Atualizar docs em lote no checkpoint estavel sempre que isso reduzir ruido sem perder rastreabilidade.
 
-## Regras de sincronizacao
+## Handoff e contexto
 
-- Toda mudanca relevante de codigo deve incluir atualizacao minima em `docs/` quando aplicavel.
-- Ao fim de cada ciclo relevante (build, bug, decisao tecnica, milestone), atualizar `docs/handoff/<nome-da-branch>.md`.
-- Manter `CONTEXT.md` apontando corretamente para o arquivo de handoff ativo da branch.
-- Alteracoes de fluxo/guardrails do projeto devem refletir em `AGENTS.md` quando necessario.
+- Manter `docs/handoff/<branch>.md` como contexto persistente da branch.
+- Manter `CONTEXT.md` apontando para o handoff ativo.
+- Registrar decisoes tecnicas com contexto, trade-off, impacto e riscos/proximos passos verificaveis.
 
-## Milestones e issues locais
+## Issues e milestones
 
-- Seguir `docs/github-project-management.md` como fonte de verdade para workflow.
-- Manter `docs/milestones/` e `docs/issues/` sincronizados com remoto no mesmo ciclo de criacao/atualizacao.
-- Em criacao de milestone/issue, preparar primeiro o espelho local (`README.md`, `CHALLENGES.md`, arquivo da issue) e usar esse material como fonte para publicacao remota.
-- Cada milestone remota deve ter pasta local com `README.md` contendo `Milestone remota: #<numero>`.
-- Cada pasta de milestone deve ter `CHALLENGES.md` com desafios por issue, solucao adotada e encaminhamentos.
-- Cada issue vinculada a milestone deve ter arquivo local `docs/milestones/m<numero>/<numero>-<slug>.md`.
-- Cada issue avulsa/standalone sem milestone deve ter arquivo local `docs/issues/<numero>-<slug>.md`.
+- Seguir `project-management.instructions.md` para estrutura de espelhos locais.
+- Criar/atualizar `docs/issues/**` ou `docs/milestones/**` no mesmo ciclo da mudanca remota relevante.
 
-## Qualidade da documentacao
+## Qualidade
 
-- Registrar decisoes tecnicas com contexto, trade-off e impacto.
-- Referenciar fontes consultadas quando influenciarem implementacao/correcao (ex.: arquivos/classes em `third_party/fmsx` e `third_party/circle`).
-- Evitar texto redundante; priorizar estado atual, riscos em aberto e proximos passos verificaveis.
+- Evitar texto redundante e historico excessivo.
+- Referenciar arquivos/classes consultados quando `third_party/circle`, `third_party/fmsx` ou outra referencia influenciar a implementacao.
+- Alteracoes de guardrail/fluxo devem refletir em `AGENTS.md` apenas quando mudarem a regra canonica para humanos/agentes.

@@ -377,7 +377,6 @@ const TComboMenuItem *combo_menu_load_disk_items_get(unsigned language,
 
 const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
                                                      unsigned proportion_mode,
-                                                     unsigned scale_percent,
                                                      unsigned scanline_mode,
                                                      boolean gfx9000_enabled,
                                                      unsigned refresh_rate_hz,
@@ -402,7 +401,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     static TComboMenuItem settings_items[36];
     static char language_label[32];
     static char proportion_label[32];
-    static char scale_label[32];
     static char scanline_label[32];
     static char gfx9000_label[32];
     static char boot_label[32];
@@ -426,8 +424,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
 
     language = combo_locale_clamp_language(language);
     if (proportion_mode > 1u) proportion_mode = 0u;
-    if (scale_percent < 200u) scale_percent = 200u;
-    if (scale_percent > 300u) scale_percent = 300u;
     if (scanline_mode > 1u) scanline_mode = 1u;
     machine_profile = backend_machine_profile_clamp(machine_profile);
     if (rammapper_kb != 256u && rammapper_kb != 512u && rammapper_kb != 1024u) rammapper_kb = 256u;
@@ -444,14 +440,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     BuildLabelFlag(proportion_label, sizeof(proportion_label), locale->settings_proportion,
                    proportion_mode == 0u ? locale->proportion_16_9
                    : locale->proportion_4_3);
-    {
-        char scale_flag[8];
-        const unsigned scale_factor = MenuScaleFactorFromPercent(scale_percent);
-        scale_flag[0] = (char) ('0' + (scale_factor % 10u));
-        scale_flag[1] = 'x';
-        scale_flag[2] = '\0';
-        BuildLabelFlag(scale_label, sizeof(scale_label), locale->settings_scale, scale_flag);
-    }
     BuildLabelFlag(scanline_label, sizeof(scanline_label), locale->settings_scanlines,
                    scanline_mode == 0u ? locale->flag_off : locale->flag_on);
     BuildLabelFlag(gfx9000_label, sizeof(gfx9000_label), locale->settings_gfx9000,
@@ -516,9 +504,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     ADD_SETTING_ITEM(language_label, ComboMenuActionCycleLanguage, ComboMenuRedrawMenuOnly, TRUE);
     ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
     ADD_SETTING_ITEM(proportion_label, ComboMenuActionCycleProportion, ComboMenuRedrawMenuAndViewport, TRUE);
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
-    ADD_SETTING_ITEM(scale_label, ComboMenuActionOverscanChanged, ComboMenuRedrawMenuAndViewport, TRUE);
-#endif
     ADD_SETTING_ITEM(scanline_label, ComboMenuActionCycleScanlines, ComboMenuRedrawMenuAndViewport, TRUE);
     if (MSXBARE_FEAT_GFX9000)
     {
@@ -640,6 +625,7 @@ const TComboMenuItem *combo_menu_joystick_map_items_get(unsigned language,
 }
 
 const TComboMenuItem *combo_menu_debug_items_get(unsigned language,
+                                                 unsigned scale_percent,
                                                  unsigned refresh_rate_hz,
                                                  boolean disk_rom_enabled,
                                                  unsigned overlay_mode,
@@ -647,6 +633,7 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned language,
                                                  unsigned *count)
 {
     static TComboMenuItem debug_items[9];
+    static char scale_label[32];
     static char refresh_label[32];
     static char overlay_label[32];
 
@@ -655,7 +642,17 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned language,
     {
         locale = combo_locale_get(ComboLanguageEN);
     }
+    if (scale_percent < 200u) scale_percent = 200u;
+    if (scale_percent > 300u) scale_percent = 300u;
 
+    {
+        char scale_flag[8];
+        const unsigned scale_factor = MenuScaleFactorFromPercent(scale_percent);
+        scale_flag[0] = (char) ('0' + (scale_factor % 10u));
+        scale_flag[1] = 'x';
+        scale_flag[2] = '\0';
+        BuildLabelFlag(scale_label, sizeof(scale_label), locale->settings_scale, scale_flag);
+    }
     BuildLabelFlag(overlay_label, sizeof(overlay_label), locale->settings_debugger,
                    MenuOverlayModeFlag(locale, overlay_mode));
     BuildLabelFlag(refresh_label, sizeof(refresh_label), locale->settings_refresh,
@@ -673,6 +670,7 @@ const TComboMenuItem *combo_menu_debug_items_get(unsigned language,
 
     if (MSXBARE_ENABLE_DEBUG_OVERLAY)
     {
+        ADD_DEBUG_ITEM(scale_label, ComboMenuActionOverscanChanged, TRUE);
         ADD_DEBUG_ITEM(overlay_label, ComboMenuActionCycleOverlay, overlay_available ? TRUE : FALSE);
         ADD_DEBUG_ITEM(refresh_label, ComboMenuActionCycleRefreshRate, TRUE);
     }

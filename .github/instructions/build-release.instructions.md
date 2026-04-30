@@ -1,5 +1,5 @@
 ---
-description: "Use quando trabalhar em build, validacao, empacotamento e entrega de artefatos no msxbarepi (make, scripts/, Makefile, README)."
+description: "Use para build, validacao, empacotamento, scripts, SD e entrega de artefatos."
 name: "MSXBarePi Build and Release"
 applyTo:
   - "Makefile"
@@ -9,40 +9,31 @@ applyTo:
 ---
 # MSXBarePi Build and Release
 
-## Escopo
+## Build
 
-- Padronizar iteracoes de build/teste local, artefatos esperados e entrega para teste em hardware.
+- Confirmar que o comando roda na raiz do repo `msxbarepi`.
+- Executar builds/testes locais necessarios e ler erros antes de propor proximos passos.
+- Antes de targets que dependem de Circle/fMSX, rodar `scripts/check-third-party-pristine.sh` ou `make guard-third-party`.
+- Em gates maiores, preferir build limpo e validacao em hardware quando aplicavel.
 
-## Workflow de build
+## Artefatos
 
-- Confirmar `PWD` em `/Users/sandersouza/Developer/msxbarepi` antes de build/debug.
-- Executar iteracoes locais necessarias e analisar erros/warnings antes de orientar proximo passo.
-- Em gates de milestone ou antes de avancos maiores, preferir `make clean && make` e validacao em hardware.
+- Artefato padrao: `artifacts/kernel8-default.img`.
+- Em branch de issue `<numero>-...`, gerar/priorizar `artifacts/kernel8-issue<numero>.img`.
+- Ao entregar build para hardware, informar:
+  - `BUILD_BID`
+  - `TXTDBG BUILD:XXXX`
+  - `BUILD_HASH`
+  - comando `make sdcard`
+- Se o hardware ainda nao exibiu o ID, calcular `TXTDBG BUILD:XXXX` com o mesmo algoritmo do kernel a partir de `MSXBARE_BUILD_BID`.
 
-## Guardrails de dependencias
+## SD e package
 
-- Antes de targets dependentes de Circle/fMSX, executar `scripts/check-third-party-pristine.sh` ou `make guard-third-party`.
-- So flexibilizar com override explicito (`ALLOW_DIRTY_THIRD_PARTY=1`) quando houver motivo tecnico claro.
-- Nunca modificar diretamente `third_party/circle` e `third_party/fmsx`; usar copia/patch separado.
+- Usar `make sdcard` como comando oficial para preparar/gravar SD em docs e respostas.
+- Antes de executar `make sdcard`, pedir confirmacao explicita do usuario.
+- Se o boot exigir novo arquivo no SD, atualizar `scripts/prepare-sd.sh` na mesma mudanca.
+- Em package, usar `DEBUG=0|1` e `OWNER=\"<nome>\"`; zip esperado: `artifacts/sdcard-package-<OWNER>.zip`.
 
-## Artefatos e rastreio
+## Docs
 
-- Preservar expectativa de artefatos: `artifacts/kernel8-default.img`.
-- Em branch de issue (`<numero>-...`), garantir tambem `artifacts/kernel8-issue<numero>.img` e prioriza-lo para a issue ativa.
-- Ao entregar build para teste, informar identificador curto `BUILD_HASH:<git>-<sha1>`.
-- Ao entregar build para teste, informar tambem o `BUILD_BID` usado na compilacao.
-- Ao entregar build para teste, informar sempre o `BUILD_ID` exato de 4 digitos (`TXTDBG BUILD:XXXX`), mesmo antes do teste em hardware; quando ainda nao houver boot em campo, calcular o valor com o mesmo algoritmo usado no kernel a partir de `MSXBARE_BUILD_BID`.
-- Em validacao de hardware, sempre informar tambem o `BUILD_ID` de 4 digitos exibido no overlay (`TXTDBG BUILD:XXXX`), pois esse e o identificador visual canonico em campo.
-
-## SD e empacotamento
-
-- Usar `make sdcard` como comando oficial para preparo/gravação de SD em docs/comandos.
-- Evitar orientar `scripts/prepare-sd.sh` diretamente no chat quando o objetivo for gravar SD; preferir sempre `make sdcard`.
-- Antes de executar `make sdcard`, pedir confirmacao explicita do usuario no chat.
-- Ao finalizar build de teste, sempre incluir o comando `make sdcard`.
-- Em `make package`, usar `DEBUG=0|1` e `OWNER=\"<nome>\"`; nome esperado do zip: `artifacts/sdcard-package-<OWNER>.zip`.
-
-## Alinhamento com docs
-
-- Se um novo arquivo for necessario no boot, atualizar `scripts/prepare-sd.sh` na mesma mudanca.
-- Atualizar `README.md`/`docs/` sempre que flags de build, comandos ou fluxo de entrega mudarem.
+- Atualizar README/docs quando comandos, flags, artefatos ou fluxo de entrega mudarem.
