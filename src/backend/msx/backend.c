@@ -1,33 +1,14 @@
 #include "backend.h"
 
-#include "../core/registry.h"
 #include "backend_internal.h"
-
-#include <string.h>
-
-#ifndef MSXBARE_BACKEND_DEFAULT
-#define MSXBARE_BACKEND_DEFAULT "msx.fmsx"
-#endif
 
 extern void msxbare_uart_write(const char *text);
 extern unsigned long long msxbare_monotonic_time_us(void);
 
 static const char kMsxBackendFamilyId[] = "msx";
-static char g_msx_requested_backend_id[32];
-
-static const BackendModuleV1 *kMsxBuiltinModules[] = {
-    &g_msx_backend_module_fmsx,
-    &g_msx_backend_module_bluemsx
-};
-
-static BackendRegistry g_msx_registry;
 static BackendInfo g_msx_backend_info = {
     "msx",
-    0,
-    0,
     "fmsx",
-    FALSE,
-    FALSE,
     FALSE,
     FALSE,
     MSX_BACKEND_INIT_OK
@@ -39,95 +20,20 @@ static const BackendHostExportsV1 kMsxHostExports = {
     msxbare_monotonic_time_us
 };
 
-static void msx_backend_registry_bootstrap(void);
-
-static int msx_backend_streq(const char *a, const char *b)
-{
-    if (a == 0 || b == 0)
-    {
-        return 0;
-    }
-
-    while (*a != '\0' && *b != '\0')
-    {
-        if (*a != *b)
-        {
-            return 0;
-        }
-        ++a;
-        ++b;
-    }
-
-    return (*a == '\0' && *b == '\0') ? 1 : 0;
-}
-
-static void msx_backend_copy_id(char *dst, unsigned dst_size, const char *src)
-{
-    unsigned i = 0u;
-
-    if (dst == 0 || dst_size == 0u)
-    {
-        return;
-    }
-
-    if (src == 0)
-    {
-        src = "";
-    }
-
-    while (i + 1u < dst_size && src[i] != '\0')
-    {
-        dst[i] = src[i];
-        ++i;
-    }
-    dst[i] = '\0';
-}
-
 static const BackendModuleV1 *msx_backend_selected_module(void)
 {
-    return g_msx_registry.selected_module;
+    return &g_msx_backend_module_fmsx;
 }
 
 static const BackendModuleV1 *msx_backend_control_module(void)
 {
-    const BackendModuleV1 *module;
-
-    msx_backend_registry_bootstrap();
-    module = msx_backend_selected_module();
-    if (module != 0)
-    {
-        return module;
-    }
-
-    module = backend_registry_find(&g_msx_registry, msx_backend_requested_backend_id());
-    if (module != 0)
-    {
-        return module;
-    }
-
-    return backend_registry_default(&g_msx_registry);
+    return &g_msx_backend_module_fmsx;
 }
 
 static const MsxBackendFamilyOps *msx_backend_family_ops(void)
 {
     const BackendModuleV1 *module = msx_backend_control_module();
     return module != 0 ? (const MsxBackendFamilyOps *) module->family_ops : 0;
-}
-
-static void msx_backend_registry_bootstrap(void)
-{
-    static boolean initialized = FALSE;
-
-    if (initialized)
-    {
-        return;
-    }
-
-    backend_registry_init(&g_msx_registry,
-                          kMsxBuiltinModules,
-                          (unsigned) (sizeof(kMsxBuiltinModules) / sizeof(kMsxBuiltinModules[0])),
-                          MSXBARE_BACKEND_DEFAULT);
-    initialized = TRUE;
 }
 
 static BackendRuntimeStatus msx_backend_empty_status(void)
@@ -156,31 +62,6 @@ const char *msx_backend_family_id(void)
     return kMsxBackendFamilyId;
 }
 
-const char *msx_backend_default_id(void)
-{
-    msx_backend_registry_bootstrap();
-    return backend_registry_default(&g_msx_registry) != 0
-        ? backend_registry_default(&g_msx_registry)->backend_id
-        : MSXBARE_BACKEND_DEFAULT;
-}
-
-void msx_backend_set_requested_backend_id(const char *backend_id)
-{
-    msx_backend_registry_bootstrap();
-    msx_backend_copy_id(g_msx_requested_backend_id, sizeof(g_msx_requested_backend_id), backend_id);
-}
-
-const char *msx_backend_requested_backend_id(void)
-{
-    return g_msx_requested_backend_id[0] != '\0' ? g_msx_requested_backend_id : 0;
-}
-
-const char *msx_backend_selected_backend_id(void)
-{
-    const BackendModuleV1 *module = msx_backend_control_module();
-    return module != 0 ? module->backend_id : 0;
-}
-
 boolean msx_backend_is_capability_available(unsigned capability_bit)
 {
     const BackendModuleV1 *module = msx_backend_control_module();
@@ -189,29 +70,17 @@ boolean msx_backend_is_capability_available(unsigned capability_bit)
 
 boolean msx_backend_init(void)
 {
-    const BackendModuleV1 *module;
+    const BackendModuleV1 *module = &g_msx_backend_module_fmsx;
     int init_error = MSX_BACKEND_INIT_OK;
-    boolean requested_backend_found = FALSE;
-    boolean used_default_backend = FALSE;
     boolean ok = FALSE;
 
-    msx_backend_registry_bootstrap();
-    module = backend_registry_select(&g_msx_registry,
-                                     msx_backend_requested_backend_id(),
-                                     &requested_backend_found,
-                                     &used_default_backend);
-
     g_msx_backend_info.backend_family = kMsxBackendFamilyId;
-    g_msx_backend_info.requested_backend_id = msx_backend_requested_backend_id();
-    g_msx_backend_info.selected_backend_id = module != 0 ? module->backend_id : 0;
-    g_msx_backend_info.active_backend_name = module != 0 ? module->display_name : "unknown";
-    g_msx_backend_info.requested_backend_found = requested_backend_found;
-    g_msx_backend_info.used_default_backend = used_default_backend;
+    g_msx_backend_info.active_backend_name = module->display_name;
     g_msx_backend_info.init_attempted = TRUE;
     g_msx_backend_info.available = FALSE;
     g_msx_backend_info.init_error_code = MSX_BACKEND_INIT_OK;
 
-    if (module != 0 && module->ops != 0 && module->ops->init != 0)
+    if (module->ops != 0 && module->ops->init != 0)
     {
         ok = module->ops->init(&kMsxHostExports, &init_error);
     }

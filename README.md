@@ -103,7 +103,6 @@ Flags publicas principais:
 - `OWNER="<nome>"` (owner/tag efetivo da build; nomeia pacote em `make package`)
 - `MSXBARE_PATREON_TAG="<nome>"` (faz a mesma coisa que `OWNER` quando `OWNER` nao for informado)
 - `FIRMWARE_DIR=<dir>`
-- `EMULATOR_BACKEND=fmsx|bluemsx`
 - `MSXBARE_BOOT_STRATEGY=standalone|multicore` (default `standalone`; também exposto em `make menuconfig`; `standalone` embute o initramfs, usa RAW para settings e dispensa `msx.cpio`; `multicore` gera `msx.cpio`, usa `SD:/msx.cfg` e mantém `initramfs msx.cpio followkernel`)
 - `CROSS=<prefixo>`
 - Precedencia no `make`: flags da linha de comando vencem `.config`; `.config` vence os defaults do `Makefile`.

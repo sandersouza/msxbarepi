@@ -47,10 +47,6 @@ typedef TFmsxV9990DebugLiveView MsxBackendV9990DebugLiveView;
 typedef TFmsxV9990DebugReferenceView MsxBackendV9990DebugReferenceView;
 
 const char *msx_backend_family_id(void);
-const char *msx_backend_default_id(void);
-void msx_backend_set_requested_backend_id(const char *backend_id);
-const char *msx_backend_requested_backend_id(void);
-const char *msx_backend_selected_backend_id(void);
 boolean msx_backend_is_capability_available(unsigned capability_bit);
 
 boolean msx_backend_init(void);

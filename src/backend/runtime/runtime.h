@@ -3,8 +3,6 @@
 
 #include "../core/module.h"
 
-#if defined(MSXBARE_BACKEND_FAMILY_MSX)
-
 #include "../msx/backend.h"
 #include "../msx/gamemaster_catalog.h"
 #include "../msx/machine_profile_catalog.h"
@@ -86,10 +84,6 @@ enum {
 #define BACKEND_CHEAT_MAX_POKES GAMEMASTER_MAX_POKES
 
 #define backend_runtime_family_id msx_backend_family_id
-#define backend_runtime_default_id msx_backend_default_id
-#define backend_runtime_set_requested_backend_id msx_backend_set_requested_backend_id
-#define backend_runtime_requested_backend_id msx_backend_requested_backend_id
-#define backend_runtime_selected_backend_id msx_backend_selected_backend_id
 #define backend_runtime_is_capability_available msx_backend_is_capability_available
 
 #define backend_runtime_init msx_backend_init
@@ -206,11 +200,5 @@ enum {
 #define backend_machine_profile_default machine_profile_default
 #define backend_machine_profile_label machine_profile_label
 #define backend_machine_profile_is_msx2_family machine_profile_is_msx2_family
-
-#else
-
-#error "Unsupported backend family adapter"
-
-#endif
 
 #endif

@@ -6,9 +6,6 @@ BUILD_DIR := build
 FB_WIDTH ?= 1024
 FB_HEIGHT ?= 768
 DEBUG := 1
-BACKEND_FAMILY ?= msx
-BACKEND_DEFAULT ?= msx.fmsx
-EMULATOR_BACKEND ?=
 MSXBARE_CARTA_ONLY ?= 0
 MSXBARE_SIZE_OPT ?= 1
 OWNER ?=
@@ -152,9 +149,6 @@ default: config-header circle-libs
 	$(MAKE) -C src $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 \
 		EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' \
 		DEBUG=$(DEBUG_BOOL) \
-		BACKEND_FAMILY=$(BACKEND_FAMILY) \
-		BACKEND_DEFAULT=$(BACKEND_DEFAULT) \
-		EMULATOR_BACKEND=$(EMULATOR_BACKEND) \
 		MSXBARE_KERNEL_MAX_SIZE=$(CIRCLE_KERNEL_MAX_SIZE) \
 		MSXBARE_CARTA_ONLY=$(MSXBARE_CARTA_ONLY) \
 		MSXBARE_SIZE_OPT=$(MSXBARE_SIZE_OPT) \
@@ -233,9 +227,6 @@ backend-module: config-header
 	$(MAKE) -C src $(CIRCLE_MAKE_FLAGS) CHECK_DEPS=0 \
 		EXTRAINCLUDE='$(CIRCLE_EXTRAINCLUDE)' \
 		DEBUG=$(DEBUG_BOOL) \
-		BACKEND_FAMILY=$(BACKEND_FAMILY) \
-		BACKEND_DEFAULT=$(BACKEND_DEFAULT) \
-		EMULATOR_BACKEND=$(EMULATOR_BACKEND) \
 		MSXBARE_KERNEL_MAX_SIZE=$(CIRCLE_KERNEL_MAX_SIZE) \
 		MSXBARE_CARTA_ONLY=$(MSXBARE_CARTA_ONLY) \
 		MSXBARE_SIZE_OPT=$(MSXBARE_SIZE_OPT) \
@@ -481,8 +472,6 @@ help:
 	@echo "Override: make CROSS=aarch64-elf-"
 	@echo "Use flags principais: DEBUG=0|1 OWNER=<nome> FIRMWARE_DIR=<dir>"
 	@echo "Owner/tag efetivo: OWNER vence; se vazio, usa MSXBARE_PATREON_TAG (menuconfig)"
-	@echo "Backend por familia: BACKEND_FAMILY=msx BACKEND_DEFAULT=msx.fmsx|msx.bluemsx"
-	@echo "Alias legado: EMULATOR_BACKEND=fmsx|bluemsx"
 	@echo "Modulo loadable: make backend-module -> artifacts/backend/msx/msx.fmsx.mod.elf"
 	@echo "Boot mode selecionavel em runtime: Settings -> Boot Mode [NORM/FAST/GAME]"
 	@echo "Bypass temporario (nao recomendado): ALLOW_DIRTY_THIRD_PARTY=1 make"

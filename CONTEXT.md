@@ -2,12 +2,23 @@
 
 Ponto de entrada rapido para contexto operacional do projeto.
 
-- Contexto completo e historico de handoff da branch atual: [docs/handoff/260-hdmi-resolution-circle.md](docs/handoff/260-hdmi-resolution-circle.md)
+- Contexto completo e historico de handoff da branch atual: [docs/handoff/262-remover-selecao-backend-fmsx-unico.md](docs/handoff/262-remover-selecao-backend-fmsx-unico.md)
 - Guardrail ativo: a issue `#251` continua aberta/pausada e a branch `251-suporte-cartucho-vdp-v9990` nao deve ser removida.
-- Branch ativa da rodada: `260-hdmi-resolution-circle`
-- Issue ativa: `#260 Melhorar deteccao HDMI, escala e troca de resolucao on-the-fly via Circle`
-- Issue remota: https://github.com/sandersouza/msxbarepi/issues/260
-- Escopo: melhorar deteccao de resolucao HDMI, ajustes de escala e troca de resolucao on-the-fly usando Circle como referencia/infraestrutura principal.
+- Branch ativa da rodada: `262-remover-selecao-backend-fmsx-unico`
+- Issue ativa: `#262 Remover selecao de backend e consolidar fMSX como backend unico`
+- Issue remota: https://github.com/sandersouza/msxbarepi/issues/262
+- Escopo: remover codigo/scripts/variaveis de selecao de backend de emulacao e consolidar fMSX como backend unico.
+- Atualizacao 2026-04-30 (issue #262):
+  - issue criada na milestone `FIX: Minor Issues / Other Issues`;
+  - espelho local criado em `docs/milestones/m17/262-remover-selecao-backend-fmsx-unico.md`;
+  - handoff ativo criado em `docs/handoff/262-remover-selecao-backend-fmsx-unico.md`;
+  - removidas as flags `EMULATOR_BACKEND`, `BACKEND_FAMILY` e `BACKEND_DEFAULT`;
+  - removidos registry multi-backend, stub `msx.bluemsx` e shims legados de selecao `emulator_backend`;
+  - runtime MSX inicializa diretamente o fMSX built-in;
+  - `backend_id=` nao e mais gravado em `msx.cfg`, scripts ou payload runtime; configuracoes antigas ficam inertes;
+  - `CORE` multicore foi preservado por selecionar `.img`, nao backend de emulacao;
+  - validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `bash -n` scripts afetados, `make -j4 DEBUG=1`, `make -j4 DEBUG=0`, `make backend-module DEBUG=0`, `make -n sdcard`;
+  - build final `DEBUG=0`: `BUILD_BID: 202604302253-e82f8ca`, `TXTDBG BUILD:E6EE`, artefato `artifacts/kernel8-issue262.img`.
 - Atualizacao 2026-04-29 (issue #260):
   - issue avulsa `#260` criada e adicionada ao projeto `MSX BarePI`; status atualizado para `In progress`;
   - branch vinculada criada via `gh issue develop`: `260-hdmi-resolution-circle`;

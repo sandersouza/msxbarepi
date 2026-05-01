@@ -62,11 +62,7 @@ typedef struct BackendModuleV1 {
 
 typedef struct {
     const char *backend_family;
-    const char *requested_backend_id;
-    const char *selected_backend_id;
     const char *active_backend_name;
-    boolean requested_backend_found;
-    boolean used_default_backend;
     boolean init_attempted;
     boolean available;
     int init_error_code;

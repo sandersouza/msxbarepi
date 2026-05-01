@@ -2546,12 +2546,9 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 		return FALSE;
 	}
 
-	boolean has_backend_id = FALSE;
 	boolean has_scc_plus = FALSE;
 	boolean has_joy_map = FALSE;
-	char cfg_backend_id[32];
 	u16 joy_map_codes[CUsbHidGamepad::MapSlotCount];
-	cfg_backend_id[0] = '\0';
 	m_UsbGamepad.GetMappingCodes(joy_map_codes, CUsbHidGamepad::MapSlotCount);
 
 	char *line = buffer;
@@ -2672,11 +2669,6 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 			{
 				m_AudioOutputGainPct = (value > 100u) ? 100u : value;
 			}
-			else if (SettingsKeyEquals(line, key_len, "backend_id"))
-			{
-				ParseTextValueLine(eq + 1, line_end, cfg_backend_id, sizeof(cfg_backend_id));
-				has_backend_id = TRUE;
-			}
 			else if (SettingsKeyEquals(line, key_len, "joy_map_up"))
 			{
 				joy_map_codes[CUsbHidGamepad::MapSlotUp] = CUsbHidGamepad::ClampControlCode((u16) value);
@@ -2712,7 +2704,6 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 	}
 
 	NormalizeSettingsForBuild();
-	backend_runtime_set_requested_backend_id(has_backend_id && cfg_backend_id[0] != '\0' ? cfg_backend_id : 0);
 	if (has_joy_map)
 	{
 		m_UsbGamepad.SetMappingCodes(joy_map_codes, CUsbHidGamepad::MapSlotCount, TRUE);
@@ -2872,25 +2863,11 @@ void CComboKernel::InitializeDebugRuntime(void)
 	}
 	{
 		const BackendInfo backend_info = backend_runtime_get_info();
-		const char *selected_backend_id = backend_info.selected_backend_id != 0
-			? backend_info.selected_backend_id
-			: backend_runtime_selected_backend_id();
 		CString backend_line;
-		backend_line.Format("Emulator backend: %s [%s]",
-			m_EmulatorBackendName != 0 ? m_EmulatorBackendName : "unknown",
-			selected_backend_id != 0 ? selected_backend_id : "default");
+		backend_line.Format("Emulator backend: %s",
+			m_EmulatorBackendName != 0 ? m_EmulatorBackendName : "unknown");
 		m_Logger.Write(FromKernel, LogNotice, backend_line);
-		if (backend_info.requested_backend_id != 0
-			&& backend_info.requested_backend_id[0] != '\0'
-			&& !backend_info.requested_backend_found
-			&& backend_info.selected_backend_id != 0)
-		{
-			CString fallback_line;
-			fallback_line.Format("Backend fallback: requested=%s -> selected=%s",
-				backend_info.requested_backend_id,
-				backend_info.selected_backend_id);
-			m_Logger.Write(FromKernel, LogWarning, fallback_line);
-		}
+		(void) backend_info;
 	}
 	{
 		CString initramfs_line;
@@ -5511,12 +5488,9 @@ void CComboKernel::LoadSettingsFromStorage(void)
 		return;
 	}
 
-	boolean has_backend_id = FALSE;
 	boolean has_scc_plus = FALSE;
 	boolean has_joy_map = FALSE;
-	char cfg_backend_id[32];
 	u16 joy_map_codes[CUsbHidGamepad::MapSlotCount];
-	cfg_backend_id[0] = '\0';
 	m_UsbGamepad.GetMappingCodes(joy_map_codes, CUsbHidGamepad::MapSlotCount);
 
 	char *line = buffer;
@@ -5666,11 +5640,6 @@ void CComboKernel::LoadSettingsFromStorage(void)
 			{
 				m_AudioOutputGainPct = (value > 100u) ? 100u : value;
 			}
-			else if (SettingsKeyEquals(line, key_len, "backend_id"))
-			{
-				ParseTextValueLine(eq + 1, line_end, cfg_backend_id, sizeof(cfg_backend_id));
-				has_backend_id = TRUE;
-			}
 			else if (SettingsKeyEquals(line, key_len, "joy_map_up"))
 			{
 				joy_map_codes[CUsbHidGamepad::MapSlotUp] = CUsbHidGamepad::ClampControlCode((u16) value);
@@ -5707,7 +5676,6 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	}
 
 	NormalizeSettingsForBuild();
-	backend_runtime_set_requested_backend_id(has_backend_id && cfg_backend_id[0] != '\0' ? cfg_backend_id : 0);
 	if (has_joy_map)
 	{
 		m_UsbGamepad.SetMappingCodes(joy_map_codes, CUsbHidGamepad::MapSlotCount, TRUE);
@@ -5790,11 +5758,6 @@ unsigned CComboKernel::BuildSettingsPayload(char *buffer, unsigned buffer_size)
 	}
 
 	unsigned offset = 0u;
-	const char *saved_backend_id = backend_runtime_selected_backend_id();
-	if (saved_backend_id == 0 || saved_backend_id[0] == '\0')
-	{
-		saved_backend_id = backend_runtime_default_id();
-	}
 
 #define APPEND_LINE_FMT(fmt, value) \
 	do { \
@@ -5812,23 +5775,6 @@ unsigned CComboKernel::BuildSettingsPayload(char *buffer, unsigned buffer_size)
 		} \
 	} while (0)
 
-#define APPEND_LINE_TEXT(key, text_value) \
-	do { \
-		const char *v = (text_value) != 0 ? (text_value) : ""; \
-		const unsigned key_len = (unsigned) strlen(key); \
-		const unsigned value_len = (unsigned) strlen(v); \
-		if (offset + key_len + value_len + 2u < buffer_size) \
-		{ \
-			memcpy(buffer + offset, key, key_len); \
-			offset += key_len; \
-			buffer[offset++] = '='; \
-			memcpy(buffer + offset, v, value_len); \
-			offset += value_len; \
-			buffer[offset++] = '\n'; \
-		} \
-	} while (0)
-
-	APPEND_LINE_TEXT("backend_id", saved_backend_id);
 	APPEND_LINE_FMT("scale=%u\n", ScaleFactorFromPercent(m_OverscanPercent));
 	APPEND_LINE_FMT("language=%u\n", m_Language);
 	APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
@@ -5860,7 +5806,6 @@ unsigned CComboKernel::BuildSettingsPayload(char *buffer, unsigned buffer_size)
 	APPEND_LINE_FMT("debugger=%u\n", ClampDebugOverlayMode(m_DebugOverlayMode));
 	APPEND_LINE_FMT("audio_gain=%u\n", m_AudioOutputGainPct > 100u ? 100u : m_AudioOutputGainPct);
 #undef APPEND_LINE_FMT
-#undef APPEND_LINE_TEXT
 
 	static const char kEndMarker[] = "#END\n";
 	const unsigned end_len = (unsigned) (sizeof(kEndMarker) - 1u);
