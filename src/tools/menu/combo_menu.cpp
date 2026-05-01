@@ -765,6 +765,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_MaxScalePercent(300u),
     m_Language(ComboLanguageEN),
     m_ProportionMode(0u),
+    m_OverscanEnabled(FALSE),
     m_ScanlineMode(0u),
     m_Gfx9000Enabled(FALSE),
     m_RefreshRateHz(60u),
@@ -833,6 +834,7 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_LastDrawnMaxScalePercent(0u),
     m_LastDrawnLanguage(ComboLanguageEN),
     m_LastDrawnProportionMode(0u),
+    m_LastDrawnOverscanEnabled(FALSE),
     m_LastDrawnScanlineMode(0u),
     m_LastDrawnGfx9000Enabled(FALSE),
     m_LastDrawnRefreshRateHz(60u),
@@ -983,6 +985,7 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnMaxScalePercent = m_MaxScalePercent;
     m_LastDrawnLanguage = m_Language;
     m_LastDrawnProportionMode = m_ProportionMode;
+    m_LastDrawnOverscanEnabled = m_OverscanEnabled;
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnGfx9000Enabled = m_Gfx9000Enabled;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;
@@ -1124,6 +1127,16 @@ void CComboPauseMenu::SetProportionMode(unsigned mode)
     if (m_ProportionMode != mode)
     {
         m_ProportionMode = mode;
+        m_ForceRedraw = TRUE;
+    }
+}
+
+void CComboPauseMenu::SetOverscanEnabled(boolean enabled)
+{
+    enabled = enabled ? TRUE : FALSE;
+    if (m_OverscanEnabled != enabled)
+    {
+        m_OverscanEnabled = enabled;
         m_ForceRedraw = TRUE;
     }
 }
@@ -1836,6 +1849,7 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
     {
         return combo_menu_settings_items_get(
             m_Language,
+            m_OverscanEnabled,
             m_ScanlineMode,
             m_Gfx9000Enabled,
             m_RefreshRateHz,
@@ -2732,6 +2746,16 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
             }
             handled_settings_input = enter_edge || left_step || right_step;
         }
+        else if (items[m_Selected].action == ComboMenuActionToggleOverscan)
+        {
+            if (left_step || right_step || enter_edge)
+            {
+                action = ComboMenuActionToggleOverscan;
+                m_ForceRedraw = TRUE;
+                m_ForceHighlightRedraw = FALSE;
+            }
+            handled_settings_input = enter_edge || left_step || right_step;
+        }
         else if (items[m_Selected].action == ComboMenuActionCycleBootMode)
         {
             if (left_step)
@@ -3291,6 +3315,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && m_LastDrawnMaxScalePercent == m_MaxScalePercent
      && m_LastDrawnLanguage == m_Language
      && m_LastDrawnProportionMode == m_ProportionMode
+     && m_LastDrawnOverscanEnabled == m_OverscanEnabled
      && m_LastDrawnScanlineMode == m_ScanlineMode
      && m_LastDrawnGfx9000Enabled == m_Gfx9000Enabled
      && m_LastDrawnRefreshRateHz == m_RefreshRateHz
@@ -3605,6 +3630,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnMaxScalePercent = m_MaxScalePercent;
     m_LastDrawnLanguage = m_Language;
     m_LastDrawnProportionMode = m_ProportionMode;
+    m_LastDrawnOverscanEnabled = m_OverscanEnabled;
     m_LastDrawnScanlineMode = m_ScanlineMode;
     m_LastDrawnGfx9000Enabled = m_Gfx9000Enabled;
     m_LastDrawnRefreshRateHz = m_RefreshRateHz;

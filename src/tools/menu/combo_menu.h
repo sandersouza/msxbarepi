@@ -19,6 +19,7 @@ public:
     void SetMaxScalePercent(unsigned percent);
     void SetLanguage(unsigned language);
     void SetProportionMode(unsigned mode);
+    void SetOverscanEnabled(boolean enabled);
     unsigned GetLanguage(void) const;
     unsigned GetProportionMode(void) const;
     unsigned GetScalePercent(void) const;
@@ -126,6 +127,7 @@ private:
     unsigned m_MaxScalePercent;
     unsigned m_Language;
     unsigned m_ProportionMode;
+    boolean m_OverscanEnabled;
     unsigned m_ScanlineMode;
     boolean m_Gfx9000Enabled;
     unsigned m_RefreshRateHz;
@@ -195,6 +197,7 @@ private:
     unsigned m_LastDrawnMaxScalePercent;
     unsigned m_LastDrawnLanguage;
     unsigned m_LastDrawnProportionMode;
+    boolean m_LastDrawnOverscanEnabled;
     unsigned m_LastDrawnScanlineMode;
     boolean m_LastDrawnGfx9000Enabled;
     unsigned m_LastDrawnRefreshRateHz;

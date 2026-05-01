@@ -393,8 +393,12 @@ static const unsigned kProportionMode16_9 = 0u;
 static const unsigned kProportionMode4_3 = 1u;
 static const unsigned kProportionWidth16_9 = 960u;
 static const unsigned kProportionHeight16_9 = 540u;
-static const unsigned kProportionWidth4_3 = 720u;
-static const unsigned kProportionHeight4_3 = 576u;
+static const unsigned kProportionWidth4_3 = 640u;
+static const unsigned kProportionHeight4_3 = 480u;
+static const unsigned kOverscanOffWidth = 672u;
+static const unsigned kOverscanOffHeight = 504u;
+static const unsigned kOverscanOffViewportWidth = 640u;
+static const unsigned kOverscanOffViewportHeight = 480u;
 static const char kBootConfigKernelStartMarker[] = "#---KERNEL START---";
 static const char kBootConfigKernelEndMarker[] = "#---KERNEL END---";
 static const char kSettingsDrive[] = "SD:";
@@ -797,19 +801,6 @@ static unsigned ScaleModeFromSettingsValue(unsigned value)
 	return kScaleModeFullMax;
 }
 
-static unsigned ScaleModeFromLegacyOverscan(unsigned value)
-{
-	if (value >= 75u)
-	{
-		return kScaleModeFullMax;
-	}
-	if (value >= 25u)
-	{
-		return kScaleModeHalfMax;
-	}
-	return kScaleModeNative;
-}
-
 static unsigned ComputeEffectiveViewportScalePercent(unsigned manual_scale_percent,
 									 unsigned max_scale_percent,
 									 unsigned screen_height,
@@ -883,6 +874,7 @@ static void SelectViewportSourceRect(unsigned width,
 static void ComputeViewportLayout(unsigned screen_width, unsigned screen_height,
 							 unsigned src_width, unsigned src_height,
 							 unsigned scale_percent,
+							 boolean overscan_enabled,
 							 unsigned *out_box_x,
 							 unsigned *out_box_y,
 							 unsigned *out_box_w,
@@ -904,12 +896,26 @@ static void ComputeViewportLayout(unsigned screen_width, unsigned screen_height,
 	if (screen_width > 0u && screen_height > 0u && src_width > 0u && src_height > 0u)
 	{
 		(void) scale_percent;
-		box_x = 0u;
-		box_y = 0u;
-		box_w = screen_width;
-		box_h = screen_height;
-		full_w = screen_width;
-		full_h = screen_height;
+		if (!overscan_enabled
+			&& screen_width >= kOverscanOffViewportWidth
+			&& screen_height >= kOverscanOffViewportHeight)
+		{
+			box_w = kOverscanOffViewportWidth;
+			box_h = kOverscanOffViewportHeight;
+			box_x = (screen_width - box_w) / 2u;
+			box_y = (screen_height - box_h) / 2u;
+			full_w = box_w;
+			full_h = box_h;
+		}
+		else
+		{
+			box_x = 0u;
+			box_y = 0u;
+			box_w = screen_width;
+			box_h = screen_height;
+			full_w = screen_width;
+			full_h = screen_height;
+		}
 		crop_x = 0u;
 		crop_y = 0u;
 	}
@@ -2049,6 +2055,7 @@ CComboKernel::CComboKernel(void)
 	m_BlitMapWovenHiRes(FALSE),
 	m_GameMasterCatalog{{0}},
 	m_OverscanPercent(300u),
+	m_OverscanEnabled(FALSE),
 	m_ScaleMaxFitEnabled(FALSE),
 	m_Language(ComboLanguagePT),
 	m_ProportionMode(kProportionMode4_3),
@@ -2596,6 +2603,10 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 			{
 				m_Language = combo_locale_clamp_language(value);
 			}
+			else if (SettingsKeyEquals(line, key_len, "overscan"))
+			{
+				m_OverscanEnabled = value ? TRUE : FALSE;
+			}
 			else if (SettingsKeyEquals(line, key_len, "scanline"))
 			{
 				m_ScanlineMode = value != 0u ? kScanlineModeLcd : kScanlineModeOff;
@@ -2715,6 +2726,7 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 	m_PauseMenu.SetScaleMaxFitEnabled(m_ScaleMaxFitEnabled);
 	m_PauseMenu.SetLanguage(m_Language);
 	m_PauseMenu.SetProportionMode(m_ProportionMode);
+	m_PauseMenu.SetOverscanEnabled(m_OverscanEnabled);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetGfx9000Enabled(m_Gfx9000Enabled);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
@@ -2746,14 +2758,7 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 		m_PauseMenu.SetScaleMaxFitEnabled(FALSE);
 	}
 #if MSXBARE_ENABLE_FMSX
-	{
-		const unsigned effective_scale = ComputeEffectiveViewportScalePercent(
-			m_OverscanPercent,
-			ComputeViewportUiMaxScalePercent(m_Screen.GetHeight()),
-			m_Screen.GetHeight(),
-			m_DebugOverlayMode);
-		backend_runtime_set_overscan(EffectiveOverscanEnabled(effective_scale));
-	}
+	backend_runtime_set_overscan(IsRuntimeOverscanEnabled());
 	backend_runtime_set_refresh_hz(m_RefreshRateHz);
 	backend_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 	backend_runtime_set_gfx9000_enabled(m_Gfx9000Enabled);
@@ -3137,6 +3142,7 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_PauseMenu.SetScalePercent(m_OverscanPercent);
 	m_PauseMenu.SetLanguage(m_Language);
 	m_PauseMenu.SetProportionMode(m_ProportionMode);
+	m_PauseMenu.SetOverscanEnabled(m_OverscanEnabled);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetGfx9000Enabled(m_Gfx9000Enabled);
 	m_RefreshRateHz = 60u;
@@ -3742,6 +3748,7 @@ TComboShutdownMode CComboKernel::Run(void)
 				ComputeViewportLayout(screen_width, screen_height,
 					active_src_w, active_src_h,
 					scale_percent,
+					m_OverscanEnabled,
 					&m_BackendBoxX, &m_BackendBoxY, &m_BackendBoxW, &m_BackendBoxH,
 					&full_snap_w, &full_snap_h,
 					&crop_x, &crop_y);
@@ -4778,6 +4785,7 @@ void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
 		ComputeViewportLayout(screen_width, screen_height,
 			src_width, src_height,
 			scale_percent,
+			m_OverscanEnabled,
 			&box_x, &box_y, &box_w, &box_h,
 			0, 0, 0, 0);
 	}
@@ -4875,6 +4883,7 @@ void CComboKernel::BlitBackendFrame(boolean force_redraw)
 		ComputeViewportLayout(screen_width, screen_height,
 			src_w, src_h,
 			scale_percent,
+			m_OverscanEnabled,
 			&offset_x, &offset_y, &dst_width, &dst_height,
 			&full_dst_width, &full_dst_height,
 			&crop_x, &crop_y);
@@ -5266,6 +5275,16 @@ void CComboKernel::RefreshSettingsUiAfterAction(void)
 	m_PauseMenu.RequestRedraw();
 }
 
+boolean CComboKernel::IsRuntimeOverscanEnabled(void) const
+{
+	const unsigned effective_scale = ComputeEffectiveViewportScalePercent(
+		m_OverscanPercent,
+		ComputeViewportUiMaxScalePercent(m_Screen.GetHeight()),
+		m_Screen.GetHeight(),
+		m_DebugOverlayMode);
+	return EffectiveOverscanEnabled(effective_scale);
+}
+
 void CComboKernel::ApplyRuntimeSettingsToBackend(void)
 {
 #if MSXBARE_ENABLE_FMSX
@@ -5277,14 +5296,7 @@ void CComboKernel::ApplyRuntimeSettingsToBackend(void)
 	{
 		return;
 	}
-	{
-		const unsigned effective_scale = ComputeEffectiveViewportScalePercent(
-			m_OverscanPercent,
-			ComputeViewportUiMaxScalePercent(m_Screen.GetHeight()),
-			m_Screen.GetHeight(),
-			m_DebugOverlayMode);
-		backend_runtime_set_overscan(EffectiveOverscanEnabled(effective_scale));
-	}
+	backend_runtime_set_overscan(IsRuntimeOverscanEnabled());
 	backend_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 	backend_runtime_set_gfx9000_enabled(m_Gfx9000Enabled);
 	backend_runtime_set_boot_mode(m_BootMode);
@@ -5548,12 +5560,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 				}
 				else if (SettingsKeyEquals(line, key_len, "overscan"))
 				{
-#if MSXBARE_ENABLE_DEBUG_OVERLAY
-					const unsigned legacy = value > 100u ? 100u : value;
-					m_OverscanPercent = ScaleModeFromLegacyOverscan(legacy);
-#else
-					(void) value;
-#endif
+					m_OverscanEnabled = value ? TRUE : FALSE;
 				}
 				else if (SettingsKeyEquals(line, key_len, "language"))
 				{
@@ -5687,6 +5694,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	m_PauseMenu.SetScaleMaxFitEnabled(m_ScaleMaxFitEnabled);
 	m_PauseMenu.SetLanguage(m_Language);
 	m_PauseMenu.SetProportionMode(m_ProportionMode);
+	m_PauseMenu.SetOverscanEnabled(m_OverscanEnabled);
 	m_PauseMenu.SetScanlineMode(m_ScanlineMode);
 	m_PauseMenu.SetGfx9000Enabled(m_Gfx9000Enabled);
 	m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
@@ -5718,14 +5726,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 		m_PauseMenu.SetScaleMaxFitEnabled(FALSE);
 	}
 #if MSXBARE_ENABLE_FMSX
-	{
-		const unsigned effective_scale = ComputeEffectiveViewportScalePercent(
-			m_OverscanPercent,
-			ComputeViewportUiMaxScalePercent(m_Screen.GetHeight()),
-			m_Screen.GetHeight(),
-			m_DebugOverlayMode);
-		backend_runtime_set_overscan(EffectiveOverscanEnabled(effective_scale));
-	}
+	backend_runtime_set_overscan(IsRuntimeOverscanEnabled());
 	backend_runtime_set_refresh_hz(m_RefreshRateHz);
 	backend_runtime_set_disk_rom_enabled(m_DiskRomEnabled);
 	backend_runtime_set_gfx9000_enabled(m_Gfx9000Enabled);
@@ -5777,6 +5778,7 @@ unsigned CComboKernel::BuildSettingsPayload(char *buffer, unsigned buffer_size)
 
 	APPEND_LINE_FMT("scale=%u\n", ScaleFactorFromPercent(m_OverscanPercent));
 	APPEND_LINE_FMT("language=%u\n", m_Language);
+	APPEND_LINE_FMT("overscan=%u\n", m_OverscanEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
 	APPEND_LINE_FMT("gfx9000=%u\n", (MSXBARE_FEAT_GFX9000 && m_Gfx9000Enabled) ? 1u : 0u);
 	if (IsMsx2FamilyProfile(m_MachineProfile))
@@ -5990,12 +5992,8 @@ boolean CComboKernel::ApplyProportionModeToScreen(const char *phase, boolean for
 
 	m_ProportionMode = kProportionMode4_3;
 
-	const unsigned target_w = (m_ProportionMode == kProportionMode4_3)
-		? kProportionWidth4_3
-		: kProportionWidth16_9;
-	const unsigned target_h = (m_ProportionMode == kProportionMode4_3)
-		? kProportionHeight4_3
-		: kProportionHeight16_9;
+	const unsigned target_w = m_OverscanEnabled ? kProportionWidth4_3 : kOverscanOffWidth;
+	const unsigned target_h = m_OverscanEnabled ? kProportionHeight4_3 : kOverscanOffHeight;
 
 	if (!force && m_Screen.GetWidth() == target_w && m_Screen.GetHeight() == target_h)
 	{
@@ -6034,9 +6032,9 @@ boolean CComboKernel::ApplyProportionModeToScreen(const char *phase, boolean for
 	}
 
 	CString line;
-	line.Format("Proportion applied %s: %s %ux%u",
+	line.Format("Display applied %s: overscan %s %ux%u",
 		phase != 0 ? phase : "runtime",
-		m_ProportionMode == kProportionMode4_3 ? "4:3" : "16:9",
+		m_OverscanEnabled ? "ON" : "OFF",
 		target_w,
 		target_h);
 	m_Logger.Write(FromKernel, LogNotice, line);
@@ -7025,14 +7023,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		m_ScaleMaxFitEnabled = FALSE;
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX
-		{
-			const unsigned effective_scale = ComputeEffectiveViewportScalePercent(
-				m_OverscanPercent,
-				ComputeViewportUiMaxScalePercent(m_Screen.GetHeight()),
-				m_Screen.GetHeight(),
-				m_DebugOverlayMode);
-			backend_runtime_set_overscan(EffectiveOverscanEnabled(effective_scale));
-		}
+		backend_runtime_set_overscan(IsRuntimeOverscanEnabled());
 		/* Scale changes can shrink/grow viewport; force deterministic full redraw + fresh snapshot. */
 		if (m_EmulationPaused && m_BackendReady)
 		{
@@ -7097,6 +7088,20 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 			line.Format("Settings: Language %s", combo_locale_language_code(m_Language));
 			m_Logger.Write(FromKernel, LogNotice, line);
 		}
+		break;
+
+	case ComboMenuActionToggleOverscan:
+		m_OverscanEnabled = m_OverscanEnabled ? FALSE : TRUE;
+		m_PauseMenu.SetOverscanEnabled(m_OverscanEnabled);
+		(void) ApplyProportionModeToScreen("menu", FALSE);
+	#if MSXBARE_ENABLE_FMSX
+		backend_runtime_set_overscan(IsRuntimeOverscanEnabled());
+	#endif
+		m_ForceViewportFullClearNextFrame = TRUE;
+		m_PauseNeedsBackgroundRedraw = TRUE;
+		m_PauseNeedsFullViewportClear = TRUE;
+		RefreshSettingsUiAfterAction();
+		m_Logger.Write(FromKernel, LogNotice, m_OverscanEnabled ? "Settings: Overscan ON" : "Settings: Overscan OFF");
 		break;
 
 	case ComboMenuActionCycleScanlines:
@@ -7650,12 +7655,7 @@ void CComboKernel::SetDebugOverlayMode(unsigned mode)
 #if MSXBARE_ENABLE_FMSX
 	if (m_BackendReady)
 	{
-		const unsigned effective_scale = ComputeEffectiveViewportScalePercent(
-			m_OverscanPercent,
-			ComputeViewportUiMaxScalePercent(m_Screen.GetHeight()),
-			m_Screen.GetHeight(),
-			m_DebugOverlayMode);
-		backend_runtime_set_overscan(EffectiveOverscanEnabled(effective_scale));
+		backend_runtime_set_overscan(IsRuntimeOverscanEnabled());
 	}
 #endif
 	if (m_ScreenReady && m_DebugOverlayUnlocked)

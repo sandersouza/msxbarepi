@@ -137,3 +137,27 @@ Essa trilha deve preservar o alvo baremetal no Raspberry Pi 3B, sem modificar di
 - O toggle `Debug -> Standard` em `DEBUG=1` passa a alterar efetivamente o MSX1 em runtime, forçando `MSX_PAL/MSX_NTSC`, `VDP R#9` e `VPeriod`.
 - `MSX2/MSX2+` nao tiveram a semantica alterada: seguem usando `R#9 bit1` e podem manter `refresh=` persistido.
 - `config.txt` nao foi alterado.
+
+## Atualizacao 2026-04-30 - Settings Overscan
+
+- `Settings -> Overscan [ON/OFF]` foi adicionado acima de `Scanline`.
+- `OFF` e o default quando nao houver configuracao em `msx.cfg`: framebuffer `672x504`, com imagem do emulador centralizada em `640x480`, mantendo a area util e a area fonte do backend sem compensacao no eixo X/Y.
+- `ON` usa framebuffer `640x480` e imagem preenchendo toda a area.
+
+## Atualizacao 2026-05-01 - Overscan ON em 4:3
+
+- Pelas capturas `ovoff.png`/`ovon.png`, o modo `OFF` estava em proporcao correta (`1372x1030`, aspecto `1.332`), enquanto o modo `ON` estava estreito no eixo X (`1351x1080`, aspecto `1.251`).
+- O framebuffer de `Overscan ON` foi ajustado de `720x576` para `768x576`.
+- O modo `Overscan OFF` nao foi alterado: segue com framebuffer `672x504` e viewport do emulador `640x480`.
+- `overscan=0|1` passa a ser persistido em `msx.cfg`/RAW e nos templates dos scripts de SD/package.
+- `config.txt` nao foi alterado.
+- Validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=1 BUILD_BID=202605010045-overscan-on-768x576`.
+- Build DEBUG=1 final para teste: `BUILD_BID: 202605010045-overscan-on-768x576`, `TXTDBG BUILD:CD17`, `BUILD_HASH:f66027e`, artefato `artifacts/kernel8-default.img`.
+
+## Atualizacao 2026-05-01 - Regra final Overscan
+
+- Regra aplicada: `Overscan ON` usa framebuffer `640x480`, com emulador preenchendo o framebuffer.
+- `Overscan OFF` usa framebuffer `672x504` e mantem o emulador em `640x480`; X/Y ficam em 4:3 para preservar a proporcao do quadro azul do modo `640x480`.
+- `config.txt` nao foi alterado.
+- Validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=1 BUILD_BID=202605010105-overscan-final-640-672`.
+- Build DEBUG=1 final para teste: `BUILD_BID: 202605010105-overscan-final-640-672`, `TXTDBG BUILD:C9A0`, `BUILD_HASH:f66027e`, artefato `artifacts/kernel8-default.img`.

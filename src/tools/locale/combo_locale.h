@@ -48,6 +48,7 @@ typedef struct {
     const char *settings_language;
     const char *settings_proportion;
     const char *settings_scale;
+    const char *settings_overscan;
     const char *settings_scanlines;
     const char *settings_gfx9000;
     const char *settings_refresh;

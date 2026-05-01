@@ -87,6 +87,7 @@ private:
     void PushKeyboardStateToRuntime(boolean rensha_fire_on);
     void SetDebugOverlayMode(unsigned mode);
     void SetUartTelemetryEnabled(boolean enabled);
+    boolean IsRuntimeOverscanEnabled(void) const;
     void UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux);
     void UpdateLoadDiagTelemetry(unsigned stage);
     boolean ApplyProportionModeToScreen(const char *phase, boolean force);
@@ -251,6 +252,7 @@ private:
     BackendCheatCatalog m_GameMasterCatalog;
     CComboPauseMenu m_PauseMenu;
     unsigned m_OverscanPercent;
+    boolean m_OverscanEnabled;
     boolean m_ScaleMaxFitEnabled;
     unsigned m_Language;
     unsigned m_ProportionMode;

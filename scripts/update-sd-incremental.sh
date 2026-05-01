@@ -299,6 +299,7 @@ ensure_settings_cfg() {
 scale=3
 language=0
 widescreen=0
+overscan=0
 scanline=0
 gfx9000=0
 disk_rom=1

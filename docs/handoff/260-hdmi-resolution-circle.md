@@ -160,3 +160,28 @@ Melhorar a deteccao de resolucao HDMI, os ajustes de escala e a possibilidade de
 - Em `DEBUG=1`, o toggle continua volatil e agora força diretamente `MSX_PAL/MSX_NTSC`, `VDP R#9` e `VPeriod` no core MSX1.
 - `MSX2/MSX2+` preservam o comportamento existente, incluindo forcing via `R#9 bit1`.
 - `SD:/config.txt` nao foi alterado.
+
+## Atualizacao 2026-04-30 - Settings Overscan
+
+- `Settings` ganhou `Overscan [ON/OFF]` acima de `Scanline`.
+- Default sem `msx.cfg` ou sem chave `overscan=`: `OFF`.
+- `OFF`: framebuffer Circle `672x504`; presenter centraliza o emulador em `640x480`, mantendo a area util e a area fonte do backend sem compensacao no eixo X/Y.
+- `ON`: usa framebuffer `640x480` e presenter ocupando toda a area.
+
+## Atualizacao 2026-05-01 - Overscan ON em 4:3
+
+- Comparacao visual `ovoff.png`/`ovon.png`: `Overscan OFF` media aproximadamente `1372x1030` no quadro azul (`1.332`), enquanto `Overscan ON` media `1351x1080` (`1.251`) por causa do framebuffer `720x576`.
+- O framebuffer do modo `Overscan ON` foi alterado para `768x576`, mantendo os `576` pixels de altura e expandindo o eixo X para 4:3.
+- O caminho `Overscan OFF` permanece `672x504` com viewport `640x480`; nenhuma alteracao em `config.txt`.
+- `overscan=0|1` passa a ser salvo em `msx.cfg`/RAW e entra nos templates de SD/package.
+- `SD:/config.txt` nao foi alterado.
+- Validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=1 BUILD_BID=202605010045-overscan-on-768x576`.
+- Build DEBUG=1 final para teste: `BUILD_BID: 202605010045-overscan-on-768x576`, `TXTDBG BUILD:CD17`, `BUILD_HASH:f66027e`, artefato `artifacts/kernel8-default.img`.
+
+## Atualizacao 2026-05-01 - Regra final Overscan
+
+- Regra aplicada: `Overscan ON` volta a usar framebuffer `640x480`, com emulador ocupando toda a area.
+- `Overscan OFF` mantem framebuffer `672x504` e emulador centralizado em `640x480`; os eixos X/Y do framebuffer externo ficam em 4:3 para preservar a proporcao do quadro azul do emulador.
+- `SD:/config.txt` nao foi alterado.
+- Validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=1 BUILD_BID=202605010105-overscan-final-640-672`.
+- Build DEBUG=1 final para teste: `BUILD_BID: 202605010105-overscan-final-640-672`, `TXTDBG BUILD:C9A0`, `BUILD_HASH:f66027e`, artefato `artifacts/kernel8-default.img`.

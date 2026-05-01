@@ -39,6 +39,7 @@ extern const TComboLocaleStrings g_ComboLocaleES = {
     "Idioma",
     "Proporcion",
     "Escala",
+    "Overscan",
     "Scanline",
     "GFX9000",
     "Estandar",

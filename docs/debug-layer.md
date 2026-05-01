@@ -70,15 +70,18 @@ Objetivo: painel legivel no framebuffer HDMI com MMU/cache ativo, sem depender d
 - Overlay compacto no canto superior esquerdo.
 - O painel pode usar a largura horizontal inteira da linha quando isso ajudar a ficar contido até a `linha 15`.
 - Emulador segue rodando ao fundo.
-- O framebuffer runtime fica fixo em `5:4` via Circle: `720x576`. `Settings` nao expoe mais `Proportion`.
+- `Settings -> Overscan` controla o framebuffer runtime:
+  - `OFF` e o default quando `msx.cfg` nao traz `overscan=`: Circle usa `672x504` e o presenter centraliza o emulador em `640x480`; o backend fMSX preserva a mesma area fonte usada no modo `640x480`;
+  - `ON`: Circle usa `640x480` e o presenter preenche toda a area.
+- `Settings` nao expoe mais `Proportion`.
 - O item `Scale` vive em `Debug`, antes de `Debugger`, apenas em builds `DEBUG=1`.
 - `Scanlines` agora e binario no runtime e no `.cfg`: `OFF/ON`.
 - O estado `ON` usa apenas a logica LCD atual; o antigo modo `CRT` foi removido.
 - `Scale [1x]`: usa a mailbox nativa do emulador.
 - `Scale [2x]`: usa metade do intervalo entre `1x` e o fullscreen, em passos de `1/16x`.
-- O presenter escala a area ativa selecionada do emulador para preencher `720x576`, independente da resolucao de origem.
-- Em modos comuns de `192` linhas, a base vertical fica em `3.00x`.
-- Em frames V9990/GFX9000, o presenter nao aplica o crop classico `256x192`; por exemplo, B4 `768x480` e redimensionado para `720x576`.
+- Com `Overscan OFF`, o presenter mantem a imagem do emulador em `640x480` dentro do framebuffer `672x504`; os 5% extras existem apenas no framebuffer externo.
+- Com `Overscan ON`, o presenter escala a area ativa selecionada do emulador para preencher `640x480`; em modos comuns de `192` linhas, a base vertical fica em `2.50x`.
+- Em frames V9990/GFX9000, o presenter nao aplica o crop classico `256x192`; por exemplo, B4 `768x480` e redimensionado para a area ativa do modo `Overscan`.
 - `Standard` e `HIRES` usam a mesma mailbox base do emulador e o mesmo modo de `Scale`.
 - `Widescreen`: removido do runtime e do menu; o viewport agora segue sempre a mailbox fixa do emulador.
 
@@ -125,7 +128,8 @@ Diretriz visual (overlay e menu):
 
 ## Menu relacionado
 - `Debug -> Debugger`: sempre aparece em builds `DEBUG=1` e opera diretamente como `MAX/MIN/OFF`.
-- `Settings` nao expoe mais `Proportion`; o runtime ignora `proportion=`/`resolution=` antigos e mantem o framebuffer fixo em `720x576`.
+- `Settings` nao expoe mais `Proportion`; o runtime ignora `proportion=`/`resolution=` antigos.
+- `Settings -> Overscan [ON/OFF]` aparece acima de `Scanline`, grava `overscan=0|1` em `msx.cfg`/RAW e nao altera `config.txt`.
 - `Debug -> Scale`: aparece apenas em builds `DEBUG=1` e afeta o viewport independentemente do modo do debugger.
 - `Settings` nao expoe mais `Save to Disk`: ao sair de `Settings`/`Debug` com `ESC`, ou fechar o menu com `F12` enquanto uma dessas views esta aberta, as alteracoes sao enfileiradas para persistencia em `msx.cfg`/RAW.
 - `Settings` nao desenha mais o header `SETTINGS`; os itens usam margem superior e inferior simetricas para reduzir a altura do menu sem alterar a fonte.

@@ -468,6 +468,7 @@ ensure_settings_cfg() {
   cat > "$SETTINGS_CFG" <<'EOF'
 scale=3
 language=1
+overscan=0
 scanline=0
 gfx9000=0
 disk_rom=1
