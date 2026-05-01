@@ -45,7 +45,7 @@ applyTo:
 
 - Inicializar screen/audio antes do backend.
 - Usar BootConfig raw cedo para evitar FatFs no caminho quente.
-- Montar FatFs antes do backend quando nao houver raw valido ou quando raw apontar ROM/DISK inicial em `SD:/`.
+- Montar FatFs antes do backend quando nao houver raw valido; midias de usuario (ROM/DISK/CAS) nao sao persistidas em settings nem usadas para autoload no boot.
 - Adiar tarefas nao criticas para o loop principal depois da primeira tentativa de USB Host.
 
 ## Configuracao runtime

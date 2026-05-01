@@ -1,6 +1,15 @@
 # Handoff Persistente da Branch main
 
-Ultima atualizacao: 19/04/2026 (handoff da #251 para pausa)
+Ultima atualizacao: 30/04/2026 (midias fora do settings)
+
+## Atualizacao 30/04/2026 - midias nao persistidas
+
+- `msx.cfg`/snapshot RAW nao gravam nem leem mais caminhos de ROM, DISK ou cassete.
+- O boot nao monta `FatFs` por causa de midia de startup salva; com raw valido, o mount volta a ficar deferido.
+- O fMSX nao inicia mais tentando abrir automaticamente `CARTA.ROM`, `CARTB.ROM`, `DRIVEA.DSK`, `DRIVEB.DSK` ou `DEFAULT.CAS`.
+- O carregamento manual pelo menu F12 permanece como fluxo explicito para ROM, DISK e cassete.
+
+Ultima atualizacao anterior: 19/04/2026 (handoff da #251 para pausa)
 
 ## Objetivo da branch
 

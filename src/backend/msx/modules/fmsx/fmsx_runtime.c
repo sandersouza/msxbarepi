@@ -317,6 +317,7 @@ extern uint8_t ScrMode;
 extern uint8_t VDP[64];
 extern uint8_t VDPStatus[16];
 extern void VDPOut(uint8_t R,uint8_t V);
+extern void fmsx_force_video_standard(unsigned pal);
 extern AY8910 PSG;
 extern YM2413 OPLL;
 extern uint8_t fmsx_vdp_get_status1_live(void);
@@ -393,7 +394,7 @@ static volatile unsigned g_load_diag_stage = 0u;
 static const unsigned kFmsxAudioRate = 48000u;
 static unsigned g_boot_warmup_frames_remaining = 0u;
 static boolean g_boot_forced_turbo = FALSE;
-static unsigned g_boot_video_gate_frames_remaining = 0u;
+static unsigned g_boot_frameskip_frames_remaining = 0u;
 static boolean g_disk_rom_enabled = TRUE;
 static boolean g_gfx9000_enabled = FALSE;
 static unsigned g_boot_mode = 0u;
@@ -1360,7 +1361,7 @@ static unsigned fmsx_runtime_boot_warmup_frames(void)
     return 0u; /* NORM */
 }
 
-static unsigned fmsx_runtime_boot_video_gate_frames(boolean game_mode)
+static unsigned fmsx_runtime_boot_frameskip_frames(boolean game_mode)
 {
     if (!game_mode)
     {
@@ -1373,7 +1374,7 @@ static unsigned fmsx_runtime_boot_video_gate_frames(boolean game_mode)
     case FMSX_MODEL_PROFILE_MSX2P:
         return MSXBARE_FMSX_GAME_VIDEO_SKIP_FRAMES_MSX2P;
     case FMSX_MODEL_PROFILE_MSX1:
-        /* In GAME on MSX1, hide all boot rendering until FAST cutoff frame. */
+        /* In GAME on MSX1, fast-forward the emulator until FAST cutoff frame. */
         return fmsx_runtime_fast_cutoff_frames();
     default:
         return 0u;
@@ -1507,7 +1508,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     fmsx_runtime_game_master_clear_tables();
     fmsx_runtime_reset_frame_perf_stats_window();
     fmsx_runtime_invalidate_video_cache();
-    g_boot_video_gate_frames_remaining = 0u;
+    g_boot_frameskip_frames_remaining = 0u;
     g_active_boot_mode = g_boot_mode;
     g_fmsx_fmpac_enabled = g_fm_music_enabled ? 1 : 0;
     fmsx_local_ym2413_set_layer_gain_pct(g_fm_layer_gain_pct);
@@ -1674,7 +1675,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
 
     UPeriod = 100;
     g_boot_warmup_frames_remaining = fmsx_runtime_boot_warmup_frames();
-    g_boot_video_gate_frames_remaining = fmsx_runtime_boot_video_gate_frames(game_mode);
+    g_boot_frameskip_frames_remaining = fmsx_runtime_boot_frameskip_frames(game_mode);
     g_boot_forced_turbo = (g_boot_warmup_frames_remaining > 0u);
     if (g_boot_forced_turbo)
     {
@@ -1756,7 +1757,7 @@ boolean fmsx_runtime_menu_reset(void)
 
     g_boot_warmup_frames_remaining = 0u;
     g_boot_forced_turbo = FALSE;
-    g_boot_video_gate_frames_remaining = 0u;
+    g_boot_frameskip_frames_remaining = 0u;
     fmsx_runtime_keyboard_reset_pipeline();
     fmsx_runtime_reset_vdp_diag_counters();
     fmsx_runtime_apply_turbo_percent(fmsx_runtime_effective_turbo_percent());
@@ -1841,7 +1842,11 @@ boolean fmsx_runtime_step_frame(void)
     }
 
     unsigned steps = 1u;
-    if (g_boot_warmup_frames_remaining > 0u)
+    if (g_boot_frameskip_frames_remaining > 0u)
+    {
+        steps = g_boot_frameskip_frames_remaining;
+    }
+    else if (g_boot_warmup_frames_remaining > 0u)
     {
         steps = fmsx_runtime_boot_burst_steps();
         if (steps == 0u)
@@ -1874,7 +1879,7 @@ boolean fmsx_runtime_step_frame(void)
     {
         const unsigned seq_before = fmsx_video_get_latest(0, 0, 0);
         const boolean audio_enabled_this_frame = fmsx_runtime_audio_render_enabled();
-        unsigned audio_frame_debt = 1u;
+        unsigned audio_frame_rendered = 0u;
         unsigned slices = 0u;
         boolean frame_done = FALSE;
         const uint64_t z80_start_us = perf_enabled ? msxbare_monotonic_time_us() : 0u;
@@ -1952,61 +1957,25 @@ boolean fmsx_runtime_step_frame(void)
 
         if (audio_enabled_this_frame)
         {
+            const uint64_t audio_start_us = perf_enabled ? msxbare_monotonic_time_us() : 0u;
             if (g_gfx9000_enabled && fmsx_runtime_trace_gfx9000_step_enabled())
             {
                 fmsx_runtime_trace_gfx9000_step(FmsxRuntimeGfx9000TraceAudioAccCall);
             }
-            audio_frame_debt = fmsx_audio_end_frame_render_accounting();
+            fmsx_audio_render_to_cpu_now();
+            audio_frame_rendered = fmsx_audio_end_frame_render_accounting();
             if (g_gfx9000_enabled && fmsx_runtime_trace_gfx9000_step_enabled())
             {
-                fmsx_runtime_trace_gfx9000_step(audio_frame_debt == 0u
+                fmsx_runtime_trace_gfx9000_step(audio_frame_rendered == 0u
                     ? FmsxRuntimeGfx9000TraceAudioAccRet0
                     : FmsxRuntimeGfx9000TraceAudioAccRetNz);
             }
-        }
-
-        if (audio_enabled_this_frame && (audio_frame_debt == 0u))
-        {
-            const uint64_t cpu_hz = (uint64_t) fmsx_runtime_get_base_cpu_clock_hz();
-            const uint64_t frame_cycles = (uint64_t) (unsigned) ((PALVideo ? VPERIOD_PAL : VPERIOD_NTSC) / 6);
-            unsigned samples_per_frame;
-
-            if (cpu_hz != 0u && frame_cycles != 0u)
-            {
-                samples_per_frame = (unsigned) (((frame_cycles * (uint64_t) kFmsxAudioRate) + (cpu_hz / 2ull)) / cpu_hz);
-            }
-            else
-            {
-                samples_per_frame = kFmsxAudioRate / fmsx_runtime_effective_refresh_hz();
-            }
             if (perf_enabled)
             {
-                const uint64_t audio_start_us = msxbare_monotonic_time_us();
-                if (g_gfx9000_enabled && fmsx_runtime_trace_gfx9000_step_enabled())
-                {
-                    fmsx_runtime_trace_gfx9000_step(FmsxRuntimeGfx9000TraceAudioPlayCall);
-                }
-                RenderAndPlayAudio(samples_per_frame);
-                if (g_gfx9000_enabled && fmsx_runtime_trace_gfx9000_step_enabled())
-                {
-                    fmsx_runtime_trace_gfx9000_step(FmsxRuntimeGfx9000TraceAudioPlayEnd);
-                }
                 call_audio_us += msxbare_monotonic_time_us() - audio_start_us;
-                call_audio_samples = call_audio_samples > (9999u - samples_per_frame)
+                call_audio_samples = call_audio_samples > (9999u - audio_frame_rendered)
                     ? 9999u
-                    : (call_audio_samples + samples_per_frame);
-            }
-            else
-            {
-                if (g_gfx9000_enabled && fmsx_runtime_trace_gfx9000_step_enabled())
-                {
-                    fmsx_runtime_trace_gfx9000_step(FmsxRuntimeGfx9000TraceAudioPlayCall);
-                }
-                RenderAndPlayAudio(samples_per_frame);
-                if (g_gfx9000_enabled && fmsx_runtime_trace_gfx9000_step_enabled())
-                {
-                    fmsx_runtime_trace_gfx9000_step(FmsxRuntimeGfx9000TraceAudioPlayEnd);
-                }
+                    : (call_audio_samples + audio_frame_rendered);
             }
         }
 
@@ -2019,9 +1988,9 @@ boolean fmsx_runtime_step_frame(void)
                 fmsx_runtime_apply_turbo_percent(fmsx_runtime_effective_turbo_percent());
             }
         }
-        if (g_boot_video_gate_frames_remaining > 0u)
+        if (g_boot_frameskip_frames_remaining > 0u)
         {
-            g_boot_video_gate_frames_remaining--;
+            g_boot_frameskip_frames_remaining--;
         }
 
         if (g_gfx9000_enabled && fmsx_runtime_trace_gfx9000_step_enabled())
@@ -2078,7 +2047,7 @@ void fmsx_runtime_shutdown(void)
     }
 
     g_fmsx_status.running = FALSE;
-    g_boot_video_gate_frames_remaining = 0u;
+    g_boot_frameskip_frames_remaining = 0u;
     fmsx_runtime_keyboard_reset_pipeline();
 }
 
@@ -2143,7 +2112,7 @@ boolean fmsx_runtime_load_state(const void *src, unsigned size)
 
     g_boot_warmup_frames_remaining = 0u;
     g_boot_forced_turbo = FALSE;
-    g_boot_video_gate_frames_remaining = 0u;
+    g_boot_frameskip_frames_remaining = 0u;
     fmsx_runtime_keyboard_reset_pipeline();
     fmsx_runtime_reset_vdp_diag_counters();
     fmsx_runtime_reset_frame_perf_stats_window();
@@ -2183,6 +2152,7 @@ void fmsx_runtime_debug_force_refresh_hz(unsigned hz)
 
     if (MODEL(MSX_MSX1))
     {
+        fmsx_force_video_standard(clamped == 50u ? 1u : 0u);
         fmsx_audio_reanchor_stream_timing();
         return;
     }
@@ -3457,24 +3427,6 @@ unsigned fmsx_runtime_get_video_frame(const u16 **pixels, unsigned *width, unsig
     TFmsxVideoPresentation presentation;
     unsigned sequence = 0u;
 
-    if (g_boot_video_gate_frames_remaining > 0u)
-    {
-        fmsx_runtime_invalidate_video_cache();
-        if (pixels != 0)
-        {
-            *pixels = 0;
-        }
-        if (width != 0)
-        {
-            *width = 0u;
-        }
-        if (height != 0)
-        {
-            *height = 0u;
-        }
-        return 0u;
-    }
-
     if (g_gfx9000_enabled)
     {
         memset(&v9990_frame, 0, sizeof(v9990_frame));
@@ -3530,12 +3482,6 @@ void fmsx_runtime_get_video_presentation(TFmsxVideoPresentation *presentation)
     }
 
     memset(presentation, 0, sizeof(*presentation));
-    if (g_boot_video_gate_frames_remaining > 0u)
-    {
-        fmsx_runtime_invalidate_video_cache();
-        return;
-    }
-
     if (g_cached_video_valid
         && (g_cached_video_pixels != 0
             || g_cached_video_width != 0u

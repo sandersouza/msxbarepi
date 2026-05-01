@@ -417,6 +417,10 @@ boolean CComboScreenDevice::PresentIfDirty(boolean dcache_enabled, boolean wait_
 
 	const unsigned page_height = m_pFrameBuffer->GetHeight();
 	const boolean offset_ok = m_pFrameBuffer->SetVirtualOffset(0u, m_nBackPage * page_height);
+	if (wait_vsync)
+	{
+		(void) m_pFrameBuffer->WaitForVerticalSync();
+	}
 
 	m_nFrontPage = m_nBackPage;
 	m_nBackPage ^= 1u;

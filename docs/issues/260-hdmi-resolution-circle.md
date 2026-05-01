@@ -70,3 +70,70 @@ Essa trilha deve preservar o alvo baremetal no Raspberry Pi 3B, sem modificar di
 - O fullscreen do viewport agora escolhe o maior fator que cabe em largura e altura em passos de `1/16x`, preservando proporcao e mantendo o presenter em escala cacheavel.
 - Validacao local passou em `DEBUG=1`, `DEBUG=0` e `make -n sdcard`.
 - Build final para teste: `BUILD_BID: 202604291401-c386661`, `TXTDBG BUILD:3260`, `BUILD_HASH:c386661`.
+
+## Atualizacao 2026-04-30
+
+- `Settings -> Proportion` foi removido.
+- O runtime mantem sempre `4:3` via Circle (`640x480`).
+- `msx.cfg`/RAW nao gravam mais `proportion=`.
+- Chaves antigas `proportion=`/`resolution=` sao ignoradas e normalizadas para `4:3`.
+- `config.txt` nao e alterado por essa mudanca.
+- Teste anterior: framebuffer Circle `768x576`, area ativa MSX `256x192` com scale fullscreen `3.00x`.
+- Build final para teste: `BUILD_BID: 202604301855-f66027e`, `TXTDBG BUILD:E04E`, `BUILD_HASH:f66027e`.
+
+## Atualizacao 2026-04-30 - framebuffer fixo 640x480
+
+- O framebuffer Circle volta a ficar fixo em `640x480`.
+- O presenter escala a area ativa selecionada do emulador para preencher `640x480`.
+- V9990/GFX9000 nao usa crop classico `256x192`; B4 `768x480` e reduzido horizontalmente para `640x480`.
+- `config.txt` nao e alterado.
+- Build final para teste: `BUILD_BID: 202604301940-f66027e`, `TXTDBG BUILD:0D37`, `BUILD_HASH:f66027e`.
+
+## Atualizacao 2026-04-30 - framebuffer fixo 720x576
+
+- O framebuffer Circle passa a ficar fixo em `720x576`.
+- O presenter escala a area ativa selecionada do emulador para preencher `720x576`.
+- Modos comuns de `192` linhas usam base vertical `3.00x`.
+- V9990/GFX9000 continua sem crop classico `256x192`; B4 e redimensionado para `720x576`.
+- `config.txt` nao e alterado.
+- Build final para teste: `BUILD_BID: 202604301950-f66027e`, `TXTDBG BUILD:CFEC`, `BUILD_HASH:f66027e`.
+
+## Atualizacao 2026-04-30 - audio Rally-X
+
+- O teste de pacing foi revertido em hardware por causar musica picotada em `RALLYX.ROM`.
+- O runtime de audio agora completa o saldo de amostras do frame quando ja houve renderizacao parcial por escrita no PSG.
+- Isso evita underproduction do ring buffer em jogos que atualizam PSG durante o frame.
+- Validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=1`.
+- Build DEBUG=1: `BUILD_BID: 202604302034-f66027e`, `TXTDBG BUILD:8D39`, `BUILD_HASH:f66027e`, artefato `artifacts/kernel8-default.img`.
+
+## Atualizacao 2026-04-30 - audio sem zero-fill
+
+- A gravacao da build `8D39` ainda apresentou picotes.
+- `RefillAudioQueue()` passou a limitar o pull ao `ring_level` do backend e a escrever na HDMI somente as amostras recebidas do fMSX.
+- O kernel nao completa mais com zeros os lotes em que o backend entrega menos amostras que o pedido.
+- Validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=1`.
+- Build DEBUG=1: `BUILD_BID: 202604302120-f66027e`, `TXTDBG BUILD:7276`, `BUILD_HASH:f66027e`, artefato `artifacts/kernel8-default.img`.
+
+## Atualizacao 2026-04-30 - audio por relogio de ciclos
+
+- A build `7276` ainda apresentou quebra leve em intervalos fixos de frames no `RALLYX.ROM`.
+- O teste de zero-fill no kernel foi revertido.
+- O fechamento de audio no fim do frame agora usa `fmsx_audio_render_to_cpu_now()`, mantendo o mesmo carimbo/carry de ciclos das escritas PSG.
+- Validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=1`.
+- Build DEBUG=1: `BUILD_BID: 202604302136-f66027e`, `TXTDBG BUILD:688E`, `BUILD_HASH:f66027e`, artefato `artifacts/kernel8-default.img`.
+
+## Atualizacao 2026-04-30 - V-SYNC pos flip
+
+- Sintoma: tearing visual similar a V-SYNC desligado.
+- `CComboScreenDevice::PresentIfDirty()` agora espera V-SYNC antes e depois de `SetVirtualOffset()`.
+- A segunda espera acontece antes de reutilizar a pagina antiga como backbuffer, reduzindo risco de escrita em pagina ainda visivel.
+- Validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=1`.
+- Build DEBUG=1: `BUILD_BID: 202604302143-f66027e`, `TXTDBG BUILD:975E`, `BUILD_HASH:f66027e`, artefato `artifacts/kernel8-default.img`.
+
+## Atualizacao 2026-04-30 - MSX1 sempre NTSC no boot
+
+- O perfil `MSX1` agora ignora persistencia de `refresh=` ao normalizar settings, voltando sempre para `NTSC` no boot.
+- Ao salvar `msx.cfg` com `machine=0`, o payload nao grava mais `refresh=`.
+- O toggle `Debug -> Standard` em `DEBUG=1` passa a alterar efetivamente o MSX1 em runtime, forçando `MSX_PAL/MSX_NTSC`, `VDP R#9` e `VPeriod`.
+- `MSX2/MSX2+` nao tiveram a semantica alterada: seguem usando `R#9 bit1` e podem manter `refresh=` persistido.
+- `config.txt` nao foi alterado.

@@ -67,7 +67,8 @@ Remover os atalhos diretos `F6`, `F7`, `F8`, `F9`, `F10`, `+` e `-`, mantendo ap
 - Hotfix pos-corte: `Kanji ROM [ON/OFF]` agora considera a feature disponivel quando ha `KANJIBASIC/MSX-JE` no perfil `MSX2+`, mesmo sem a fonte `KANJI.ROM`; assim o pacote enxuto permite religar/desligar o mapeamento japones.
 - O primeiro blit visivel passou a acontecer antes da inicializacao USB, reduzindo o tempo ate imagem util quando USB demora.
 - O auto-enable de GFX9000 no boot roda antes de `ApplyRuntimeSettingsToBackend()` e sem resetar o backend antes do primeiro frame.
-- `Boot Mode [GAME]` em perfil `MSX 2+` foi ajustado para fast-forward e gate de video ate o frame `240`.
+- `Boot Mode [GAME]` passou a consumir o skip inicial como frameskip real no emulador; `get_video_frame()`/presenter nao ficam mais bloqueados ate o frame de corte.
+- Build de reteste: `BUILD_BID: 202604302007-f66027e`, `TXTDBG BUILD:3F50`, `BUILD_HASH:f66027e`.
 - `make sdcard` usa o artefato existente, sem recompilar, seleciona automaticamente `artifacts/kernel8-issue<N>.img` em branch de issue e passa o kernel escolhido para o script de preparo.
 - `make package` agora usa o mesmo fluxo de `make sdcard` via `prepare-sd.sh` em `OFFLINE_DRY_PACKAGE=1`, criando o ZIP sem tocar em disco fisico.
 - O preparo de SD aborta quando `kernel8.img` obrigatorio nao existe, em vez de emitir apenas warning.

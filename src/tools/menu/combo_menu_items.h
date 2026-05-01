@@ -81,7 +81,6 @@ const TComboMenuItem *combo_menu_load_disk_items_get(unsigned language,
                                                       const char *drive2_name,
                                                       unsigned *count);
 const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
-                                                     unsigned proportion_mode,
                                                      unsigned scanline_mode,
                                                      boolean gfx9000_enabled,
                                                      unsigned refresh_rate_hz,

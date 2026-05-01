@@ -296,13 +296,11 @@ ensure_settings_cfg() {
 
   mkdir -p "$(dirname "$SETTINGS_CFG")"
   cat > "$SETTINGS_CFG" <<'EOF'
-proportion=16:9
 scale=3
 language=0
 widescreen=0
 scanline=0
 gfx9000=0
-refresh=60
 disk_rom=1
 boot_mode=0
 machine=0
@@ -312,10 +310,6 @@ scc_cart=0
 fm_music=0
 debugger=0
 audio_gain=100
-cart_a_path=EMPTY
-cart_b_path=EMPTY
-disk_a_path=EMPTY
-disk_b_path=EMPTY
 #END
 EOF
 }

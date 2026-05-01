@@ -98,7 +98,7 @@ Ponto de entrada rapido para contexto operacional do projeto.
   - o build gera `build/initramfs/msx-embedded.cpio` e embute no `kernel8.img`; `MSXBARE_EMBED_INITRAMFS=0` preserva o fallback externo `msx.cpio`
   - `sdcard/config.txt` nao usa mais `initramfs msx.cpio followkernel` no default
   - settings de boot passam a ter snapshot raw espelhado antes da particao FAT do SD, carregado antes de `FatFs`
-  - `FatFs` fica deferido quando o raw BootConfig e valido e nao ha midia de startup em `SD:/`; se o raw tiver ROM/DISK salva em `SD:/`, o FAT monta antes do backend para o primeiro `StartMSX()` ja carregar a midia
+  - `FatFs` fica deferido quando o raw BootConfig e valido; ROM/DISK/CAS de usuario nao sao mais persistidos em `msx.cfg`/RAW nem usados para autoload no boot
   - `DEBUG=1` emite UART `BOOT_TIME start_to_backend_start_ms`, `start_to_backend_ready_ms`, `start_to_first_blit_ms`, `start_to_usb_ready_ms`/`usb_retry_scheduled_tick`, `start_to_bt14_ms`, `initramfs_source`, `initramfs_bytes`, `raw_cfg_ms` e `fat_deferred_ms`
   - causa do nao boot com initramfs embutido: o `.img` estava abaixo de `KERNEL_MAX_SIZE=0x400000`, mas o footprint real do ELF nao; `_end=0x004BCA75` ultrapassava `MEM_KERNEL_END=0x00480000`, fazendo o Circle parar em `sysinit()` antes da UART
   - `CIRCLE_KERNEL_MAX_SIZE` foi elevado para `0x500000`, e o build agora valida tambem `_end` contra `MEM_KERNEL_END`, nao apenas o tamanho do `.img`

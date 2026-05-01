@@ -376,7 +376,6 @@ const TComboMenuItem *combo_menu_load_disk_items_get(unsigned language,
 }
 
 const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
-                                                     unsigned proportion_mode,
                                                      unsigned scanline_mode,
                                                      boolean gfx9000_enabled,
                                                      unsigned refresh_rate_hz,
@@ -400,7 +399,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
 {
     static TComboMenuItem settings_items[36];
     static char language_label[32];
-    static char proportion_label[32];
     static char scanline_label[32];
     static char gfx9000_label[32];
     static char boot_label[32];
@@ -423,7 +421,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     }
 
     language = combo_locale_clamp_language(language);
-    if (proportion_mode > 1u) proportion_mode = 0u;
     if (scanline_mode > 1u) scanline_mode = 1u;
     machine_profile = backend_machine_profile_clamp(machine_profile);
     if (rammapper_kb != 256u && rammapper_kb != 512u && rammapper_kb != 1024u) rammapper_kb = 256u;
@@ -437,9 +434,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     (void) overlay_available;
 
     BuildLabelFlag(language_label, sizeof(language_label), locale->settings_language, combo_locale_language_code(language));
-    BuildLabelFlag(proportion_label, sizeof(proportion_label), locale->settings_proportion,
-                   proportion_mode == 0u ? locale->proportion_16_9
-                   : locale->proportion_4_3);
     BuildLabelFlag(scanline_label, sizeof(scanline_label), locale->settings_scanlines,
                    scanline_mode == 0u ? locale->flag_off : locale->flag_on);
     BuildLabelFlag(gfx9000_label, sizeof(gfx9000_label), locale->settings_gfx9000,
@@ -503,7 +497,6 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     const boolean show_boot_mode = (MSXBARE_ONE_ROM_MODE == 0 && MSXBARE_BOOT_MODE_LOCKED == 0) ? TRUE : FALSE;
     ADD_SETTING_ITEM(language_label, ComboMenuActionCycleLanguage, ComboMenuRedrawMenuOnly, TRUE);
     ADD_SETTING_ITEM("", ComboMenuActionSeparator, ComboMenuRedrawMenuOnly, FALSE);
-    ADD_SETTING_ITEM(proportion_label, ComboMenuActionCycleProportion, ComboMenuRedrawMenuAndViewport, TRUE);
     ADD_SETTING_ITEM(scanline_label, ComboMenuActionCycleScanlines, ComboMenuRedrawMenuAndViewport, TRUE);
     if (MSXBARE_FEAT_GFX9000)
     {

@@ -70,13 +70,15 @@ Objetivo: painel legivel no framebuffer HDMI com MMU/cache ativo, sem depender d
 - Overlay compacto no canto superior esquerdo.
 - O painel pode usar a largura horizontal inteira da linha quando isso ajudar a ficar contido até a `linha 15`.
 - Emulador segue rodando ao fundo.
-- O item `Proportion` vive em `Settings` e aplica a resolucao do framebuffer via Circle: `16:9` usa `960x540`, `4:3` usa `640x480`.
+- O framebuffer runtime fica fixo em `5:4` via Circle: `720x576`. `Settings` nao expoe mais `Proportion`.
 - O item `Scale` vive em `Debug`, antes de `Debugger`, apenas em builds `DEBUG=1`.
 - `Scanlines` agora e binario no runtime e no `.cfg`: `OFF/ON`.
 - O estado `ON` usa apenas a logica LCD atual; o antigo modo `CRT` foi removido.
 - `Scale [1x]`: usa a mailbox nativa do emulador.
 - `Scale [2x]`: usa metade do intervalo entre `1x` e o fullscreen, em passos de `1/16x`.
-- `Scale [3x]`: fullscreen fit usa a area MSX ativa `256x192` e aplica o mesmo multiplicador em X/Y. Em `4:3` (`640x480`) o fator e `2.5x`; em `16:9` (`960x540`) o fator e `2.75x`.
+- O presenter escala a area ativa selecionada do emulador para preencher `720x576`, independente da resolucao de origem.
+- Em modos comuns de `192` linhas, a base vertical fica em `3.00x`.
+- Em frames V9990/GFX9000, o presenter nao aplica o crop classico `256x192`; por exemplo, B4 `768x480` e redimensionado para `720x576`.
 - `Standard` e `HIRES` usam a mesma mailbox base do emulador e o mesmo modo de `Scale`.
 - `Widescreen`: removido do runtime e do menu; o viewport agora segue sempre a mailbox fixa do emulador.
 
@@ -123,7 +125,7 @@ Diretriz visual (overlay e menu):
 
 ## Menu relacionado
 - `Debug -> Debugger`: sempre aparece em builds `DEBUG=1` e opera diretamente como `MAX/MIN/OFF`.
-- `Settings -> Proportion`: alterna `16:9`/`4:3`, grava em `msx.cfg`/RAW e nao altera `config.txt`.
+- `Settings` nao expoe mais `Proportion`; o runtime ignora `proportion=`/`resolution=` antigos e mantem o framebuffer fixo em `720x576`.
 - `Debug -> Scale`: aparece apenas em builds `DEBUG=1` e afeta o viewport independentemente do modo do debugger.
 - `Settings` nao expoe mais `Save to Disk`: ao sair de `Settings`/`Debug` com `ESC`, ou fechar o menu com `F12` enquanto uma dessas views esta aberta, as alteracoes sao enfileiradas para persistencia em `msx.cfg`/RAW.
 - `Settings` nao desenha mais o header `SETTINGS`; os itens usam margem superior e inferior simetricas para reduzir a altura do menu sem alterar a fonte.
@@ -131,6 +133,7 @@ Diretriz visual (overlay e menu):
 - `Settings -> Disk ROM`: aparece abaixo de `MegaRAM`, independente de `DEBUG=1`/`DEBUG=0`, e alterna a disponibilidade da Disk ROM no runtime.
 - Em builds com `DEBUG=1`, o menu `Debug` mantem controles de diagnostico e apresentacao de debug, como `Scale`, `Debugger` e `Standard [NTSC/PAL]`.
 - Nesse caminho de diagnostico, o toggle agora atua no estado efetivo do VDP em runtime:
+  - em `MSX1`, o runtime força diretamente o bit de video `MSX_PAL/MSX_NTSC`, `VDP R#9` e `VPeriod`, pois o TMS9918 nao expoe `R#9` gravavel como o V99x8;
   - em `MSX2/MSX2+`, ele força `R#9 bit1` (`PAL/NTSC`) no core local;
   - o overlay passa a refletir imediatamente o modo efetivo (`PALVideo`), e nao apenas o pacing base do host.
 - O item do menu deve espelhar o estado efetivo em tempo real:
@@ -143,7 +146,8 @@ Diretriz visual (overlay e menu):
   - com `Boot Screen` desligado, `KANJI*.ROM` e `KANJIBASIC*.ROM` nao entram no initramfs;
   - quando a fonte ou os mapas japoneses nao existirem no pacote, o runtime simplesmente segue sem esse recurso, sem toggle de usuario.
 - Fora de debug, `Refresh` continua oculto.
-- O runtime inicia em `NTSC` e continua podendo passar para `PAL` automaticamente quando o software escreve `R#9`.
+- O runtime inicia em `NTSC`; no perfil `MSX1`, `refresh=` nao e persistido no `msx.cfg` e o boot volta sempre para `NTSC`.
+- Em `MSX2/MSX2+`, o runtime continua podendo passar para `PAL` automaticamente quando o software escreve `R#9`.
 - Itens de audio em `Settings`:
   - `Konami SCC+` (OFF/ON/DUAL)
   - `FM-PAC` (ON/OFF)
@@ -293,7 +297,7 @@ make DEBUG=1 MSXBARE_V9990_UART_TRACE=1
 
 - A lista abaixo resume as familias principais; as entradas `G9*` dependem de `MSXBARE_V9990_UART_TRACE=1`:
   - `VDP EVT`: eventos da janela rastreada com `PC`, scanline, fase de linha, alvo de `IE1`, `R#19/R#23` e I/O de VDP (`0x98`, `0x99` address/register). Em `Knightmare Gold`, a janela aparece como `W=KG` e fica ativa durante a gameplay em `screen mode 4` quando o disco carregado contem `kmaregold`/`kmare`.
-  - `G9E cart-auto`: ativacao automatica de `GFX9000` ao carregar/configurar uma ROM reconhecida como V9990.
+  - `G9E cart-auto`: ativacao automatica de `GFX9000` ao carregar pelo menu uma ROM reconhecida como V9990.
   - `G9E rt-cart-auto`: autoativacao feita dentro do `fmsx_runtime_start()`, no ultimo ponto antes de `StartMSX()`, quando o kernel/menu ainda nao deixaram `GFX9000` ligado.
   - `G9C start`: estado de boot do `CODEINTRUDER`, incluindo `g9:<0|1>` para confirmar se a ROM iniciou com `GFX9000` ativo.
   - `G9C pc`: checkpoint do `CODEINTRUDER`; `vram-test` marca a rotina `7358h`, `after-test` marca passagem do teste e `no-v9990-loop` marca o loop de falha em `7466h`.

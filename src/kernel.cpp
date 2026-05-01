@@ -393,8 +393,8 @@ static const unsigned kProportionMode16_9 = 0u;
 static const unsigned kProportionMode4_3 = 1u;
 static const unsigned kProportionWidth16_9 = 960u;
 static const unsigned kProportionHeight16_9 = 540u;
-static const unsigned kProportionWidth4_3 = 640u;
-static const unsigned kProportionHeight4_3 = 480u;
+static const unsigned kProportionWidth4_3 = 720u;
+static const unsigned kProportionHeight4_3 = 576u;
 static const char kBootConfigKernelStartMarker[] = "#---KERNEL START---";
 static const char kBootConfigKernelEndMarker[] = "#---KERNEL END---";
 static const char kSettingsDrive[] = "SD:";
@@ -857,7 +857,9 @@ static void SelectViewportSourceRect(unsigned width,
 	(void) screen_width;
 	(void) screen_height;
 
-	if (!woven_hires && width >= kFmsxHostWidth && height >= kFmsxHostHeight)
+	if (!woven_hires
+		&& (presentation == 0 || presentation->disable_scanline_postfx == 0u)
+		&& width >= kFmsxHostWidth && height >= kFmsxHostHeight)
 	{
 		const unsigned active_w = (width >= (kFmsxHostWidth << 1)) ? (kViewportBaseWidth << 1) : kViewportBaseWidth;
 		if (width >= active_w)
@@ -901,24 +903,15 @@ static void ComputeViewportLayout(unsigned screen_width, unsigned screen_height,
 
 	if (screen_width > 0u && screen_height > 0u && src_width > 0u && src_height > 0u)
 	{
-		const boolean hires_mode = src_width >= 512u ? TRUE : FALSE;
-		const unsigned box_base_w = kViewportBaseWidth;
-		const unsigned box_base_h = kViewportBaseHeight;
-		const unsigned scale_fit_units = ComputeScaleFitUnits(scale_percent, screen_width, screen_height);
-
-		(void) hires_mode;
-		full_w = (box_base_w * scale_fit_units) / kScaleFitUnitOne;
-		full_h = (box_base_h * scale_fit_units) / kScaleFitUnitOne;
-
-		if (full_w == 0u) full_w = 1u;
-		if (full_h == 0u) full_h = 1u;
-
-		box_w = (full_w > screen_width) ? screen_width : full_w;
-		box_h = (full_h > screen_height) ? screen_height : full_h;
-		crop_x = (full_w > box_w) ? ((full_w - box_w) / 2u) : 0u;
-		crop_y = (full_h > box_h) ? ((full_h - box_h) / 2u) : 0u;
-		box_x = (screen_width > box_w) ? ((screen_width - box_w) / 2u) : 0u;
-		box_y = (screen_height > box_h) ? ((screen_height - box_h) / 2u) : 0u;
+		(void) scale_percent;
+		box_x = 0u;
+		box_y = 0u;
+		box_w = screen_width;
+		box_h = screen_height;
+		full_w = screen_width;
+		full_h = screen_height;
+		crop_x = 0u;
+		crop_y = 0u;
 	}
 
 	if (out_box_x != 0) *out_box_x = box_x;
@@ -1612,22 +1605,6 @@ static boolean AppendTextToBuffer(char *buffer, unsigned buffer_size, unsigned *
 	return TRUE;
 }
 
-static boolean StartupPathNeedsFatFs(const char *path)
-{
-	if (path == 0)
-	{
-		return FALSE;
-	}
-	while (*path == ' ' || *path == '\t')
-	{
-		++path;
-	}
-	return ((path[0] == 'S' || path[0] == 's')
-		&& (path[1] == 'D' || path[1] == 'd')
-		&& path[2] == ':'
-		&& (path[3] == '/' || path[3] == '\\')) ? TRUE : FALSE;
-}
-
 static boolean BuildUsesRawBootConfig(void)
 {
 #if MSXBARE_USE_RAW_BOOT_CONFIG
@@ -1635,31 +1612,6 @@ static boolean BuildUsesRawBootConfig(void)
 #else
 	return FALSE;
 #endif
-}
-
-static boolean StartupMediaNeedsFatFs(void)
-{
-#if MSXBARE_ENABLE_FMSX
-#if MSXBARE_FEAT_LOAD_ROM
-	for (unsigned slot = 0u; slot < 2u; ++slot)
-	{
-		if (StartupPathNeedsFatFs(backend_runtime_get_cartridge_path(slot)))
-		{
-			return TRUE;
-		}
-	}
-#endif
-#if MSXBARE_FEAT_LOAD_DISK
-	for (unsigned drive = 0u; drive < 2u; ++drive)
-	{
-		if (StartupPathNeedsFatFs(backend_runtime_get_disk_path(drive)))
-		{
-			return TRUE;
-		}
-	}
-#endif
-#endif
-	return FALSE;
 }
 
 static u32 ReadLe32(const u8 *p)
@@ -2099,14 +2051,13 @@ CComboKernel::CComboKernel(void)
 	m_OverscanPercent(300u),
 	m_ScaleMaxFitEnabled(FALSE),
 	m_Language(ComboLanguagePT),
-	m_ProportionMode(kProportionMode16_9),
+	m_ProportionMode(kProportionMode4_3),
 	m_CoreNames{{0}},
 	m_CoreCount(0u),
 	m_CoreSelected(0u),
 	m_CoreActiveName{0},
 	m_ScanlineMode(kScanlineModeOff),
 	m_Gfx9000Enabled(FALSE),
-	m_Gfx9000AutoCfgApplied(FALSE),
 	m_RefreshRateHz(60u),
 	m_DiskRomEnabled(MSXBARE_FEAT_DISK_ROM ? TRUE : FALSE),
 	m_BootMode((MSXBARE_BOOT_MODE_DEFAULT_ENUM <= 2u) ? MSXBARE_BOOT_MODE_DEFAULT_ENUM : kBootModeNorm),
@@ -2353,6 +2304,7 @@ unsigned CComboKernel::DebugRepairTimerIrqBinding(unsigned stage)
 
 void CComboKernel::NormalizeSettingsForBuild(void)
 {
+	m_ProportionMode = kProportionMode4_3;
 #if !MSXBARE_FEAT_GFX9000
 	m_Gfx9000Enabled = FALSE;
 #endif
@@ -2397,6 +2349,7 @@ void CComboKernel::NormalizeSettingsForBuild(void)
 	m_MegaRamKb = ClampMegaRamKb(m_MegaRamKb);
 	if (!IsMsx2FamilyProfile(m_MachineProfile))
 	{
+		m_RefreshRateHz = 60u;
 		m_RamMapperKb = kRamMapperKbDefault;
 	}
 }
@@ -2593,23 +2546,11 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 		return FALSE;
 	}
 
-	boolean has_cfg_carta = FALSE;
-	boolean has_cfg_cartb = FALSE;
-	boolean has_cfg_diska = FALSE;
-	boolean has_cfg_diskb = FALSE;
 	boolean has_backend_id = FALSE;
 	boolean has_scc_plus = FALSE;
 	boolean has_joy_map = FALSE;
-	char cfg_carta_path[192];
-	char cfg_cartb_path[192];
-	char cfg_diska_path[192];
-	char cfg_diskb_path[192];
 	char cfg_backend_id[32];
 	u16 joy_map_codes[CUsbHidGamepad::MapSlotCount];
-	cfg_carta_path[0] = '\0';
-	cfg_cartb_path[0] = '\0';
-	cfg_diska_path[0] = '\0';
-	cfg_diskb_path[0] = '\0';
 	cfg_backend_id[0] = '\0';
 	m_UsbGamepad.GetMappingCodes(joy_map_codes, CUsbHidGamepad::MapSlotCount);
 
@@ -2651,7 +2592,8 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 			else if (SettingsKeyEquals(line, key_len, "proportion")
 			      || SettingsKeyEquals(line, key_len, "resolution"))
 			{
-				m_ProportionMode = ParseProportionModeValue(eq + 1, line_end, m_ProportionMode);
+				(void) ParseProportionModeValue(eq + 1, line_end, m_ProportionMode);
+				m_ProportionMode = kProportionMode4_3;
 			}
 			else if (SettingsKeyEquals(line, key_len, "language"))
 			{
@@ -2765,43 +2707,11 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 				joy_map_codes[CUsbHidGamepad::MapSlotButton2] = CUsbHidGamepad::ClampControlCode((u16) value);
 				has_joy_map = TRUE;
 			}
-			else if (SettingsKeyEquals(line, key_len, "cart_a_path"))
-			{
-				ParseTextValueLine(eq + 1, line_end, cfg_carta_path, sizeof(cfg_carta_path));
-				has_cfg_carta = TRUE;
-			}
-			else if (SettingsKeyEquals(line, key_len, "cart_b_path"))
-			{
-				ParseTextValueLine(eq + 1, line_end, cfg_cartb_path, sizeof(cfg_cartb_path));
-				has_cfg_cartb = TRUE;
-			}
-			else if (SettingsKeyEquals(line, key_len, "disk_a_path"))
-			{
-				ParseTextValueLine(eq + 1, line_end, cfg_diska_path, sizeof(cfg_diska_path));
-				has_cfg_diska = TRUE;
-			}
-			else if (SettingsKeyEquals(line, key_len, "disk_b_path"))
-			{
-				ParseTextValueLine(eq + 1, line_end, cfg_diskb_path, sizeof(cfg_diskb_path));
-				has_cfg_diskb = TRUE;
-			}
 		}
 		line = line_end;
 	}
 
 	NormalizeSettingsForBuild();
-	NormalizeLegacyMsxAssetPath(cfg_carta_path, sizeof(cfg_carta_path));
-	NormalizeLegacyMsxAssetPath(cfg_cartb_path, sizeof(cfg_cartb_path));
-	NormalizeLegacyMsxAssetPath(cfg_diska_path, sizeof(cfg_diska_path));
-	NormalizeLegacyMsxAssetPath(cfg_diskb_path, sizeof(cfg_diskb_path));
-#if MSXBARE_FEAT_GFX9000
-	if ((has_cfg_carta && RomPathLooksLikeGfx9000(cfg_carta_path))
-	 || (has_cfg_cartb && RomPathLooksLikeGfx9000(cfg_cartb_path)))
-	{
-		m_Gfx9000Enabled = TRUE;
-		m_Gfx9000AutoCfgApplied = TRUE;
-	}
-#endif
 	backend_runtime_set_requested_backend_id(has_backend_id && cfg_backend_id[0] != '\0' ? cfg_backend_id : 0);
 	if (has_joy_map)
 	{
@@ -2831,7 +2741,7 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 	}
 	m_PauseMenu.SetFmMusicEnabled(m_FmMusicEnabled);
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
-	m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled, has_cfg_cartb && cfg_cartb_path[0] ? FALSE : TRUE);
+	m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled, TRUE);
 	m_PauseMenu.SetOverlayMode(
 		MSXBARE_ENABLE_DEBUG_OVERLAY ? m_DebugOverlayMode : ComboDebugOverlayOff,
 		MSXBARE_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
@@ -2864,20 +2774,6 @@ boolean CComboKernel::ApplyRawSettingsText(char *buffer)
 	backend_runtime_set_fm_music_enabled(m_FmMusicEnabled);
 	backend_runtime_set_fm_layer_gain_pct(m_FmLayerGainPct);
 	backend_runtime_set_scc_plus_enabled(m_SccCartEnabled);
-#if MSXBARE_FEAT_LOAD_ROM
-	if (has_cfg_carta) (void) backend_runtime_set_cartridge_path(0u, cfg_carta_path[0] ? cfg_carta_path : 0);
-	if (has_cfg_cartb) (void) backend_runtime_set_cartridge_path(1u, cfg_cartb_path[0] ? cfg_cartb_path : 0);
-#else
-	(void) has_cfg_carta;
-	(void) has_cfg_cartb;
-#endif
-#if MSXBARE_FEAT_LOAD_DISK
-	if (has_cfg_diska) (void) backend_runtime_set_disk_path(0u, cfg_diska_path[0] ? cfg_diska_path : 0);
-	if (has_cfg_diskb) (void) backend_runtime_set_disk_path(1u, cfg_diskb_path[0] ? cfg_diskb_path : 0);
-#else
-	(void) has_cfg_diska;
-	(void) has_cfg_diskb;
-#endif
 	if (!backend_runtime_set_scc_dual_cart_enabled(m_SccDualCartEnabled))
 	{
 		m_SccDualCartEnabled = FALSE;
@@ -3118,17 +3014,8 @@ TComboShutdownMode CComboKernel::Run(void)
 
 			if (raw_loaded)
 			{
-				if (StartupMediaNeedsFatFs())
-				{
-					const u64 fat_start_us = CTimer::GetClockTicks64();
-					m_SettingsFatFsMountPending = MountSettingsFileSystem("BT5M") ? FALSE : TRUE;
-					m_BootFatDeferredMs = (unsigned) ((CTimer::GetClockTicks64() - fat_start_us) / 1000u);
-				}
-				else
-				{
-					m_SettingsFatFsMountPending = TRUE;
-					BootPhase(m_Logger, "BT5", "FATFS mount... DEFER");
-				}
+				m_SettingsFatFsMountPending = TRUE;
+				BootPhase(m_Logger, "BT5", "FATFS mount... DEFER");
 			}
 			else
 			{
@@ -3168,7 +3055,6 @@ TComboShutdownMode CComboKernel::Run(void)
 	if (m_BackendEnabled)
 	{
 		const boolean backend_has_machine = backend_runtime_is_capability_available(BACKEND_CAP_MACHINE);
-		const boolean backend_has_media = backend_runtime_is_capability_available(BACKEND_CAP_MEDIA);
 		if (!kBootQuiet)
 		{
 			BootTrace("R1");
@@ -3244,34 +3130,6 @@ TComboShutdownMode CComboKernel::Run(void)
 				m_EmulatorBackendName != 0 ? m_EmulatorBackendName : "backend");
 			m_Logger.Write(FromKernel, LogNotice, line);
 			BootPhase(m_Logger, "BT10", "emulator backend... OK");
-
-			/* Defensive restore exists only on the current media-capable path for now. */
-			if (backend_has_media)
-			{
-#if MSXBARE_FEAT_LOAD_DISK
-				for (unsigned drive = 0u; drive < 2u; ++drive)
-				{
-					const char *persisted_path = backend_runtime_get_disk_path(drive);
-					const char *mounted_name = backend_runtime_get_disk_name(drive);
-					if (persisted_path != 0 && persisted_path[0] != '\0'
-					 && (mounted_name == 0 || mounted_name[0] == '\0'))
-					{
-						if (backend_runtime_media_load_disk(drive, persisted_path))
-						{
-							CString restore_line;
-							restore_line.Format("Boot media restore: DSK DRIVE%u <= %s", drive + 1u, persisted_path);
-							m_Logger.Write(FromKernel, LogNotice, restore_line);
-						}
-						else
-						{
-							CString restore_line;
-							restore_line.Format("Boot media restore failed: DSK DRIVE%u <= %s", drive + 1u, persisted_path);
-							m_Logger.Write(FromKernel, LogWarning, restore_line);
-						}
-					}
-				}
-#endif
-			}
 		}
 	}
 #endif
@@ -3290,12 +3148,6 @@ TComboShutdownMode CComboKernel::Run(void)
 #if MSXBARE_ENABLE_DEBUG_OVERLAY
 	BootPhase(m_Logger, "BT12", "debug overlay... READY");
 	m_Logger.Write(FromKernel, LogNotice, "Overlay: F11 | Pause: F12");
-#if MSXBARE_V9990_UART_TRACE
-	if (m_Gfx9000AutoCfgApplied)
-	{
-		msxbare_uart_write("G9E cart-auto ON src:cfg\n");
-	}
-#endif
 #else
 	BootPhase(m_Logger, "BT12", "debug overlay... OFF");
 #endif
@@ -5659,23 +5511,11 @@ void CComboKernel::LoadSettingsFromStorage(void)
 		return;
 	}
 
-	boolean has_cfg_carta = FALSE;
-	boolean has_cfg_cartb = FALSE;
-	boolean has_cfg_diska = FALSE;
-	boolean has_cfg_diskb = FALSE;
 	boolean has_backend_id = FALSE;
 	boolean has_scc_plus = FALSE;
 	boolean has_joy_map = FALSE;
-	char cfg_carta_path[192];
-	char cfg_cartb_path[192];
-	char cfg_diska_path[192];
-	char cfg_diskb_path[192];
 	char cfg_backend_id[32];
 	u16 joy_map_codes[CUsbHidGamepad::MapSlotCount];
-	cfg_carta_path[0] = '\0';
-	cfg_cartb_path[0] = '\0';
-	cfg_diska_path[0] = '\0';
-	cfg_diskb_path[0] = '\0';
 	cfg_backend_id[0] = '\0';
 	m_UsbGamepad.GetMappingCodes(joy_map_codes, CUsbHidGamepad::MapSlotCount);
 
@@ -5718,7 +5558,8 @@ void CComboKernel::LoadSettingsFromStorage(void)
 				else if (SettingsKeyEquals(line, key_len, "proportion")
 				      || SettingsKeyEquals(line, key_len, "resolution"))
 				{
-					m_ProportionMode = ParseProportionModeValue(eq + 1, line_end, m_ProportionMode);
+					(void) ParseProportionModeValue(eq + 1, line_end, m_ProportionMode);
+					m_ProportionMode = kProportionMode4_3;
 				}
 				else if (SettingsKeyEquals(line, key_len, "scale_max"))
 				{
@@ -5860,44 +5701,12 @@ void CComboKernel::LoadSettingsFromStorage(void)
 				joy_map_codes[CUsbHidGamepad::MapSlotButton2] = CUsbHidGamepad::ClampControlCode((u16) value);
 				has_joy_map = TRUE;
 			}
-			else if (SettingsKeyEquals(line, key_len, "cart_a_path"))
-			{
-				ParseTextValueLine(eq + 1, line_end, cfg_carta_path, sizeof(cfg_carta_path));
-				has_cfg_carta = TRUE;
-			}
-			else if (SettingsKeyEquals(line, key_len, "cart_b_path"))
-			{
-				ParseTextValueLine(eq + 1, line_end, cfg_cartb_path, sizeof(cfg_cartb_path));
-				has_cfg_cartb = TRUE;
-			}
-			else if (SettingsKeyEquals(line, key_len, "disk_a_path"))
-			{
-				ParseTextValueLine(eq + 1, line_end, cfg_diska_path, sizeof(cfg_diska_path));
-				has_cfg_diska = TRUE;
-			}
-			else if (SettingsKeyEquals(line, key_len, "disk_b_path"))
-			{
-				ParseTextValueLine(eq + 1, line_end, cfg_diskb_path, sizeof(cfg_diskb_path));
-				has_cfg_diskb = TRUE;
-			}
 		}
 
 		line = line_end;
 	}
 
 	NormalizeSettingsForBuild();
-	NormalizeLegacyMsxAssetPath(cfg_carta_path, sizeof(cfg_carta_path));
-	NormalizeLegacyMsxAssetPath(cfg_cartb_path, sizeof(cfg_cartb_path));
-	NormalizeLegacyMsxAssetPath(cfg_diska_path, sizeof(cfg_diska_path));
-	NormalizeLegacyMsxAssetPath(cfg_diskb_path, sizeof(cfg_diskb_path));
-#if MSXBARE_FEAT_GFX9000
-	if ((has_cfg_carta && RomPathLooksLikeGfx9000(cfg_carta_path))
-	 || (has_cfg_cartb && RomPathLooksLikeGfx9000(cfg_cartb_path)))
-	{
-		m_Gfx9000Enabled = TRUE;
-		m_Gfx9000AutoCfgApplied = TRUE;
-	}
-#endif
 	backend_runtime_set_requested_backend_id(has_backend_id && cfg_backend_id[0] != '\0' ? cfg_backend_id : 0);
 	if (has_joy_map)
 	{
@@ -5927,8 +5736,7 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	}
 	m_PauseMenu.SetFmMusicEnabled(m_FmMusicEnabled);
 	m_PauseMenu.SetSccCartEnabled(m_SccCartEnabled);
-	m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled,
-		has_cfg_cartb && cfg_cartb_path[0] ? FALSE : TRUE);
+	m_PauseMenu.SetSccDualCartState(m_SccDualCartEnabled, TRUE);
 	m_PauseMenu.SetOverlayMode(
 		MSXBARE_ENABLE_DEBUG_OVERLAY ? m_DebugOverlayMode : ComboDebugOverlayOff,
 		MSXBARE_ENABLE_DEBUG_OVERLAY ? TRUE : FALSE);
@@ -5961,20 +5769,6 @@ void CComboKernel::LoadSettingsFromStorage(void)
 	backend_runtime_set_fm_music_enabled(m_FmMusicEnabled);
 	backend_runtime_set_fm_layer_gain_pct(m_FmLayerGainPct);
 	backend_runtime_set_scc_plus_enabled(m_SccCartEnabled);
-#if MSXBARE_FEAT_LOAD_ROM
-		if (has_cfg_carta) (void) backend_runtime_set_cartridge_path(0u, cfg_carta_path[0] ? cfg_carta_path : 0);
-		if (has_cfg_cartb) (void) backend_runtime_set_cartridge_path(1u, cfg_cartb_path[0] ? cfg_cartb_path : 0);
-#else
-		(void) has_cfg_carta;
-		(void) has_cfg_cartb;
-#endif
-#if MSXBARE_FEAT_LOAD_DISK
-		if (has_cfg_diska) (void) backend_runtime_set_disk_path(0u, cfg_diska_path[0] ? cfg_diska_path : 0);
-		if (has_cfg_diskb) (void) backend_runtime_set_disk_path(1u, cfg_diskb_path[0] ? cfg_diskb_path : 0);
-#else
-		(void) has_cfg_diska;
-		(void) has_cfg_diskb;
-#endif
 		if (!backend_runtime_set_scc_dual_cart_enabled(m_SccDualCartEnabled))
 		{
 			m_SccDualCartEnabled = FALSE;
@@ -6035,12 +5829,14 @@ unsigned CComboKernel::BuildSettingsPayload(char *buffer, unsigned buffer_size)
 	} while (0)
 
 	APPEND_LINE_TEXT("backend_id", saved_backend_id);
-	APPEND_LINE_TEXT("proportion", m_ProportionMode == kProportionMode4_3 ? "4:3" : "16:9");
 	APPEND_LINE_FMT("scale=%u\n", ScaleFactorFromPercent(m_OverscanPercent));
 	APPEND_LINE_FMT("language=%u\n", m_Language);
 	APPEND_LINE_FMT("scanline=%u\n", m_ScanlineMode);
 	APPEND_LINE_FMT("gfx9000=%u\n", (MSXBARE_FEAT_GFX9000 && m_Gfx9000Enabled) ? 1u : 0u);
-	APPEND_LINE_FMT("refresh=%u\n", ClampRefreshRateHz(m_RefreshRateHz));
+	if (IsMsx2FamilyProfile(m_MachineProfile))
+	{
+		APPEND_LINE_FMT("refresh=%u\n", ClampRefreshRateHz(m_RefreshRateHz));
+	}
 	APPEND_LINE_FMT("disk_rom=%u\n", m_DiskRomEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("boot_mode=%u\n", m_BootMode);
 	APPEND_LINE_FMT("machine=%u\n", m_MachineProfile);
@@ -6063,13 +5859,6 @@ unsigned CComboKernel::BuildSettingsPayload(char *buffer, unsigned buffer_size)
 	APPEND_LINE_FMT("scc_dual=%u\n", m_SccDualCartEnabled ? 1u : 0u);
 	APPEND_LINE_FMT("debugger=%u\n", ClampDebugOverlayMode(m_DebugOverlayMode));
 	APPEND_LINE_FMT("audio_gain=%u\n", m_AudioOutputGainPct > 100u ? 100u : m_AudioOutputGainPct);
-#if MSXBARE_ENABLE_FMSX
-	APPEND_LINE_TEXT("cart_a_path", backend_runtime_get_cartridge_path(0u));
-	APPEND_LINE_TEXT("cart_b_path", backend_runtime_get_cartridge_path(1u));
-	APPEND_LINE_TEXT("disk_a_path", backend_runtime_get_disk_path(0u));
-	APPEND_LINE_TEXT("disk_b_path", backend_runtime_get_disk_path(1u));
-#endif
-
 #undef APPEND_LINE_FMT
 #undef APPEND_LINE_TEXT
 
@@ -6254,10 +6043,7 @@ boolean CComboKernel::ApplyProportionModeToScreen(const char *phase, boolean for
 		return FALSE;
 	}
 
-	if (m_ProportionMode > kProportionMode4_3)
-	{
-		m_ProportionMode = kProportionMode16_9;
-	}
+	m_ProportionMode = kProportionMode4_3;
 
 	const unsigned target_w = (m_ProportionMode == kProportionMode4_3)
 		? kProportionWidth4_3
@@ -7333,14 +7119,14 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		break;
 
 	case ComboMenuActionCycleProportion:
-		m_ProportionMode = (m_ProportionMode == kProportionMode4_3) ? kProportionMode16_9 : kProportionMode4_3;
+		m_ProportionMode = kProportionMode4_3;
 		m_PauseMenu.SetProportionMode(m_ProportionMode);
 		(void) ApplyProportionModeToScreen("menu", FALSE);
 		RefreshSettingsUiAfterAction();
 		break;
 
 	case ComboMenuActionCycleProportionPrev:
-		m_ProportionMode = (m_ProportionMode == kProportionMode16_9) ? kProportionMode4_3 : kProportionMode16_9;
+		m_ProportionMode = kProportionMode4_3;
 		m_PauseMenu.SetProportionMode(m_ProportionMode);
 		(void) ApplyProportionModeToScreen("menu", FALSE);
 		RefreshSettingsUiAfterAction();
@@ -7592,9 +7378,19 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		{
 			m_MachineProfile = CycleMachineProfileForBuild(m_MachineProfile, FALSE);
 		}
+		if (!IsMsx2FamilyProfile(m_MachineProfile))
+		{
+			m_RefreshRateHz = 60u;
+			m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
+			m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
+		}
 		m_PauseMenu.SetMachineProfile(m_MachineProfile);
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX
+		if (!IsMsx2FamilyProfile(m_MachineProfile))
+		{
+			backend_runtime_set_refresh_hz(m_RefreshRateHz);
+		}
 		ApplyRuntimeSettingsToBackend();
 	#endif
 		{
@@ -7608,9 +7404,19 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		{
 			m_MachineProfile = CycleMachineProfileForBuild(m_MachineProfile, TRUE);
 		}
+		if (!IsMsx2FamilyProfile(m_MachineProfile))
+		{
+			m_RefreshRateHz = 60u;
+			m_FrameIntervalUs = FrameIntervalFromRefreshHz(m_RefreshRateHz);
+			m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
+		}
 		m_PauseMenu.SetMachineProfile(m_MachineProfile);
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX
+		if (!IsMsx2FamilyProfile(m_MachineProfile))
+		{
+			backend_runtime_set_refresh_hz(m_RefreshRateHz);
+		}
 		ApplyRuntimeSettingsToBackend();
 	#endif
 		{

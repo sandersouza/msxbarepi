@@ -6,7 +6,7 @@ Para preparar o SD em modo multicore, compile e copie com `MSXBARE_BOOT_STRATEGY
 
 Em SD multicore com alternancia pelo Settings `CORE`, mantenha tambem o `<core>.cpio` correspondente na raiz. Ao trocar de core, o runtime grava `kernel=<core>.img` e `initramfs <core>.cpio followkernel` apenas dentro do bloco `#---KERNEL START---`/`#---KERNEL END---` antes do reboot.
 
-O Settings `Proportion [16:9/4:3]` e persistido em `msx.cfg`/RAW e aplicado pelo Circle no framebuffer do runtime. `16:9` usa `960x540`; `4:3` usa `640x480`. Esse setting nao altera `config.txt`, que fica restrito ao boot/firmware do Raspberry Pi e pode permanecer com deteccao HDMI automatica.
+O framebuffer runtime do MSX fica fixo via Circle em `720x576`. O Settings nao expoe mais `Proportion`; chaves antigas `proportion=`/`resolution=` em `msx.cfg`/RAW sao ignoradas. O presenter escala a area ativa do emulador para preencher `720x576`, dando base vertical `3.00x` para modos comuns de `192` linhas e redimensionando modos largos como V9990 B4. Isso nao altera `config.txt`, que fica restrito ao boot/firmware do Raspberry Pi e pode permanecer com deteccao HDMI automatica.
 
 Payload esperado na partição FAT32 de boot:
 

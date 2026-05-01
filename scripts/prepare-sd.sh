@@ -467,12 +467,10 @@ ensure_settings_cfg() {
   mkdir -p "$(dirname "$SETTINGS_CFG")"
   cat > "$SETTINGS_CFG" <<'EOF'
 backend_id=msx.fmsx
-proportion=16:9
 scale=3
 language=1
 scanline=0
 gfx9000=0
-refresh=60
 disk_rom=1
 boot_mode=0
 machine=0
@@ -491,10 +489,6 @@ scc_plus=1
 scc_dual=0
 debugger=0
 audio_gain=100
-cart_a_path=
-cart_b_path=
-disk_a_path=
-disk_b_path=
 #END
 EOF
 }

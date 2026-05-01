@@ -260,7 +260,6 @@ private:
     char m_CoreActiveName[kCoreNameBytes];
     unsigned m_ScanlineMode;
     boolean m_Gfx9000Enabled;
-    boolean m_Gfx9000AutoCfgApplied;
     unsigned m_RefreshRateHz;
     boolean m_DiskRomEnabled;
     unsigned m_BootMode;

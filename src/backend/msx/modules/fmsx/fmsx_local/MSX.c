@@ -279,7 +279,7 @@ const char *ProgDir = 0;           /* Program directory      */
 char *WorkDir = 0;                 /* Working directory      */
 
 /** Cartridge files used by fMSX *****************************/
-const char *ROMName[MAXCARTS] = { "CARTA.ROM","CARTB.ROM" };
+const char *ROMName[MAXCARTS] = { 0, 0 };
 
 /** On-cartridge SRAM data ***********************************/
 char *SRAMName[MAXSLOTS] = {0,0,0,0,0,0};/* Filenames (gen-d)*/
@@ -289,7 +289,7 @@ static char *Manbow2FlashName[MAXSLOTS] = {0,0,0,0,0,0};
 static uint8_t SaveManbow2Flash[MAXSLOTS] = {0,0,0,0,0,0};
 
 /** Disk images used by fMSX *********************************/
-const char *DSKName[MAXDRIVES] = { "DRIVEA.DSK","DRIVEB.DSK" };
+const char *DSKName[MAXDRIVES] = { 0, 0 };
 uint8_t DiskROMLoaded = 0;            /* 1 when DISK.ROM loaded */
 uint8_t *FmsxKanjiBase = 0;           /* Base pointer of loaded KANJI.ROM blob */
 uint8_t FmsxMSX2PKanjiBasicLoaded = 0;/* 1 when slot 3-1:4000h maps Kanji BASIC */
@@ -498,7 +498,7 @@ const char *FNTName = "DEFAULT.FNT"; /* Font file for text   */
 uint8_t *FontBuf;                     /* Font for text modes    */
 
 /** Cassette tape ********************************************/
-const char *CasName = "DEFAULT.CAS";  /* Tape image file     */
+const char *CasName = 0;              /* Tape image file     */
 RFILE *CasStream;
 uint8_t tape_type = NO_TAPE;
 #define TAPE_HEADER_LEN 10
@@ -2981,6 +2981,24 @@ static void fmsx_sync_bios_region_flag(int pal)
 
   if(pal) bios_page0[Addr] |= 0x80u;
   else    bios_page0[Addr] &= (uint8_t)~0x80u;
+}
+
+void fmsx_force_video_standard(unsigned pal)
+{
+  if(pal)
+  {
+    Mode |= MSX_PAL;
+    VDP[9] |= 0x02u;
+  }
+  else
+  {
+    Mode &= ~MSX_PAL;
+    VDP[9] &= (uint8_t)~0x02u;
+  }
+
+  VPeriod = fmsx_scale_cycles((pal ? VPERIOD_PAL : VPERIOD_NTSC) / 6);
+  fmsx_sync_bios_region_flag(pal ? 1 : 0);
+  fmsx_sync_bios_vdp_r9_shadow();
 }
 
 static void fmsx_s1985_init_once(void)

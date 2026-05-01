@@ -28,7 +28,7 @@ Remover atalhos diretos de debug que nao sao mais operacionais (`F6-F10`, `+`, `
 - `MSXBARE_EMBED_INITRAMFS=0` permanece como fallback externo, mantendo `sdcard/msx.cpio` e a linha `initramfs` no `config.txt`.
 - O boot passou a tentar `BootConfig` raw em slots espelhados antes da particao FAT para aplicar settings antes do backend sem montar FatFs.
 - O FatFs fica deferido quando o raw BootConfig e valido; no primeiro boot sem raw, o caminho legado monta FAT antes do backend e semeia o raw.
-- Excecao corrigida: se o raw BootConfig valido aponta `cart_a_path`, `cart_b_path`, `disk_a_path` ou `disk_b_path` em `SD:/`, o FatFs passa a montar antes do backend para a midia salva carregar no primeiro boot, sem depender de reset posterior.
+- Obsoleto em 30/04/2026: o raw BootConfig nao carrega mais midia salva no boot; ROM/DISK/CAS de usuario deixaram de ser persistidos em settings.
 - `F12`/save de settings persiste tanto `SD:/msxbarepi.cfg` quanto o raw BootConfig.
 - Em `DEBUG=1`, a UART emite `BOOT_TIME start_to_backend_start_ms`, `start_to_backend_ready_ms`, `start_to_first_blit_ms`, `start_to_usb_ready_ms`/`usb_retry_scheduled_tick`, `start_to_bt14_ms`, `initramfs_source`, `initramfs_bytes`, `raw_cfg_ms` e `fat_deferred_ms`.
 - `MSXBARE_BOOT_SCREEN=0` continua removendo `KANJI.ROM` e `KANJIBASIC.ROM` do initramfs; `MSXBARE_BOOT_SCREEN=1` preserva `KANJIBASIC.ROM` e remove a fonte `KANJI.ROM` por padrao; `MSXBARE_KANJI_FONT=1` preserva ambos.
@@ -144,6 +144,7 @@ Remover atalhos diretos de debug que nao sao mais operacionais (`F6-F10`, `+`, `
 - `make -j4 DEBUG=0`: OK, `Kernel memory _end: 0x4AA4D5 / 0x580000`
 - `scripts/check-third-party-pristine.sh`: OK apos ajuste final
 - `git diff --check`: OK apos ajuste final
+- `make -j4 DEBUG=1`: OK apos troca do gate de video GAME por frameskip real, `BUILD_BID: 202604302007-f66027e`, `TXTDBG BUILD:3F50`
 - `bash -n scripts/make-initramfs.sh scripts/prepare-sd.sh scripts/update-sd-incremental.sh scripts/make-sdcard-package.sh`: OK
 - `MSXBARE_BOOT_SCREEN=0 ./scripts/make-initramfs.sh roms/initramfs /tmp/msx-test-bootscreen-off.cpio`: OK, pacote `321536` bytes, sem `KANJI.ROM` e sem `KANJIBASIC.ROM`
 - Historico pre-corte de `KANJI.ROM`: `MSXBARE_BOOT_SCREEN=1 ./scripts/make-initramfs.sh roms/initramfs /tmp/msx-test-bootscreen-on.cpio`: OK, pacote `616448` bytes, com `KANJI.ROM` e `KANJIBASIC.ROM`

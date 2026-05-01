@@ -1836,7 +1836,6 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
     {
         return combo_menu_settings_items_get(
             m_Language,
-            m_ProportionMode,
             m_ScanlineMode,
             m_Gfx9000Enabled,
             m_RefreshRateHz,
