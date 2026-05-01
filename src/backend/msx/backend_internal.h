@@ -109,7 +109,6 @@ typedef struct {
 } MsxBackendFamilyOps;
 
 extern const BackendModuleV1 g_msx_backend_module_fmsx;
-extern const BackendModuleV1 g_msx_backend_module_bluemsx;
 
 #ifdef __cplusplus
 }

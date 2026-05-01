@@ -466,7 +466,6 @@ ensure_settings_cfg() {
   echo "[INFO] Arquivo de configuracao nao encontrado; gerando default: ${SETTINGS_CFG}"
   mkdir -p "$(dirname "$SETTINGS_CFG")"
   cat > "$SETTINGS_CFG" <<'EOF'
-backend_id=msx.fmsx
 scale=3
 language=1
 scanline=0

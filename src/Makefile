@@ -2,9 +2,6 @@ CIRCLEHOME = ../third_party/circle
 STDLIB_SUPPORT = 1
 
 DEBUG ?= 0
-BACKEND_FAMILY ?= msx
-BACKEND_DEFAULT ?= msx.fmsx
-EMULATOR_BACKEND ?=
 MSXBARE_CARTA_ONLY ?= 0
 MSXBARE_SIZE_OPT ?= 1
 MSXBARE_BUILD_BID ?=
@@ -57,30 +54,6 @@ CPPFLAGS += -include ../build/config_build.h
 DEFINE += -DMSXBARE_EMBED_INITRAMFS=$(MSXBARE_EMBED_INITRAMFS)
 DEFINE += '-DMSXBARE_EMBED_INITRAMFS_PATH="$(MSXBARE_EMBED_INITRAMFS_PATH)"'
 
-ifeq ($(EMULATOR_BACKEND),bluemsx)
-BACKEND_DEFAULT := msx.bluemsx
-else ifeq ($(EMULATOR_BACKEND),fmsx)
-BACKEND_DEFAULT := msx.fmsx
-else ifneq ($(EMULATOR_BACKEND),)
-$(error EMULATOR_BACKEND invalido: $(EMULATOR_BACKEND). Use fmsx ou bluemsx)
-endif
-
-ifeq ($(BACKEND_FAMILY),msx)
-CPPFLAGS += -DMSXBARE_BACKEND_FAMILY_MSX=1
-CFLAGS += -DMSXBARE_BACKEND_FAMILY_MSX=1
-CXXFLAGS += -DMSXBARE_BACKEND_FAMILY_MSX=1
-else
-$(error BACKEND_FAMILY invalida: $(BACKEND_FAMILY). Use msx)
-endif
-
-ifneq ($(BACKEND_DEFAULT),msx.fmsx)
-ifneq ($(BACKEND_DEFAULT),msx.bluemsx)
-$(error BACKEND_DEFAULT invalido: $(BACKEND_DEFAULT). Use msx.fmsx ou msx.bluemsx)
-endif
-endif
-
-CPPFLAGS += '-DMSXBARE_BACKEND_DEFAULT="$(BACKEND_DEFAULT)"'
-
 CFLAGS += -w
 CXXFLAGS += -w
 CFLAGS += -DMSXBARE_ENABLE_DEBUG_OVERLAY=$(DEBUG)
@@ -119,9 +92,9 @@ ifeq ($(DEBUG),1)
 OBJS += tools/debug/combo_debug_overlay.o
 endif
 OBJS += tools/locale/combo_locale.o tools/locale/combo_locale_pt.o tools/locale/combo_locale_en.o tools/locale/combo_locale_es.o
-OBJS += backend/core/registry.o backend/msx/backend.o
+OBJS += backend/msx/backend.o
 OBJS += backend/msx/gamemaster_catalog.o backend/msx/machine_profile_catalog.o
-OBJS += backend/msx/modules/fmsx/module.o backend/msx/modules/bluemsx/module.o
+OBJS += backend/msx/modules/fmsx/module.o
 
 # Rules.mk clean handles current dir globs; include nested tool objects/deps.
 EXTRACLEAN += tools/*.o tools/*.d tools/*/*.o tools/*/*.d
