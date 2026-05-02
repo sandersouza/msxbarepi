@@ -20,6 +20,7 @@ public:
 
 	boolean Initialize(void);
 	boolean Resize(unsigned nWidth, unsigned nHeight);
+	void SetInitialSize(unsigned nWidth, unsigned nHeight);
 
 	unsigned GetWidth(void) const;
 	unsigned GetHeight(void) const;

@@ -253,6 +253,7 @@ private:
     CComboPauseMenu m_PauseMenu;
     unsigned m_OverscanPercent;
     boolean m_OverscanEnabled;
+    boolean m_AvOutputDetected;
     boolean m_ScaleMaxFitEnabled;
     unsigned m_Language;
     unsigned m_ProportionMode;

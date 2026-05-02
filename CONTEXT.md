@@ -2,12 +2,22 @@
 
 Ponto de entrada rapido para contexto operacional do projeto.
 
-- Contexto completo e historico de handoff da branch atual: [docs/handoff/262-remover-selecao-backend-fmsx-unico.md](docs/handoff/262-remover-selecao-backend-fmsx-unico.md)
+- Contexto completo e historico de handoff da branch atual: [docs/handoff/fix-av-out-without-circle-framebuffer.md](docs/handoff/fix-av-out-without-circle-framebuffer.md)
 - Guardrail ativo: a issue `#251` continua aberta/pausada e a branch `251-suporte-cartucho-vdp-v9990` nao deve ser removida.
-- Branch ativa da rodada: `262-remover-selecao-backend-fmsx-unico`
-- Issue ativa: `#262 Remover selecao de backend e consolidar fMSX como backend unico`
-- Issue remota: https://github.com/sandersouza/msxbarepi/issues/262
-- Escopo: remover codigo/scripts/variaveis de selecao de backend de emulacao e consolidar fMSX como backend unico.
+- Branch ativa da rodada: `fix/av-out-without-circle-framebuffer`
+- Issue ativa: sem issue remota nesta rodada.
+- Escopo: corrigir saida AV/composite no Raspberry Pi 3B preservando HDMI.
+- Atualizacao 2026-05-01 (AV/composite):
+  - causa provavel: `Overscan=OFF` redimensionava o framebuffer Circle para `672x504`, modo acima das 480 linhas seguras em AV/NTSC;
+  - correcao aplicada: o runtime detecta modo SDTV/AV pelo framebuffer inicial reportado pelo firmware (`480..576` linhas, cobrindo NTSC/PAL-M e PAL);
+  - diagnostico/correcao adicional: em `DEBUG=1`, UART/logger sobem antes de `BT2` e registram `BOOT_DISPLAY`; se AV/SDTV for detectado antes da tela, a primeira inicializacao do framebuffer usa `640x480`;
+  - a mecanica de tamanho do `Overscan` foi reativada tambem em AV/SDTV: `Overscan OFF` usa `704x528` (10% inteiro sobre `640x480`) e `Overscan ON` usa `640x480`;
+  - log de hardware AV da build `06EA` chegou a `BT2: screen... OK` e abortou em `sndhdmi: Requires HDMI display with audio support` / `Cannot start HDMI sound`; em AV/SDTV, o audio agora usa Circle `CPWMSoundBaseDevice` pelo jack A/V;
+  - `sdcard/config.txt` local ja esta no perfil AV equivalente ao SMSBarePI (`enable_tvout=1`, `sdtv_mode=0`, `disable_overscan=1`, sem forcar HDMI);
+  - validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=1`, `make -n sdcard`;
+  - build final `DEBUG=1`: `BUILD_BID=202605012136-ec2bcc8`, `TXTDBG BUILD:F137`, artefato `artifacts/kernel8-default.img`;
+  - validacao em hardware pelo usuario: AV/composite com video e audio funcionando corretamente no Raspberry Pi 3B;
+  - handoff ativo criado em `docs/handoff/fix-av-out-without-circle-framebuffer.md`.
 - Atualizacao 2026-04-30 (issue #262):
   - issue criada na milestone `FIX: Minor Issues / Other Issues`;
   - espelho local criado em `docs/milestones/m17/262-remover-selecao-backend-fmsx-unico.md`;
