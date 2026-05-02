@@ -204,6 +204,12 @@ boolean CComboScreenDevice::Resize(unsigned nWidth, unsigned nHeight)
 	return Initialize();
 }
 
+void CComboScreenDevice::SetInitialSize(unsigned nWidth, unsigned nHeight)
+{
+	m_nInitWidth = nWidth;
+	m_nInitHeight = nHeight;
+}
+
 unsigned CComboScreenDevice::GetWidth(void) const
 {
 	if (m_pTerminal != 0 && m_pTerminal->GetWidth() > 0u)

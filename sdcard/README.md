@@ -6,7 +6,7 @@ Para preparar o SD em modo multicore, compile e copie com `MSXBARE_BOOT_STRATEGY
 
 Em SD multicore com alternancia pelo Settings `CORE`, mantenha tambem o `<core>.cpio` correspondente na raiz. Ao trocar de core, o runtime grava `kernel=<core>.img` e `initramfs <core>.cpio followkernel` apenas dentro do bloco `#---KERNEL START---`/`#---KERNEL END---` antes do reboot.
 
-O Settings nao expoe mais `Proportion`; chaves antigas `proportion=`/`resolution=` em `msx.cfg`/RAW sao ignoradas. `Overscan=0` e o default: o framebuffer Circle usa `672x504` e o presenter centraliza o emulador em `640x480`, preservando a mesma area fonte do backend usada no modo `640x480`. Com `Overscan=1`, o runtime usa `640x480` e o presenter preenche toda a area. Isso nao altera `config.txt`, que fica restrito ao boot/firmware do Raspberry Pi e pode permanecer com deteccao HDMI automatica.
+O Settings nao expoe mais `Proportion`; chaves antigas `proportion=`/`resolution=` em `msx.cfg`/RAW sao ignoradas. `Overscan=0` e o default: o framebuffer Circle usa `704x528` e o presenter centraliza o emulador em `640x480`, preservando a mesma area fonte do backend usada no modo `640x480` com margem inteira de 10%. Com `Overscan=1`, o runtime usa `640x480` e o presenter preenche toda a area. Em AV/SDTV detectado pelo firmware, o boot pula audio HDMI, mas a mecanica de tamanho do Overscan permanece ativa. Isso nao altera `config.txt`, que fica restrito ao boot/firmware do Raspberry Pi e pode permanecer com deteccao HDMI/AV automatica.
 
 Payload esperado na partição FAT32 de boot:
 

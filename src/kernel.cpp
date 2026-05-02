@@ -7,6 +7,7 @@
 #include <circle/bcmpropertytags.h>
 #include <circle/machineinfo.h>
 #include <circle/sound/hdmisoundbasedevice.h>
+#include <circle/sound/pwmsoundbasedevice.h>
 #include <circle/startup.h>
 #include <circle/string.h>
 #include <circle/synchronize.h>
@@ -395,8 +396,8 @@ static const unsigned kProportionWidth16_9 = 960u;
 static const unsigned kProportionHeight16_9 = 540u;
 static const unsigned kProportionWidth4_3 = 640u;
 static const unsigned kProportionHeight4_3 = 480u;
-static const unsigned kOverscanOffWidth = 672u;
-static const unsigned kOverscanOffHeight = 504u;
+static const unsigned kOverscanOffWidth = 704u;
+static const unsigned kOverscanOffHeight = 528u;
 static const unsigned kOverscanOffViewportWidth = 640u;
 static const unsigned kOverscanOffViewportHeight = 480u;
 static const char kBootConfigKernelStartMarker[] = "#---KERNEL START---";
@@ -427,6 +428,30 @@ static const u8 kJoyBridgeFireB = (u8) (1u << 5);
 static const boolean kBootQuiet = TRUE;
 /* Rensha modes are expressed in pulses per 10 frames (0.5, 1.0, 1.5). */
 static const unsigned kRenshaRateDen = 20u; /* 1/20 pulse per frame unit */
+
+static boolean IsAvCompositeDisplayMode(unsigned width, unsigned height)
+{
+	/* Firmware SDTV modes used by composite AV: NTSC/PAL-M 720x480, PAL 720x576. */
+	return width > 640u && width <= 768u && height >= 480u && height <= 576u ? TRUE : FALSE;
+}
+
+static boolean ProbeFirmwareDisplayDimensions(unsigned *width, unsigned *height)
+{
+	if (width != 0) *width = 0u;
+	if (height != 0) *height = 0u;
+
+	CBcmPropertyTags tags;
+	TPropertyTagDisplayDimensions dimensions;
+	memset(&dimensions, 0, sizeof(dimensions));
+	if (!tags.GetTag(PROPTAG_GET_DISPLAY_DIMENSIONS, &dimensions, sizeof(dimensions)))
+	{
+		return FALSE;
+	}
+
+	if (width != 0) *width = dimensions.nWidth;
+	if (height != 0) *height = dimensions.nHeight;
+	return dimensions.nWidth != 0u && dimensions.nHeight != 0u ? TRUE : FALSE;
+}
 
 #ifndef MSXBARE_BUILD_OWNER
 #define MSXBARE_BUILD_OWNER ""
@@ -2056,6 +2081,7 @@ CComboKernel::CComboKernel(void)
 	m_GameMasterCatalog{{0}},
 	m_OverscanPercent(300u),
 	m_OverscanEnabled(FALSE),
+	m_AvOutputDetected(FALSE),
 	m_ScaleMaxFitEnabled(FALSE),
 	m_Language(ComboLanguagePT),
 	m_ProportionMode(kProportionMode4_3),
@@ -2844,12 +2870,7 @@ void CComboKernel::InitializeDebugRuntime(void)
 #if !MSXBARE_ENABLE_DEBUG_OVERLAY
 	return;
 #else
-	if (g_backend_uart_trace_serial != 0)
-	{
-		return;
-	}
-
-	if (!m_Serial.Initialize(115200))
+	if (g_backend_uart_trace_serial == 0 && !m_Serial.Initialize(115200))
 	{
 		BootPhaseWarn(m_Logger, "BT11", "UART + Logger... FAIL");
 		return;
@@ -2963,6 +2984,33 @@ TComboShutdownMode CComboKernel::Run(void)
 	m_DCacheEnabled = (sctlr_el1 & (1u << 2)) ? TRUE : FALSE;
 	m_ICacheEnabled = (sctlr_el1 & (1u << 12)) ? TRUE : FALSE;
 	const boolean backend_audio_enabled = m_BackendEnabled ? TRUE : FALSE;
+	unsigned firmware_display_w = 0u;
+	unsigned firmware_display_h = 0u;
+	const boolean firmware_display_valid = ProbeFirmwareDisplayDimensions(&firmware_display_w, &firmware_display_h);
+	m_AvOutputDetected = firmware_display_valid ? IsAvCompositeDisplayMode(firmware_display_w, firmware_display_h) : FALSE;
+
+#if MSXBARE_ENABLE_DEBUG_OVERLAY
+	if (g_backend_uart_trace_serial == 0 && m_Serial.Initialize(115200))
+	{
+		g_backend_uart_trace_serial = &m_Serial;
+		(void) m_Logger.Initialize(&m_Serial);
+		BootPhase(m_Logger, "BT1D", "early UART + Logger... OK");
+		{
+			CString display_line;
+			display_line.Format("BOOT_DISPLAY firmware=%ux%u valid=%u av=%u",
+				firmware_display_w,
+				firmware_display_h,
+				firmware_display_valid ? 1u : 0u,
+				m_AvOutputDetected ? 1u : 0u);
+			m_Logger.Write(FromKernel, LogNotice, display_line);
+		}
+	}
+#endif
+
+	if (m_AvOutputDetected)
+	{
+		m_Screen.SetInitialSize(kProportionWidth4_3, kProportionHeight4_3);
+	}
 
 	if (!m_Screen.Initialize())
 	{
@@ -2971,6 +3019,7 @@ TComboShutdownMode CComboKernel::Run(void)
 		return ComboShutdownHalt;
 	}
 	m_ScreenReady = TRUE;
+	m_AvOutputDetected = m_AvOutputDetected || IsAvCompositeDisplayMode(m_Screen.GetWidth(), m_Screen.GetHeight());
 	BootPhase(m_Logger, "BT2", "screen... OK");
 
 	if (m_TestToneEnabled || backend_audio_enabled)
@@ -3784,7 +3833,7 @@ TComboShutdownMode CComboKernel::Run(void)
 				m_SoundStartAttempts++;
 				if (m_Sound->Start())
 				{
-					m_Logger.Write(FromKernel, LogWarning, "HDMI sound recovered after retry");
+					m_Logger.Write(FromKernel, LogWarning, "Sound recovered after retry");
 				}
 				else
 				{
@@ -3900,16 +3949,30 @@ TComboShutdownMode CComboKernel::Run(void)
 void CComboKernel::InitializeAudioOutput(boolean backend_audio_enabled)
 {
 	m_AudioInitAttempted = TRUE;
-	m_Sound = new CHDMISoundBaseDevice(&m_Interrupt, kSampleRate, kChunkSize);
-	if (m_Sound == 0)
+	if (m_AvOutputDetected)
 	{
-		m_Logger.Write(FromKernel, LogPanic, "Failed to allocate CHDMISoundBaseDevice");
-		return;
+		m_Sound = new CPWMSoundBaseDevice(&m_Interrupt, kSampleRate, kChunkSize);
+		if (m_Sound == 0)
+		{
+			m_Logger.Write(FromKernel, LogWarning, "Failed to allocate CPWMSoundBaseDevice");
+			return;
+		}
+		m_Logger.Write(FromKernel, LogNotice, "Audio output: PWM AV");
+	}
+	else
+	{
+		m_Sound = new CHDMISoundBaseDevice(&m_Interrupt, kSampleRate, kChunkSize);
+		if (m_Sound == 0)
+		{
+			m_Logger.Write(FromKernel, LogPanic, "Failed to allocate CHDMISoundBaseDevice");
+			return;
+		}
+		m_Logger.Write(FromKernel, LogNotice, "Audio output: HDMI");
 	}
 
 	if (!m_Sound->AllocateQueue(kQueueMs))
 	{
-		m_Logger.Write(FromKernel, LogPanic, "Cannot allocate sound queue");
+		m_Logger.Write(FromKernel, m_AvOutputDetected ? LogWarning : LogPanic, "Cannot allocate sound queue");
 		return;
 	}
 
@@ -3920,12 +3983,15 @@ void CComboKernel::InitializeAudioOutput(boolean backend_audio_enabled)
 	if (!m_Sound->Start())
 	{
 		m_SoundStartFailures++;
-		m_Logger.Write(FromKernel, LogPanic, "Cannot start HDMI sound");
+		m_Logger.Write(FromKernel, m_AvOutputDetected ? LogWarning : LogPanic,
+			m_AvOutputDetected ? "Cannot start PWM AV sound" : "Cannot start HDMI sound");
+		return;
 	}
 
 	if (m_TestToneEnabled)
 	{
-		m_Logger.Write(FromKernel, LogNotice, "Test tone ON (440Hz HDMI)");
+		m_Logger.Write(FromKernel, LogNotice,
+			m_AvOutputDetected ? "Test tone ON (440Hz PWM AV)" : "Test tone ON (440Hz HDMI)");
 	}
 	else if (backend_audio_enabled)
 	{
@@ -3936,7 +4002,8 @@ void CComboKernel::InitializeAudioOutput(boolean backend_audio_enabled)
 			tone_line.Format("Boot probe tone: %ums", MSXBARE_AUDIO_BOOT_TONE_MS);
 			m_Logger.Write(FromKernel, LogNotice, tone_line);
 		}
-		m_Logger.Write(FromKernel, LogNotice, "Emulator audio ON (HDMI)");
+		m_Logger.Write(FromKernel, LogNotice,
+			m_AvOutputDetected ? "Emulator audio ON (PWM AV)" : "Emulator audio ON (HDMI)");
 	}
 }
 
@@ -6032,9 +6099,10 @@ boolean CComboKernel::ApplyProportionModeToScreen(const char *phase, boolean for
 	}
 
 	CString line;
-	line.Format("Display applied %s: overscan %s %ux%u",
+	line.Format("Display applied %s: overscan %s%s %ux%u",
 		phase != 0 ? phase : "runtime",
 		m_OverscanEnabled ? "ON" : "OFF",
+		m_AvOutputDetected ? " AV" : "",
 		target_w,
 		target_h);
 	m_Logger.Write(FromKernel, LogNotice, line);
