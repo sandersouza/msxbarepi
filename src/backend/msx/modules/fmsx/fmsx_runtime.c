@@ -842,6 +842,7 @@ static unsigned fmsx_runtime_clamp_rammapper_kb(unsigned kb)
 {
     switch (kb)
     {
+    case 64u:
     case 512u:
     case 1024u:
         return kb;
@@ -851,10 +852,15 @@ static unsigned fmsx_runtime_clamp_rammapper_kb(unsigned kb)
     }
 }
 
-static unsigned fmsx_runtime_rammapper_pages(void)
+static unsigned fmsx_runtime_rammapper_pages_for_profile(unsigned profile)
 {
+    if (profile == FMSX_MODEL_PROFILE_MSX1)
+    {
+        return 4u;
+    }
     switch (g_rammapper_kb)
     {
+    case 64u:   return 4u;
     case 512u:  return 32u;
     case 1024u: return 64u;
     case 256u:
@@ -878,19 +884,26 @@ static unsigned fmsx_runtime_clamp_megaram_kb(unsigned kb)
 
 static boolean fmsx_runtime_find_slot_map(unsigned slot, unsigned *out_ps, unsigned *out_ss)
 {
-    /* Must match fMSX CartMap in MSX.c */
-    static const uint8_t kCartMap[4][4] = {
-        { 255u, 3u, 4u, 5u },
-        { 0u,   0u, 0u, 0u },
-        { 1u,   1u, 1u, 1u },
-        { 2u, 255u, 255u, 255u }
-    };
-
     for (unsigned ps = 0u; ps < 4u; ++ps)
     {
         for (unsigned ss = 0u; ss < 4u; ++ss)
         {
-            if (kCartMap[ps][ss] == slot)
+            unsigned mapped = 255u;
+            if (g_active_model_profile == FMSX_MODEL_PROFILE_MSX1)
+            {
+                if (ps == 1u && ss == 0u) mapped = 0u;
+                else if (ps == 3u && ss == 0u) mapped = 1u;
+            }
+            else
+            {
+                if (ps == 1u && ss == 0u) mapped = 0u;
+                else if (ps == 2u && ss == 0u) mapped = 1u;
+                else if (ps == 3u && ss == 3u) mapped = 2u;
+                else if (ps == 0u && ss == 2u) mapped = 3u;
+                else if (ps == 0u && ss == 3u) mapped = 4u;
+            }
+
+            if (mapped == slot)
             {
                 if (out_ps != 0) *out_ps = ps;
                 if (out_ss != 0) *out_ss = ss;
@@ -919,7 +932,11 @@ static unsigned fmsx_runtime_pick_internal_scc_slot(void)
     for (unsigned i = 0u; i < sizeof(kPreferredSlots) / sizeof(kPreferredSlots[0]); ++i)
     {
         const unsigned slot = kPreferredSlots[i];
-        if (slot < MAXSLOTS && ROMData[slot] == 0)
+        unsigned ps = 0u;
+        unsigned ss = 0u;
+        if (slot < MAXSLOTS
+         && ROMData[slot] == 0
+         && fmsx_runtime_find_slot_map(slot, &ps, &ss))
         {
             return slot;
         }
@@ -1284,7 +1301,11 @@ static boolean fmsx_runtime_game_master_commit(void)
 
 static unsigned fmsx_runtime_disk_subslot(void)
 {
-    return MODEL(MSX_MSX2P) ? 2u : 1u;
+    if (MODEL(MSX_MSX1))
+    {
+        return 0u;
+    }
+    return 2u;
 }
 
 static void fmsx_runtime_force_disk_rom_off_mapping(void)
@@ -1294,7 +1315,15 @@ static void fmsx_runtime_force_disk_rom_off_mapping(void)
      * fMSX may keep DiskROM mapped even when MSX_PATCHBDOS is toggled off.
      * Enforce OFF policy by unmapping slot 3:<disk_subslot> pages 2-3 explicitly.
      */
-    if (!(MODEL(MSX_MSX2P) && FmsxMSX2PKanjiBasicLoaded && disk_subslot == 1u))
+    if (MODEL(MSX_MSX1))
+    {
+        if (ROMData[1] == 0 && ROMName[1] == 0 && g_cartridge_path[1][0] == '\0')
+        {
+            MemMap[3][0][2] = EmptyRAM;
+            MemMap[3][0][3] = EmptyRAM;
+        }
+    }
+    else if (!(MODEL(MSX_MSX2P) && FmsxMSX2PKanjiBasicLoaded && disk_subslot == 1u))
     {
         MemMap[3][disk_subslot][2] = EmptyRAM;
         MemMap[3][disk_subslot][3] = EmptyRAM;
@@ -1600,7 +1629,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     fmsx_runtime_trace_gfx9000_event("start-set", g_gfx9000_enabled);
     fmsx_v9990_set_enabled(g_gfx9000_enabled);
     fmsx_runtime_set_load_diag(2101u); /* before StartMSX */
-    boolean started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages(), 2) ? TRUE : FALSE;
+    boolean started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages_for_profile(requested_model_profile), 2) ? TRUE : FALSE;
     fmsx_runtime_set_load_diag(started ? 2102u : 9102u); /* after StartMSX */
     if (started)
     {
@@ -1618,7 +1647,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
         g_use_embedded_bios = TRUE;
         fmsx_runtime_refresh_scc_virtual_slots();
         fmsx_runtime_set_load_diag(2107u); /* MSX1 GAME retry with forced embedded BIOS */
-        started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages(), 2) ? TRUE : FALSE;
+        started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages_for_profile(FMSX_MODEL_PROFILE_MSX1), 2) ? TRUE : FALSE;
         fmsx_runtime_set_load_diag(started ? 2108u : 9108u); /* forced BIOS retry result */
         g_use_embedded_bios = FALSE;
     }
@@ -1636,7 +1665,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
             g_use_embedded_bios = FALSE;
             fmsx_runtime_refresh_scc_virtual_slots();
             fmsx_runtime_set_load_diag(2105u); /* retry after full initramfs mount */
-            started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages(), 2) ? TRUE : FALSE;
+            started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages_for_profile(requested_model_profile), 2) ? TRUE : FALSE;
             fmsx_runtime_set_load_diag(started ? 2106u : 9106u); /* retry result */
             g_use_embedded_bios = FALSE;
         }
@@ -1654,7 +1683,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
         g_use_embedded_bios = FALSE;
         fmsx_runtime_refresh_scc_virtual_slots();
         fmsx_runtime_set_load_diag(2103u); /* fallback retry as MSX1 */
-        started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages(), 2) ? TRUE : FALSE;
+        started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages_for_profile(FMSX_MODEL_PROFILE_MSX1), 2) ? TRUE : FALSE;
         fmsx_runtime_set_load_diag(started ? 2104u : 9104u); /* fallback result */
         g_use_embedded_bios = FALSE;
         if (!started && game_mode)
@@ -1666,7 +1695,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
             g_use_embedded_bios = TRUE;
             fmsx_runtime_refresh_scc_virtual_slots();
             fmsx_runtime_set_load_diag(2109u); /* MSX2->MSX1 fallback retry forced embedded BIOS */
-            started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages(), 2) ? TRUE : FALSE;
+            started = StartMSX(startup_mode, fmsx_runtime_rammapper_pages_for_profile(FMSX_MODEL_PROFILE_MSX1), 2) ? TRUE : FALSE;
             fmsx_runtime_set_load_diag(started ? 2110u : 9110u); /* forced BIOS fallback result */
             g_use_embedded_bios = FALSE;
         }
@@ -2235,30 +2264,7 @@ void fmsx_runtime_set_disk_rom_enabled(boolean enabled)
         return;
     }
 
-    const boolean disk_rom_effective = fmsx_runtime_disk_rom_effective(g_active_model_profile);
-    int new_mode = Mode & ~MSX_PATCHBDOS;
-    FmsxDiskROMPolicyEnabled = disk_rom_effective ? 1u : 0u;
-    if (disk_rom_effective)
-    {
-        /* Force transition so ResetMSX() reloads DISK.ROM with hooks disabled. */
-        Mode |= MSX_PATCHBDOS;
-        new_mode = fmsx_runtime_apply_disk_mode_bits(Mode & ~MSX_PATCHBDOS,
-                                                     g_active_model_profile,
-                                                     TRUE);
-    }
-    else
-    {
-        Mode |= MSX_PATCHBDOS;
-        new_mode = fmsx_runtime_apply_disk_mode_bits(Mode & ~MSX_PATCHBDOS,
-                                                     g_active_model_profile,
-                                                     FALSE);
-    }
-    (void) ResetMSX(new_mode, RAMPages, VRAMPages);
-    if (!disk_rom_effective)
-    {
-        fmsx_runtime_force_disk_rom_off_mapping();
-    }
-    (void) fmsx_runtime_apply_kanji_rom_enabled();
+    (void) fmsx_runtime_hard_reset();
 }
 
 boolean fmsx_runtime_get_disk_rom_enabled(void)
@@ -2664,6 +2670,10 @@ boolean fmsx_runtime_load_cartridge(unsigned slot_index, const char *path)
     }
 
     fmsx_runtime_set_load_diag(2301u); /* before LoadCart */
+    if (g_active_model_profile == FMSX_MODEL_PROFILE_MSX1 && slot_index == 1u)
+    {
+        fmsx_runtime_force_disk_rom_off_mapping();
+    }
     const int pages = LoadCart(path, (int) slot_index, ROMGUESS((int) slot_index) | ROMTYPE((int) slot_index));
     if (pages <= 0)
     {
@@ -2672,6 +2682,12 @@ boolean fmsx_runtime_load_cartridge(unsigned slot_index, const char *path)
     }
     fmsx_runtime_set_load_diag(2302u); /* LoadCart ok */
     fmsx_runtime_refresh_scc_virtual_slots();
+    if (g_active_model_profile == FMSX_MODEL_PROFILE_MSX1
+     && slot_index == 1u
+     && g_disk_rom_enabled)
+    {
+        (void) fmsx_runtime_hard_reset();
+    }
     g_fmsx_status.last_pc = (int) CPU.PC.W;
     return TRUE;
 }
@@ -2810,6 +2826,12 @@ boolean fmsx_runtime_unload_cartridge(unsigned slot_index)
     }
 
     fmsx_runtime_refresh_scc_virtual_slots();
+    if (g_active_model_profile == FMSX_MODEL_PROFILE_MSX1
+     && slot_index == 1u
+     && g_disk_rom_enabled)
+    {
+        (void) fmsx_runtime_hard_reset();
+    }
     g_fmsx_status.last_pc = (int) CPU.PC.W;
     return TRUE;
 }

@@ -7,12 +7,50 @@ Ponto de entrada rapido para contexto operacional do projeto.
 - Branch ativa da rodada: `fix/av-out-without-circle-framebuffer`
 - Issue ativa: sem issue remota nesta rodada.
 - Escopo: corrigir saida AV/composite no Raspberry Pi 3B preservando HDMI.
+- Atualizacao 2026-05-04 (Machine/MSX1 mapper):
+  - troca em `Settings -> Machine` agora deixa hard reset pendente e so reinicia a emulacao ao sair do menu;
+  - selecionar `MSX1` força 64 KB de RAM no `SLOT2`, sem RAM mapper e com slots primarios nao expandidos;
+  - layout MSX1: `SLOT0` ROM `BIOS+BASIC`, `SLOT1` Cartucho A, `SLOT2` RAM principal, `SLOT3` Cartucho B ou `DISK.ROM`;
+  - `DISK.ROM` em MSX1 usa `3-0` quando nao ha Cartucho B; carregar Cartucho B libera o `SLOT3`, e remover Cartucho B restaura a Disk ROM se o toggle seguir `ON`;
+  - `MSXDOS2.ROM` continua carregando somente em MSX2/MSX2+;
+  - `Load ROMS` em MSX1 mostra `DISKROM` no segundo slot de cartucho quando nao ha Cartucho B e `Disk ROM [ON]`;
+  - alternar `Disk ROM` reinicia o runtime para a BIOS enxergar a troca imediatamente;
+  - ao voltar para MSX2/MSX2+, o mapper retorna ao default de 256 KB quando vinha do default MSX1;
+  - validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=0`, `make -j4 DEBUG=1`; build DEBUG=1 `BUILD_BID=202605041720-80bcca4`, `TXTDBG BUILD:F767`.
+- Atualizacao 2026-05-04 (layout Panasonic MSX2/MSX2+):
+  - perfis MSX2/MSX2+ passam a seguir `blueMSX` Panasonic `FS-A1F`/`FS-A1WSX`;
+  - Cartucho A em `1-0`, Cartucho B em `2-0`, RAM em `3-0`, SubROM em `3-1`, `DISK.ROM` em `3-2`;
+  - helper interno nao usa mais `3-0`, evitando colisao com RAM no layout Panasonic;
+  - validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=0`, `make -j4 DEBUG=1`; build DEBUG=1 `BUILD_BID=202605041727-80bcca4`, `TXTDBG BUILD:3202`.
+- Atualizacao 2026-05-04 (LOAD ROMS SLOT2):
+  - segundo slot de `LOAD ROMS` bloqueia carga somente em MSX1 com `Disk ROM [ON]`;
+  - em MSX2/MSX2+, CartB pode ser carregado com `Disk ROM [ON/OFF]`;
+  - reativar `Disk ROM` em MSX1 descarrega CartB automaticamente antes do reset que restaura `DISK.ROM`;
+  - validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=0`, `make -j4 DEBUG=1`; build DEBUG=1 `BUILD_BID=202605041730-80bcca4`, `TXTDBG BUILD:F87A`.
+- Atualizacao 2026-05-04 (MSX1 CartB com Disk ROM OFF):
+  - limpeza da Disk ROM no MSX1 nao apaga mais `MemMap[3][0][2..3]` quando ha CartB carregado no segundo slot;
+  - validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=0`, `make -j4 DEBUG=1`; build DEBUG=1 `BUILD_BID=202605041801-80bcca4`, `TXTDBG BUILD:A350`.
+- Atualizacao 2026-05-04 (FM Music ON):
+  - foco atual: `FM Music` nao ativava ao alternar pelo menu porque `FMPAC.ROM` so e carregado em `StartMSX()`;
+  - o toggle agora aplica o flag ao runtime e deixa reset pendente para a saida do menu, reaproveitando o fluxo que ja reinicia a maquina apos mudanca de `Machine`;
+  - reteste esperado: ligar `FM Music`, sair do menu e confirmar que o FM-PAC/OPLL fica visivel para o software.
+  - validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=0`, `make -j4 DEBUG=1`; build DEBUG=1 `BUILD_BID=202605041848-80bcca4`, `TXTDBG BUILD:A456`.
+- Atualizacao 2026-05-04 (boot travado no USB):
+  - UART `/tmp/msx2p-boot-serial.log` da build `18:48` chegou a `BT12`, `runtime OK`, `first blit` e parou apos `Boot step: init USB`;
+  - nao houve `USB host ready` nem `BT13`, entao o travamento esta dentro de `m_USBHCI.Initialize()`;
+  - adicionado `DebugRepairTimerIrqBinding(0x8F)` imediatamente antes do init USB inicial e `0x8E` antes do retry, alem do log `Boot step: USB IRQ checked` para separar travamento no reparo de IRQ versus no init USB.
+  - validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=0`, `make -j4 DEBUG=1`; build DEBUG=1 `BUILD_BID=202605041858-80bcca4`, `TXTDBG BUILD:6737`.
+- Atualizacao 2026-05-04 (FM Music sem sobrescrever ROM):
+  - o layout Panasonic tinha deixado MSX2/MSX2+ com apenas um helper interno (`3-3`), que podia ser ocupado por `MSXDOS2.ROM`/`PAINTER.ROM` antes de `FMPAC.ROM`;
+  - MSX2/MSX2+ agora restauram helpers internos em `0-2` e `0-3`, alem de `3-3`, preservando Cartucho A em `1-0`, Cartucho B em `2-0`, RAM/SubROM/DiskROM em `3-0/3-1/3-2`;
+  - o carregador continua usando apenas slots cujas paginas estejam vazias, sem remover ou sobrepor ROM previamente carregada para ativar FM.
+  - validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=0`, `make -j4 DEBUG=1`; build DEBUG=1 `BUILD_BID=202605041907-80bcca4`, `TXTDBG BUILD:AD7E`.
 - Atualizacao 2026-05-04 (Disk ROM OFF):
   - branch local atual: `codex/corrigir-viewport-mailbox-escala`;
   - `Disk ROM [OFF]` agora vira politica efetiva de boot/reset do fMSX local, nao apenas bloqueio tardio de acesso a disco;
   - o runtime remove `MSX_MSXDOS2` do `Mode` quando a politica esta OFF e força a transicao de `PATCHBDOS` para que `ResetMSX()` limpe o mapeamento antes do scan da BIOS;
   - `ResetMSX()` nao carrega `DISK.ROM` quando `FmsxDiskROMPolicyEnabled=0` e descarrega o slot interno reservado para `MSXDOS2.ROM`;
-  - objetivo de reteste: com `Disk ROM [OFF]`, o BASIC nao deve mostrar Disk BASIC; com `ON`, `DISK.ROM`/`MSXDOS2.ROM` voltam ao fluxo normal.
+  - objetivo de reteste: com `Disk ROM [OFF]`, o BASIC nao deve mostrar Disk BASIC; com `ON`, `DISK.ROM` volta ao fluxo normal e `MSXDOS2.ROM` volta apenas em MSX2/MSX2+.
   - validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=0`, `make -j4 DEBUG=1`; build DEBUG=1 `BUILD_BID=202605041538-a107316`, `TXTDBG BUILD:94E9`.
 - Atualizacao 2026-05-04 (viewport MSX classico):
   - ajuste local em `main`: presenter fMSX classico passou a usar mailbox fonte completa `272x228`, em vez de recortar `256x192` centralizado;

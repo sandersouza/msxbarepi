@@ -388,6 +388,7 @@ struct InterruptBindingBaseline
 static InterruptBindingBaseline g_InterruptBindingBaseline = {0, 0, FALSE, FALSE};
 }
 static const unsigned kBootModeGame = 2u;
+static const unsigned kMsx1RamKbDefault = 64u;
 static const unsigned kRamMapperKbDefault = 256u;
 static const unsigned kMegaRamKbDefault = 0u;
 static const unsigned kProportionMode16_9 = 0u;
@@ -1135,6 +1136,7 @@ static unsigned ClampRamMapperKb(unsigned kb)
 {
 	switch (kb)
 	{
+	case 64u:
 	case 512u:
 	case 1024u:
 		return kb;
@@ -1152,6 +1154,11 @@ static unsigned CycleRamMapperKb(unsigned kb, boolean reverse)
 		return (kb == 256u) ? 512u : ((kb == 512u) ? 1024u : 256u);
 	}
 	return (kb == 1024u) ? 512u : ((kb == 512u) ? 256u : 1024u);
+}
+
+static unsigned DefaultRamMapperKbForMachineProfile(unsigned profile)
+{
+	return IsMsx2FamilyProfile(profile) ? kRamMapperKbDefault : kMsx1RamKbDefault;
 }
 
 static unsigned ClampMegaRamKb(unsigned kb)
@@ -2047,6 +2054,7 @@ CComboKernel::CComboKernel(void)
 	m_EmulationPaused(FALSE),
 	m_LastF12Pressed(FALSE),
 	m_LastPauseWasInSettings(FALSE),
+	m_MachineResetPending(FALSE),
 	m_LastPausePressed(FALSE),
 	m_LastMenuBackPressed(FALSE),
 	m_PauseNeedsBackgroundRedraw(FALSE),
@@ -2414,12 +2422,19 @@ void CComboKernel::NormalizeSettingsForBuild(void)
 	m_SccDualCartEnabled = FALSE;
 #endif
 
-	m_RamMapperKb = ClampRamMapperKb(m_RamMapperKb);
 	m_MegaRamKb = ClampMegaRamKb(m_MegaRamKb);
 	if (!IsMsx2FamilyProfile(m_MachineProfile))
 	{
 		m_RefreshRateHz = 60u;
-		m_RamMapperKb = kRamMapperKbDefault;
+		m_RamMapperKb = kMsx1RamKbDefault;
+	}
+	else
+	{
+		m_RamMapperKb = ClampRamMapperKb(m_RamMapperKb);
+		if (m_RamMapperKb == kMsx1RamKbDefault)
+		{
+			m_RamMapperKb = kRamMapperKbDefault;
+		}
 	}
 }
 
@@ -3290,6 +3305,8 @@ TComboShutdownMode CComboKernel::Run(void)
 		if (!m_UsbReady)
 		{
 			m_Logger.Write(FromKernel, LogNotice, "Boot step: init USB");
+			(void) DebugRepairTimerIrqBinding(0x8Fu);
+			m_Logger.Write(FromKernel, LogNotice, "Boot step: USB IRQ checked");
 			if (m_USBHCI.Initialize())
 			{
 				m_UsbReady = TRUE;
@@ -3363,6 +3380,7 @@ TComboShutdownMode CComboKernel::Run(void)
 		{
 			if (tick >= m_UsbInitRetryTick)
 			{
+				(void) DebugRepairTimerIrqBinding(0x8Eu);
 				if (m_USBHCI.Initialize())
 				{
 					m_UsbReady = TRUE;
@@ -3903,7 +3921,7 @@ TComboShutdownMode CComboKernel::Run(void)
 			const char *drive1_src = m_BackendReady ? backend_runtime_get_disk_name(0u) : 0;
 			const char *drive2_src = m_BackendReady ? backend_runtime_get_disk_name(1u) : 0;
 			FormatRomName83(slot1_src, slot1_name);
-			FormatRomName83(slot2_src, slot2_name);
+			FormatRomName83((slot2_src == 0 && m_MachineProfile == 0u && m_DiskRomEnabled) ? "DISKROM" : slot2_src, slot2_name);
 			FormatRomName83(drive1_src, drive1_name);
 			FormatRomName83(drive2_src, drive2_name);
 		#else
@@ -4259,10 +4277,13 @@ boolean CComboKernel::PerformMenuHardReset(unsigned requested_diag, unsigned suc
 	UpdateLoadDiagTelemetry(3510u); /* shared hard reset path */
 	backend_runtime_set_boot_mode(m_BootMode);
 	backend_runtime_set_model_profile(m_MachineProfile);
+	backend_runtime_set_rammapper_kb(m_RamMapperKb);
+	backend_runtime_set_megaram_kb(m_MegaRamKb);
 	const boolean reset_ok = backend_runtime_reset();
 	if (reset_ok)
 	{
 		UpdateLoadDiagTelemetry(success_diag);
+		m_MachineResetPending = FALSE;
 		ResetEmulationRuntimeState();
 		ApplyRuntimeSettingsToBackend();
 		(void) ApplyDisplayModeToScreen("hard-reset", FALSE, FALSE);
@@ -6828,6 +6849,14 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 			browser_path[0] = '\0';
 			if (m_PauseMenu.ConsumePendingRomBrowserOpen(&browser_slot, browser_path, sizeof(browser_path)))
 			{
+				if (browser_slot == 1u
+				 && !IsMsx2FamilyProfile(m_MachineProfile)
+				 && m_DiskRomEnabled)
+				{
+					UpdateLoadDiagTelemetry(9008u); /* MSX1 slot B reserved by DiskROM */
+					m_Logger.Write(FromKernel, LogWarning, "Load ROM bloqueado: SLOT2 reservado pela Disk ROM no MSX1");
+					break;
+				}
 				m_PauseMenu.OpenFileBrowser((unsigned) ComboFileBrowserModeRom, browser_slot, browser_path);
 				UpdateLoadDiagTelemetry(2103u); /* ROM browser open deferred to main loop */
 				break;
@@ -6845,10 +6874,13 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 				{
 					slot_index = (action == ComboMenuActionCartridgeB) ? 1u : 0u;
 				}
-				if (slot_index == 1u && m_SccDualCartEnabled)
+				if (slot_index == 1u
+				 && !IsMsx2FamilyProfile(m_MachineProfile)
+				 && m_DiskRomEnabled
+				 && rom_path[0] != '\0')
 				{
-					UpdateLoadDiagTelemetry(9008u); /* slot B reserved by Konami SCC+ DUAL */
-					m_Logger.Write(FromKernel, LogWarning, "Load ROM bloqueado: SLOT2 reservado por Konami SCC+ DUAL");
+					UpdateLoadDiagTelemetry(9008u); /* MSX1 slot B reserved by DiskROM */
+					m_Logger.Write(FromKernel, LogWarning, "Load ROM bloqueado: SLOT2 reservado pela Disk ROM no MSX1");
 					break;
 				}
 #if MSXBARE_FEAT_GFX9000
@@ -7397,7 +7429,19 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		m_Logger.Write(FromKernel, LogNotice, "Disk ROM indisponivel neste build");
 		break;
 #else
-		m_DiskRomEnabled = m_DiskRomEnabled ? FALSE : TRUE;
+		{
+			const boolean next_disk_rom_enabled = m_DiskRomEnabled ? FALSE : TRUE;
+		#if MSXBARE_ENABLE_FMSX
+			if (next_disk_rom_enabled
+			 && !IsMsx2FamilyProfile(m_MachineProfile)
+			 && m_BackendReady
+			 && backend_runtime_get_cartridge_name(1u) != 0)
+			{
+				(void) backend_runtime_unload_cartridge(1u);
+			}
+		#endif
+			m_DiskRomEnabled = next_disk_rom_enabled;
+		}
 		m_PauseMenu.SetDiskRomEnabled(m_DiskRomEnabled);
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX
@@ -7485,7 +7529,14 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 
 	case ComboMenuActionCycleMachine:
 		{
+			const unsigned previous_machine_profile = m_MachineProfile;
 			m_MachineProfile = CycleMachineProfileForBuild(m_MachineProfile, FALSE);
+			if (!IsMsx2FamilyProfile(m_MachineProfile)
+			 || !IsMsx2FamilyProfile(previous_machine_profile)
+			 || m_RamMapperKb == kMsx1RamKbDefault)
+			{
+				m_RamMapperKb = DefaultRamMapperKbForMachineProfile(m_MachineProfile);
+			}
 		}
 		if (!IsMsx2FamilyProfile(m_MachineProfile))
 		{
@@ -7494,12 +7545,14 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 			m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 		}
 		m_PauseMenu.SetMachineProfile(m_MachineProfile);
+		m_PauseMenu.SetRamMapperKb(m_RamMapperKb);
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX
 		if (!IsMsx2FamilyProfile(m_MachineProfile))
 		{
 			backend_runtime_set_refresh_hz(m_RefreshRateHz);
 		}
+		m_MachineResetPending = TRUE;
 		ApplyRuntimeSettingsToBackend();
 	#endif
 		{
@@ -7511,7 +7564,14 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 
 	case ComboMenuActionCycleMachinePrev:
 		{
+			const unsigned previous_machine_profile = m_MachineProfile;
 			m_MachineProfile = CycleMachineProfileForBuild(m_MachineProfile, TRUE);
+			if (!IsMsx2FamilyProfile(m_MachineProfile)
+			 || !IsMsx2FamilyProfile(previous_machine_profile)
+			 || m_RamMapperKb == kMsx1RamKbDefault)
+			{
+				m_RamMapperKb = DefaultRamMapperKbForMachineProfile(m_MachineProfile);
+			}
 		}
 		if (!IsMsx2FamilyProfile(m_MachineProfile))
 		{
@@ -7520,12 +7580,14 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 			m_PauseMenu.SetRefreshRateHz(m_RefreshRateHz);
 		}
 		m_PauseMenu.SetMachineProfile(m_MachineProfile);
+		m_PauseMenu.SetRamMapperKb(m_RamMapperKb);
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX
 		if (!IsMsx2FamilyProfile(m_MachineProfile))
 		{
 			backend_runtime_set_refresh_hz(m_RefreshRateHz);
 		}
+		m_MachineResetPending = TRUE;
 		ApplyRuntimeSettingsToBackend();
 	#endif
 		{
@@ -7754,6 +7816,7 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 		RefreshSettingsUiAfterAction();
 	#if MSXBARE_ENABLE_FMSX
 		backend_runtime_set_fm_music_enabled(m_FmMusicEnabled);
+		m_MachineResetPending = TRUE;
 	#endif
 		m_Logger.Write(FromKernel, LogNotice, m_FmMusicEnabled ? "Settings: FM Music ON" : "Settings: FM Music OFF");
 		break;
@@ -8181,6 +8244,13 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 			if (!m_EmulationPaused)
 			{
 				m_ForceViewportFullClearNextFrame = TRUE;
+				if (m_MachineResetPending && m_BackendReady)
+				{
+					if (!PerformMenuHardReset(3601u, 3602u, 9602u))
+					{
+						m_Logger.Write(FromKernel, LogWarning, "Settings: reset failed");
+					}
+				}
 			}
 			if (!BackendQueueKernelLogDuringGfx9000Trace(0, m_EmulationPaused ? "Emulation PAUSED" : "Emulation RESUMED"))
 			{

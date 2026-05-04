@@ -138,6 +138,9 @@ Diretriz visual (overlay e menu):
 - `Settings` nao desenha mais o header `SETTINGS`; os itens usam margem superior e inferior simetricas para reduzir a altura do menu sem alterar a fonte.
 - Em builds `DEBUG=0`, `Scale` nao aparece no menu e o viewport usa sempre o maior scale permitido pela resolucao ativa.
 - `Settings -> Disk ROM`: aparece abaixo de `MegaRAM`, independente de `DEBUG=1`/`DEBUG=0`, e alterna a disponibilidade da Disk ROM no runtime. Quando `OFF`, o boot/reset nao carrega `DISK.ROM` nem arma o cartucho interno `MSXDOS2.ROM`; isso evita que o Disk BASIC apareca sem ROM de disco habilitada.
+- `Settings -> Machine`: qualquer troca de perfil deixa um hard reset pendente, executado apenas ao sair do menu. Ao selecionar `MSX1`, o runtime volta para 64 KB de RAM primaria sem RAM mapper; o item `MEM Mapper` fica `N/A` porque nao ha slot expandido nem portas de mapper ativas nesse perfil.
+- `Load ROMS` em `MSX1`: quando `Disk ROM [ON]` e nao ha Cartucho B, o segundo slot de cartucho mostra `DISKROM`; ao carregar Cartucho B, a Disk ROM sai do `SLOT3`, e volta ao remover o cartucho se o toggle continuar `ON`.
+- `Load ROMS`: o segundo slot de cartucho fica bloqueado para carga apenas em `MSX1` com `Disk ROM [ON]`; em `MSX2/MSX2+`, `SLOT2` continua aceitando cartucho com `Disk ROM [ON/OFF]`.
 - Em builds com `DEBUG=1`, o menu `Debug` mantem controles de diagnostico e apresentacao de debug, como `Scale`, `Debugger` e `Standard [NTSC/PAL]`.
 - Nesse caminho de diagnostico, o toggle agora atua no estado efetivo do VDP em runtime:
   - em `MSX1`, o runtime força diretamente o bit de video `MSX_PAL/MSX_NTSC`, `VDP R#9` e `VPeriod`, pois o TMS9918 nao expoe `R#9` gravavel como o V99x8;

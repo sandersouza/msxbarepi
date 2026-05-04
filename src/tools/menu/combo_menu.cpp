@@ -1256,7 +1256,7 @@ unsigned CComboPauseMenu::GetMachineProfile(void) const
 
 void CComboPauseMenu::SetRamMapperKb(unsigned kb)
 {
-    if (kb != 256u && kb != 512u && kb != 1024u)
+    if (kb != 64u && kb != 256u && kb != 512u && kb != 1024u)
     {
         kb = 256u;
     }

@@ -18,11 +18,29 @@
 ## Workflow de boot
 
 1. Runtime aplica perfil `MSX2` (`machine=1`).
-2. BIOS principal + SUBROM são carregadas no mapa do modelo.
+2. BIOS principal + SUBROM são carregadas no mapa Panasonic `FS-A1F`.
 3. `DISK.ROM` é mapeada quando `disk_rom=1`.
 4. Se `MSXDOS2.ROM` estiver disponível, o runtime arma o cartucho DOS2 no boot.
 5. Com `DRIVEA.DSK` presente desde o initramfs inicial, o boot pode entrar direto no MSX-DOS 2.
 6. `TM3` deve refletir estado de disco em `D:e/l`.
+
+## Layout de slots
+
+Referência: `third_party/bluemsx/.../Machines/MSX2 - Panasonic FS-A1F/config.ini`.
+
+- `SLOT0`: BIOS+BASIC em `0-0`
+  - `0-2`/`0-3`: slots helper internos quando livres
+- `SLOT1`: Cartucho A em `1-0`
+- `SLOT2`: Cartucho B em `2-0`
+- `SLOT3`: expandido
+  - `3-0`: RAM principal/RAM mapper
+  - `3-1`: SubROM
+  - `3-2`: `DISK.ROM`
+  - `3-3`: ROM interna Panasonic/cockpit quando disponível; slot helper interno quando livre
+
+Os helpers internos sao candidatos para ROMs opcionais (`MSXDOS2.ROM`,
+`PAINTER.ROM`, `FMPAC.ROM`) somente quando as paginas do subslot estao vazias;
+o runtime nao substitui ROM ja carregada para ativar uma extensao.
 
 ## Defaults de runtime (catálogo)
 

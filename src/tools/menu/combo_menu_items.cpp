@@ -425,7 +425,7 @@ const TComboMenuItem *combo_menu_settings_items_get(unsigned language,
     language = combo_locale_clamp_language(language);
     if (scanline_mode > 1u) scanline_mode = 1u;
     machine_profile = backend_machine_profile_clamp(machine_profile);
-    if (rammapper_kb != 256u && rammapper_kb != 512u && rammapper_kb != 1024u) rammapper_kb = 256u;
+    if (rammapper_kb != 64u && rammapper_kb != 256u && rammapper_kb != 512u && rammapper_kb != 1024u) rammapper_kb = 256u;
     if (megaram_kb != 0u && megaram_kb != 256u && megaram_kb != 512u && megaram_kb != 1024u) megaram_kb = 0u;
     if (z80_turbo_mode > 2u) z80_turbo_mode = 0u;
     if (boot_mode > 2u) boot_mode = 0u;
