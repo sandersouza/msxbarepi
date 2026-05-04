@@ -3113,8 +3113,37 @@ static const uint16_t BIOSPatches[] =
 { 0x00E1,0x00E4,0x00E7,0x00EA,0x00ED,0x00F0,0x00F3,0 };
 
 /** Cartridge map, by primary and secondary slots ************/
-static const uint8_t CartMap[4][4] =
-{ { 255,3,4,5 },{ 0,0,0,0 },{ 1,1,1,1 },{ 2,255,255,255 } };
+static uint8_t CartMap[4][4];
+
+static void ResetCartMapForMode(int model)
+{
+  uint8_t ps,ss;
+
+  for(ps=0;ps<4;++ps)
+    for(ss=0;ss<4;++ss)
+      CartMap[ps][ss]=255u;
+
+  if((model&MSX_MODEL)==MSX_MSX1)
+  {
+    CartMap[1][0]=0u; /* primary slot 1: Cart A */
+    CartMap[3][0]=1u; /* primary slot 3: Cart B or DiskROM */
+  }
+  else
+  {
+    /*
+     * Panasonic FS-A1F / FS-A1WSX visible layout:
+     *   Slot A = 1-0, Slot B = 2-0.
+     * Keep multiple internal helper slots available for optional ROMs
+     * (MSXDOS2, PAINTER, FMPAC) without replacing an already-loaded ROM.
+     * Slot 3-0/3-1/3-2 are reserved for RAM/SubROM(+Kanji)/DiskROM.
+     */
+    CartMap[1][0]=0u;
+    CartMap[2][0]=1u;
+    CartMap[3][3]=2u;
+    CartMap[0][2]=3u;
+    CartMap[0][3]=4u;
+  }
+}
 
 /** Screen Mode Handlers [number of screens + 1] *************/
 void (*RefreshLine[MAXSCREEN+2])(uint8_t Y) =
@@ -3407,8 +3436,9 @@ static int fmsx_system_cart_slot_is_available(uint8_t slot)
 
   /*
    * System helper cartridges must not be mapped on top of occupied
-   * internal subslots. This matters on MSX2+ HB-F1XDJ derived layouts,
-   * where 3-0/3-1/3-2/3-3 are already used by RAM/SubROM+Kanji/FDC/FM.
+   * internal subslots. This matters on Panasonic FS-A1F/FS-A1WSX
+   * derived layouts, where 3-0/3-1/3-2 are reserved by
+   * RAM/SubROM(+Kanji)/FDC.
    */
   for(page=2;page<6;++page)
     if(MemMap[PS][SS][page]!=EmptyRAM)
@@ -3561,6 +3591,7 @@ int StartMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   FmsxMSX2PKanjiBasicBase = 0;
   FmsxMSX2PMSXJELoaded = 0;
   FmsxMSX2PMSXJEBase = 0;
+  ResetCartMapForMode(NewMode&MSX_MODEL);
 
   /* Zero cartridge related data */
   for(J=0;J<MAXSLOTS;++J)
@@ -3841,6 +3872,7 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   if((Mode^NewMode)&MSX_MODEL)
   {
     if(log_cb) log_cb(1,"ResetMSX: model change\n");
+    ResetCartMapForMode(NewMode&MSX_MODEL);
     /* Change to the program directory */
     if(ProgDir && chdir(ProgDir)) { }
 
@@ -3901,14 +3933,11 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
         P2=LoadROM("MSX2PEXT.ROM",0x4000,0);
         if(!P2) P2=LoadROM("MSX2SUB.ROM",0x4000,0);
         if(!P2) P2=LoadROM("SUBROM.ROM",0x4000,0);
-        /* openMSX Sony_HB-F1XDJ maps Kanji BASIC at slot 3-1, 4000h- BFFFh. */
+        /* Panasonic FS-A1WSX maps Kanji BASIC at slot 3-1, 4000h-BFFFh. */
         P3=LoadROM("KANJIBASIC.ROM",0x8000,0);
         if(!P3) P3=LoadROM("HB-F1XDJ_KANJIBASIC.ROM",0x8000,0);
         if(!P3) P3=LoadROM("FS-A1FX_KANJIBASIC.ROM",0x8000,0);
-        /* openMSX Sony_HB-F1XDJ also maps MSX-JE in slot 0-3. */
-        P4=LoadROM("MSXJE.ROM",0x10000,0);
-        if(!P4) P4=LoadROM("HB-F1XDJ.ROM",0x10000,0);
-        if(!P4) P4=LoadROM("HB-F1XDJ_MSXJE.ROM",0x10000,0);
+        P4=0; /* Panasonic FS-A1WSX keeps slot 0-3 empty in this profile. */
         if(!P1||!P2)
         {
           NewMode=(NewMode&~MSX_MODEL)|(Mode&MSX_MODEL);
@@ -4018,33 +4047,39 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
   /* If toggling BDOS patches... */
   if((Mode^NewMode)&MSX_PATCHBDOS)
   {
-    const uint8_t disk_subslot = ((NewMode&MSX_MODEL)==MSX_MSX2P)? 2:1;
+    const uint8_t disk_subslot = ((NewMode&MSX_MODEL)==MSX_MSX1)? 0:2;
     if(log_cb) log_cb(1,"ResetMSX: PATCHBDOS begin\n");
     if(log_cb) log_cb(1,"ResetMSX: patchbdos branch\n");
     if(!FmsxDiskROMPolicyEnabled)
     {
+      const int diskrom_owns_slot = !(((NewMode&MSX_MODEL)==MSX_MSX1) && ROMName[1]);
       fmsx_unload_system_cart_slot(FMSX_MSXDOS2_SYSTEM_SLOT);
-      if(MemMap[3][disk_subslot][2]!=EmptyRAM)
+      if(diskrom_owns_slot && MemMap[3][disk_subslot][2]!=EmptyRAM)
         FreeMemory(MemMap[3][disk_subslot][2]);
-      MemMap[3][disk_subslot][2]=EmptyRAM;
-      MemMap[3][disk_subslot][3]=EmptyRAM;
+      if(diskrom_owns_slot)
+      {
+        MemMap[3][disk_subslot][2]=EmptyRAM;
+        MemMap[3][disk_subslot][3]=EmptyRAM;
+      }
       DiskROMLoaded=0;
       NewMode&=~(MSX_PATCHBDOS|MSX_MSXDOS2);
     }
     else
     {
+      const int diskrom_blocked_by_cartb = ((NewMode&MSX_MODEL)==MSX_MSX1 && ROMName[1]);
       /* Change to the program directory */
       if(ProgDir && chdir(ProgDir)) { }
 
-      /* Try loading DiskROM */
-      P1=LoadROM("DISK.ROM",0x4000,0);
+      /* Try loading DiskROM, unless MSX1 slot 3 is reserved by Cart B. */
+      P1=diskrom_blocked_by_cartb? 0:LoadROM("DISK.ROM",0x4000,0);
       DiskROMLoaded=!!P1;
 
       /* Change to the working directory */
       if(WorkDir && chdir(WorkDir)) { }
 
       /* If failed loading DiskROM, ignore the new PATCHBDOS bit */
-      if(!P1) NewMode=(NewMode&~MSX_PATCHBDOS)|(Mode&MSX_PATCHBDOS);
+      if(!P1 && diskrom_blocked_by_cartb) NewMode&=~(MSX_PATCHBDOS|MSX_MSXDOS2);
+      else if(!P1) NewMode=(NewMode&~MSX_PATCHBDOS)|(Mode&MSX_PATCHBDOS);
       else
       {
         if(((NewMode&MSX_MODEL)==MSX_MSX2P) && FmsxMSX2PKanjiBasicLoaded && (disk_subslot==1))
@@ -4169,9 +4204,18 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
     /* PSL=0:0:0:0, SSL=0:0:0:0 */
     PSL[J]              = 0;
     SSL[J]              = 0;
-    /* RAMMap=3:<model-dependent subslot>:1:0 */
-    MemMap[3][RAMMapperSubSlot()][J*2]   = RAMData+(3-J)*0x4000;
-    MemMap[3][RAMMapperSubSlot()][J*2+1] = MemMap[3][RAMMapperSubSlot()][J*2]+0x2000;
+    if(MODEL(MSX_MSX1))
+    {
+      /* MSX1 layout: primary slot 2 is the 64KiB main RAM. */
+      MemMap[2][0][J*2]   = RAMData+J*0x4000;
+      MemMap[2][0][J*2+1] = MemMap[2][0][J*2]+0x2000;
+    }
+    else
+    {
+      /* RAMMap=3:<model-dependent subslot>:1:0 */
+      MemMap[3][RAMMapperSubSlot()][J*2]   = RAMData+(3-J)*0x4000;
+      MemMap[3][RAMMapperSubSlot()][J*2+1] = MemMap[3][RAMMapperSubSlot()][J*2]+0x2000;
+    }
     RAMMapper[J]        = 3-J;
     /* Setting address space */
     RAM[J*2]            = MemMap[0][0][J*2];
@@ -4606,6 +4650,7 @@ case 0xFC: /* Mapper page at 0000h */
 case 0xFD: /* Mapper page at 4000h */
 case 0xFE: /* Mapper page at 8000h */
 case 0xFF: /* Mapper page at C000h */
+  if(MODEL(MSX_MSX1)) return(NORAM);
   return(RAMMapper[Port-0xFC]|~RAMMask);
 
 case 0xD9: /* Kanji support */
@@ -5142,6 +5187,7 @@ case 0xFC: /* Mapper page at 0000h */
 case 0xFD: /* Mapper page at 4000h */
 case 0xFE: /* Mapper page at 8000h */
 case 0xFF: /* Mapper page at C000h */
+  if(MODEL(MSX_MSX1)) return;
   J=Port-0xFC;
   Value&=RAMMask;
   if(RAMMapper[J]!=Value)
@@ -5498,11 +5544,8 @@ static int IsExpandedPrimarySlot(uint8_t PS)
   switch(Mode&MSX_MODEL)
   {
     case MSX_MSX1:
-      /*
-       * Keep upstream fMSX behavior for MSX1 memory map:
-       * slot 3 remains expanded so RAM mapper in 3-2 is reachable.
-       */
-      return(PS==3);
+      return(0);
+    case MSX_MSX2:
     case MSX_MSX2P:
       return((PS==0)||(PS==3));
     default:
@@ -5513,19 +5556,21 @@ static int IsExpandedPrimarySlot(uint8_t PS)
 static uint8_t RAMMapperSubSlot(void)
 {
   /*
-   * openMSX Sony_HB-F1XDJ: RAM mapper in 3-0.
-   * Keep legacy fMSX derived layout (3-2) for MSX1/MSX2.
+   * Panasonic FS-A1F / FS-A1WSX: main RAM in 3-0.
+   * MSX1 keeps plain 64KiB RAM in unexpanded primary slot 2.
    */
-  return ((Mode&MSX_MODEL)==MSX_MSX2P)? 0:2;
+  if((Mode&MSX_MODEL)==MSX_MSX1) return 0;
+  return 0;
 }
 
 static uint8_t DiskROMSubSlot(void)
 {
   /*
-   * openMSX Sony_HB-F1XDJ: WD2793/Disk ROM in 3-2.
-   * Keep legacy fMSX derived layout (3-1) for MSX1/MSX2.
+   * Panasonic FS-A1F / FS-A1WSX: WD2793/Disk ROM in 3-2.
+   * MSX1 keeps primary slot 3 unexpanded, so DiskROM lives in 3-0.
    */
-  return ((Mode&MSX_MODEL)==MSX_MSX2P)? 2:1;
+  if((Mode&MSX_MODEL)==MSX_MSX1) return 0;
+  return 2;
 }
 
 static void TrackP1SlotSelection(void)
@@ -5555,7 +5600,9 @@ void PSlot(uint8_t V)
       SSL[J]     = IsExpandedPrimarySlot(PSL[J])? (uint8_t)((SSLReg[PSL[J]]>>I)&3):0;
       RAM[I]     = MemMap[PSL[J]][SSL[J]][I];
       RAM[I+1]   = MemMap[PSL[J]][SSL[J]][I+1];
-      EnWrite[J] = (PSL[J]==3)&&(SSL[J]==RAMMapperSubSlot())&&(MemMap[3][RAMMapperSubSlot()][I]!=EmptyRAM);
+      EnWrite[J] = MODEL(MSX_MSX1)
+        ? ((PSL[J]==2)&&(MemMap[2][0][I]!=EmptyRAM))
+        : ((PSL[J]==3)&&(SSL[J]==RAMMapperSubSlot())&&(MemMap[3][RAMMapperSubSlot()][I]!=EmptyRAM));
     }
 
   TrackP1SlotSelection();
@@ -5585,7 +5632,9 @@ void SSlot(uint8_t V)
         SSL[J]     = V&3;
         RAM[I]     = MemMap[PSL[J]][SSL[J]][I];
         RAM[I+1]   = MemMap[PSL[J]][SSL[J]][I+1];
-        EnWrite[J] = (PSL[J]==3)&&(SSL[J]==RAMMapperSubSlot())&&(MemMap[3][RAMMapperSubSlot()][I]!=EmptyRAM);
+        EnWrite[J] = MODEL(MSX_MSX1)
+          ? ((PSL[J]==2)&&(MemMap[2][0][I]!=EmptyRAM))
+          : ((PSL[J]==3)&&(SSL[J]==RAMMapperSubSlot())&&(MemMap[3][RAMMapperSubSlot()][I]!=EmptyRAM));
       }
     }
 

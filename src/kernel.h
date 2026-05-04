@@ -177,6 +177,7 @@ private:
     boolean m_EmulationPaused;
     boolean m_LastF12Pressed;
     boolean m_LastPauseWasInSettings;
+    boolean m_MachineResetPending;
     boolean m_LastPausePressed;
     boolean m_LastMenuBackPressed;
     boolean m_PauseNeedsBackgroundRedraw;

@@ -19,16 +19,32 @@
 ## Workflow de boot
 
 1. Runtime aplica perfil `MSX2+` (`machine=2`).
-2. BIOS + SUBROM + componentes opcionais do set (ex.: KANJI/MSX-JE) entram no mapa.
+2. BIOS + SUBROM + componentes opcionais do set entram no mapa Panasonic `FS-A1WSX`.
 3. Política de `disk_rom` é aplicada sem alterar os outros perfis.
 4. Se `MSXDOS2.ROM` estiver disponível, o runtime arma o cartucho DOS2 no primeiro slot de sistema realmente livre, compatível com o mapa interno do perfil.
 5. Com `DRIVEA.DSK` presente desde o initramfs inicial, o boot pode entrar direto no MSX-DOS 2.
 6. Diagnóstico de boot deve usar `TM3/TM4` para validar mapeamentos críticos.
 
-Observação do perfil `HB-F1XDJ`:
-- `RAM mapper` ocupa `3-0`
-- `DISK.ROM` ocupa `3-2`
-- por isso o bootstrap de `MSXDOS2.ROM` não pode assumir fixamente `3-0`, ao contrário do layout genérico do `fMSX`
+## Layout de slots
+
+Referência: `third_party/bluemsx/.../Machines/MSX2+ - Panasonic FS-A1WSX/config.ini`.
+
+- `SLOT0`: expandido
+  - `0-0`: BIOS+BASIC
+  - `0-2`: ROM de música FM Panasonic quando disponível; slot helper interno quando livre
+  - `0-3`: vazio no perfil `FS-A1WSX`
+- `SLOT1`: Cartucho A em `1-0`
+- `SLOT2`: Cartucho B em `2-0`
+- `SLOT3`: expandido
+  - `3-0`: RAM principal/RAM mapper
+  - `3-1`: SubROM + Kanji BASIC
+  - `3-2`: `DISK.ROM`
+  - `3-3`: firmware Panasonic quando disponível; slot helper interno quando livre
+
+O bootstrap de `MSXDOS2.ROM` não pode assumir fixamente `3-0`, porque `3-0` é RAM nesse layout.
+Os helpers internos (`0-2`, `0-3`, `3-3`) sao usados apenas se estiverem
+vazios, para que `MSXDOS2.ROM`, `PAINTER.ROM` e `FMPAC.ROM` nao sobrescrevam
+ROMs ja carregadas.
 
 ## Defaults de runtime (catálogo)
 
