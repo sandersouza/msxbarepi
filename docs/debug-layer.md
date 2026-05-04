@@ -71,7 +71,7 @@ Objetivo: painel legivel no framebuffer HDMI com MMU/cache ativo, sem depender d
 - O painel pode usar a largura horizontal inteira da linha quando isso ajudar a ficar contido até a `linha 15`.
 - Emulador segue rodando ao fundo.
 - `Settings -> Overscan` controla o framebuffer runtime:
-  - `OFF` e o default quando `msx.cfg` nao traz `overscan=`: Circle usa `704x528` e o presenter centraliza o emulador em `640x480`; o backend fMSX preserva a mesma area fonte usada no modo `640x480`;
+  - `OFF` e o default quando `msx.cfg` nao traz `overscan=`: Circle usa `704x528` e o presenter centraliza o emulador em `640x480`; o backend fMSX preserva a mailbox classica completa `272x228`;
   - `ON`: Circle usa `640x480` e o presenter preenche toda a area.
 - `Settings` nao expoe mais `Proportion`.
 - O item `Scale` vive em `Debug`, antes de `Debugger`, apenas em builds `DEBUG=1`.
@@ -79,9 +79,9 @@ Objetivo: painel legivel no framebuffer HDMI com MMU/cache ativo, sem depender d
 - O estado `ON` usa apenas a logica LCD atual; o antigo modo `CRT` foi removido.
 - `Scale [1x]`: usa a mailbox nativa do emulador.
 - `Scale [2x]`: usa metade do intervalo entre `1x` e o fullscreen, em passos de `1/16x`.
-- Com `Overscan OFF`, o presenter mantem a imagem do emulador em `640x480` dentro do framebuffer `704x528`; os 10% extras existem apenas no framebuffer externo, com valores inteiros nos dois eixos.
+- Com `Overscan OFF`, o presenter mantem a imagem do emulador em `640x480` dentro do framebuffer `704x528`; os 10% extras existem apenas no framebuffer externo, com valores inteiros nos dois eixos. Em frames fMSX classicos, a fonte apresentada e a mailbox `272x228`, preservando as bordas superior/inferior/laterais usadas pelo BASIC e evitando corte vertical da area util.
 - Com `Overscan ON`, o presenter escala a area ativa selecionada do emulador para preencher `640x480`; em modos comuns de `192` linhas, a base vertical fica em `2.50x`.
-- Em frames V9990/GFX9000, o presenter nao aplica o crop classico `256x192`; por exemplo, B4 `768x480` e redimensionado para a area ativa do modo `Overscan`.
+- Em frames V9990/GFX9000, o presenter nao aplica a mailbox classica fMSX `272x228`; por exemplo, B4 `768x480` e redimensionado para a area ativa do modo `Overscan`.
 - `Standard` e `HIRES` usam a mesma mailbox base do emulador e o mesmo modo de `Scale`.
 - `Widescreen`: removido do runtime e do menu; o viewport agora segue sempre a mailbox fixa do emulador.
 

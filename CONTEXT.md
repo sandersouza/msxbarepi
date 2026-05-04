@@ -7,6 +7,11 @@ Ponto de entrada rapido para contexto operacional do projeto.
 - Branch ativa da rodada: `fix/av-out-without-circle-framebuffer`
 - Issue ativa: sem issue remota nesta rodada.
 - Escopo: corrigir saida AV/composite no Raspberry Pi 3B preservando HDMI.
+- Atualizacao 2026-05-04 (viewport MSX classico):
+  - ajuste local em `main`: presenter fMSX classico passou a usar mailbox fonte completa `272x228`, em vez de recortar `256x192` centralizado;
+  - objetivo: preservar bordas superior/inferior/laterais e evitar corte vertical da area util visto no BASIC;
+  - caminho V9990/GFX9000 permanece fora desse crop classico por `disable_scanline_postfx`;
+  - docs sincronizadas em `docs/debug-layer.md` e `docs/handoff/main.md`.
 - Atualizacao 2026-05-01 (AV/composite):
   - causa provavel: `Overscan=OFF` redimensionava o framebuffer Circle para `672x504`, modo acima das 480 linhas seguras em AV/NTSC;
   - correcao aplicada: o runtime detecta modo SDTV/AV pelo framebuffer inicial reportado pelo firmware (`480..576` linhas, cobrindo NTSC/PAL-M e PAL);

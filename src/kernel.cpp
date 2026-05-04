@@ -634,12 +634,10 @@ static unsigned UMin(unsigned a, unsigned b)
 	return a < b ? a : b;
 }
 
-static const unsigned kViewportBaseWidth = 256u;
 static const unsigned kViewportBaseHeight = 192u;
 static const unsigned kFmsxHostBorderPixels = 8u;
 static const unsigned kFmsxHostWidth = 256u + (kFmsxHostBorderPixels << 1);
 static const unsigned kFmsxHostHeight = 212u + (kFmsxHostBorderPixels << 1);
-static const unsigned kMsxActiveHeight = 192u;
 static const unsigned kViewportScaleFitUnits16_9 = 44u;
 
 static boolean CanUseDirectPresentWithDebug(unsigned dst_x,
@@ -877,16 +875,16 @@ static void SelectViewportSourceRect(unsigned width,
 		&& (presentation == 0 || presentation->disable_scanline_postfx == 0u)
 		&& width >= kFmsxHostWidth && height >= kFmsxHostHeight)
 	{
-		const unsigned active_w = (width >= (kFmsxHostWidth << 1)) ? (kViewportBaseWidth << 1) : kViewportBaseWidth;
+		const unsigned active_w = (width >= (kFmsxHostWidth << 1)) ? (kFmsxHostWidth << 1) : kFmsxHostWidth;
 		if (width >= active_w)
 		{
 			x = (width - active_w) / 2u;
 			w = active_w;
 		}
-		if (height >= kMsxActiveHeight)
+		if (height >= kFmsxHostHeight)
 		{
-			y = (height - kMsxActiveHeight) / 2u;
-			h = kMsxActiveHeight;
+			y = 0u;
+			h = kFmsxHostHeight;
 		}
 	}
 

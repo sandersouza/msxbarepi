@@ -1,6 +1,15 @@
 # Handoff Persistente da Branch main
 
-Ultima atualizacao: 30/04/2026 (midias fora do settings)
+Ultima atualizacao: 04/05/2026 (viewport MSX classico)
+
+## Atualizacao 04/05/2026 - viewport MSX classico
+
+- Corrigido o recorte do presenter fMSX classico em `src/kernel.cpp`: a fonte apresentada passou de `256x192` centralizado para a mailbox completa `272x228`.
+- Objetivo: preservar as bordas superior/inferior/laterais usadas pelo BASIC e evitar corte vertical da area util observado em hardware/captura.
+- O caminho `V9990/GFX9000` continua fora do crop classico por `disable_scanline_postfx`.
+- Documentacao sincronizada em `docs/debug-layer.md`.
+
+Ultima atualizacao anterior: 30/04/2026 (midias fora do settings)
 
 ## Atualizacao 30/04/2026 - midias nao persistidas
 
