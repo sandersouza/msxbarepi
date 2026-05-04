@@ -71,17 +71,19 @@ Objetivo: painel legivel no framebuffer HDMI com MMU/cache ativo, sem depender d
 - O painel pode usar a largura horizontal inteira da linha quando isso ajudar a ficar contido até a `linha 15`.
 - Emulador segue rodando ao fundo.
 - `Settings -> Overscan` controla o framebuffer runtime:
-  - `OFF` e o default quando `msx.cfg` nao traz `overscan=`: Circle usa `704x528` e o presenter centraliza o emulador em `640x480`; o backend fMSX preserva a mesma area fonte usada no modo `640x480`;
-  - `ON`: Circle usa `640x480` e o presenter preenche toda a area.
+  - `OFF` e o default quando `msx.cfg` nao traz `overscan=`: Circle usa `640x480` e o presenter desenha o emulador em `544x456` (`2x`) centralizado;
+  - `ON`: Circle usa framebuffer dinamico `2x` sobre a area fonte ativa do modo MSX atual; em SCREEN 0, `544x456` para mailbox fMSX `272x228`;
+  - com o menu F12 aberto, Circle usa `640x480`; em `Overscan ON`, o snapshot ocupa a altura inteira do menu e preserva a proporcao do framebuffer dinamico runtime, enquanto em `Overscan OFF` preserva a imagem `2x` centralizada.
 - `Settings` nao expoe mais `Proportion`.
 - O item `Scale` vive em `Debug`, antes de `Debugger`, apenas em builds `DEBUG=1`.
 - `Scanlines` agora e binario no runtime e no `.cfg`: `OFF/ON`.
 - O estado `ON` usa apenas a logica LCD atual; o antigo modo `CRT` foi removido.
 - `Scale [1x]`: usa a mailbox nativa do emulador.
 - `Scale [2x]`: usa metade do intervalo entre `1x` e o fullscreen, em passos de `1/16x`.
-- Com `Overscan OFF`, o presenter mantem a imagem do emulador em `640x480` dentro do framebuffer `704x528`; os 10% extras existem apenas no framebuffer externo, com valores inteiros nos dois eixos.
-- Com `Overscan ON`, o presenter escala a area ativa selecionada do emulador para preencher `640x480`; em modos comuns de `192` linhas, a base vertical fica em `2.50x`.
-- Em frames V9990/GFX9000, o presenter nao aplica o crop classico `256x192`; por exemplo, B4 `768x480` e redimensionado para a area ativa do modo `Overscan`.
+- Com `Overscan OFF`, o presenter mantem a imagem do emulador em escala inteira `2x` dentro de um framebuffer HDMI padrao `640x480`; os pixels do emulador nao passam por escala fracionaria no runtime. O calculo usa a area fonte ativa do modo MSX atual, nao constantes fixas.
+- Com `Overscan ON`, o framebuffer do Raspberry Pi muda dinamicamente para `area_fonte_ativa*2`, mantendo o emulador em escala inteira e sem fit proporcional. O blitter rapido de escala inteira aceita a origem deslocada da mailbox fMSX, preservando desempenho apos o crop `272x228`.
+- Acoes que fazem hard reset do backend, como carregar ROM, reaplicam o modo de display runtime apos sair do F12 para nao manter o framebuffer temporario `640x480` do menu.
+- Em frames V9990/GFX9000, o presenter nao aplica a mailbox classica fMSX `272x228`; por exemplo, B4 `768x480` e redimensionado para a area ativa do modo `Overscan`.
 - `Standard` e `HIRES` usam a mesma mailbox base do emulador e o mesmo modo de `Scale`.
 - `Widescreen`: removido do runtime e do menu; o viewport agora segue sempre a mailbox fixa do emulador.
 
@@ -130,11 +132,12 @@ Diretriz visual (overlay e menu):
 - `Debug -> Debugger`: sempre aparece em builds `DEBUG=1` e opera diretamente como `MAX/MIN/OFF`.
 - `Settings` nao expoe mais `Proportion`; o runtime ignora `proportion=`/`resolution=` antigos.
 - `Settings -> Overscan [ON/OFF]` aparece acima de `Scanline`, grava `overscan=0|1` em `msx.cfg`/RAW e nao altera `config.txt`.
+- Em modos fMSX de largura fisica alta, como `WIDTH 80`, o framebuffer/snapshot do F12 usa os pixels fisicos para copiar a imagem, mas usa a largura logica do VDP para calcular proporcao. Isso evita esticar horizontalmente a captura do menu e evita que o resume redimensione o framebuffer runtime para uma largura dobrada.
 - `Debug -> Scale`: aparece apenas em builds `DEBUG=1` e afeta o viewport independentemente do modo do debugger.
 - `Settings` nao expoe mais `Save to Disk`: ao sair de `Settings`/`Debug` com `ESC`, ou fechar o menu com `F12` enquanto uma dessas views esta aberta, as alteracoes sao enfileiradas para persistencia em `msx.cfg`/RAW.
 - `Settings` nao desenha mais o header `SETTINGS`; os itens usam margem superior e inferior simetricas para reduzir a altura do menu sem alterar a fonte.
 - Em builds `DEBUG=0`, `Scale` nao aparece no menu e o viewport usa sempre o maior scale permitido pela resolucao ativa.
-- `Settings -> Disk ROM`: aparece abaixo de `MegaRAM`, independente de `DEBUG=1`/`DEBUG=0`, e alterna a disponibilidade da Disk ROM no runtime.
+- `Settings -> Disk ROM`: aparece abaixo de `MegaRAM`, independente de `DEBUG=1`/`DEBUG=0`, e alterna a disponibilidade da Disk ROM no runtime. Quando `OFF`, o boot/reset nao carrega `DISK.ROM` nem arma o cartucho interno `MSXDOS2.ROM`; isso evita que o Disk BASIC apareca sem ROM de disco habilitada.
 - Em builds com `DEBUG=1`, o menu `Debug` mantem controles de diagnostico e apresentacao de debug, como `Scale`, `Debugger` e `Standard [NTSC/PAL]`.
 - Nesse caminho de diagnostico, o toggle agora atua no estado efetivo do VDP em runtime:
   - em `MSX1`, o runtime força diretamente o bit de video `MSX_PAL/MSX_NTSC`, `VDP R#9` e `VPeriod`, pois o TMS9918 nao expoe `R#9` gravavel como o V99x8;

@@ -7,6 +7,23 @@ Ponto de entrada rapido para contexto operacional do projeto.
 - Branch ativa da rodada: `fix/av-out-without-circle-framebuffer`
 - Issue ativa: sem issue remota nesta rodada.
 - Escopo: corrigir saida AV/composite no Raspberry Pi 3B preservando HDMI.
+- Atualizacao 2026-05-04 (Disk ROM OFF):
+  - branch local atual: `codex/corrigir-viewport-mailbox-escala`;
+  - `Disk ROM [OFF]` agora vira politica efetiva de boot/reset do fMSX local, nao apenas bloqueio tardio de acesso a disco;
+  - o runtime remove `MSX_MSXDOS2` do `Mode` quando a politica esta OFF e força a transicao de `PATCHBDOS` para que `ResetMSX()` limpe o mapeamento antes do scan da BIOS;
+  - `ResetMSX()` nao carrega `DISK.ROM` quando `FmsxDiskROMPolicyEnabled=0` e descarrega o slot interno reservado para `MSXDOS2.ROM`;
+  - objetivo de reteste: com `Disk ROM [OFF]`, o BASIC nao deve mostrar Disk BASIC; com `ON`, `DISK.ROM`/`MSXDOS2.ROM` voltam ao fluxo normal.
+  - validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=0`, `make -j4 DEBUG=1`; build DEBUG=1 `BUILD_BID=202605041538-a107316`, `TXTDBG BUILD:94E9`.
+- Atualizacao 2026-05-04 (viewport MSX classico):
+  - ajuste local em `main`: presenter fMSX classico passou a usar mailbox fonte completa `272x228`, em vez de recortar `256x192` centralizado;
+  - objetivo: preservar bordas superior/inferior/laterais e evitar corte vertical da area util visto no BASIC;
+  - framebuffer dinamico baseado na area fonte ativa do modo MSX: em SCREEN 0, runtime `Overscan ON` usa `544x456` com emulador `2x`; runtime `Overscan OFF` usa `640x480` com emulador `544x456` centralizado; F12 usa `640x480`;
+  - modos de largura fisica alta do fMSX, como `WIDTH 80`, agora mantem pixels fisicos para blit/snapshot, mas calculam layout/framebuffer pela largura logica do VDP para nao dobrar a proporcao horizontal ao abrir/sair do F12;
+  - validacao local apos ajuste `WIDTH 80`: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=0`, `make -j4 DEBUG=1`; build DEBUG=1 `BUILD_BID=202605041556-a107316`, `TXTDBG BUILD:F05B`;
+  - blitter rapido de escala inteira agora aceita origem deslocada, evitando queda para o caminho generico com a mailbox `272x228`;
+  - F12 com `Overscan ON` escala o snapshot para ocupar a altura de `640x480`, preservando a proporcao do framebuffer dinamico; hard reset por carga de ROM reaplica o display runtime ao sair do menu;
+  - caminho V9990/GFX9000 permanece fora desse crop classico por `disable_scanline_postfx`;
+  - docs sincronizadas em `docs/debug-layer.md` e `docs/handoff/main.md`.
 - Atualizacao 2026-05-01 (AV/composite):
   - causa provavel: `Overscan=OFF` redimensionava o framebuffer Circle para `672x504`, modo acima das 480 linhas seguras em AV/NTSC;
   - correcao aplicada: o runtime detecta modo SDTV/AV pelo framebuffer inicial reportado pelo firmware (`480..576` linhas, cobrindo NTSC/PAL-M e PAL);

@@ -291,6 +291,7 @@ static uint8_t SaveManbow2Flash[MAXSLOTS] = {0,0,0,0,0,0};
 /** Disk images used by fMSX *********************************/
 const char *DSKName[MAXDRIVES] = { 0, 0 };
 uint8_t DiskROMLoaded = 0;            /* 1 when DISK.ROM loaded */
+uint8_t FmsxDiskROMPolicyEnabled = 1; /* Runtime DiskROM policy */
 uint8_t *FmsxKanjiBase = 0;           /* Base pointer of loaded KANJI.ROM blob */
 uint8_t FmsxMSX2PKanjiBasicLoaded = 0;/* 1 when slot 3-1:4000h maps Kanji BASIC */
 uint8_t *FmsxMSX2PKanjiBasicBase = 0; /* Base pointer of mapped KANJIBASIC blob */
@@ -3370,6 +3371,31 @@ static int fmsx_find_slot_map(uint8_t slot,uint8_t *ps_out,uint8_t *ss_out)
   return 1;
 }
 
+static void fmsx_unload_system_cart_slot(uint8_t slot)
+{
+  uint8_t PS,SS;
+  int J;
+
+  if((slot>=MAXSLOTS)||!fmsx_find_slot_map(slot,&PS,&SS))
+    return;
+
+  if(ROMData[slot])
+  {
+    FreeMemory(ROMData[slot]);
+    ROMData[slot]=0;
+  }
+  ROMMask[slot]=0;
+  FreeMemory(SRAMData[slot]);
+  FreeMemory((uint8_t*)SRAMName[slot]);
+  SRAMData[slot]=0;
+  SRAMName[slot]=0;
+  SaveSRAM[slot]=0;
+  fmsx_cart_clear_effective_type(slot);
+
+  for(J=0;J<8;++J)
+    MemMap[PS][SS][J]=EmptyRAM;
+}
+
 static int fmsx_system_cart_slot_is_available(uint8_t slot)
 {
   uint8_t PS,SS;
@@ -3439,7 +3465,7 @@ static void fmsx_trace_msxdos2_boot(const char *phase,int option_enabled,int fil
 
 static void fmsx_try_load_msxdos2_system_cart(const char *phase)
 {
-  const int option_enabled = !MODEL(MSX_MSX1) && OPTION(MSX_MSXDOS2);
+  const int option_enabled = FmsxDiskROMPolicyEnabled && !MODEL(MSX_MSX1) && OPTION(MSX_MSXDOS2);
   const int diskrom_mapped = MemMap[3][DiskROMSubSlot()][2]!=EmptyRAM;
   const int system_slot = fmsx_find_next_free_system_cart_slot(FMSX_MSXDOS2_SYSTEM_SLOT);
   const int slot_free = system_slot>=0;
@@ -3453,6 +3479,9 @@ static void fmsx_try_load_msxdos2_system_cart(const char *phase)
 
   if(system_slot>=0)
     fmsx_find_slot_map((uint8_t)system_slot,&slot_ps,&slot_ss);
+
+  if(!FmsxDiskROMPolicyEnabled)
+    fmsx_unload_system_cart_slot(FMSX_MSXDOS2_SYSTEM_SLOT);
 
   if(option_enabled&&diskrom_mapped&&slot_free)
   {
@@ -3992,51 +4021,64 @@ int ResetMSX(int NewMode,int NewRAMPages,int NewVRAMPages)
     const uint8_t disk_subslot = ((NewMode&MSX_MODEL)==MSX_MSX2P)? 2:1;
     if(log_cb) log_cb(1,"ResetMSX: PATCHBDOS begin\n");
     if(log_cb) log_cb(1,"ResetMSX: patchbdos branch\n");
-    /* Change to the program directory */
-    if(ProgDir && chdir(ProgDir)) { }
-
-    /* Try loading DiskROM */
-    P1=LoadROM("DISK.ROM",0x4000,0);
-    DiskROMLoaded=!!P1;
-
-    /* Change to the working directory */
-    if(WorkDir && chdir(WorkDir)) { }
-
-    /* If failed loading DiskROM, ignore the new PATCHBDOS bit */
-    if(!P1) NewMode=(NewMode&~MSX_PATCHBDOS)|(Mode&MSX_PATCHBDOS);
+    if(!FmsxDiskROMPolicyEnabled)
+    {
+      fmsx_unload_system_cart_slot(FMSX_MSXDOS2_SYSTEM_SLOT);
+      if(MemMap[3][disk_subslot][2]!=EmptyRAM)
+        FreeMemory(MemMap[3][disk_subslot][2]);
+      MemMap[3][disk_subslot][2]=EmptyRAM;
+      MemMap[3][disk_subslot][3]=EmptyRAM;
+      DiskROMLoaded=0;
+      NewMode&=~(MSX_PATCHBDOS|MSX_MSXDOS2);
+    }
     else
     {
-      if(((NewMode&MSX_MODEL)==MSX_MSX2P) && FmsxMSX2PKanjiBasicLoaded && (disk_subslot==1))
-      {
-        /*
-         * Keep MSX2+ Kanji BASIC visible at slot 3-1:4000h-7FFFh.
-         * This preserves the boot-logo startup routine used by real ROM sets.
-         */
-        FreeMemory(P1);
-        DiskROMLoaded=0;
-      }
+      /* Change to the program directory */
+      if(ProgDir && chdir(ProgDir)) { }
+
+      /* Try loading DiskROM */
+      P1=LoadROM("DISK.ROM",0x4000,0);
+      DiskROMLoaded=!!P1;
+
+      /* Change to the working directory */
+      if(WorkDir && chdir(WorkDir)) { }
+
+      /* If failed loading DiskROM, ignore the new PATCHBDOS bit */
+      if(!P1) NewMode=(NewMode&~MSX_PATCHBDOS)|(Mode&MSX_PATCHBDOS);
       else
       {
-        /* Assign new DiskROM */
-        FreeMemory(MemMap[3][disk_subslot][2]);
-        MemMap[3][disk_subslot][2]=P1;
-        MemMap[3][disk_subslot][3]=P1+0x2000;
-
-        /* If BDOS patching requested and PatchZ80 trap exists... */
-#ifdef PATCH_Z80
-        if(NewMode&MSX_PATCHBDOS)
+        if(((NewMode&MSX_MODEL)==MSX_MSX2P) && FmsxMSX2PKanjiBasicLoaded && (disk_subslot==1))
         {
-          /* Apply patches to BDOS */
-          for(J=0;DiskPatches[J];++J)
-          {
-            P2=P1+DiskPatches[J]-0x4000;
-            P2[0]=0xED;P2[1]=0xFE;P2[2]=0xC9;
-          }
+          /*
+           * Keep MSX2+ Kanji BASIC visible at slot 3-1:4000h-7FFFh.
+           * This preserves the boot-logo startup routine used by real ROM sets.
+           */
+          FreeMemory(P1);
+          DiskROMLoaded=0;
         }
+        else
+        {
+          /* Assign new DiskROM */
+          FreeMemory(MemMap[3][disk_subslot][2]);
+          MemMap[3][disk_subslot][2]=P1;
+          MemMap[3][disk_subslot][3]=P1+0x2000;
+
+          /* If BDOS patching requested and PatchZ80 trap exists... */
+#ifdef PATCH_Z80
+          if(NewMode&MSX_PATCHBDOS)
+          {
+            /* Apply patches to BDOS */
+            for(J=0;DiskPatches[J];++J)
+            {
+              P2=P1+DiskPatches[J]-0x4000;
+              P2[0]=0xED;P2[1]=0xFE;P2[2]=0xC9;
+            }
+          }
 #else
-        if(NewMode&MSX_PATCHBDOS)
-          if(log_cb) log_cb(1,"ResetMSX: PATCHBDOS hooks skipped (no PATCH_Z80 trap)\n");
+          if(NewMode&MSX_PATCHBDOS)
+            if(log_cb) log_cb(1,"ResetMSX: PATCHBDOS hooks skipped (no PATCH_Z80 trap)\n");
 #endif
+        }
       }
     }
     if(log_cb) log_cb(1,"ResetMSX: PATCHBDOS end\n");

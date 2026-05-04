@@ -1,6 +1,23 @@
 # Handoff Persistente da Branch main
 
-Ultima atualizacao: 30/04/2026 (midias fora do settings)
+Ultima atualizacao: 04/05/2026 (viewport MSX classico)
+
+## Atualizacao 04/05/2026 - viewport MSX classico
+
+- Corrigido o recorte do presenter fMSX classico em `src/kernel.cpp`: a fonte apresentada passou de `256x192` centralizado para a mailbox completa `272x228`.
+- Objetivo: preservar as bordas superior/inferior/laterais usadas pelo BASIC e evitar corte vertical da area util observado em hardware/captura.
+- Ajustado o framebuffer dinamico do Circle:
+  - runtime `Overscan ON`: framebuffer `544x456` e emulador `272x228` em `2x`;
+  - runtime `Overscan OFF`: framebuffer `640x480` com emulador `544x456` (`2x`) centralizado, evitando o modo custom lento observado em hardware;
+  - menu F12: framebuffer `640x480`, com snapshot seguindo o estado visual de `Overscan`.
+  - os tamanhos acima sao o caso SCREEN 0; o calculo agora usa a area fonte ativa do modo MSX atual.
+- Otimizado o blitter rapido de escala inteira para aceitar origem deslocada na mailbox fMSX. Sem isso, o crop completo `272x228` fazia o caminho `2x` cair no blitter generico e deixava o framebuffer dinamico lento.
+- Corrigido o menu F12 em `Overscan ON`: o snapshot do emulador ocupa a altura de `640x480`, mas preserva a proporcao do framebuffer dinamico runtime para nao alargar horizontalmente.
+- Hard reset do backend, incluindo carga de ROM pelo menu, reaplica o modo runtime apos sair do F12 para evitar ficar preso no framebuffer temporario `640x480`.
+- O caminho `V9990/GFX9000` continua fora do crop classico por `disable_scanline_postfx`.
+- Documentacao sincronizada em `docs/debug-layer.md`.
+
+Ultima atualizacao anterior: 30/04/2026 (midias fora do settings)
 
 ## Atualizacao 30/04/2026 - midias nao persistidas
 
@@ -120,3 +137,25 @@ make DEBUG=1 MSXBARE_V9990_UART_TRACE=1
 - O loader completo de modulos em runtime continua fora do escopo desta rodada; o que ficou pronto agora foi a ABI, o registry e o artefato loadable.
 - A fachada publica `src/backend/msx/backend.h` ainda reaproveita tipos `TFmsx*` para parte da telemetria de debug; isso preserva compatibilidade nesta baseline e deixa o desacoplamento fino desses tipos para uma rodada posterior.
 - O caminho futuro previsto para descoberta de modulo em runtime ja ficou documentado como `SD:/modules/msx/msx.fmsx.mod.elf`.
+
+## Atualizacao 2026-05-04 - `Disk ROM [OFF]` como politica real de boot
+
+- Sintoma: `Settings -> Disk ROM [OFF]` impedia operacoes de disco, mas o boot ainda deixava Disk BASIC visivel, como se `DISK.ROM`/`MSXDOS2.ROM` continuassem presentes.
+- Causa: `StartMSX()` inicializa `Mode=~NewMode`, o que força a transicao de `MSX_PATCHBDOS`; `ResetMSX()` carregava `DISK.ROM` nessa transicao mesmo quando `NewMode` vinha sem `PATCHBDOS`. O runtime limpava o mapeamento depois, tarde demais para a BIOS/BASIC.
+- Correcao:
+  - `fmsx_runtime_machine_mode_bits_for_profile()` agora so inclui `MSX_MSXDOS2` quando a politica efetiva de Disk ROM esta ON.
+  - `FmsxDiskROMPolicyEnabled` foi exposto ao core local para `ResetMSX()` decidir antes do carregamento da Disk ROM.
+  - Com a politica OFF, `ResetMSX()` nao chama `LoadROM("DISK.ROM")`, limpa o slot de Disk ROM e descarrega o slot interno reservado para `MSXDOS2.ROM`.
+  - Toggle/reset forcam a transicao de `PATCHBDOS` tambem no caminho OFF para que a limpeza aconteca antes do scan de boot, nao depois.
+- Risco restante para hardware: retestar `Disk ROM [OFF]` no boot e apos toggle em runtime; `Disk ROM [ON]` deve preservar `DISK.ROM`/`MSXDOS2.ROM` e o hotswap de DSK sem reset pos-insercao.
+- Validacao local desta correcao: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=0`, `make -j4 DEBUG=1`.
+- Build DEBUG=1 para reteste: `BUILD_BID=202605041538-a107316`, `TXTDBG BUILD:94E9`, artefato `artifacts/kernel8-default.img`.
+
+## Atualizacao 2026-05-04 - F12 preservando proporcao em `WIDTH 80`
+
+- Sintoma: no BASIC com `WIDTH 80`, a imagem runtime permanecia correta ate abrir o menu F12; o snapshot do emulador aparecia largo demais e, ao sair, o framebuffer runtime passava a ocupar toda a largura horizontal.
+- Causa: o layout do viewport usava a largura fisica do buffer fMSX para calcular proporcao e framebuffer dinamico. Em modos de largura alta, o fMSX expoe pixels fisicos dobrados, mas a proporcao visual do MSX continua baseada na largura logica do VDP.
+- Correcao: `src/kernel.cpp` separa dimensoes fisicas de copia (`src_w/src_h`) das dimensoes logicas de layout. O blit/snapshot continuam lendo todos os pixels fisicos, mas `ComputeViewportLayout()` e `ApplyDisplayModeToScreen()` recebem a largura/altura logica quando `BackendVideoPresentation` indica largura fisica dobrada.
+- Risco restante para hardware: retestar `WIDTH 80` com F12 em `Overscan ON` e confirmar que o snapshot do menu e o resume mantem a mesma largura visual do runtime anterior ao menu.
+- Validacao local desta correcao: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=0`, `make -j4 DEBUG=1`.
+- Build DEBUG=1 para reteste: `BUILD_BID=202605041556-a107316`, `TXTDBG BUILD:F05B`, artefato `artifacts/kernel8-default.img`.

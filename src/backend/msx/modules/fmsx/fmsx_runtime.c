@@ -273,6 +273,7 @@ extern int VPeriod;
 extern int RAMPages;
 extern int VRAMPages;
 extern uint8_t DiskROMLoaded;
+extern uint8_t FmsxDiskROMPolicyEnabled;
 extern uint8_t FmsxMSX2PKanjiBasicLoaded;
 extern uint8_t *FmsxMSX2PKanjiBasicBase;
 extern uint8_t FmsxMSX2PMSXJELoaded;
@@ -1299,7 +1300,8 @@ static void fmsx_runtime_force_disk_rom_off_mapping(void)
         MemMap[3][disk_subslot][3] = EmptyRAM;
     }
     DiskROMLoaded = 0u;
-    Mode &= ~MSX_PATCHBDOS;
+    FmsxDiskROMPolicyEnabled = 0u;
+    Mode &= ~(MSX_PATCHBDOS | MSX_MSXDOS2);
 }
 
 static unsigned fmsx_runtime_fast_cutoff_frames(void)
@@ -1313,23 +1315,40 @@ static unsigned fmsx_runtime_fast_cutoff_frames(void)
     }
 }
 
-static int fmsx_runtime_machine_mode_bits_for_profile(unsigned profile)
+static int fmsx_runtime_apply_disk_mode_bits(int mode, unsigned profile, boolean disk_rom_effective)
 {
+    if (disk_rom_effective && profile != FMSX_MODEL_PROFILE_MSX1)
+    {
+        return mode | MSX_MSXDOS2;
+    }
+    return mode & ~MSX_MSXDOS2;
+}
+
+static int fmsx_runtime_machine_mode_bits_for_profile(unsigned profile, boolean disk_rom_effective)
+{
+    int mode;
     switch (profile)
     {
     case FMSX_MODEL_PROFILE_MSX2:
         /* DOS2 is a separate fMSX boot option bit, not implied by the model enum. */
-        return MSX_MSX2 | MSX_MSXDOS2;
+        mode = MSX_MSX2;
+        break;
     case FMSX_MODEL_PROFILE_MSX2P:
-        return MSX_MSX2P | MSX_MSXDOS2;
+        mode = MSX_MSX2P;
+        break;
     case FMSX_MODEL_PROFILE_MSX1:
-    default: return MSX_MSX1;
+    default:
+        mode = MSX_MSX1;
+        break;
     }
+    return fmsx_runtime_apply_disk_mode_bits(mode, profile, disk_rom_effective);
 }
 
 static int fmsx_runtime_machine_mode_bits(void)
 {
-    return fmsx_runtime_machine_mode_bits_for_profile(g_model_profile);
+    return fmsx_runtime_machine_mode_bits_for_profile(
+        g_model_profile,
+        fmsx_runtime_disk_rom_effective(g_model_profile));
 }
 
 static boolean fmsx_runtime_is_fast_like_boot(void)
@@ -1549,6 +1568,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
     startup_mode |= MSX_GUESSA | MSX_GUESSB;
     /* Keep internal fMSX autofire disabled. Project handles input explicitly. */
     startup_mode &= ~(MSX_AUTOSPACE | MSX_AUTOFIREA | MSX_AUTOFIREB);
+    FmsxDiskROMPolicyEnabled = disk_rom_effective ? 1u : 0u;
 
     unsigned started_model_profile = requested_model_profile;
     const char *saved_carta = 0;
@@ -1630,7 +1650,7 @@ static boolean fmsx_runtime_start(boolean boot_basic)
          */
         TrashMSX();
         started_model_profile = FMSX_MODEL_PROFILE_MSX1;
-        startup_mode = fmsx_runtime_machine_mode_bits_for_profile(FMSX_MODEL_PROFILE_MSX1) | base_mode;
+        startup_mode = fmsx_runtime_machine_mode_bits_for_profile(FMSX_MODEL_PROFILE_MSX1, FALSE) | base_mode;
         g_use_embedded_bios = FALSE;
         fmsx_runtime_refresh_scc_virtual_slots();
         fmsx_runtime_set_load_diag(2103u); /* fallback retry as MSX1 */
@@ -1734,16 +1754,21 @@ boolean fmsx_runtime_menu_reset(void)
 
     const boolean disk_rom_effective = fmsx_runtime_disk_rom_effective(g_active_model_profile);
     int new_mode = Mode & ~MSX_PATCHBDOS;
+    FmsxDiskROMPolicyEnabled = disk_rom_effective ? 1u : 0u;
     if (disk_rom_effective)
     {
         /* Keep behavior aligned with disk-ROM toggle path. */
         Mode |= MSX_PATCHBDOS;
-        new_mode = Mode & ~MSX_PATCHBDOS;
+        new_mode = fmsx_runtime_apply_disk_mode_bits(Mode & ~MSX_PATCHBDOS,
+                                                     g_active_model_profile,
+                                                     TRUE);
     }
     else
     {
-        Mode &= ~MSX_PATCHBDOS;
-        new_mode = Mode & ~MSX_PATCHBDOS;
+        Mode |= MSX_PATCHBDOS;
+        new_mode = fmsx_runtime_apply_disk_mode_bits(Mode & ~MSX_PATCHBDOS,
+                                                     g_active_model_profile,
+                                                     FALSE);
     }
 
     fmsx_runtime_trace_gfx9000_event("menu-set", g_gfx9000_enabled);
@@ -2212,16 +2237,21 @@ void fmsx_runtime_set_disk_rom_enabled(boolean enabled)
 
     const boolean disk_rom_effective = fmsx_runtime_disk_rom_effective(g_active_model_profile);
     int new_mode = Mode & ~MSX_PATCHBDOS;
+    FmsxDiskROMPolicyEnabled = disk_rom_effective ? 1u : 0u;
     if (disk_rom_effective)
     {
         /* Force transition so ResetMSX() reloads DISK.ROM with hooks disabled. */
         Mode |= MSX_PATCHBDOS;
-        new_mode = Mode & ~MSX_PATCHBDOS;
+        new_mode = fmsx_runtime_apply_disk_mode_bits(Mode & ~MSX_PATCHBDOS,
+                                                     g_active_model_profile,
+                                                     TRUE);
     }
     else
     {
-        Mode &= ~MSX_PATCHBDOS;
-        new_mode = Mode & ~MSX_PATCHBDOS;
+        Mode |= MSX_PATCHBDOS;
+        new_mode = fmsx_runtime_apply_disk_mode_bits(Mode & ~MSX_PATCHBDOS,
+                                                     g_active_model_profile,
+                                                     FALSE);
     }
     (void) ResetMSX(new_mode, RAMPages, VRAMPages);
     if (!disk_rom_effective)
