@@ -396,10 +396,8 @@ static const unsigned kProportionWidth16_9 = 960u;
 static const unsigned kProportionHeight16_9 = 540u;
 static const unsigned kProportionWidth4_3 = 640u;
 static const unsigned kProportionHeight4_3 = 480u;
-static const unsigned kOverscanOffWidth = 704u;
-static const unsigned kOverscanOffHeight = 528u;
-static const unsigned kOverscanOffViewportWidth = 640u;
-static const unsigned kOverscanOffViewportHeight = 480u;
+static const unsigned kMenuFramebufferWidth = 640u;
+static const unsigned kMenuFramebufferHeight = 480u;
 static const char kBootConfigKernelStartMarker[] = "#---KERNEL START---";
 static const char kBootConfigKernelEndMarker[] = "#---KERNEL END---";
 static const char kSettingsDrive[] = "SD:";
@@ -638,6 +636,7 @@ static const unsigned kViewportBaseHeight = 192u;
 static const unsigned kFmsxHostBorderPixels = 8u;
 static const unsigned kFmsxHostWidth = 256u + (kFmsxHostBorderPixels << 1);
 static const unsigned kFmsxHostHeight = 212u + (kFmsxHostBorderPixels << 1);
+static const unsigned kFmsxRuntimeScale = 2u;
 static const unsigned kViewportScaleFitUnits16_9 = 44u;
 
 static boolean CanUseDirectPresentWithDebug(unsigned dst_x,
@@ -843,11 +842,6 @@ static unsigned ComputeEffectiveViewportScalePercent(unsigned manual_scale_perce
 	return ClampScalePercent(manual_scale_percent, max_scale_percent);
 }
 
-static boolean EffectiveOverscanEnabled(unsigned scale_percent)
-{
-	return (scale_percent > kScaleModeNative) ? TRUE : FALSE;
-}
-
 static void SelectViewportSourceRect(unsigned width,
 							   unsigned height,
 							   unsigned screen_width,
@@ -894,6 +888,40 @@ static void SelectViewportSourceRect(unsigned width,
 	if (out_h != 0) *out_h = h;
 }
 
+static void ComputeViewportLayoutSourceSize(unsigned src_width,
+								 unsigned src_height,
+								 const BackendVideoPresentation *presentation,
+								 unsigned *out_width,
+								 unsigned *out_height)
+{
+	unsigned layout_w = src_width;
+	unsigned layout_h = src_height;
+
+	if (presentation != 0 && presentation->disable_scanline_postfx == 0u)
+	{
+		/*
+		 * fMSX exposes high-width MSX modes as physical pixels, but their visual
+		 * aspect is still based on the logical VDP width. Keep the physical width
+		 * for sampling and use the logical/display width only for layout.
+		 */
+		if (presentation->logical_width > 0u
+			&& src_width >= 512u
+			&& src_width >= (presentation->logical_width << 1))
+		{
+			layout_w = src_width >> 1;
+		}
+		if (presentation->woven_hires != 0u
+			&& presentation->logical_height > 0u
+			&& src_height >= (presentation->logical_height << 1))
+		{
+			layout_h = src_height >> 1;
+		}
+	}
+
+	if (out_width != 0) *out_width = layout_w;
+	if (out_height != 0) *out_height = layout_h;
+}
+
 static void ComputeViewportLayout(unsigned screen_width, unsigned screen_height,
 							 unsigned src_width, unsigned src_height,
 							 unsigned scale_percent,
@@ -919,12 +947,22 @@ static void ComputeViewportLayout(unsigned screen_width, unsigned screen_height,
 	if (screen_width > 0u && screen_height > 0u && src_width > 0u && src_height > 0u)
 	{
 		(void) scale_percent;
-		if (!overscan_enabled
-			&& screen_width >= kOverscanOffViewportWidth
-			&& screen_height >= kOverscanOffViewportHeight)
+		if (screen_width == kMenuFramebufferWidth
+			&& screen_height == kMenuFramebufferHeight)
 		{
-			box_w = kOverscanOffViewportWidth;
-			box_h = kOverscanOffViewportHeight;
+			if (overscan_enabled)
+			{
+				box_h = screen_height;
+				const u64 fit_w = (((u64) screen_height * (u64) src_width) + ((u64) src_height / 2u)) / (u64) src_height;
+				box_w = fit_w > (u64) screen_width ? screen_width : (unsigned) fit_w;
+			}
+			else
+			{
+				const unsigned runtime_w = src_width * kFmsxRuntimeScale;
+				const unsigned runtime_h = src_height * kFmsxRuntimeScale;
+				box_w = runtime_w > screen_width ? screen_width : runtime_w;
+				box_h = runtime_h > screen_height ? screen_height : runtime_h;
+			}
 			box_x = (screen_width - box_w) / 2u;
 			box_y = (screen_height - box_h) / 2u;
 			full_w = box_w;
@@ -3780,12 +3818,16 @@ TComboShutdownMode CComboKernel::Run(void)
 				unsigned active_src_y = 0u;
 				unsigned active_src_w = src_w;
 				unsigned active_src_h = src_h;
+				unsigned layout_src_w = src_w;
+				unsigned layout_src_h = src_h;
 				unsigned full_snap_w = 0u;
 				unsigned full_snap_h = 0u;
 				unsigned crop_x = 0u;
 				unsigned crop_y = 0u;
 				SelectViewportSourceRect(src_w, src_h, screen_width, screen_height, &presentation,
 					&active_src_x, &active_src_y, &active_src_w, &active_src_h);
+				ComputeViewportLayoutSourceSize(active_src_w, active_src_h, &presentation,
+					&layout_src_w, &layout_src_h);
 				const unsigned max_scale = ComputeViewportUiMaxScalePercent(screen_height);
 				const unsigned scale_percent =
 					ComputeEffectiveViewportScalePercent(m_OverscanPercent,
@@ -3793,7 +3835,7 @@ TComboShutdownMode CComboKernel::Run(void)
 						screen_height,
 						m_DebugOverlayMode);
 				ComputeViewportLayout(screen_width, screen_height,
-					active_src_w, active_src_h,
+					layout_src_w, layout_src_h,
 					scale_percent,
 					m_OverscanEnabled,
 					&m_BackendBoxX, &m_BackendBoxY, &m_BackendBoxW, &m_BackendBoxH,
@@ -4223,6 +4265,8 @@ boolean CComboKernel::PerformMenuHardReset(unsigned requested_diag, unsigned suc
 		UpdateLoadDiagTelemetry(success_diag);
 		ResetEmulationRuntimeState();
 		ApplyRuntimeSettingsToBackend();
+		(void) ApplyDisplayModeToScreen("hard-reset", FALSE, FALSE);
+		m_ForceViewportFullClearNextFrame = TRUE;
 	}
 	else
 	{
@@ -4838,9 +4882,13 @@ void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
 	unsigned box_h = m_Screen.GetHeight();
 	const unsigned screen_width = m_Screen.GetWidth();
 	const unsigned screen_height = m_Screen.GetHeight();
+	unsigned layout_src_w = src_width;
+	unsigned layout_src_h = src_height;
 
 	if (screen_width > 0u && screen_height > 0u)
 	{
+		ComputeViewportLayoutSourceSize(src_width, src_height, presentation,
+			&layout_src_w, &layout_src_h);
 		const unsigned max_scale = ComputeViewportUiMaxScalePercent(screen_height);
 		const unsigned scale_percent =
 			ComputeEffectiveViewportScalePercent(m_OverscanPercent,
@@ -4848,7 +4896,7 @@ void CComboKernel::ComputeViewportBox(unsigned src_width, unsigned src_height,
 				screen_height,
 				m_DebugOverlayMode);
 		ComputeViewportLayout(screen_width, screen_height,
-			src_width, src_height,
+			layout_src_w, layout_src_h,
 			scale_percent,
 			m_OverscanEnabled,
 			&box_x, &box_y, &box_w, &box_h,
@@ -4917,6 +4965,8 @@ void CComboKernel::BlitBackendFrame(boolean force_redraw)
 	unsigned src_y0 = 0u;
 	unsigned src_w = width;
 	unsigned src_h = height;
+	unsigned layout_src_w = width;
+	unsigned layout_src_h = height;
 	unsigned dst_width = 0u;
 	unsigned dst_height = 0u;
 	unsigned full_dst_width = 0u;
@@ -4931,6 +4981,7 @@ void CComboKernel::BlitBackendFrame(boolean force_redraw)
 		woven_hires ? presentation.logical_height : height;
 	const unsigned src_pitch = (presentation.pitch_pixels != 0u) ? presentation.pitch_pixels : width;
 	SelectViewportSourceRect(width, height, screen_width, screen_height, &presentation, &src_x0, &src_y0, &src_w, &src_h);
+	ComputeViewportLayoutSourceSize(src_w, src_h, &presentation, &layout_src_w, &layout_src_h);
 
 	const unsigned scanline_mode =
 		((presentation.disable_scanline_postfx == 0u) && (m_ScanlineMode != kScanlineModeOff))
@@ -4946,7 +4997,7 @@ void CComboKernel::BlitBackendFrame(boolean force_redraw)
 				screen_height,
 				m_DebugOverlayMode);
 		ComputeViewportLayout(screen_width, screen_height,
-			src_w, src_h,
+			layout_src_w, layout_src_h,
 			scale_percent,
 			m_OverscanEnabled,
 			&offset_x, &offset_y, &dst_width, &dst_height,
@@ -5050,9 +5101,7 @@ void CComboKernel::BlitBackendFrame(boolean force_redraw)
 			(src_h > 0u && full_dst_height > 0u && (full_dst_height % src_h) == 0u) ? (full_dst_height / src_h) : 0u;
 		const boolean exact_integer_physical =
 			!woven_hires &&
-			(scanline_mode == kScanlineModeOff)
-			&& (src_x0 == 0u)
-			&& (src_y0 == 0u)
+			(scanline_mode == kScanlineModeOff || scanline_mode == kScanlineModeLcd)
 			&& (exact_scale_x >= 2u)
 			&& (exact_scale_x == exact_scale_y)
 			&& (full_dst_width == (src_w * exact_scale_x))
@@ -5066,9 +5115,10 @@ void CComboKernel::BlitBackendFrame(boolean force_redraw)
 				const unsigned full_y = y + crop_y;
 				const unsigned src_rel_y = full_y / scale;
 				const unsigned src_y = src_y0 + src_rel_y;
+				const boolean dark_lcd = (scanline_mode == kScanlineModeLcd) && ((y & 1u) != 0u);
 				u16 *dst_line =
 					present_base + present_offset_pixels + (y * present_pitch_pixels);
-				if (prev_src_y == src_y)
+				if (prev_src_y == src_y && scanline_mode == kScanlineModeOff)
 				{
 					memcpy(dst_line, dst_line - present_pitch_pixels,
 						dst_width * sizeof(u16));
@@ -5077,6 +5127,13 @@ void CComboKernel::BlitBackendFrame(boolean force_redraw)
 				{
 					const u16 *src_line = pixels + (src_y * src_pitch) + src_x0;
 					BlitLineExpandNxRgb565NoDim(dst_line, src_line + (crop_x / scale), dst_width / scale + ((dst_width % scale) != 0u ? 1u : 0u), scale);
+				}
+				if (dark_lcd)
+				{
+					for (unsigned x = 0u; x < dst_width; ++x)
+					{
+						dst_line[x] = (u16) ((dst_line[x] & 0xF7DEu) >> 1);
+					}
 				}
 				prev_src_y = src_y;
 			}
@@ -5332,6 +5389,8 @@ void CComboKernel::ExitPauseForBackendAction(void)
 	m_PauseRenderSuppressed = TRUE;
 	m_LastPauseWasInSettings = FALSE;
 	m_PauseMenu.Reset();
+	(void) ApplyDisplayModeToScreen("resume-action", FALSE, FALSE);
+	m_ForceViewportFullClearNextFrame = TRUE;
 	m_LastPauseToggleUs = CTimer::GetClockTicks64();
 }
 
@@ -5342,12 +5401,7 @@ void CComboKernel::RefreshSettingsUiAfterAction(void)
 
 boolean CComboKernel::IsRuntimeOverscanEnabled(void) const
 {
-	const unsigned effective_scale = ComputeEffectiveViewportScalePercent(
-		m_OverscanPercent,
-		ComputeViewportUiMaxScalePercent(m_Screen.GetHeight()),
-		m_Screen.GetHeight(),
-		m_DebugOverlayMode);
-	return EffectiveOverscanEnabled(effective_scale);
+	return m_OverscanEnabled ? TRUE : FALSE;
 }
 
 void CComboKernel::ApplyRuntimeSettingsToBackend(void)
@@ -6050,6 +6104,11 @@ void CComboKernel::SaveSettingsToStorage(void)
 
 boolean CComboKernel::ApplyProportionModeToScreen(const char *phase, boolean force)
 {
+	return ApplyDisplayModeToScreen(phase, force, m_EmulationPaused);
+}
+
+boolean CComboKernel::ApplyDisplayModeToScreen(const char *phase, boolean force, boolean menu_mode)
+{
 	if (!m_ScreenReady)
 	{
 		return FALSE;
@@ -6057,8 +6116,41 @@ boolean CComboKernel::ApplyProportionModeToScreen(const char *phase, boolean for
 
 	m_ProportionMode = kProportionMode4_3;
 
-	const unsigned target_w = m_OverscanEnabled ? kProportionWidth4_3 : kOverscanOffWidth;
-	const unsigned target_h = m_OverscanEnabled ? kProportionHeight4_3 : kOverscanOffHeight;
+	unsigned active_src_w = kFmsxHostWidth;
+	unsigned active_src_h = kFmsxHostHeight;
+	unsigned layout_src_w = kFmsxHostWidth;
+	unsigned layout_src_h = kFmsxHostHeight;
+#if MSXBARE_ENABLE_FMSX
+	if (m_BackendReady)
+	{
+		const u16 *pixels = 0;
+		unsigned frame_w = 0u;
+		unsigned frame_h = 0u;
+		BackendVideoPresentation presentation = {0};
+		(void) backend_runtime_video_frame(&pixels, &frame_w, &frame_h);
+		backend_runtime_get_video_presentation(&presentation);
+		if (pixels != 0 && frame_w > 0u && frame_h > 0u
+			&& presentation.disable_scanline_postfx == 0u)
+		{
+			unsigned active_x = 0u;
+			unsigned active_y = 0u;
+			SelectViewportSourceRect(frame_w, frame_h, 0u, 0u, &presentation,
+				&active_x, &active_y, &active_src_w, &active_src_h);
+			ComputeViewportLayoutSourceSize(active_src_w, active_src_h, &presentation,
+				&layout_src_w, &layout_src_h);
+			(void) active_x;
+			(void) active_y;
+		}
+	}
+#endif
+	const unsigned runtime_target_w = layout_src_w * kFmsxRuntimeScale;
+	const unsigned runtime_target_h = layout_src_h * kFmsxRuntimeScale;
+	const unsigned target_w = menu_mode
+		? kMenuFramebufferWidth
+		: (m_OverscanEnabled ? runtime_target_w : kMenuFramebufferWidth);
+	const unsigned target_h = menu_mode
+		? kMenuFramebufferHeight
+		: (m_OverscanEnabled ? runtime_target_h : kMenuFramebufferHeight);
 
 	if (!force && m_Screen.GetWidth() == target_w && m_Screen.GetHeight() == target_h)
 	{
@@ -6097,8 +6189,9 @@ boolean CComboKernel::ApplyProportionModeToScreen(const char *phase, boolean for
 	}
 
 	CString line;
-	line.Format("Display applied %s: overscan %s%s %ux%u",
+	line.Format("Display applied %s: %s overscan %s%s %ux%u",
 		phase != 0 ? phase : "runtime",
+		menu_mode ? "menu" : "runtime",
 		m_OverscanEnabled ? "ON" : "OFF",
 		m_AvOutputDetected ? " AV" : "",
 		target_w,
@@ -8084,6 +8177,11 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 					m_PauseRenderSuppressed = FALSE;
 					m_Gfx9000ResumeTracePending = FALSE;
 				}
+			(void) ApplyDisplayModeToScreen(m_EmulationPaused ? "pause" : "resume", FALSE, m_EmulationPaused);
+			if (!m_EmulationPaused)
+			{
+				m_ForceViewportFullClearNextFrame = TRUE;
+			}
 			if (!BackendQueueKernelLogDuringGfx9000Trace(0, m_EmulationPaused ? "Emulation PAUSED" : "Emulation RESUMED"))
 			{
 				m_Logger.Write(FromKernel, LogNotice, m_EmulationPaused ? "Emulation PAUSED" : "Emulation RESUMED");

@@ -91,6 +91,7 @@ private:
     void UpdateSettingsSaveTelemetry(unsigned stage, unsigned code, unsigned aux);
     void UpdateLoadDiagTelemetry(unsigned stage);
     boolean ApplyProportionModeToScreen(const char *phase, boolean force);
+    boolean ApplyDisplayModeToScreen(const char *phase, boolean force, boolean menu_mode);
     void RefreshCoreListFromStorage(void);
     boolean PersistSelectedCoreToBootConfig(void);
     boolean TryCoreSwitchReboot(void);
