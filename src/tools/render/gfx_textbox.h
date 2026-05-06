@@ -49,6 +49,9 @@ public:
 		      unsigned scale_x = 1u, unsigned scale_y = 1u);
 	void DrawMatrix(unsigned x, unsigned y, const TGfxTextMatrix &matrix, const TGfxTextStyle &style,
 			unsigned scale_x = 1u, unsigned scale_y = 1u);
+	void DrawBitmapNearest(unsigned x, unsigned y, unsigned w, unsigned h,
+			       const TScreenColor *pixels, unsigned src_w, unsigned src_h,
+			       unsigned src_stride_pixels);
 	void CopyRectFromScreen(unsigned x, unsigned y, unsigned w, unsigned h,
 				TScreenColor *buffer, unsigned buffer_stride_pixels);
 	void CopyRectFromVisibleScreen(unsigned x, unsigned y, unsigned w, unsigned h,

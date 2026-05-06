@@ -828,6 +828,13 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_GameMasterApplyBlinkFrames(0u),
     m_GameMasterCheatItems{{0}},
     m_GameMasterCheatItemLabels{{0}},
+    m_StateSlots{{0}},
+    m_StateSlotItems{{0}},
+    m_StateSlotLabels{{0}},
+    m_HasPendingStateSlot(FALSE),
+    m_PendingStateSlot(0u),
+    m_StateSlotContentStamp(0u),
+    m_LastDrawnStateSlotContentStamp(0xFFFFFFFFu),
     m_LastBackPressed(FALSE),
     m_LastDrawnView(MenuViewRoot),
     m_LastDrawnScalePercent(0u),
@@ -917,6 +924,14 @@ CComboPauseMenu::CComboPauseMenu(void)
     m_HasPendingCassetteBrowserOpen = FALSE;
     CopySmallText(m_PendingCassetteBrowserPath, sizeof(m_PendingCassetteBrowserPath), "");
     ResetGameMasterState();
+    for (unsigned i = 0u; i < 10u; ++i)
+    {
+        m_StateSlotItems[i].label = m_StateSlotLabels[i];
+        m_StateSlotItems[i].action = ComboMenuActionNone;
+        m_StateSlotItems[i].selectable = TRUE;
+        m_StateSlotItems[i].redraw_policy = ComboMenuRedrawMenuOnly;
+        m_StateSlotLabels[i][0] = '\0';
+    }
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), "");
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), "");
     CopySmallText(m_LastDrawnLoadDiskDrive1Name, sizeof(m_LastDrawnLoadDiskDrive1Name), "");
@@ -1008,6 +1023,7 @@ void CComboPauseMenu::Reset(void)
     m_LastDrawnBrowserMode = 0xFFFFFFFFu;
     m_LastDrawnBrowserSlot = 0xFFFFFFFFu;
     m_LastDrawnBrowserContentStamp = 0xFFFFFFFFu;
+    m_LastDrawnStateSlotContentStamp = 0xFFFFFFFFu;
     m_BrowserWarmupRedraws = 0u;
     m_FileBrowser.Reset();
     m_HasPendingRomSelection = FALSE;
@@ -1026,6 +1042,8 @@ void CComboPauseMenu::Reset(void)
     CopySmallText(m_PendingCassettePath, sizeof(m_PendingCassettePath), "");
     m_HasPendingCassetteBrowserOpen = FALSE;
     CopySmallText(m_PendingCassetteBrowserPath, sizeof(m_PendingCassetteBrowserPath), "");
+    m_HasPendingStateSlot = FALSE;
+    m_PendingStateSlot = 0u;
     ResetGameMasterState();
     CopySmallText(m_LastDrawnLoadRomSlot1Name, sizeof(m_LastDrawnLoadRomSlot1Name), m_LoadRomSlot1Name);
     CopySmallText(m_LastDrawnLoadRomSlot2Name, sizeof(m_LastDrawnLoadRomSlot2Name), m_LoadRomSlot2Name);
@@ -1583,6 +1601,21 @@ boolean CComboPauseMenu::ConsumePendingCassetteBrowserOpen(char *path, unsigned 
     return TRUE;
 }
 
+boolean CComboPauseMenu::ConsumePendingStateSlot(unsigned *slot)
+{
+    if (!m_HasPendingStateSlot)
+    {
+        return FALSE;
+    }
+    if (slot != 0)
+    {
+        *slot = m_PendingStateSlot;
+    }
+    m_HasPendingStateSlot = FALSE;
+    m_PendingStateSlot = 0u;
+    return TRUE;
+}
+
 boolean CComboPauseMenu::ConsumePendingGameMasterCheat(unsigned *game_index,
                                                        unsigned *cheat_index,
                                                        boolean *has_value_override,
@@ -1643,6 +1676,52 @@ void CComboPauseMenu::OpenFileBrowser(unsigned mode, unsigned slot_index, const 
     m_ForceHighlightRedraw = FALSE;
     m_RequestBackgroundRestore = TRUE;
     m_BrowserWarmupRedraws = 1u;
+}
+
+void CComboPauseMenu::OpenStateSlotBrowser(boolean save_mode)
+{
+    m_View = save_mode ? MenuViewSaveStateSlots : MenuViewLoadStateSlots;
+    m_Selected = 0u;
+    m_ForceRedraw = TRUE;
+    m_ForceHighlightRedraw = FALSE;
+    m_ForceContentRedraw = FALSE;
+    m_RequestBackgroundRestore = TRUE;
+    ResetRepeatState();
+}
+
+void CComboPauseMenu::SetStateSlots(const TComboStateSlotUi *slots, unsigned count, unsigned content_stamp)
+{
+    if (count > 10u)
+    {
+        count = 10u;
+    }
+    for (unsigned i = 0u; i < 10u; ++i)
+    {
+        if (slots != 0 && i < count)
+        {
+            m_StateSlots[i] = slots[i];
+        }
+        else
+        {
+            m_StateSlots[i].occupied = FALSE;
+            m_StateSlots[i].valid = FALSE;
+            m_StateSlots[i].has_preview = FALSE;
+            m_StateSlots[i].preview_pixels = 0;
+            m_StateSlots[i].preview_w = 0u;
+            m_StateSlots[i].preview_h = 0u;
+            m_StateSlots[i].preview_stride = 0u;
+            m_StateSlots[i].cart_a[0] = '\0';
+            m_StateSlots[i].cart_b[0] = '\0';
+            m_StateSlots[i].disk_a[0] = '\0';
+            m_StateSlots[i].disk_b[0] = '\0';
+            m_StateSlots[i].cassette[0] = '\0';
+        }
+    }
+    if (m_StateSlotContentStamp != content_stamp)
+    {
+        m_StateSlotContentStamp = content_stamp;
+        m_ForceRedraw = TRUE;
+    }
 }
 
 void CComboPauseMenu::OpenGameMaster(BackendCheatCatalog *catalog, unsigned load_status, unsigned error_line)
@@ -1908,6 +1987,31 @@ const TComboMenuItem *CComboPauseMenu::GetItems(unsigned *count) const
     if (m_View == MenuViewLoadDisk)
     {
         return combo_menu_load_disk_items_get(m_Language, m_LoadDiskDrive1Name, m_LoadDiskDrive2Name, count);
+    }
+    if (m_View == MenuViewSaveStateSlots || m_View == MenuViewLoadStateSlots)
+    {
+        for (unsigned i = 0u; i < 10u; ++i)
+        {
+            m_StateSlotLabels[i][0] = '\0';
+            char slot_label[12];
+            slot_label[0] = 'S';
+            slot_label[1] = 'L';
+            slot_label[2] = 'O';
+            slot_label[3] = 'T';
+            slot_label[4] = ' ';
+            slot_label[5] = (char) ('0' + i);
+            slot_label[6] = '\0';
+            CopySmallText(m_StateSlotLabels[i], sizeof(m_StateSlotLabels[i]), slot_label);
+            m_StateSlotItems[i].label = m_StateSlotLabels[i];
+            m_StateSlotItems[i].action = (m_View == MenuViewSaveStateSlots) ? ComboMenuActionSaveState : ComboMenuActionLoadState;
+            m_StateSlotItems[i].selectable = TRUE;
+            m_StateSlotItems[i].redraw_policy = ComboMenuRedrawMenuOnly;
+        }
+        if (count != 0)
+        {
+            *count = 10u;
+        }
+        return m_StateSlotItems;
     }
     if (m_View == MenuViewGameMasterCheats)
     {
@@ -3021,6 +3125,28 @@ TComboMenuAction CComboPauseMenu::ProcessInput(boolean paused,
         {
             action = ComboMenuActionGameMaster;
         }
+        else if (m_View == MenuViewRoot && items[m_Selected].action == ComboMenuActionSaveState)
+        {
+            OpenStateSlotBrowser(TRUE);
+        }
+        else if (m_View == MenuViewRoot && items[m_Selected].action == ComboMenuActionLoadState)
+        {
+            OpenStateSlotBrowser(FALSE);
+        }
+        else if ((m_View == MenuViewSaveStateSlots || m_View == MenuViewLoadStateSlots)
+              && m_Selected < 10u)
+        {
+            if (m_View == MenuViewSaveStateSlots || (m_StateSlots[m_Selected].occupied && m_StateSlots[m_Selected].valid))
+            {
+                m_HasPendingStateSlot = TRUE;
+                m_PendingStateSlot = m_Selected;
+                action = (m_View == MenuViewSaveStateSlots) ? ComboMenuActionSaveState : ComboMenuActionLoadState;
+            }
+            else
+            {
+                m_ForceRedraw = TRUE;
+            }
+        }
         else if (m_View == MenuViewSettings && items[m_Selected].action == ComboMenuActionOpenJoystickMap)
         {
             m_JoystickMapReturnSelected = m_Selected;
@@ -3201,6 +3327,14 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     {
         title = locale->title_active_cheats;
     }
+    else if (m_View == MenuViewSaveStateSlots)
+    {
+        title = locale->title_save_state;
+    }
+    else if (m_View == MenuViewLoadStateSlots)
+    {
+        title = locale->title_load_state;
+    }
     else if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewLoadCassetteBrowser)
     {
         if (m_View == MenuViewLoadCassetteBrowser)
@@ -3244,11 +3378,29 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     const boolean show_title = (m_View == MenuViewSettings) ? FALSE : TRUE;
     const unsigned title_len = show_title ? ComboStrLen(title) : 0u;
     const unsigned item_start_row = show_title ? 2u : 1u;
+    const unsigned state_slot_area_cols = 12u;
+    const unsigned state_slot_panel_cols = 8u;
+    const unsigned state_info_gap_cols = 3u;
+    const unsigned state_preview_w_px = 256u;
+    const unsigned state_preview_h_px = 192u;
+    const unsigned state_preview_cols = (state_preview_w_px + cell_w - 1u) / cell_w;
+    const unsigned state_preview_rows = (state_preview_h_px + cell_h - 1u) / cell_h;
+    const unsigned state_preview_top_rows = 4u;
+    const unsigned state_info_border_top_rows = 0u;
+    const unsigned state_info_bottom_margin_rows = 1u;
+    const unsigned state_info_cols = state_preview_cols + 2u;
+    const unsigned state_info_col = 2u + state_slot_area_cols + state_info_gap_cols;
     unsigned content_cols = max_item_len > title_len ? max_item_len : title_len;
     content_cols += 4u;
     if (content_cols < 18u)
     {
         content_cols = 18u;
+    }
+    const boolean state_slot_view = (m_View == MenuViewSaveStateSlots || m_View == MenuViewLoadStateSlots) ? TRUE : FALSE;
+    if (state_slot_view)
+    {
+        const unsigned state_content_cols = state_info_col + state_info_cols + 2u;
+        content_cols = state_content_cols > title_len ? state_content_cols : title_len;
     }
     if (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewLoadCassetteBrowser || m_View == MenuViewGameMasterBrowser)
     {
@@ -3274,7 +3426,19 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     const boolean has_unload_hint = (m_View == MenuViewLoadRom || m_View == MenuViewLoadDisk) ? TRUE : FALSE;
     const boolean has_cheat_hint = FALSE;
     const unsigned base_margin_rows = show_title ? 3u : 2u;
-    const unsigned box_rows = item_count + base_margin_rows + (has_unload_hint ? 2u : 0u) + (has_cheat_hint ? 2u : 0u);
+    unsigned box_rows = item_count + base_margin_rows + (has_unload_hint ? 2u : 0u) + (has_cheat_hint ? 2u : 0u);
+    if (state_slot_view)
+    {
+        const unsigned state_info_bottom_row = 2u
+            + state_info_border_top_rows
+            + (state_preview_top_rows - state_info_border_top_rows)
+            + state_preview_rows
+            + state_info_bottom_margin_rows;
+        if (box_rows < state_info_bottom_row)
+        {
+            box_rows = state_info_bottom_row;
+        }
+    }
     const unsigned box_w_px = box_cols * cell_w;
     const unsigned box_h_px = box_rows * cell_h;
 
@@ -3339,6 +3503,9 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
      && ComboTextEquals(m_LastDrawnLoadRomSlot2Name, m_LoadRomSlot2Name)
      && ComboTextEquals(m_LastDrawnLoadDiskDrive1Name, m_LoadDiskDrive1Name)
      && ComboTextEquals(m_LastDrawnLoadDiskDrive2Name, m_LoadDiskDrive2Name)
+     && (m_View != MenuViewSaveStateSlots && m_View != MenuViewLoadStateSlots
+         ? TRUE
+         : (m_LastDrawnStateSlotContentStamp == m_StateSlotContentStamp))
      && (m_View != MenuViewLoadRomBrowser && m_View != MenuViewLoadDiskBrowser && m_View != MenuViewLoadCassetteBrowser && m_View != MenuViewGameMasterBrowser
          ? TRUE
          : (m_LastDrawnBrowserTop == m_FileBrowser.GetTop()
@@ -3443,13 +3610,14 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         const unsigned y = box_y + (row * cell_h);
         const unsigned text_len = ComboStrLen(items[i].label);
         const boolean settings_row = (m_View == MenuViewSettings || m_View == MenuViewDebug || m_View == MenuViewJoystickMap);
+        const boolean state_slot_row = (m_View == MenuViewSaveStateSlots || m_View == MenuViewLoadStateSlots);
         const boolean load_media_row = (m_View == MenuViewLoadRom || m_View == MenuViewLoadDisk);
         const boolean browser_row = (m_View == MenuViewLoadRomBrowser || m_View == MenuViewLoadDiskBrowser || m_View == MenuViewLoadCassetteBrowser || m_View == MenuViewGameMasterBrowser);
         const boolean cheat_list_row = (m_View == MenuViewGameMasterCheats);
         const boolean separator_row = (items[i].action == ComboMenuActionSeparator);
         const boolean selected_row = (items[i].selectable && i == m_Selected) ? TRUE : FALSE;
 
-        if (selected_row && box_cols > 4u && !load_media_row && !cheat_list_row)
+        if (selected_row && box_cols > 4u && !state_slot_row && !load_media_row && !cheat_list_row)
         {
             unsigned highlight_cols = box_cols - 4u;
             if (browser_row && browser_with_scrollbar && bar_col > 4u)
@@ -3475,7 +3643,24 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
             return;
         }
 
-        if (settings_row || load_media_row || cheat_list_row)
+        if (state_slot_row)
+        {
+            const unsigned slot_panel_col = 2u + ((state_slot_area_cols - state_slot_panel_cols) / 2u);
+            const unsigned x_left = box_x + (slot_panel_col * cell_w);
+            const unsigned x_end = x_left + (state_slot_panel_cols * cell_w);
+            TGfxTextStyle left_style = normal_style;
+            if (selected_row && x_left < x_end)
+            {
+                renderer->FillRect(x_left, y, x_end - x_left, cell_h, BRIGHT_WHITE_COLOR);
+                left_style = selected_style;
+            }
+            char left_buf[16];
+            ComboSliceCopy(left_buf, sizeof(left_buf), items[i].label, 0u, text_len);
+            const unsigned left_len = ComboStrLen(left_buf);
+            const unsigned text_offset_cols = (state_slot_panel_cols > left_len) ? ((state_slot_panel_cols - left_len) / 2u) : 0u;
+            renderer->DrawText(x_left + (text_offset_cols * cell_w), y, left_buf, left_style, scale_x, scale_y);
+        }
+        else if (settings_row || load_media_row || cheat_list_row)
         {
             const unsigned split = settings_row ? ComboFindFlagStart(items[i].label) : ComboFindTabSplit(items[i].label);
             const unsigned left_len = split < text_len ? split : text_len;
@@ -3575,6 +3760,54 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
         draw_row(i);
     }
 
+    if ((m_View == MenuViewSaveStateSlots || m_View == MenuViewLoadStateSlots) && m_Selected < 10u)
+    {
+        const TComboStateSlotUi *slot = &m_StateSlots[m_Selected];
+        const unsigned info_x = box_x + (state_info_col * cell_w);
+        const unsigned info_y = box_y + (2u * cell_h);
+        const unsigned info_w = state_info_cols * cell_w;
+        const unsigned preview_w = state_preview_w_px;
+        const unsigned preview_h = state_preview_h_px;
+        const unsigned preview_y = info_y + (state_preview_top_rows * cell_h);
+        const unsigned info_border_y = info_y + (state_info_border_top_rows * cell_h);
+        const unsigned info_border_h = preview_y + preview_h + (state_info_bottom_margin_rows * cell_h) - info_border_y;
+        renderer->DrawRectBorder(info_x, info_border_y, info_w, info_border_h, BRIGHT_WHITE_COLOR, 1u);
+        const unsigned line_x = info_x + cell_w;
+        unsigned line_y = info_y + cell_h;
+        char line[48];
+        if (!slot->occupied)
+        {
+            renderer->DrawText(line_x, line_y, locale->state_empty, normal_style, scale_x, scale_y);
+        }
+        else if (!slot->valid)
+        {
+            renderer->DrawText(line_x, line_y, locale->state_invalid, normal_style, scale_x, scale_y);
+        }
+        else
+        {
+            line[0] = '\0';
+            ComboBuildTabLabel(line, sizeof(line), locale->state_cart, slot->cart_a);
+            renderer->DrawText(line_x, line_y, line, normal_style, scale_x, scale_y);
+            line_y += cell_h;
+            ComboBuildTabLabel(line, sizeof(line), locale->state_disk, slot->disk_a);
+            renderer->DrawText(line_x, line_y, line, normal_style, scale_x, scale_y);
+            line_y += cell_h;
+            ComboBuildTabLabel(line, sizeof(line), locale->state_cassette, slot->cassette);
+            renderer->DrawText(line_x, line_y, line, normal_style, scale_x, scale_y);
+            line_y = preview_y;
+            if (slot->has_preview && slot->preview_pixels != 0)
+            {
+                renderer->DrawBitmapNearest(line_x, line_y, preview_w, preview_h,
+                    slot->preview_pixels, slot->preview_w, slot->preview_h, slot->preview_stride);
+                renderer->DrawRectBorder(line_x, line_y, preview_w, preview_h, BRIGHT_WHITE_COLOR, 1u);
+            }
+            else
+            {
+                renderer->DrawText(line_x, line_y, locale->state_empty, normal_style, scale_x, scale_y);
+            }
+        }
+    }
+
     if (browser_with_scrollbar)
     {
         const unsigned bar_x = box_x + (bar_col * cell_w);
@@ -3660,6 +3893,7 @@ void CComboPauseMenu::Render(boolean visible, CGfxTextBoxRenderer *renderer, uns
     m_LastDrawnBrowserMode = m_FileBrowser.GetMode();
     m_LastDrawnBrowserSlot = m_FileBrowser.GetSlotIndex();
     m_LastDrawnBrowserContentStamp = m_FileBrowser.GetContentStamp();
+    m_LastDrawnStateSlotContentStamp = m_StateSlotContentStamp;
     m_LastBoxX = box_x;
     m_LastBoxY = box_y;
     m_LastBoxW = box_w_px;

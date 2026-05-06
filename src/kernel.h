@@ -110,8 +110,14 @@ private:
     boolean EnsureStateIoBuffer(unsigned min_capacity);
     boolean EnsureBackendPresentBuffer(unsigned min_pixels);
     boolean EnsureStateStorageDirectory(void);
-    void SaveEmulatorStateToStorage(void);
-    void LoadEmulatorStateFromStorage(void);
+    void BuildStateSlotPath(unsigned slot, const char *suffix, char *path, unsigned path_size) const;
+    void RefreshStateSlotUiFromStorage(void);
+    boolean CaptureStatePreviewToStorage(unsigned slot);
+    boolean LoadStatePreviewFromStorage(unsigned slot);
+    boolean WriteStateMetadataToStorage(unsigned slot, unsigned state_bytes);
+    void RestoreStateMediaFromStorage(unsigned slot);
+    void SaveEmulatorStateToStorage(unsigned slot);
+    void LoadEmulatorStateFromStorage(unsigned slot);
     void NormalizeSettingsForBuild(void);
     unsigned DebugRepairTimerIrqBinding(unsigned stage);
 
@@ -120,6 +126,9 @@ private:
 
 private:
 	static const unsigned kBlitMapMaxAxis = 2048u;
+    static const unsigned kStateSlotCount = 10u;
+    static const unsigned kStatePreviewW = 256u;
+    static const unsigned kStatePreviewH = 192u;
     static const unsigned kMaxCoreEntries = 16u;
     static const unsigned kCoreNameBytes = 32u;
 
@@ -309,6 +318,8 @@ private:
     boolean m_CoreSwitchPending;
     boolean m_StateSavePending;
     boolean m_StateLoadPending;
+    unsigned m_StateActionSlot;
+    unsigned m_StateSlotUiStamp;
     boolean m_MediaCatalogStarted;
     boolean m_MediaCatalogSummaryLogged;
     volatile unsigned m_PendingMenuAction;
@@ -325,6 +336,8 @@ private:
     unsigned m_BootFatDeferredMs;
     u8 *m_StateIoBuffer;
     unsigned m_StateIoBufferCapacity;
+    TComboStateSlotUi m_StateSlotUi[kStateSlotCount];
+    TScreenColor m_StatePreviewPixels[kStateSlotCount][kStatePreviewW * kStatePreviewH];
     u16 *m_BackendPresentBuffer;
     unsigned m_BackendPresentBufferPixels;
 

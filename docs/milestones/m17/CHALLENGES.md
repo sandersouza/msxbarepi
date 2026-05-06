@@ -102,8 +102,8 @@ Registro de desafios enfrentados por issue, decisão adotada e status da soluç�
 
 ### #243 — HIRES/interlaced ainda degrada em 1080p com Scale 4x
 - Desafio: mesmo depois da estabilização funcional da `#238`, os modos `HIRES/interlaced` ainda ficam em torno de `~53 FPS` em `1080p + 4x`, enquanto resoluções/escalas menores já voltaram ao comportamento esperado.
-- Solução adotada: abrir follow-up `minor` dedicado ao resíduo de performance do presenter/render path high-res, isolando o gargalo sem reabrir a trilha funcional do boot logo do `MSX2+`.
-- Status: Futuro
+- Solução adotada: encerrar o caminho caro de `1080p + Scale 4x` separando a política de framebuffer. Com `Overscan OFF`, Circle fica em `640x480` e o MSX é apresentado em escala inteira `2x`; com `Overscan ON`, Circle usa framebuffer dinâmico `area_fonte_ativa*2`, preservando escala inteira sem fit fracionário.
+- Status: Concluída
 - Referência: [243-bug-hires-interlaced-lentidao-1080p-scale-4x.md](/Users/sandersouza/Developer/msxbarepi/docs/milestones/m17/243-bug-hires-interlaced-lentidao-1080p-scale-4x.md)
 
 ### #247 — HIRES/interlaced flicka entre página correta e frame verticalmente esticado

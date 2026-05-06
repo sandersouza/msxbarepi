@@ -2,11 +2,22 @@
 
 Ponto de entrada rapido para contexto operacional do projeto.
 
-- Contexto completo e historico de handoff da branch atual: [docs/handoff/fix-av-out-without-circle-framebuffer.md](docs/handoff/fix-av-out-without-circle-framebuffer.md)
+- Contexto completo e historico de handoff da branch atual: [docs/handoff/237-melhorar-save-load-state-slots-preview-metadata.md](docs/handoff/237-melhorar-save-load-state-slots-preview-metadata.md)
 - Guardrail ativo: a issue `#251` continua aberta/pausada e a branch `251-suporte-cartucho-vdp-v9990` nao deve ser removida.
-- Branch ativa da rodada: `fix/av-out-without-circle-framebuffer`
-- Issue ativa: sem issue remota nesta rodada.
-- Escopo: corrigir saida AV/composite no Raspberry Pi 3B preservando HDMI.
+- Branch ativa da rodada: `codex/237-melhorar-save-load-state-slots-preview-metadata`
+- Issue ativa: `#237 [P2] Melhorar Save/Load State com slots 0-9, preview e metadata`.
+- Escopo: evoluir Save/Load State para selecao explicita de slots `0-9` com metadata e preview por slot.
+- Atualizacao 2026-05-04 (issue #237):
+  - `Save State` e `Load State` abrem uma view de slots fixos `0-9` antes de executar a acao;
+  - estado, metadata e preview passam a usar `SD:/states/slot-<n>.sav`, `.meta` e `.raw`;
+  - preview bruto `256x192` e renderizado em tamanho fixo no painel lateral `INFO`;
+  - lista de slots mostra somente `SLOT 0..9`; midias e preview ficam apenas no painel `INFO`;
+  - metadata registra cartucho/discos/cassete, caminhos completos das midias e `uptime_ms`, mas a UI nao exibe data/hora;
+  - `Load State` tenta restaurar ROMs, discos e cassete pelos caminhos salvos; midia ausente fica descarregada/vazia;
+  - slots vazios/invalidos ficam legiveis e nao disparam load;
+  - ajuste 2026-05-05: cursor inicial sempre no `SLOT 0`, lista sem coluna de status/timestamp, sem labels `INFO`/`DATE`/`PREVIEW`, coluna de slots compacta/centralizada, quadro lateral subido e sem linha de espaco ate a borda inferior da janela;
+  - validacao local: `scripts/check-third-party-pristine.sh`, `git diff --check`, `make -j4 DEBUG=1`, `make -j4 DEBUG=0`;
+  - build final `DEBUG=0`: `BUILD_BID=202605051208-2bf4d90`, `TXTDBG BUILD:8C72`, artefato `artifacts/kernel8-issue237.img`.
 - Atualizacao 2026-05-04 (Machine/MSX1 mapper):
   - troca em `Settings -> Machine` agora deixa hard reset pendente e so reinicia a emulacao ao sair do menu;
   - selecionar `MSX1` força 64 KB de RAM no `SLOT2`, sem RAM mapper e com slots primarios nao expandidos;

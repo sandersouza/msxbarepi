@@ -666,3 +666,27 @@ void CGfxTextBoxRenderer::DrawMatrix(unsigned x, unsigned y, const TGfxTextMatri
 		}
 	}
 }
+
+void CGfxTextBoxRenderer::DrawBitmapNearest(unsigned x, unsigned y, unsigned w, unsigned h,
+					    const TScreenColor *pixels, unsigned src_w, unsigned src_h,
+					    unsigned src_stride_pixels)
+{
+	if (pixels == 0 || w == 0u || h == 0u || src_w == 0u || src_h == 0u)
+	{
+		return;
+	}
+	if (src_stride_pixels < src_w)
+	{
+		src_stride_pixels = src_w;
+	}
+	for (unsigned dy = 0u; dy < h; ++dy)
+	{
+		const unsigned sy = (unsigned) (((u64) dy * (u64) src_h) / (u64) h);
+		const TScreenColor *src = pixels + (sy * src_stride_pixels);
+		for (unsigned dx = 0u; dx < w; ++dx)
+		{
+			const unsigned sx = (unsigned) (((u64) dx * (u64) src_w) / (u64) w);
+			PutPixel(x + dx, y + dy, src[sx]);
+		}
+	}
+}

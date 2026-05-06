@@ -27,6 +27,9 @@ applyTo:
 - Criar espelho local antes de publicar issue/milestone remota.
 - Issue nova entra em `Backlog`; mover para `In progress`, `In review` e `Done` conforme o ciclo real.
 - Toda issue deve ter DoR e DoD; checklist nao substitui criterio de aceite.
+- Use o projeto https://github.com/users/sandersouza/projects/6/views/1 ( COCOBarePI ) para acompanhar o board.
+- As issues devem seguir o fluxo no Board; nao pular etapas. Se o usuario disser `estavel`/`estável`, mover para `In review`; se disser `mergeado`, mover para `Done`.
+- Ao criar issue move-a inicialmente para `Backlog` e depois mova para `In progress` quando o usuario disser `estavel`/`estável`.
 
 ## Branches e commits
 
