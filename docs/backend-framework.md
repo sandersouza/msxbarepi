@@ -88,6 +88,20 @@ msxbare_backend_module_v1
 
 Esse artefato nao implica selecao entre backends; ele representa apenas o modulo fMSX.
 
+## Initramfs e midia
+
+O modulo fMSX consome BIOS/cartuchos/discos pelo VFS interno preenchido a partir do CPIO em `src/backend/msx/modules/fmsx/fmsx_initramfs.cpp` e `src/backend/msx/modules/fmsx/fmsx_virtual_fs.c`.
+
+- No modo `standalone`, o build gera `build/initramfs/msx-embedded.cpio` e o embedda no kernel.
+- No modo `multicore`, o boot externo usa `msx.cpio` via `initramfs <core>.cpio followkernel`.
+- Nomes canonicos de boot incluem `MSX.ROM`, `MSX2.ROM`, `MSX2P.ROM`, `MSX2EXT.ROM`, `MSX2PEXT.ROM`, `DISK.ROM`, `CARTA.ROM`, `CARTB.ROM`, `DRIVEA.DSK`, `DRIVEB.DSK`, `CARTS.CRC` e `CARTS.SHA`.
+
+## Referencias
+
+- Base fMSX upstream consultada/adaptada sem alterar upstream: `third_party/fmsx/fMSX/MSX.c`, `third_party/fmsx/fMSX/V9938.c`, `third_party/fmsx/fMSX/Z80.c`, `third_party/fmsx/EMULib/`.
+- Contratos e build baremetal Circle usados pelo kernel: `third_party/circle/include/circle/types.h`, `third_party/circle/include/circle/startup.h`, libs Circle em `third_party/circle/lib/` e addons SD/FAT em `third_party/circle/addon/`.
+- Guardrail operacional: `scripts/check-third-party-pristine.sh` deve passar antes de builds que dependem de Circle/fMSX.
+
 ## Limitacoes atuais
 
 - A adaptacao interna `src/backend/runtime/runtime.h` ainda faz bridge por aliases de tipo e funcao para a familia MSX.

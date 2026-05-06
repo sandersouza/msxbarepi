@@ -7,6 +7,22 @@
 #include "combo_menu_items.h"
 #include "../usb_hid_gamepad.h"
 
+struct TComboStateSlotUi
+{
+    boolean occupied;
+    boolean valid;
+    boolean has_preview;
+    const TScreenColor *preview_pixels;
+    unsigned preview_w;
+    unsigned preview_h;
+    unsigned preview_stride;
+    char cart_a[17];
+    char cart_b[17];
+    char disk_a[17];
+    char disk_b[17];
+    char cassette[17];
+};
+
 class CComboPauseMenu
 {
 public:
@@ -57,11 +73,14 @@ public:
     boolean ConsumePendingDiskBrowserOpen(unsigned *drive_index, char *path, unsigned path_size);
     boolean ConsumePendingCassetteSelection(char *path, unsigned path_size);
     boolean ConsumePendingCassetteBrowserOpen(char *path, unsigned path_size);
+    boolean ConsumePendingStateSlot(unsigned *slot);
     boolean ConsumePendingGameMasterCheat(unsigned *game_index,
                                           unsigned *cheat_index,
                                           boolean *has_value_override,
                                           uint16_t *value_override);
     void OpenFileBrowser(unsigned mode, unsigned slot_index, const char *path);
+    void OpenStateSlotBrowser(boolean save_mode);
+    void SetStateSlots(const TComboStateSlotUi *slots, unsigned count, unsigned content_stamp);
     void OpenGameMaster(BackendCheatCatalog *catalog, unsigned load_status, unsigned error_line);
     unsigned GetAudioGainPercent(void) const;
     boolean IsInSettings(void) const;
@@ -101,7 +120,9 @@ private:
         MenuViewLoadDiskBrowser = 7,
         MenuViewLoadCassetteBrowser = 8,
         MenuViewGameMasterBrowser = 9,
-        MenuViewGameMasterCheats = 10
+        MenuViewGameMasterCheats = 10,
+        MenuViewSaveStateSlots = 11,
+        MenuViewLoadStateSlots = 12
     };
     static void CopySmallText(char *dst, unsigned dst_size, const char *src);
     void ResetRepeatState(void);
@@ -190,6 +211,13 @@ private:
     unsigned m_GameMasterApplyBlinkFrames;
     mutable TComboMenuItem m_GameMasterCheatItems[CComboFileBrowser::kVisibleRows + 2u];
     mutable char m_GameMasterCheatItemLabels[CComboFileBrowser::kVisibleRows + 2u][64];
+    TComboStateSlotUi m_StateSlots[10];
+    mutable TComboMenuItem m_StateSlotItems[10];
+    mutable char m_StateSlotLabels[10][32];
+    boolean m_HasPendingStateSlot;
+    unsigned m_PendingStateSlot;
+    unsigned m_StateSlotContentStamp;
+    unsigned m_LastDrawnStateSlotContentStamp;
     boolean m_LastBackPressed;
     unsigned m_LastDrawnView;
     unsigned m_LastDrawnScalePercent;

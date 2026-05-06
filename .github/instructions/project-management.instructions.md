@@ -27,6 +27,9 @@ applyTo:
 - Criar espelho local antes de publicar issue/milestone remota.
 - Issue nova entra em `Backlog`; mover para `In progress`, `In review` e `Done` conforme o ciclo real.
 - Toda issue deve ter DoR e DoD; checklist nao substitui criterio de aceite.
+- Use o projeto https://github.com/users/sandersouza/projects/6/views/1 ( COCOBarePI ) para acompanhar o board.
+- As issues devem seguir o fluxo no Board; nao pular etapas. Se o usuario disser `estavel`/`estável`, mover para `In review`; se disser `mergeado`, mover para `Done`.
+- Ao criar issue move-a inicialmente para `Backlog` e depois mova para `In progress` quando o usuario disser `estavel`/`estável`.
 
 ## Branches e commits
 
@@ -36,6 +39,7 @@ applyTo:
 - Nao fazer commit/push em iteracao experimental. Commit/push so quando o usuario declarar que a issue esta estavel.
 - Se um commit local for feito antes da estabilidade por engano, desfazer o commit de volta ao worktree.
 - Antes de remover branch local, confirmar, exceto quando o usuario pedir explicitamente sincronizacao/limpeza apos merge.
+- Sempre que eu lhe disser `sincronize` ou `sincronizar`, sincronize os remotos e locais, removendo branches locais remotas que foram deletadas e atualizando as branches locais com as remotas.
 
 ## PRs
 

@@ -116,7 +116,13 @@ Diretriz visual (overlay e menu):
   - `Disk Drive B`
   - `Settings`
 - `Save State` / `Load State`:
-  - ao acionar pelo menu `F12`, a acao e enfileirada, o menu fecha imediatamente e o save/load roda no tick seguinte do loop principal
+  - ao acionar pelo menu `F12`, abre uma lista fixa de slots `0-9`;
+  - `Save State` permite escolher conscientemente o slot que sera sobrescrito;
+  - `Load State` permite escolher apenas slots validos, deixando slots vazios/invalidos legiveis sem executar load;
+  - a tela de slots usa painel lateral `INFO` com ROM, disco, cassete e preview bruto `256x192` capturado do viewport;
+  - `Load State` restaura ROMs, discos e cassete pelos caminhos gravados na metadata; midia ausente fica vazia;
+  - ao confirmar slot em `Save State`, a gravacao e enfileirada no tick seguinte e o menu permanece aberto; em `Load State`, o menu fecha para restaurar o runtime;
+  - a UI nao exibe data/hora porque o Raspberry Pi 3B nao tem relogio com bateria nesse fluxo.
 - Ao ativar ou desativar o overlay de debug, o kernel agora limpa a tela inteira antes da nova apresentacao:
   - framebuffer visivel
   - staging/present buffer

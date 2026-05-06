@@ -408,7 +408,6 @@ static const char kSettingsLegacy83Path[] = "SD:/MSXBARE.CFG";
 static const char kBootConfigPath[] = "SD:/config.txt";
 static const char kDefaultCoreName[] = "msx";
 static const char kStateDirPath[] = "SD:/states";
-static const char kStatePath[] = "SD:/states/slot-last.sav";
 static const unsigned kRawBootConfigSlotBytes = 4096u;
 static const unsigned kRawBootConfigPayloadOffset = 64u;
 static const unsigned kRawBootConfigMaxPayload = kRawBootConfigSlotBytes - kRawBootConfigPayloadOffset;
@@ -2179,6 +2178,8 @@ CComboKernel::CComboKernel(void)
 	m_CoreSwitchPending(FALSE),
 	m_StateSavePending(FALSE),
 	m_StateLoadPending(FALSE),
+	m_StateActionSlot(0u),
+	m_StateSlotUiStamp(1u),
 	m_MediaCatalogStarted(FALSE),
 	m_MediaCatalogSummaryLogged(FALSE),
 	m_PendingMenuAction((unsigned) ComboMenuActionNone),
@@ -2195,6 +2196,8 @@ CComboKernel::CComboKernel(void)
 		m_BootFatDeferredMs(0u),
 		m_StateIoBuffer(0),
 	m_StateIoBufferCapacity(0u),
+	m_StateSlotUi{{0}},
+	m_StatePreviewPixels{{0}},
 	m_BackendPresentBuffer(0),
 	m_BackendPresentBufferPixels(0u)
 {
@@ -2205,6 +2208,7 @@ CComboKernel::CComboKernel(void)
 	m_CoreCount = 1u;
 	m_CoreSelected = 0u;
 	m_PauseMenu.SetCoreName(m_CoreActiveName, TRUE);
+	m_PauseMenu.SetStateSlots(m_StateSlotUi, kStateSlotCount, m_StateSlotUiStamp);
 	memset(m_DebugOverlayLineLengths, 0, sizeof(m_DebugOverlayLineLengths));
 	NormalizeSettingsForBuild();
 	ResetUartPerfTelemetry();
@@ -3529,12 +3533,12 @@ TComboShutdownMode CComboKernel::Run(void)
 		if (m_StateSavePending)
 		{
 			m_StateSavePending = FALSE;
-			SaveEmulatorStateToStorage();
+			SaveEmulatorStateToStorage(m_StateActionSlot);
 		}
 		if (m_StateLoadPending)
 		{
 			m_StateLoadPending = FALSE;
-			LoadEmulatorStateFromStorage();
+			LoadEmulatorStateFromStorage(m_StateActionSlot);
 		}
 		if (m_PendingMenuAction != (unsigned) ComboMenuActionNone)
 		{
@@ -6630,7 +6634,380 @@ boolean CComboKernel::EnsureStateStorageDirectory(void)
 	return (mkdir_result == FR_OK || mkdir_result == FR_EXIST) ? TRUE : FALSE;
 }
 
-void CComboKernel::SaveEmulatorStateToStorage(void)
+void CComboKernel::BuildStateSlotPath(unsigned slot, const char *suffix, char *path, unsigned path_size) const
+{
+	if (path == 0 || path_size == 0u)
+	{
+		return;
+	}
+	if (slot >= kStateSlotCount)
+	{
+		slot = 0u;
+	}
+	if (suffix == 0)
+	{
+		suffix = "sav";
+	}
+	CString line;
+	line.Format("%s/slot-%u.%s", kStateDirPath, slot, suffix);
+	CopyTextBounded(path, path_size, line);
+}
+
+static void StateCopyMediaName(char *dst, unsigned dst_size, const char *src)
+{
+	if (src == 0 || src[0] == '\0')
+	{
+		CopyTextBounded(dst, dst_size, "-");
+		return;
+	}
+	FormatRomName83(src, dst);
+	if (dst != 0 && dst_size > 0u && dst[0] == '\0')
+	{
+		CopyTextBounded(dst, dst_size, "-");
+	}
+}
+
+static void StateCopyPath(char *dst, unsigned dst_size, const char *src)
+{
+	if (dst == 0 || dst_size == 0u)
+	{
+		return;
+	}
+	if (src == 0)
+	{
+		src = "";
+	}
+	CopyTextBounded(dst, dst_size, src);
+}
+
+static void StateMetaValue(const char *text, const char *key, char *dst, unsigned dst_size)
+{
+	if (dst == 0 || dst_size == 0u || text == 0 || key == 0)
+	{
+		return;
+	}
+	const unsigned key_len = strlen(key);
+	const char *line = text;
+	while (*line != '\0')
+	{
+		if (strncmp(line, key, key_len) == 0 && line[key_len] == '=')
+		{
+			const char *value = line + key_len + 1u;
+			unsigned n = 0u;
+			while (value[n] != '\0' && value[n] != '\n' && value[n] != '\r' && n + 1u < dst_size)
+			{
+				dst[n] = value[n];
+				++n;
+			}
+			dst[n] = '\0';
+			return;
+		}
+		while (*line != '\0' && *line != '\n')
+		{
+			++line;
+		}
+		if (*line == '\n')
+		{
+			++line;
+		}
+	}
+}
+
+static boolean StateMetaHasKey(const char *text, const char *key)
+{
+	if (text == 0 || key == 0)
+	{
+		return FALSE;
+	}
+	const unsigned key_len = strlen(key);
+	const char *line = text;
+	while (*line != '\0')
+	{
+		if (strncmp(line, key, key_len) == 0 && line[key_len] == '=')
+		{
+			return TRUE;
+		}
+		while (*line != '\0' && *line != '\n')
+		{
+			++line;
+		}
+		if (*line == '\n')
+		{
+			++line;
+		}
+	}
+	return FALSE;
+}
+
+static boolean StateLoadMetadataText(unsigned slot, char *text, unsigned text_size)
+{
+	if (text == 0 || text_size == 0u)
+	{
+		return FALSE;
+	}
+	text[0] = '\0';
+	char path[64];
+	CString meta_path;
+	meta_path.Format("%s/slot-%u.meta", kStateDirPath, slot);
+	CopyTextBounded(path, sizeof(path), meta_path);
+	FIL file;
+	if (f_open(&file, path, FA_READ) != FR_OK)
+	{
+		return FALSE;
+	}
+	UINT bytes_read = 0u;
+	const FRESULT read_result = f_read(&file, text, text_size - 1u, &bytes_read);
+	(void) f_close(&file);
+	if (read_result != FR_OK || bytes_read == 0u)
+	{
+		return FALSE;
+	}
+	text[bytes_read] = '\0';
+	return (strncmp(text, "MSXBARE_STATE_META_V1", 21u) == 0) ? TRUE : FALSE;
+}
+
+static void StateLoadMetadataFields(unsigned slot, TComboStateSlotUi *ui)
+{
+	if (ui == 0)
+	{
+		return;
+	}
+	char text[1536];
+	if (!StateLoadMetadataText(slot, text, sizeof(text)))
+	{
+		return;
+	}
+	StateMetaValue(text, "cart_a", ui->cart_a, sizeof(ui->cart_a));
+	StateMetaValue(text, "cart_b", ui->cart_b, sizeof(ui->cart_b));
+	StateMetaValue(text, "disk_a", ui->disk_a, sizeof(ui->disk_a));
+	StateMetaValue(text, "disk_b", ui->disk_b, sizeof(ui->disk_b));
+	StateMetaValue(text, "cassette", ui->cassette, sizeof(ui->cassette));
+}
+
+boolean CComboKernel::LoadStatePreviewFromStorage(unsigned slot)
+{
+	if (slot >= kStateSlotCount)
+	{
+		return FALSE;
+	}
+	char path[64];
+	BuildStateSlotPath(slot, "raw", path, sizeof(path));
+	FIL file;
+	const FRESULT open_result = f_open(&file, path, FA_READ);
+	if (open_result != FR_OK)
+	{
+		return FALSE;
+	}
+	const unsigned need_bytes = kStatePreviewW * kStatePreviewH * sizeof(TScreenColor);
+	if ((unsigned) f_size(&file) != need_bytes)
+	{
+		(void) f_close(&file);
+		return FALSE;
+	}
+	UINT bytes_read = 0u;
+	const FRESULT read_result = f_read(&file, m_StatePreviewPixels[slot], need_bytes, &bytes_read);
+	(void) f_close(&file);
+	return (read_result == FR_OK && bytes_read == need_bytes) ? TRUE : FALSE;
+}
+
+boolean CComboKernel::CaptureStatePreviewToStorage(unsigned slot)
+{
+	if (slot >= kStateSlotCount)
+	{
+		return FALSE;
+	}
+	TViewportScreenshotView snap;
+	if (!combo_viewport_screenshot_get(&snap) || snap.pixels == 0 || snap.w == 0u || snap.h == 0u)
+	{
+		return FALSE;
+	}
+	for (unsigned y = 0u; y < kStatePreviewH; ++y)
+	{
+		const unsigned sy = (unsigned) (((u64) y * (u64) snap.h) / (u64) kStatePreviewH);
+		const TScreenColor *src = snap.pixels + (sy * snap.stride);
+		TScreenColor *dst = m_StatePreviewPixels[slot] + (y * kStatePreviewW);
+		for (unsigned x = 0u; x < kStatePreviewW; ++x)
+		{
+			const unsigned sx = (unsigned) (((u64) x * (u64) snap.w) / (u64) kStatePreviewW);
+			dst[x] = src[sx];
+		}
+	}
+	char path[64];
+	BuildStateSlotPath(slot, "raw", path, sizeof(path));
+	FIL file;
+	const FRESULT open_result = f_open(&file, path, FA_WRITE | FA_CREATE_ALWAYS);
+	if (open_result != FR_OK)
+	{
+		return FALSE;
+	}
+	const unsigned bytes = kStatePreviewW * kStatePreviewH * sizeof(TScreenColor);
+	UINT written = 0u;
+	const FRESULT write_result = f_write(&file, m_StatePreviewPixels[slot], bytes, &written);
+	const FRESULT close_result = f_close(&file);
+	return (write_result == FR_OK && close_result == FR_OK && written == bytes) ? TRUE : FALSE;
+}
+
+boolean CComboKernel::WriteStateMetadataToStorage(unsigned slot, unsigned state_bytes)
+{
+	if (slot >= kStateSlotCount)
+	{
+		return FALSE;
+	}
+	char path[64];
+	BuildStateSlotPath(slot, "meta", path, sizeof(path));
+	char cart_a[17], cart_b[17], disk_a[17], disk_b[17], cassette[17];
+	char cart_a_path[192], cart_b_path[192], disk_a_path[192], disk_b_path[192], cassette_path[192];
+	StateCopyMediaName(cart_a, sizeof(cart_a), backend_runtime_get_cartridge_name(0u));
+	StateCopyMediaName(cart_b, sizeof(cart_b), backend_runtime_get_cartridge_name(1u));
+	StateCopyMediaName(disk_a, sizeof(disk_a), backend_runtime_get_disk_name(0u));
+	StateCopyMediaName(disk_b, sizeof(disk_b), backend_runtime_get_disk_name(1u));
+	StateCopyMediaName(cassette, sizeof(cassette), backend_runtime_get_cassette_path());
+	StateCopyPath(cart_a_path, sizeof(cart_a_path), backend_runtime_get_cartridge_path(0u));
+	StateCopyPath(cart_b_path, sizeof(cart_b_path), backend_runtime_get_cartridge_path(1u));
+	StateCopyPath(disk_a_path, sizeof(disk_a_path), backend_runtime_get_disk_path(0u));
+	StateCopyPath(disk_b_path, sizeof(disk_b_path), backend_runtime_get_disk_path(1u));
+	StateCopyPath(cassette_path, sizeof(cassette_path), backend_runtime_get_cassette_path());
+	CString meta;
+	meta.Format("MSXBARE_STATE_META_V1\nslot=%u\nbytes=%u\nuptime_ms=%u\ncart_a=%s\ncart_b=%s\ndisk_a=%s\ndisk_b=%s\ncassette=%s\ncart_a_path=%s\ncart_b_path=%s\ndisk_a_path=%s\ndisk_b_path=%s\ncassette_path=%s\npreview_w=%u\npreview_h=%u\n",
+		slot, state_bytes, (unsigned) (CTimer::GetClockTicks64() / 1000ull),
+		cart_a, cart_b, disk_a, disk_b, cassette,
+		cart_a_path, cart_b_path, disk_a_path, disk_b_path, cassette_path,
+		kStatePreviewW, kStatePreviewH);
+	FIL file;
+	const FRESULT open_result = f_open(&file, path, FA_WRITE | FA_CREATE_ALWAYS);
+	if (open_result != FR_OK)
+	{
+		return FALSE;
+	}
+	UINT written = 0u;
+	const unsigned len = strlen((const char *) meta);
+	const FRESULT write_result = f_write(&file, (const char *) meta, len, &written);
+	const FRESULT close_result = f_close(&file);
+	return (write_result == FR_OK && close_result == FR_OK && written == len) ? TRUE : FALSE;
+}
+
+void CComboKernel::RefreshStateSlotUiFromStorage(void)
+{
+	if (!m_SettingsFatFsMounted)
+	{
+		memset(m_StateSlotUi, 0, sizeof(m_StateSlotUi));
+		++m_StateSlotUiStamp;
+		m_PauseMenu.SetStateSlots(m_StateSlotUi, kStateSlotCount, m_StateSlotUiStamp);
+		return;
+	}
+	for (unsigned slot = 0u; slot < kStateSlotCount; ++slot)
+	{
+		TComboStateSlotUi *ui = &m_StateSlotUi[slot];
+		memset(ui, 0, sizeof(*ui));
+		char state_path[64];
+		BuildStateSlotPath(slot, "sav", state_path, sizeof(state_path));
+		FILINFO info;
+		const FRESULT stat_result = f_stat(state_path, &info);
+		if (stat_result == FR_NO_FILE)
+		{
+			continue;
+		}
+		ui->occupied = TRUE;
+		ui->valid = (stat_result == FR_OK && ((info.fattrib & AM_DIR) == 0u) && info.fsize > 0u && info.fsize <= kStateBufferMaxBytes) ? TRUE : FALSE;
+		StateCopyMediaName(ui->cart_a, sizeof(ui->cart_a), "-");
+		StateCopyMediaName(ui->cart_b, sizeof(ui->cart_b), "-");
+		StateCopyMediaName(ui->disk_a, sizeof(ui->disk_a), "-");
+		StateCopyMediaName(ui->disk_b, sizeof(ui->disk_b), "-");
+		StateCopyMediaName(ui->cassette, sizeof(ui->cassette), "-");
+		StateLoadMetadataFields(slot, ui);
+		ui->has_preview = ui->valid ? LoadStatePreviewFromStorage(slot) : FALSE;
+		if (ui->has_preview)
+		{
+			ui->preview_pixels = m_StatePreviewPixels[slot];
+			ui->preview_w = kStatePreviewW;
+			ui->preview_h = kStatePreviewH;
+			ui->preview_stride = kStatePreviewW;
+		}
+	}
+	++m_StateSlotUiStamp;
+	m_PauseMenu.SetStateSlots(m_StateSlotUi, kStateSlotCount, m_StateSlotUiStamp);
+}
+
+static boolean StatePathExists(const char *path)
+{
+	if (path == 0 || path[0] == '\0')
+	{
+		return FALSE;
+	}
+	FILINFO info;
+	const FRESULT stat_result = f_stat(path, &info);
+	return (stat_result == FR_OK && ((info.fattrib & AM_DIR) == 0u)) ? TRUE : FALSE;
+}
+
+void CComboKernel::RestoreStateMediaFromStorage(unsigned slot)
+{
+	char text[1536];
+	if (!StateLoadMetadataText(slot, text, sizeof(text)))
+	{
+		return;
+	}
+	if (!StateMetaHasKey(text, "cart_a_path")
+	 && !StateMetaHasKey(text, "cart_b_path")
+	 && !StateMetaHasKey(text, "disk_a_path")
+	 && !StateMetaHasKey(text, "disk_b_path")
+	 && !StateMetaHasKey(text, "cassette_path"))
+	{
+		return;
+	}
+
+	char path[192];
+	const char *cart_keys[] = { "cart_a_path", "cart_b_path" };
+	for (unsigned i = 0u; i < 2u; ++i)
+	{
+		path[0] = '\0';
+		StateMetaValue(text, cart_keys[i], path, sizeof(path));
+		if (StatePathExists(path))
+		{
+			if (!backend_runtime_media_load_cartridge(i, path))
+			{
+				(void) backend_runtime_unload_cartridge(i);
+			}
+		}
+		else
+		{
+			(void) backend_runtime_unload_cartridge(i);
+		}
+	}
+
+	const char *disk_keys[] = { "disk_a_path", "disk_b_path" };
+	for (unsigned i = 0u; i < 2u; ++i)
+	{
+		path[0] = '\0';
+		StateMetaValue(text, disk_keys[i], path, sizeof(path));
+		if (StatePathExists(path))
+		{
+			if (!backend_runtime_media_load_disk(i, path))
+			{
+				(void) backend_runtime_unload_disk(i);
+			}
+		}
+		else
+		{
+			(void) backend_runtime_unload_disk(i);
+		}
+	}
+
+	path[0] = '\0';
+	StateMetaValue(text, "cassette_path", path, sizeof(path));
+	if (StatePathExists(path))
+	{
+		if (!backend_runtime_media_load_cassette(path))
+		{
+			(void) backend_runtime_unload_cassette();
+		}
+	}
+	else
+	{
+		(void) backend_runtime_unload_cassette();
+	}
+}
+
+void CComboKernel::SaveEmulatorStateToStorage(unsigned slot)
 {
 	UpdateSettingsSaveTelemetry(32u, 0u, 0u);
 #if !MSXBARE_ENABLE_FMSX
@@ -6675,12 +7052,14 @@ void CComboKernel::SaveEmulatorStateToStorage(void)
 	UpdateSettingsSaveTelemetry(33u, state_bytes > 999u ? 999u : state_bytes, 0u);
 
 	FIL file;
-	const FRESULT open_result = f_open(&file, kStatePath, FA_WRITE | FA_CREATE_ALWAYS);
+	char state_path[64];
+	BuildStateSlotPath(slot, "sav", state_path, sizeof(state_path));
+	const FRESULT open_result = f_open(&file, state_path, FA_WRITE | FA_CREATE_ALWAYS);
 	if (open_result != FR_OK)
 	{
 		UpdateSettingsSaveTelemetry(93u, 6u, open_result);
 		UpdateLoadDiagTelemetry(7390u + (ClampFatFsCode(open_result) % 10u));
-		LogSdOpResult(m_Logger, "STATE:OPENW", open_result, kStatePath, TRUE);
+		LogSdOpResult(m_Logger, "STATE:OPENW", open_result, state_path, TRUE);
 		m_Logger.Write(FromKernel, LogWarning, "Save State falhou: nao foi possivel criar arquivo");
 		return;
 	}
@@ -6691,8 +7070,11 @@ void CComboKernel::SaveEmulatorStateToStorage(void)
 	if (write_result == FR_OK && close_result == FR_OK && bytes_written == state_bytes)
 	{
 		UpdateSettingsSaveTelemetry(34u, bytes_written > 999u ? 999u : bytes_written, 0u);
+		(void) CaptureStatePreviewToStorage(slot);
+		(void) WriteStateMetadataToStorage(slot, state_bytes);
+		RefreshStateSlotUiFromStorage();
 		CString line;
-		line.Format("Save State OK: %u bytes em %s", state_bytes, kStatePath);
+		line.Format("Save State OK: slot %u, %u bytes em %s", slot, state_bytes, state_path);
 		m_Logger.Write(FromKernel, LogNotice, line);
 	}
 	else
@@ -6701,19 +7083,19 @@ void CComboKernel::SaveEmulatorStateToStorage(void)
 		if (write_result != FR_OK)
 		{
 			UpdateLoadDiagTelemetry(7490u + (ClampFatFsCode(write_result) % 10u));
-			LogSdOpResult(m_Logger, "STATE:WRITE", write_result, kStatePath, TRUE);
+			LogSdOpResult(m_Logger, "STATE:WRITE", write_result, state_path, TRUE);
 		}
 		else if (close_result != FR_OK)
 		{
 			UpdateLoadDiagTelemetry(7590u + (ClampFatFsCode(close_result) % 10u));
-			LogSdOpResult(m_Logger, "STATE:CLOSE", close_result, kStatePath, TRUE);
+			LogSdOpResult(m_Logger, "STATE:CLOSE", close_result, state_path, TRUE);
 		}
 		m_Logger.Write(FromKernel, LogWarning, "Save State falhou: erro de escrita no SD");
 	}
 #endif
 }
 
-void CComboKernel::LoadEmulatorStateFromStorage(void)
+void CComboKernel::LoadEmulatorStateFromStorage(unsigned slot)
 {
 	UpdateSettingsSaveTelemetry(42u, 0u, 0u);
 #if !MSXBARE_ENABLE_FMSX
@@ -6735,7 +7117,9 @@ void CComboKernel::LoadEmulatorStateFromStorage(void)
 	}
 
 	FILINFO file_info;
-	const FRESULT stat_result = f_stat(kStatePath, &file_info);
+	char state_path[64];
+	BuildStateSlotPath(slot, "sav", state_path, sizeof(state_path));
+	const FRESULT stat_result = f_stat(state_path, &file_info);
 	if (stat_result == FR_NO_FILE)
 	{
 		UpdateSettingsSaveTelemetry(94u, 5u, 0u);
@@ -6746,18 +7130,18 @@ void CComboKernel::LoadEmulatorStateFromStorage(void)
 	{
 		UpdateSettingsSaveTelemetry(94u, 6u, stat_result);
 		UpdateLoadDiagTelemetry(8190u + (ClampFatFsCode(stat_result) % 10u));
-		LogSdOpResult(m_Logger, "STATE:STAT", stat_result, kStatePath, TRUE);
+		LogSdOpResult(m_Logger, "STATE:STAT", stat_result, state_path, TRUE);
 		m_Logger.Write(FromKernel, LogWarning, "Load State falhou: erro ao consultar arquivo");
 		return;
 	}
 
 	FIL file;
-	const FRESULT open_result = f_open(&file, kStatePath, FA_READ);
+	const FRESULT open_result = f_open(&file, state_path, FA_READ);
 	if (open_result != FR_OK)
 	{
 		UpdateSettingsSaveTelemetry(94u, 7u, open_result);
 		UpdateLoadDiagTelemetry(8290u + (ClampFatFsCode(open_result) % 10u));
-		LogSdOpResult(m_Logger, "STATE:OPENR", open_result, kStatePath, TRUE);
+		LogSdOpResult(m_Logger, "STATE:OPENR", open_result, state_path, TRUE);
 		m_Logger.Write(FromKernel, LogWarning, "Load State falhou: nao foi possivel abrir arquivo");
 		return;
 	}
@@ -6788,17 +7172,18 @@ void CComboKernel::LoadEmulatorStateFromStorage(void)
 		if (read_result != FR_OK)
 		{
 			UpdateLoadDiagTelemetry(8390u + (ClampFatFsCode(read_result) % 10u));
-			LogSdOpResult(m_Logger, "STATE:READ", read_result, kStatePath, TRUE);
+			LogSdOpResult(m_Logger, "STATE:READ", read_result, state_path, TRUE);
 		}
 		else if (close_result != FR_OK)
 		{
 			UpdateLoadDiagTelemetry(8490u + (ClampFatFsCode(close_result) % 10u));
-			LogSdOpResult(m_Logger, "STATE:CLOSE", close_result, kStatePath, TRUE);
+			LogSdOpResult(m_Logger, "STATE:CLOSE", close_result, state_path, TRUE);
 		}
 		m_Logger.Write(FromKernel, LogWarning, "Load State falhou: erro de leitura no SD");
 		return;
 	}
 
+	RestoreStateMediaFromStorage(slot);
 	if (!backend_runtime_load_state(m_StateIoBuffer, file_size))
 	{
 		UpdateSettingsSaveTelemetry(94u, 10u, 0u);
@@ -6827,7 +7212,7 @@ void CComboKernel::LoadEmulatorStateFromStorage(void)
 	m_PauseMenu.RequestRedraw();
 	UpdateSettingsSaveTelemetry(44u, file_size > 999u ? 999u : file_size, 0u);
 	CString line;
-	line.Format("Load State OK: %u bytes de %s", file_size, kStatePath);
+	line.Format("Load State OK: slot %u, %u bytes de %s", slot, file_size, state_path);
 	m_Logger.Write(FromKernel, LogNotice, line);
 #endif
 }
@@ -7823,20 +8208,45 @@ void CComboKernel::HandleMenuAction(TComboMenuAction action)
 #endif
 
 	case ComboMenuActionSaveState:
-		ExitPauseForBackendAction();
+	{
+		unsigned slot = 0u;
+		(void) m_PauseMenu.ConsumePendingStateSlot(&slot);
+		if (slot >= kStateSlotCount)
+		{
+			slot = 0u;
+		}
 		RefreshSettingsUiAfterAction();
+		m_StateActionSlot = slot;
 		m_StateSavePending = TRUE;
 		UpdateSettingsSaveTelemetry(31u, 0u, 0u);
-		m_Logger.Write(FromKernel, LogNotice, "Save State queued");
+		{
+			CString line;
+			line.Format("Save State queued: slot %u", slot);
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
 		break;
+	}
 
 	case ComboMenuActionLoadState:
+	{
+		unsigned slot = 0u;
+		(void) m_PauseMenu.ConsumePendingStateSlot(&slot);
+		if (slot >= kStateSlotCount)
+		{
+			slot = 0u;
+		}
 		ExitPauseForBackendAction();
 		RefreshSettingsUiAfterAction();
+		m_StateActionSlot = slot;
 		m_StateLoadPending = TRUE;
 		UpdateSettingsSaveTelemetry(41u, 0u, 0u);
-		m_Logger.Write(FromKernel, LogNotice, "Load State queued");
+		{
+			CString line;
+			line.Format("Load State queued: slot %u", slot);
+			m_Logger.Write(FromKernel, LogNotice, line);
+		}
 		break;
+	}
 
 	default:
 		break;
@@ -8234,6 +8644,11 @@ void CComboKernel::UpdateJoystickFromRaw(unsigned char modifiers, const unsigned
 				{
 					/* Reset only on pause-enter to avoid one-frame root-layout flash on pause-exit. */
 					m_PauseMenu.Reset();
+					if (!m_SettingsFatFsMounted && m_SettingsStorageReady)
+					{
+						(void) MountSettingsFileSystem("STATEUI");
+					}
+					RefreshStateSlotUiFromStorage();
 					m_LastPauseWasInSettings = FALSE;
 					m_PauseNeedsBackgroundRedraw = TRUE;
 					m_PauseNeedsFullViewportClear = FALSE;

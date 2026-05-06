@@ -19,6 +19,8 @@ typedef struct {
     const char *title_load_cassette;
     const char *title_game_master;
     const char *title_active_cheats;
+    const char *title_save_state;
+    const char *title_load_state;
     const char *root_load_cart;
     const char *root_load_disk;
     const char *root_load_cassette;
@@ -45,6 +47,11 @@ typedef struct {
     const char *game_master_no_cheats;
     const char *game_master_line;
     const char *game_master_apply_hint;
+    const char *state_empty;
+    const char *state_invalid;
+    const char *state_cart;
+    const char *state_disk;
+    const char *state_cassette;
     const char *settings_language;
     const char *settings_proportion;
     const char *settings_scale;
