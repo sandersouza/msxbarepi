@@ -39,6 +39,7 @@ applyTo:
 - Nao fazer commit/push em iteracao experimental. Commit/push so quando o usuario declarar que a issue esta estavel.
 - Se um commit local for feito antes da estabilidade por engano, desfazer o commit de volta ao worktree.
 - Antes de remover branch local, confirmar, exceto quando o usuario pedir explicitamente sincronizacao/limpeza apos merge.
+- Sempre que eu lhe disser `sincronize` ou `sincronizar`, sincronize os remotos e locais, removendo branches locais remotas que foram deletadas e atualizando as branches locais com as remotas.
 
 ## PRs
 
