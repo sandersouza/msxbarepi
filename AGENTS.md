@@ -5,13 +5,11 @@
 Construir uma base baremetal para Raspberry Pi 3B e evoluir até um emulador MSX executável sem sistema operacional.
 
 ## Fonte canonica de regras de fluxo
+- As regras operacionais estao centralizadas em `.github/instructions/`.
+- Regra unica: sempre carregar e aplicar **todos** os arquivos `*.instructions.md` dessa pasta.
+- Leia a documentação do projeto em caso de dúvidas, e para minimizar o custo de tokens para tarefas como CODE REVIEW e TESTING.
 
-As regras operacionais estao centralizadas em `.github/instructions/`.
-
-Regra unica: sempre carregar e aplicar **todos** os arquivos `*.instructions.md` dessa pasta.
-
-Prioridade interna:
-
+## Prioridade interna:
 - Novas regras devem ser adicionadas dentro de seus arquivos de contexto (ex.: regras de gestao em `project-management.instructions.md`).
 - Regras que impactam o fluxo geral do projeto (ex.: sincronizacao de docs, atualizacao de contexto) devem ser adicionadas em `docs-sync.instructions.md`.
 - Regras que impactam a organizacao do trabalho e ciclo de desenvolvimento devem ser adicionadas em `project-management.instructions.md`.
